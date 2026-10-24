@@ -19,6 +19,7 @@ type challengeDoc struct {
 	Factor        string            `bson:"factor,omitempty"`
 	NewUser       bool              `bson:"new_user,omitempty"`
 	Profile       map[string]string `bson:"profile,omitempty"`
+	ViaOrg        string            `bson:"via_org,omitempty"`
 	Secret        string            `bson:"secret,omitempty"`
 	SessionID     string            `bson:"session_id,omitempty"`
 	CodeHash      string            `bson:"code_hash,omitempty"`

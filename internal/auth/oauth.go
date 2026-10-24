@@ -87,8 +87,10 @@ type LoginCode struct {
 	CodeChallenge string
 	// NewUser says the sign-in made the user, and Profile is what the provider said of them:
 	// the redemption hands both over once.
-	NewUser   bool
-	Profile   map[string]string
+	NewUser bool
+	Profile map[string]string
+	// Org is the organization whose connection signed the person in; the session records it.
+	Org       string
 	CreatedAt time.Time
 	ExpiresAt time.Time
 }
@@ -157,12 +159,18 @@ func (s *Users) TakeOAuthState(ctx context.Context, state string) (OAuthState, e
 // IssueLoginCode makes the one-time code that lets the app, holding the PKCE verifier
 // of challenge, get a session for the user; method is the first factor that proved them.
 func (s *Users) IssueLoginCode(ctx context.Context, userID, method, challenge string, newUser bool, profile map[string]string) (string, error) {
+	return s.IssueLoginCodeIn(ctx, userID, method, challenge, newUser, profile, "")
+}
+
+// IssueLoginCodeIn is IssueLoginCode for a person an organization's connection signed in: the
+// session the code becomes records the organization.
+func (s *Users) IssueLoginCodeIn(ctx context.Context, userID, method, challenge string, newUser bool, profile map[string]string, org string) (string, error) {
 	code, err := randomValue()
 	if err != nil {
 		return "", err
 	}
 	now := s.now()
-	lc := LoginCode{ID: HashToken(code), UserID: userID, Method: method, CodeChallenge: challenge, NewUser: newUser, CreatedAt: now, ExpiresAt: now.Add(LoginCodeTTL)}
+	lc := LoginCode{ID: HashToken(code), UserID: userID, Method: method, CodeChallenge: challenge, NewUser: newUser, Org: org, CreatedAt: now, ExpiresAt: now.Add(LoginCodeTTL)}
 	if newUser && len(profile) > 0 {
 		lc.Profile = profile
 	}
@@ -199,7 +207,7 @@ func (s *Users) RedeemLoginCode(ctx context.Context, code, verifier string) (Red
 	if method == "" {
 		method = "oauth"
 	}
-	return s.afterFirstFactor(ctx, u, method, handover{newUser: lc.NewUser, profile: lc.Profile})
+	return s.afterFirstFactor(ctx, u, method, handover{newUser: lc.NewUser, profile: lc.Profile, org: lc.Org})
 }
 
 // Redeemed is the outcome of redeeming a login code: the session, whether the sign-in made the
@@ -218,7 +226,13 @@ type Redeemed struct {
 // StartProviderSession starts a session for a user a provider login resolved (the native
 // flow, which has no login code to redeem).
 func (s *Users) StartProviderSession(ctx context.Context, u User, provider string, newUser bool, profile map[string]string) (Redeemed, error) {
-	return s.afterFirstFactor(ctx, u, provider, handover{newUser: newUser, profile: profile})
+	return s.StartProviderSessionIn(ctx, u, provider, newUser, profile, "")
+}
+
+// StartProviderSessionIn is StartProviderSession for a person an organization's connection
+// signed in: the session records the organization.
+func (s *Users) StartProviderSessionIn(ctx context.Context, u User, provider string, newUser bool, profile map[string]string, org string) (Redeemed, error) {
+	return s.afterFirstFactor(ctx, u, provider, handover{newUser: newUser, profile: profile, org: org})
 }
 
 // ProviderLogin is a person an external provider has vouched for.
@@ -397,9 +411,12 @@ func (s *Users) signInNewIdentity(ctx context.Context, in ProviderLogin, email s
 func (s *Users) signUpWithProvider(ctx context.Context, in ProviderLogin, email string) (ProviderResult, error) {
 	verified := in.TrustsEmail && in.EmailVerified
 	restore := func() {}
-	switch s.Settings.Signup {
-	case registry.SignupOpen:
-	case registry.SignupInvite:
+	switch {
+	case in.Org != "":
+		// A person of an organization's connection is let in whatever the sign-up mode: the
+		// connection's restriction is the gate, and the realm switched the feature on.
+	case s.Settings.Signup == registry.SignupOpen:
+	case s.Settings.Signup == registry.SignupInvite:
 		if in.Invitation == "" {
 			return ProviderResult{}, ErrInvitationRequired
 		}

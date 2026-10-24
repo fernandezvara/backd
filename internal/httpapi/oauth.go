@@ -416,10 +416,19 @@ func (a *authAPI) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		back(paramError, oauthProviderError)
 		return
 	}
-	if conn, org := sc.conns[p.Name], p.Org != ""; org && !conn.Admits(signInClaimsOf(claims)) {
-		logger(r.Context()).Info("a person the connection does not admit", "provider", p.Name, "org", p.Org)
-		back(paramError, oauthNotAllowed)
-		return
+	if conn, org := sc.conns[p.Name], p.Org != ""; org {
+		if !conn.Admits(signInClaimsOf(claims)) {
+			logger(r.Context()).Info("a person the connection does not admit", "provider", p.Name, "org", p.Org)
+			back(paramError, oauthNotAllowed)
+			return
+		}
+		if err := svc.CheckConnectionAuthority(r.Context(), conn); err != nil {
+			if !errors.Is(err, auth.ErrConnectionUnusable) {
+				logger(r.Context()).Error("check a connection", "org", p.Org, "error", err)
+			}
+			back(paramError, oauthProviderError)
+			return
+		}
 	}
 	res, err := svc.ResolveProviderLogin(r.Context(), auth.ProviderLogin{
 		Provider: p.Name, Org: p.Org, Subject: claims.Subject, Email: claims.Email, EmailVerified: claims.EmailVerified, TrustsEmail: p.TrustsEmail(),
@@ -432,11 +441,14 @@ func (a *authAPI) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.keepAppleToken(r, svc, p, res.User.ID, p.ClientID, tokens.RefreshToken)
+	if p.Org != "" {
+		svc.AfterOrgSignIn(r.Context(), p.Org, p.Name, res)
+	}
 	if st.Intent == auth.IntentLink {
 		back(paramLinked, p.Name)
 		return
 	}
-	loginCode, err := svc.IssueLoginCode(r.Context(), res.User.ID, p.Name, st.CodeChallenge, res.NewUser, res.Profile)
+	loginCode, err := svc.IssueLoginCodeIn(r.Context(), res.User.ID, p.Name, st.CodeChallenge, res.NewUser, res.Profile, p.Org)
 	if err != nil {
 		logger(r.Context()).Error("issue a login code", "error", err)
 		back(paramError, oauthProviderError)

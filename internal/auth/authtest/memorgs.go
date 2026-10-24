@@ -705,3 +705,30 @@ func (m *MemStore) SeedConnection(c auth.OrgConnection) {
 	}
 	o.conns[connKey(c.Org, c.Provider)] = c
 }
+
+func (m *MemStore) BlockOrgMember(_ context.Context, org, user string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for k, c := range m.org().conns {
+		if c.Org == org && !slices.Contains(c.Blocked, user) {
+			c.Blocked = append(slices.Clone(c.Blocked), user)
+			if len(c.Blocked) > auth.MaxConnectionBlocked {
+				c.Blocked = c.Blocked[len(c.Blocked)-auth.MaxConnectionBlocked:]
+			}
+			m.org().conns[k] = c
+		}
+	}
+	return nil
+}
+
+func (m *MemStore) UnblockOrgMember(_ context.Context, org, user string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for k, c := range m.org().conns {
+		if c.Org == org {
+			c.Blocked = slices.DeleteFunc(slices.Clone(c.Blocked), func(u string) bool { return u == user })
+			m.org().conns[k] = c
+		}
+	}
+	return nil
+}

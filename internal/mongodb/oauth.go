@@ -37,6 +37,7 @@ type loginCodeDoc struct {
 	CodeChallenge string            `bson:"code_challenge"`
 	NewUser       bool              `bson:"new_user,omitempty"`
 	Profile       map[string]string `bson:"profile,omitempty"`
+	Org           string            `bson:"org,omitempty"`
 	CreatedAt     time.Time         `bson:"created_at"`
 	ExpiresAt     time.Time         `bson:"expires_at"`
 }

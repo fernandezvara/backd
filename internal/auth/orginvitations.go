@@ -556,6 +556,10 @@ func (s *Users) AcceptOrgInvitation(ctx context.Context, p Principal, token stri
 	if err := s.putMember(ctx, before, m, inv.ID); err != nil {
 		return Membership{}, err
 	}
+	// An invitation is the way back for someone a manager removed.
+	if err := s.Store.UnblockOrgMember(ctx, inv.Org, p.User.ID); err != nil && s.Log != nil {
+		s.Log.Warn("take a member off a connection's blocked list", "org", inv.Org, "error", err)
+	}
 	s.Audit(ctx, AuditOrgInviteAccept, orgTarget(inv.Org), map[string]any{"invitation": inv.ID, "user": p.User.ID, "roles": used.Roles, "teams": m.Teams})
 	return s.membership(ctx, pv.Org, m)
 }

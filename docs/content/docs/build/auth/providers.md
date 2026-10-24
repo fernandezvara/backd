@@ -147,7 +147,7 @@ Run a worker (`backd worker`, or `serve --with-worker`) for this: without one th
 
 - **Microsoft never links by address.** The address in a Microsoft token is whatever the tenant's administrator set, so it can't prove who the person is; the user is stored unverified and email verification applies.
 - **Pre-hijacking is closed:** an account made with someone's address, never verified, does not absorb that person's Google identity.
-- **Sign-up modes** apply: `open`; `invite` needs the invitation token passed to `start` (`invitation=…`, bound to an address it must match); `closed` is `backd_error=signup_closed`.
+- **Sign-up modes** apply to the realm's providers (an [organization's connection](../../organizations/api/#joining) is let in whatever the mode): `open`; `invite` needs the invitation token passed to `start` (`invitation=…`, bound to an address it must match); `closed` is `backd_error=signup_closed`.
 - New users from Google or Apple with a verified address are marked verified; an Apple private-relay address counts. A user needs an address: a provider that gives none ends with `backd_error=email_required`.
 - **Linking a provider to a signed-in user** is `POST …/start` with the session in `Authorization` and `"intent": "link"`; it ends at `redirect_to?backd_linked=<provider>`. A provider account that belongs to another user, or a second one of the same provider, is `link_conflict`.
 - Remove a method with `DELETE /_auth/identities/{provider}`; the last one can't be removed. A method that came through an [organization's connection](../../organizations/api/#signing-in-through-a-connection) is removed with `?org=<id>`: a user holds one identity per provider **per organization**.

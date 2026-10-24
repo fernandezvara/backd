@@ -3,6 +3,7 @@ package mongodb
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -129,5 +130,84 @@ func TestAuthStoreOrganizationIdentitiesAndSlugs(t *testing.T) {
 	}
 	if _, err := s.OrgBySlug(ctx, "one"); !errors.Is(err, auth.ErrNotFound) {
 		t.Errorf("a deleted organization's slug: %v", err)
+	}
+}
+
+func TestAuthStoreBlocksRemovedMembers(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	for _, c := range []auth.OrgConnection{
+		{ID: "o1:google", Org: "o1", Provider: "google", ClientID: "c", HostedDomain: "a.example", Enabled: true, CreatedAt: now, UpdatedAt: now},
+		{ID: "o1:microsoft", Org: "o1", Provider: "microsoft", ClientID: "c", Tenant: "t", Enabled: true, CreatedAt: now, UpdatedAt: now},
+		{ID: "o2:google", Org: "o2", Provider: "google", ClientID: "c", HostedDomain: "b.example", Enabled: true, CreatedAt: now, UpdatedAt: now},
+	} {
+		if err := s.PutOrgConnection(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Every connection of the organization, once, and no other organization's.
+	for range 2 {
+		if err := s.BlockOrgMember(ctx, "o1", "u1"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for provider, want := range map[string]int{"google": 1, "microsoft": 1} {
+		if c, _ := s.OrgConnection(ctx, "o1", provider); len(c.Blocked) != want || !c.HasBlocked("u1") {
+			t.Errorf("%s blocked = %v", provider, c.Blocked)
+		}
+	}
+	if c, _ := s.OrgConnection(ctx, "o2", "google"); len(c.Blocked) != 0 {
+		t.Errorf("another organization's connection blocks: %v", c.Blocked)
+	}
+	if err := s.UnblockOrgMember(ctx, "o1", "u1"); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := s.OrgConnection(ctx, "o1", "google"); len(c.Blocked) != 0 {
+		t.Errorf("unblocked: %v", c.Blocked)
+	}
+	// The list keeps the newest.
+	for i := range auth.MaxConnectionBlocked + 5 {
+		if err := s.BlockOrgMember(ctx, "o2", fmt.Sprintf("u%04d", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c, _ := s.OrgConnection(ctx, "o2", "google")
+	if len(c.Blocked) != auth.MaxConnectionBlocked || c.HasBlocked("u0000") || !c.HasBlocked(fmt.Sprintf("u%04d", auth.MaxConnectionBlocked+4)) {
+		t.Errorf("blocked has %d entries, first %q", len(c.Blocked), c.Blocked[0])
+	}
+}
+
+func TestAuthStoreKeepsTheOrganizationOfASignIn(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	if err := s.CreateUser(ctx, auth.User{ID: "u1", Email: "u1@example.com", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateSession(ctx, auth.Session{ID: "s1", UserID: "u1", TokenHash: "h1", CreatedAt: now, LastUsedAt: now, ExpiresAt: now.Add(time.Hour), Org: "o1"}); err != nil {
+		t.Fatal(err)
+	}
+	sess, _, err := s.SessionByTokenHash(ctx, "h1")
+	if err != nil || sess.Org != "o1" {
+		t.Errorf("session = %+v, %v", sess, err)
+	}
+	if err := s.PutLoginCode(ctx, auth.LoginCode{ID: "lc1", UserID: "u1", Method: "google", CodeChallenge: "c", Org: "o1", CreatedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	if lc, err := s.ClaimLoginCode(ctx, "lc1", now); err != nil || lc.Org != "o1" {
+		t.Errorf("login code = %+v, %v", lc, err)
+	}
+	if err := s.PutChallenge(ctx, auth.AuthChallenge{ID: "ch1", Kind: auth.ChallengeMFA, UserID: "u1", Factor: "google", ViaOrg: "o1", CreatedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	if c, err := s.GetChallenge(ctx, "ch1", now); err != nil || c.ViaOrg != "o1" || c.Org != "" {
+		t.Errorf("challenge = %+v, %v", c, err)
+	}
+	if err := s.PutOAuthState(ctx, auth.OAuthState{ID: "st1", Provider: "google", Org: "o1", Intent: "signin", CodeChallenge: "c", Verifier: "v", Nonce: "n", RedirectTo: "https://x", CreatedAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	if st, err := s.ClaimOAuthState(ctx, "st1", now); err != nil || st.Org != "o1" {
+		t.Errorf("state = %+v, %v", st, err)
 	}
 }

@@ -176,9 +176,20 @@ The people of the company sign in at the organization's own address, which is th
 - **Identities are keyed by organization.** The person's identity is `(provider, organization, subject)`: the same Google account at two organizations, or at an organization and at the realm, is separate identities, and a user holds one per provider per organization. `GET /_auth/me` lists them with the organization's id.
 - **It never links by address.** If an account already has the person's address, the flow ends at `backd_error=account_exists` even when Google says it is verified: an organization's managers control the connection, so their provider's word is not proof that an address is theirs. The person signs in the way they already do and links the connection with `intent: link`. Addresses from a connection are stored unverified.
 
-{{< hint style="note" >}}
-Joining the organization when a person signs in, the roles given on joining and the members who were removed come with the next step of the same release; until then signing in through a connection creates or finds the user without making them a member.
-{{< /hint >}}
+### Joining
+
+| The person | What happens |
+|---|---|
+| Has no account, and the connection admits them | An account is made, **whatever the realm's `signup` mode** (`closed` and `invite` included: the connection's restriction is the gate and the realm switched the feature on), and they join the organization with the connection's `join_roles` |
+| Has an account with the same address | `account_exists`: they sign in the way they already do and link the connection with `intent: link`, which joins them |
+| Signs in again | Nothing changes: they are not made a member again, and keep the roles they have |
+| Was removed by a manager | Signed in, **not** joined, until an invitation to the organization is accepted. Leaving by oneself does not block |
+
+- Joining happens only when the sign-in makes the identity (a new person, or the explicit link). Someone who is already a member keeps their roles, and a blocked person is never rejoined by signing in or by linking.
+- **Removal blocks.** While the organization has a connection, a member a manager (or an administrator) removes is kept in the connection's blocked list (the newest 1000), and accepting an invitation to the organization lifts it.
+- **The roles are checked again at every join.** If the manager who last set the connection no longer holds the capabilities of its `join_roles`, backd disables the connection (`org.sso.disabled`) and the sign-in ends with `provider_error`, so a manager who lost a role doesn't leave a powerful default behind. A realm administrator's connection is not affected, and neither is one whose roles open nothing.
+- **Sessions remember where they came from.** The session a sign-in opens records the organization of the connection (also across a second step or a consent), for what comes later; nothing enforces it yet.
+- Audit: every sign-in is `org.sso.login` with `joined`, and a join is `org.member_add` with `by: sso`.
 
 Realm administrators use the same under `/_admin/orgs/{org}/sso[/{provider}]` (the `users` area, no proof needed beyond their own session or key) and `backd orgs sso`, `sso-set` and `sso-delete`.
 

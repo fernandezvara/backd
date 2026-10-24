@@ -299,3 +299,26 @@ func TestCallerSignInMethods(t *testing.T) {
 		t.Errorf("anonymous: %v %v", mfa, methods)
 	}
 }
+
+// The organization a sign-in came through survives the second step into the session.
+func TestOrganizationOfASignInSurvivesTheSecondStep(t *testing.T) {
+	ctx := context.Background()
+	f := newMFAFixture(t)
+	out, err := f.svc.StartProviderSessionIn(ctx, f.user, "google", false, nil, "org-7")
+	if err != nil || out.Challenge == nil {
+		t.Fatalf("start: %+v, %v", out, err)
+	}
+	v, err := f.svc.VerifyMFA(ctx, out.Challenge.Token, MethodTOTP, f.code(t, 0), "")
+	if err != nil || v.Principal.Session.Org != "org-7" {
+		t.Errorf("session org = %q, %v", v.Principal.Session.Org, err)
+	}
+	// And a sign-in that did not come through one records none.
+	out, _ = f.svc.StartProviderSession(ctx, f.user, "google", false, nil)
+	f.secret = ""
+	rec, _ := f.store.MFAOf(ctx, f.user.ID)
+	secret, _ := f.svc.OpenToken(rec.Secret)
+	code, _ := totp.GenerateCodeCustom(secret, f.clock.Add(30*time.Second), totp.ValidateOpts{Period: 30, Digits: otp.DigitsSix, Algorithm: otp.AlgorithmSHA1})
+	if v, err = f.svc.VerifyMFA(ctx, out.Challenge.Token, MethodTOTP, code, ""); err != nil || v.Principal.Session.Org != "" {
+		t.Errorf("session org = %q, %v", v.Principal.Session.Org, err)
+	}
+}

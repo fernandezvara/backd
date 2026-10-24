@@ -103,10 +103,19 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 		a.providerUnavailable(w, r, "the provider could not be reached")
 		return
 	}
-	if p.Org != "" && !sc.conns[p.Name].Admits(signInClaimsOf(claims)) {
-		logger(r.Context()).Info("a native person the connection does not admit", "provider", p.Name, "org", p.Org)
-		writeError(w, r, http.StatusForbidden, codeNotAllowed, "this account is not allowed to sign in through this organization")
-		return
+	if p.Org != "" {
+		if !sc.conns[p.Name].Admits(signInClaimsOf(claims)) {
+			logger(r.Context()).Info("a native person the connection does not admit", "provider", p.Name, "org", p.Org)
+			writeError(w, r, http.StatusForbidden, codeNotAllowed, "this account is not allowed to sign in through this organization")
+			return
+		}
+		if err := svc.CheckConnectionAuthority(r.Context(), sc.conns[p.Name]); err != nil {
+			if !errors.Is(err, auth.ErrConnectionUnusable) {
+				logger(r.Context()).Error("check a connection", "org", p.Org, "error", err)
+			}
+			writeError(w, r, http.StatusNotFound, codeNotFound, "this organization has no such sign-in provider")
+			return
+		}
 	}
 	var refresh string
 	if p.Name == registry.ProviderApple && p.RevokeOnDelete {
@@ -132,13 +141,16 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 		a.nativeFailure(w, r, svc, p.Name, err)
 		return
 	}
+	if p.Org != "" {
+		svc.AfterOrgSignIn(r.Context(), p.Org, p.Name, res)
+	}
 	if intent == auth.IntentLink {
 		a.keepAppleToken(r, svc, p, res.User.ID, claims.Audience, refresh)
 		writeJSON(w, http.StatusOK, map[string]any{"linked": p.Name})
 		return
 	}
 	a.keepAppleToken(r, svc, p, res.User.ID, claims.Audience, refresh)
-	out, err := svc.StartProviderSession(r.Context(), res.User, p.Name, res.NewUser, res.Profile)
+	out, err := svc.StartProviderSessionIn(r.Context(), res.User, p.Name, res.NewUser, res.Profile, p.Org)
 	if err != nil {
 		authError(w, r, err)
 		return

@@ -16,8 +16,10 @@ import (
 
 // Audit actions of connections; the target is org:<id>, details never hold the secret.
 const (
-	AuditOrgSSOSet     = "org.sso.set"     // details: provider, enabled, secret_changed
-	AuditOrgSSODeleted = "org.sso.deleted" // details: provider
+	AuditOrgSSOSet      = "org.sso.set"      // details: provider, enabled, secret_changed
+	AuditOrgSSODeleted  = "org.sso.deleted"  // details: provider
+	AuditOrgSSOLogin    = "org.sso.login"    // a person signed in through a connection; details: user, provider, joined
+	AuditOrgSSODisabled = "org.sso.disabled" // backd disabled a connection; details: provider, reason
 )
 
 var (
@@ -27,6 +29,9 @@ var (
 	ErrSSOProviderUnknown = errors.New("that provider is not available to organizations")
 	// ErrConnectionNotFound: the organization has no connection with that provider.
 	ErrConnectionNotFound = errors.New("the organization has no sign-in connection with that provider")
+	// ErrConnectionUnusable: the connection was disabled because the manager who last set it no
+	// longer holds the roles it gives on joining.
+	ErrConnectionUnusable = errors.New("the sign-in connection can't be used")
 	// ErrSSOLimit: the organization has the most connections the realm allows.
 	ErrSSOLimit = errors.New("the organization has the most sign-in connections it may")
 )
@@ -435,4 +440,75 @@ func (c OrgConnection) Admits(in SignInClaims) bool {
 	}
 	_, domain, ok := strings.Cut(strings.ToLower(strings.TrimSpace(in.Email)), "@")
 	return ok && slices.Contains(c.EmailDomains, domain)
+}
+
+// CheckConnectionAuthority makes sure the roles a connection gives on joining are still within
+// reach of whoever set it: a manager who lost a role doesn't leave a powerful default behind.
+// A connection whose last setter no longer holds the roles' capabilities is disabled (audited)
+// and ErrConnectionUnusable is returned. Roles that open nothing, and connections set by a
+// realm administrator, are always fine.
+func (s *Users) CheckConnectionAuthority(ctx context.Context, c OrgConnection) error {
+	need := s.capsOfRoles(c.JoinRoles)
+	by, isUser := strings.CutPrefix(c.UpdatedBy, "user:")
+	if !need.Any() || !isUser {
+		return nil
+	}
+	holds := false
+	if m, err := s.MembershipOf(ctx, by, c.Org); err == nil {
+		cc := s.caps(m)
+		holds = cc.Has(registry.CapRoles) || cc.Covers(need)
+	} else if !errors.Is(err, ErrNotOrgMember) {
+		return err
+	}
+	if holds {
+		return nil
+	}
+	c.Enabled, c.UpdatedAt = false, s.now()
+	if err := s.Store.PutOrgConnection(ctx, c); err != nil {
+		return err
+	}
+	s.Audit(ctx, AuditOrgSSODisabled, orgTarget(c.Org), map[string]any{"provider": c.Provider, "reason": "the manager who set it no longer holds the roles it gives"})
+	return ErrConnectionUnusable
+}
+
+// AfterOrgSignIn is what a successful sign-in through an organization's connection does to the
+// membership (design/org-sso.md §6). The person joins with the connection's join roles only
+// when this sign-in made the identity (a new person, or an explicit link): someone who is
+// already a member stays as they are, and someone a manager removed stays out until invited
+// again. A failure to join never fails the sign-in: the person is signed in and not joined.
+func (s *Users) AfterOrgSignIn(ctx context.Context, orgID, provider string, res ProviderResult) (joined bool) {
+	defer func() {
+		s.Audit(ctx, AuditOrgSSOLogin, orgTarget(orgID), map[string]any{"user": res.User.ID, "provider": provider, "joined": joined})
+	}()
+	if !res.NewUser && !res.Linked {
+		return false
+	}
+	o := s.Settings.Organizations
+	c, err := s.Store.OrgConnection(ctx, orgID, provider)
+	if err != nil || o == nil || c.HasBlocked(res.User.ID) {
+		return false
+	}
+	org, err := s.Store.OrgByID(ctx, orgID)
+	if err != nil || org.Status != OrgActive {
+		return false
+	}
+	if _, err := s.Store.OrgMember(ctx, orgID, res.User.ID); err == nil {
+		return false // a member already
+	}
+	if err := s.CheckConnectionAuthority(ctx, c); err != nil {
+		return false
+	}
+	var roles []string
+	for _, r := range c.JoinRoles {
+		if o.Declared(r) { // a role removed from realm.yaml grants nothing
+			roles = append(roles, r)
+		}
+	}
+	if _, err := s.addMember(ctx, o, org, res.User.ID, roles, "", "sso"); err != nil {
+		if s.Log != nil {
+			s.Log.Warn("a person signed in through a connection could not join the organization", "org", orgID, "provider", provider, "error", err)
+		}
+		return false
+	}
+	return true
 }

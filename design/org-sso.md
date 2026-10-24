@@ -89,9 +89,9 @@ Two prefixes, each already in use, and the rule that picks one: **`_orgs` is the
 
 - **Why no email link:** the organization's manager controls the connection, and a provider they control could assert anyone's address. Tenant and Workspace restrictions prove the *company* of the person, not that the email belongs to an account in this realm.
 - **Removal:** a manager removing a member (or a member being removed by any path) adds them to `blocked` while a connection exists; accepting an invitation to the organization removes them from it. Leaving by oneself does not block.
-- **Sessions** record the organization they were opened through (`LoginCode` and session `org`). Nothing enforces it yet ([31](#9-follow-ups)); recording it now avoids a later migration.
+- **Sessions** record the organization they were opened through (`LoginCode` and session `org`; the second-step and consent challenges carry it as `via_org`, since `org` there already names a magic link's company context). Nothing enforces it yet ([31](#9-follow-ups)); recording it now avoids a later migration.
 - **MFA:** the provider's own second factor isn't trusted; the organization's `require_mfa` applies as it does for any member.
-- **Audit:** `org.sso.login` (user, organization, provider), `org.member.joined` with `via: sso`.
+- **Audit:** `org.sso.login` (user, provider, whether this sign-in joined them) and, for a join, the existing `org.member_add` with `by: sso`. A connection switched off because its setter lost the roles is `org.sso.disabled`.
 
 ## 7. Lifecycle and portability (issue 30.6)
 

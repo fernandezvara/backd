@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/registry"
 )
 
 var requestIDs = regexp.MustCompile(`"request_id":"[^"]*"`)
@@ -410,5 +411,221 @@ func TestIdentitiesAreKeyedByOrganization(t *testing.T) {
 	}
 	if err := f.svc.UnlinkIn(ctx, f.adaID, "google", "orgA", "self"); err == nil {
 		t.Error("unlinked twice")
+	}
+}
+
+// memberOf says whether the user is a member of the organization, and with which direct roles.
+func (o *orgSignIn) memberOf(t *testing.T, user string) (bool, []string) {
+	t.Helper()
+	m, err := o.svc.Store.OrgMember(context.Background(), o.org, user)
+	if err != nil {
+		return false, nil
+	}
+	return true, m.DirectRoles(time.Now())
+}
+
+// loginAs signs in with a password and returns the session token.
+func (o *orgSignIn) loginAs(t *testing.T, email, password string) string {
+	t.Helper()
+	rec, out := o.do(t, "POST", "/v1/acme/_auth/login", `{"email": "`+email+`", "password": "`+password+`"}`)
+	if rec.Code != 200 {
+		t.Fatalf("login: %d %v", rec.Code, out)
+	}
+	return out["token"].(string)
+}
+
+func (o *orgSignIn) connect(t *testing.T, provider string, in auth.ConnectionInput) {
+	t.Helper()
+	if _, err := o.svc.AdminSetOrgConnection(context.Background(), o.org, provider, in); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOrganizationSignInJoinsWithTheJoinRoles(t *testing.T) {
+	o := newOrgSignIn(t)
+	ctx := context.Background()
+	o.connect(t, "google", auth.ConnectionInput{ClientID: "org-g-client", HostedDomain: "acme.example", JoinRoles: []string{"editor"}})
+
+	a := o.signInOrg(t, "google", orgGoogle("g-join", "joiner@acme.example", "acme.example", true))
+	code, out := o.redeem(t, a)
+	if code != 200 {
+		t.Fatalf("redeem: %d %v", code, out)
+	}
+	userID := out["user"].(map[string]any)["id"].(string)
+	if member, roles := o.memberOf(t, userID); !member || strings.Join(roles, ",") != "editor" {
+		t.Fatalf("membership = %v %v", member, roles)
+	}
+	// The session records the organization it was opened through.
+	p, err := o.svc.Authenticate(ctx, out["token"].(string))
+	if err != nil || p.Session.Org != o.org {
+		t.Errorf("session org = %q, %v", p.Session.Org, err)
+	}
+	// A returning sign-in changes nothing, and a returning member keeps their roles.
+	o.connect(t, "google", auth.ConnectionInput{ClientID: "org-g-client", HostedDomain: "acme.example", JoinRoles: []string{"member"}})
+	if a := o.signInOrg(t, "google", orgGoogle("g-join", "joiner@acme.example", "acme.example", true)); a.errorCode() != "" {
+		t.Fatalf("again: %v", a.result)
+	}
+	if _, roles := o.memberOf(t, userID); strings.Join(roles, ",") != "editor" {
+		t.Errorf("roles after a second sign-in = %v", roles)
+	}
+	// Audited: the sign-in, and the join through it.
+	_, trail := o.doH(t, "GET", "/v1/acme/_admin/audit?limit=100", "", jsonHdr(o.key))
+	text := toJSON(t, trail)
+	for _, want := range []string{"org.sso.login", `"joined":true`, `"joined":false`, "org.member_add", `"by":"sso"`} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the audit trail lacks %s", want)
+		}
+	}
+}
+
+func TestOrganizationSignInIgnoresTheSignupMode(t *testing.T) {
+	o := newOrgSignIn(t)
+	for _, mode := range []string{registry.SignupClosed, registry.SignupInvite} {
+		o.svc.Settings.Signup = mode
+		sub := "g-" + mode
+		a := o.signInOrg(t, "google", orgGoogle(sub, mode+"@acme.example", "acme.example", true))
+		if a.errorCode() != "" {
+			t.Errorf("sign-up %s: an allowed person was refused: %v", mode, a.result)
+		}
+		// The realm's own providers still follow the mode.
+		if r := o.signIn(t, "google", googleUser("realm-"+mode, "realm-"+mode+"@example.com", true), nil); r.errorCode() == "" {
+			t.Errorf("sign-up %s: the realm's google admitted a stranger", mode)
+		}
+	}
+}
+
+// Removed by a manager, a person stays out of the connection until invited; leaving is free.
+func TestRemovedMembersAreNotRejoinedBySignIn(t *testing.T) {
+	o := newOrgSignIn(t)
+	ctx := context.Background()
+	o.connect(t, "google", auth.ConnectionInput{ClientID: "org-g-client", HostedDomain: "acme.example", JoinRoles: []string{"member"}})
+	a := o.signInOrg(t, "google", orgGoogle("g-rm", "removed@acme.example", "acme.example", true))
+	_, out := o.redeem(t, a)
+	userID := out["user"].(map[string]any)["id"].(string)
+	if member, _ := o.memberOf(t, userID); !member {
+		t.Fatal("not joined")
+	}
+	blocked := func() bool {
+		c, _ := o.svc.Store.OrgConnection(ctx, o.org, "google")
+		return c.HasBlocked(userID)
+	}
+
+	// Leaving by oneself doesn't block.
+	if err := o.svc.LeaveOrg(ctx, userID, o.org); err != nil {
+		t.Fatal(err)
+	}
+	if blocked() {
+		t.Error("leaving blocked the person")
+	}
+	// A manager's removal does, on every connection of the organization.
+	if _, err := o.svc.AdminAddMember(ctx, o.org, userID, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := o.svc.AdminRemoveMember(ctx, o.org, userID); err != nil {
+		t.Fatal(err)
+	}
+	if !blocked() {
+		t.Fatal("a removed member was not blocked")
+	}
+	if c, _ := o.svc.Store.OrgConnection(ctx, o.org, "microsoft"); !c.HasBlocked(userID) {
+		t.Error("the Microsoft connection does not block them")
+	}
+
+	// They link the connection again (their identity is gone): signed in, not joined.
+	if err := o.svc.UnlinkIn(ctx, userID, "google", o.org, "self"); err == nil {
+		t.Fatal("unlinked the only method") // the account has no other: give it a password
+	}
+	pw := "dev-p4ssw0rd!"
+	if err := o.svc.SetPassword(ctx, "removed@acme.example", pw); err != nil {
+		t.Fatal(err)
+	}
+	if err := o.svc.UnlinkIn(ctx, userID, "google", o.org, "self"); err != nil {
+		t.Fatal(err)
+	}
+	session := o.loginAs(t, "removed@acme.example", pw)
+	o.idp.SetUser(orgGoogle("g-rm", "removed@acme.example", "acme.example", true))
+	verifier, challenge, _ := auth.NewPKCE()
+	rec, body := o.doH(t, "POST", o.base+"/google/start", `{"redirect_to": "`+appRedirect+`", "code_challenge": "`+challenge+`", "intent": "link"}`, jsonHdr(session))
+	if rec.Code != 200 {
+		t.Fatalf("link start: %d %v", rec.Code, body)
+	}
+	if res := o.finish(t, "google", body["authorize_url"].(string), verifier, false); res.result.Query().Get("backd_linked") != "google" {
+		t.Fatalf("link: %v", res.result)
+	}
+	if member, _ := o.memberOf(t, userID); member {
+		t.Error("a blocked person rejoined by linking")
+	}
+
+	// An invitation is the way back, and it lifts the block.
+	inv, err := o.svc.AdminCreateOrgInvitation(ctx, o.org, auth.InvitationInput{Binding: auth.BindUser, User: userID, Roles: []string{"member"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, _ := o.svc.Authenticate(ctx, session)
+	if _, err := o.svc.AcceptOrgInvitation(ctx, p, inv.Token); err != nil {
+		t.Fatal(err)
+	}
+	if blocked() {
+		t.Error("accepting an invitation did not lift the block")
+	}
+}
+
+// An explicit link through the connection joins the person who is not a member yet.
+func TestLinkingAConnectionJoins(t *testing.T) {
+	o := newOrgSignIn(t)
+	ctx := context.Background()
+	o.connect(t, "google", auth.ConnectionInput{ClientID: "org-g-client", HostedDomain: "acme.example", JoinRoles: []string{"member"}})
+	o.idp.SetUser(orgGoogle("g-bob", "bob@example.com", "acme.example", true))
+	verifier, challenge, _ := auth.NewPKCE()
+	rec, body := o.doH(t, "POST", o.base+"/google/start", `{"redirect_to": "`+appRedirect+`", "code_challenge": "`+challenge+`", "intent": "link"}`, jsonHdr(o.bob))
+	if rec.Code != 200 {
+		t.Fatalf("start: %d %v", rec.Code, body)
+	}
+	if res := o.finish(t, "google", body["authorize_url"].(string), verifier, false); res.result.Query().Get("backd_linked") != "google" {
+		t.Fatalf("link: %v", res.result)
+	}
+	if member, roles := o.memberOf(t, o.bobID); !member || strings.Join(roles, ",") != "member" {
+		t.Errorf("membership after linking = %v %v", member, roles)
+	}
+	id, err := o.svc.Store.IdentityOfIn(ctx, o.bobID, "google", o.org)
+	if err != nil || id.Org != o.org {
+		t.Errorf("identity = %+v, %v", id, err)
+	}
+	// Bob's own account is unchanged: same address, no new user.
+	if u, _ := o.svc.Store.UserByEmail(ctx, "bob@example.com"); u.ID != o.bobID {
+		t.Errorf("user = %+v", u)
+	}
+}
+
+// A connection whose setter lost the roles it gives is switched off.
+func TestConnectionIsDisabledWhenItsSetterLosesTheRoles(t *testing.T) {
+	o := newOrgSignIn(t)
+	ctx := context.Background()
+	// bob, an owner, gives admin on joining; then bob is demoted to a role that can't give it.
+	if _, err := o.svc.AdminAddMember(ctx, o.org, o.bobID, []string{"owner"}); err != nil {
+		t.Fatal(err)
+	}
+	proof := o.withProof(t, o.bob)
+	rec, out := o.doH(t, "PUT", "/v1/acme/_orgs/"+o.org+"/sso/google", `{"client_id": "org-g-client", "hosted_domain": "acme.example", "join_roles": ["admin"]}`, proof)
+	if rec.Code != 200 {
+		t.Fatalf("set: %d %v", rec.Code, out)
+	}
+	if _, err := o.svc.AdminSetMemberRoles(ctx, o.org, o.bobID, []string{"member"}); err != nil {
+		t.Fatal(err)
+	}
+	a := o.signInOrg(t, "google", orgGoogle("g-late", "late@acme.example", "acme.example", true))
+	if a.errorCode() != "provider_error" {
+		t.Fatalf("sign-in through a connection whose setter lost the roles: %v", a.result)
+	}
+	c, _ := o.svc.Store.OrgConnection(ctx, o.org, "google")
+	if c.Enabled {
+		t.Error("the connection is still enabled")
+	}
+	if u, err := o.svc.Store.UserByEmail(ctx, "late@acme.example"); err == nil {
+		t.Errorf("a user was made: %+v", u)
+	}
+	// Once disabled it answers like a missing provider.
+	if _, code, _, _ := o.start(t, o.base, "google"); code != http.StatusNotFound {
+		t.Errorf("start of a disabled connection: %d", code)
 	}
 }

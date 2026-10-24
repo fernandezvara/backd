@@ -115,3 +115,18 @@ func (s *AuthStore) DeleteOrgConnection(ctx context.Context, org, provider strin
 	}
 	return nil
 }
+
+// BlockOrgMember implements auth.Store: the members a manager removed stay out of the
+// connection until invited again. The newest are kept when the list is full.
+func (s *AuthStore) BlockOrgMember(ctx context.Context, org, user string) error {
+	_, err := s.orgConnections().UpdateMany(ctx,
+		bson.D{{Key: "org", Value: org}, {Key: "blocked", Value: bson.D{{Key: "$ne", Value: user}}}},
+		bson.D{{Key: "$push", Value: bson.D{{Key: "blocked", Value: bson.D{{Key: "$each", Value: bson.A{user}}, {Key: "$slice", Value: -auth.MaxConnectionBlocked}}}}}})
+	return err
+}
+
+// UnblockOrgMember implements auth.Store.
+func (s *AuthStore) UnblockOrgMember(ctx context.Context, org, user string) error {
+	_, err := s.orgConnections().UpdateMany(ctx, bson.D{{Key: "org", Value: org}}, bson.D{{Key: "$pull", Value: bson.D{{Key: "blocked", Value: user}}}})
+	return err
+}

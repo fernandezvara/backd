@@ -207,6 +207,7 @@ var systemCollections = []systemCollection{
 			"expires_at":   typ("date"),
 			"methods":      map[string]any{"bsonType": "array", "items": str()},
 			"mfa":          typ("bool"),
+			"org":          str(),
 		}),
 		indexes: []systemIndex{
 			{keys: bson.D{{Key: "token_hash", Value: 1}}, unique: true},
@@ -531,6 +532,7 @@ var systemCollections = []systemCollection{
 			"consents":       typ("object"),
 			"new_user":       typ("bool"),
 			"profile":        typ("object"),
+			"via_org":        str(),
 			"attempts":       typ("int"),
 			"created_at":     typ("date"),
 			"expires_at":     typ("date"),
@@ -858,6 +860,7 @@ var systemCollections = []systemCollection{
 			"code_challenge": str(),
 			"new_user":       typ("bool"),
 			"profile":        typ("object"),
+			"org":            str(),
 			"created_at":     typ("date"),
 			"expires_at":     typ("date"),
 		}),
