@@ -129,7 +129,7 @@ Deleting is not undoable for `delete` collections: reactivating an organization 
 
 ## Sign-in connections
 
-A company can sign its people in with **its own** Google Workspace or Microsoft Entra tenant instead of the providers the realm configures. The realm switches the feature on with [`organizations.sso`](../../configuration/realm/#organizations); the managers of an organization (a role with `manage: sso`) then keep its **connections**: an application the company registered with the provider, a client secret, and the restriction that says who may come in. Everything answers `404` while the realm has it off.
+A company can sign its people in with **its own** Google Workspace or Microsoft Entra tenant instead of the providers the realm configures (the step-by-step version is [the sign-in guide](../sign-in/); the operator's side, [Organization sign-in for operators](../../../operate/organization-sign-in/)). The realm switches the feature on with [`organizations.sso`](../../configuration/realm/#organizations); the managers of an organization (a role with `manage: sso`) then keep its **connections**: an application the company registered with the provider, a client secret, and the restriction that says who may come in. Everything answers `404` while the realm has it off.
 
 | Request | Needs | Answer |
 |---|---|---|

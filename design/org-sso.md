@@ -138,3 +138,17 @@ Two prefixes, each already in use, and the rule that picks one: **`_orgs` is the
 ## 12. Follow-ups
 
 Milestone `31-org-sso-extensions`: Apple (a team per organization), generic OpenID Connect (issuer allow-list and egress), `require_sso` per organization (membership counts only for sessions opened through its connection, like `require_mfa`), verified domains (DNS proof, realm-admin approval) with automatic email linking and "which organization is this email?" discovery, and review.
+
+## 13. As built (milestone 30)
+
+Where the implementation differs from, or adds to, the text above:
+
+- **Addresses stored unverified.** New users from a connection are stored with `email_verified: false` for both providers (§5): Google's word proves the Workspace, not that a managed address is theirs to claim in this realm.
+- **One `404` for every unavailable connection**, not `404 or 503`; `503` stays for backd's public address being unknown (§5).
+- **Secrets** of an organization are stored with the `database` field set to their scope (`org:<id>`), so the collection's unique `(database, name)` index holds one per organization; the document also has `org`.
+- **Identities** replace two unique indexes (`(provider, subject)` and `(user_id, provider)`) with ones that include `org`; `backd provision` drops the old ones (§5).
+- **CLI**: `backd orgs sso`, `sso-set`, `sso-delete` (single words, as `claims-set`); `updated_by` is kept on connections beside `created_by`; the connection id is `<org>:<provider>`.
+- **Audit**: a join is the existing `org.member_add` with `by: sso`; `org.sso.login` and `org.sso.disabled` are new (§6, §7).
+- **Challenges** carry the organization of the sign-in as `via_org` (the field `org` already names a magic link's company context).
+- **Admin UI**: a *Sign-in* section of the organization page, not a tab (the page has none); it also lists the last twenty `org.sso.login` events.
+- **Not in this milestone**: the Dart client's `org` parameters (the JavaScript client has them), Apple and generic OpenID Connect, `require_sso`, and verified domains (milestone 31).

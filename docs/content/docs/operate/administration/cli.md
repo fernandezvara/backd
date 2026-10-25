@@ -148,7 +148,7 @@ Be careful when taking an admin role away from yourself: once no one holds an ad
 |---|---|
 | `backd bootstrap --realm <realm> --email <email>` | Create a realm's first administrator (see [The first administrator](#the-first-administrator)) |
 | `backd user <command>` | Manage a realm's users through the admin API (see [Users and passwords](../../../build/auth/users/)) |
-| `backd orgs <command>` | Manage a realm's organizations, members, teams and claims (see [Organizations](../../../build/organizations/)) |
+| `backd orgs <command>` | Manage a realm's organizations, members, teams and claims, and their [sign-in connections](../../organization-sign-in/) (`sso`, `sso-set`, `sso-delete`) (see [Organizations](../../../build/organizations/)) |
 | `backd apikey <command>` | Manage a realm's API keys (see [API keys](../../../build/auth/api-keys/)) |
 | `backd push devices\|sends\|test` | See a realm's push devices and send records, and send an audited test push (see [Records and test send](../../../build/push/records/)) |
 | `backd secret set\|create\|rotate\|list\|delete`, `backd secret rotate-key` | Manage [function secrets](../../../build/functions/secrets/) and [field keys](../../../build/configuration/field-keys/) (`create --type key --generate`, or `--value key:\|env:\|file:`; `rotate --generate\|--value\|--resume`); `rotate-key` re-encrypts them under a new master key, on MongoDB directly |
