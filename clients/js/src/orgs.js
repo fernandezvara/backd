@@ -232,9 +232,9 @@ export class Orgs {
    */
   async create(input, opts) {
     const { data } = await this.client.request({ method: 'POST', path: ['_orgs'], body: input, ...opts })
-    // The organization comes with a session of its own: keep it, so `client.org(id)` is signed in.
+    // The organization comes with a session of its own: keep it, so `client.org(slug)` (its id when it has no slug) is signed in.
     if (data.session?.token && this.client.root.storage.slot) {
-      await this.client.org(data.id).auth.signedIn(/** @type {any} */ ({ token: data.session.token, session_id: '', expires_at: data.session.expires_at, org: data.session.org }))
+      await this.client.org(data.slug ?? data.id).auth.signedIn(/** @type {any} */ ({ token: data.session.token, session_id: '', expires_at: data.session.expires_at, org: data.session.org }))
     }
     return data
   }

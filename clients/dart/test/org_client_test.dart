@@ -180,6 +180,7 @@ void main() {
       ..answer(respond(201, {
         'id': 'on',
         'name': 'New',
+        'slug': 'new',
         'session': {
           'token': 'bds_n',
           'expires_at': '2030-01-01T00:00:00Z',
@@ -190,7 +191,7 @@ void main() {
     final root = testClient(t);
     final org = await root.orgs.create({'name': 'New', 'slug': 'new'});
     expect(org['id'], 'on');
-    final c = root.org('on');
+    final c = root.org('new');
     expect(await c.storage.get(), 'bds_n');
     await c.auth.me();
     expect(headerOf(t.requests[1], 'Authorization'), 'Bearer bds_n');
@@ -213,7 +214,7 @@ void main() {
       'slug': 'start-inc',
     });
     expect(out.organization['slug'], 'start-inc');
-    expect(await root.org('on').storage.get(), 'bds_n');
+    expect(await root.org('start-inc').storage.get(), 'bds_n');
     expect(await root.storage.get(), isNull);
   });
 

@@ -145,7 +145,7 @@ test('creating an organization signs the app in to it', async () => {
   const root = createClient({ url: 'http://api.test', realm: 'acme', fetch: m.fetch, storage: memoryStorage() })
   const org = await root.orgs.create({ name: 'New', slug: 'new' })
   assert.equal(org.id, 'on')
-  const c = root.org('on')
+  const c = root.org('new')
   assert.equal(await c.auth.token(), 'bds_n')
   await c.auth.me()
   assert.equal(m.calls[1].headers.Authorization, 'Bearer bds_n')
@@ -158,7 +158,7 @@ test('a new person starts a company', async () => {
   assert.equal(m.calls[0].url.pathname, '/v1/acme/_auth/orgs')
   assert.deepEqual(m.calls[0].body, { email: 'founder@example.com', password: 'dev-p4ssw0rd!', name: 'Start Inc', slug: 'start-inc' })
   assert.equal(out.organization.slug, 'start-inc')
-  assert.equal(await root.org('on').auth.token(), 'bds_n', 'the token is the new organization client\'s')
+  assert.equal(await root.org('start-inc').auth.token(), 'bds_n', 'the token is the new organization client\'s')
 })
 
 test('a company that needs its address verified first starts no session', async () => {

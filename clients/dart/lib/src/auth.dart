@@ -554,11 +554,10 @@ final class Auth {
     final organization =
         Map<String, Object?>.from(data.remove('organization') as Map);
     final session = Session.fromJson(data);
-    // The session is the new organization's: kept under its own client when
-    // the storage can, else in this one.
-    final target = client.keepsOrgSessions && session.org != null
-        ? client.org(session.org!).auth
-        : this;
+    // The session is the new organization's: kept under its own client (named
+    // as the person will type it: the slug) when the storage can, else in
+    // this one.
+    final target = client.keepsOrgSessions ? client.org(slug).auth : this;
     return (
       session: await target._signedIn(session),
       organization: organization

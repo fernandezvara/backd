@@ -366,8 +366,9 @@ export class Auth {
       throw new VerificationRequiredError({ status, code: 'verification_required', message: 'the account and the organization were created: verify the email address, then sign in' })
     }
     const { organization, ...session } = data
-    // The session is the new organization's: kept under its own client when the storage can, else in this one.
-    const target = this.client.root.storage.slot ? this.client.org(session.org) : this.client
+    // The session is the new organization's: kept under its own client (named as the person will type it:
+    // the slug) when the storage can, else in this one.
+    const target = this.client.root.storage.slot ? this.client.org(slug) : this.client
     return { .../** @type {Session} */ (await target.auth.signedIn(session)), organization }
   }
 

@@ -29,7 +29,7 @@ final class Orgs {
     final data = Map<String, Object?>.from(res.data as Map);
     final made = data['session'];
     if (made is Map && made['token'] is String && client.keepsOrgSessions) {
-      await client.org('${data['id']}').auth.signedInWith(Session(
+      await client.org('${data['slug'] ?? data['id']}').auth.signedInWith(Session(
             token: made['token'] as String,
             sessionId: '',
             expiresAt: '${made['expires_at'] ?? ''}',
