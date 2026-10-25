@@ -127,3 +127,68 @@ test('a read-only administrator sees team roles and has no controls for them', a
   await page.getByRole('link', { name: 'Organizations' }).click()
   await expect(page.getByRole('button', { name: 'Give a team role' })).toHaveCount(0)
 })
+
+test('an administrator connects an organization to its own Google Workspace and Microsoft tenant', async ({ page, signIn }) => {
+  const name = `Sign-in ${stamp}`
+  const secret = `never-shown-${stamp}`
+  await signIn('admin', { keep: true })
+  await page.getByRole('link', { name: 'Organizations' }).click()
+  await page.getByRole('button', { name: 'Create organization' }).click()
+  const create = page.getByRole('dialog')
+  await create.getByLabel('Name').fill(name)
+  await create.getByLabel("Owner's email").fill(users.admin)
+  await create.getByRole('button', { name: 'Create', exact: true }).click()
+  await expect(page.getByTestId('org-name')).toHaveText(name)
+  const id = /\/orgs\/([^/?#]+)/.exec(page.url())![1]!
+
+  // Google: the redirect address to register is shown, the secret never is.
+  await expect(page.getByTestId('org-sso')).toBeVisible()
+  await expect(page.getByTestId('org-connections')).toContainText('No connections yet')
+  await page.getByRole('button', { name: 'Connect a provider' }).click()
+  const google = page.getByRole('dialog')
+  await google.getByLabel('Client id').fill('123-abc.apps.googleusercontent.com')
+  await google.getByLabel('Client secret').fill(secret)
+  await google.getByLabel('Workspace domain').fill('acme.example')
+  await google.getByLabel('Roles on joining').fill('editor')
+  await google.getByRole('button', { name: 'Save' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Connection saved' })).toBeVisible()
+  const row = page.getByTestId('connection-google')
+  await expect(row).toContainText('123-abc.apps.googleusercontent.com')
+  await expect(row).toContainText('acme.example')
+  await expect(row).toContainText('editor')
+  await expect(row).toContainText('Client secret set')
+  await expect(row.getByTestId('connection-redirect')).toContainText(`/v1/adminui/_auth/orgs/${id}/oauth/google/callback`)
+  await expect(page.locator('body')).not.toContainText(secret)
+
+  // Editing leaves the stored secret alone when the field stays empty.
+  await row.getByRole('button', { name: 'Change roles' }).click()
+  const edit = page.getByRole('dialog')
+  await expect(edit.getByLabel('Client secret')).toHaveValue('')
+  await edit.getByLabel('Client id').fill('456-def.apps.googleusercontent.com')
+  await edit.getByRole('button', { name: 'Save' }).click()
+  await expect(row).toContainText('456-def.apps.googleusercontent.com')
+  await expect(row).toContainText('Client secret set')
+
+  // Microsoft: a tenant that admits anyone is refused, with the reason.
+  await page.getByRole('button', { name: 'Connect a provider' }).click()
+  const ms = page.getByRole('dialog')
+  await ms.getByLabel('Client id').fill('22222222-3333-4444-5555-666666666666')
+  await ms.getByLabel('Client secret').fill(secret)
+  await ms.getByLabel('Tenant id').fill('common')
+  await ms.getByRole('button', { name: 'Save' }).click()
+  await expect(ms).toContainText('admit people of any organization')
+  await ms.getByLabel('Tenant id').fill('11111111-2222-3333-4444-555555555555')
+  await ms.getByRole('button', { name: 'Save' }).click()
+  await expect(page.getByTestId('connection-microsoft')).toContainText('11111111-2222-3333-4444-555555555555')
+  // Both providers are connected: nothing left to add.
+  await expect(page.getByRole('button', { name: 'Connect a provider' })).toHaveCount(0)
+  await expect(page.getByTestId('org-sso-logins')).toContainText('Nobody has signed in')
+
+  // Removing asks for the provider's name.
+  await page.getByTestId('connection-google').getByRole('button', { name: 'Delete' }).click()
+  const del = page.getByRole('dialog')
+  await del.getByLabel(/Type/).fill('google')
+  await del.getByRole('button', { name: 'Delete' }).click()
+  await expect(page.getByTestId('connection-google')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Connect a provider' })).toBeVisible()
+})

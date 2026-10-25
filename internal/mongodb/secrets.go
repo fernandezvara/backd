@@ -31,7 +31,21 @@ type secretDoc struct {
 	UpdatedBy      string    `bson:"updated_by"`
 }
 
+// storedDatabase is what the document's database field holds. An organization's secret has no
+// database, but the unique index of the collection is (database, name): the field holds the
+// scope ("org:<id>", which no database name can be), so the same name can exist for every
+// organization.
+func storedDatabase(sec auth.Secret) string {
+	if sec.Org != "" {
+		return sec.Scope()
+	}
+	return sec.Database
+}
+
 func (d secretDoc) secret() auth.Secret {
+	if d.Org != "" {
+		d.Database = ""
+	}
 	return auth.Secret{
 		Database: d.Database, Org: d.Org, Name: d.Name, Type: d.Type, Fingerprint: d.Fingerprint,
 		Version: d.Version, PrevCiphertext: d.PrevCiphertext, PrevNonce: d.PrevNonce, PrevVersion: d.PrevVersion, Ciphertext: d.Ciphertext, Nonce: d.Nonce, KeyID: d.KeyID,
@@ -56,7 +70,7 @@ func (s *AuthStore) UpsertSecret(ctx context.Context, sec auth.Secret) error {
 	id := secretID(sec.Scope(), sec.Name)
 	update := bson.D{
 		{Key: "$set", Value: bson.D{
-			{Key: "database", Value: sec.Database},
+			{Key: "database", Value: storedDatabase(sec)},
 			{Key: "org", Value: sec.Org},
 			{Key: "name", Value: sec.Name},
 			{Key: "type", Value: sec.Type},
@@ -81,7 +95,7 @@ func (s *AuthStore) UpsertSecret(ctx context.Context, sec auth.Secret) error {
 // the existence check.
 func (s *AuthStore) CreateSecret(ctx context.Context, sec auth.Secret) error {
 	_, err := s.secrets().InsertOne(ctx, secretDoc{
-		ID: secretID(sec.Scope(), sec.Name), Database: sec.Database, Org: sec.Org, Name: sec.Name, Type: sec.Type, Fingerprint: sec.Fingerprint, Version: sec.Version,
+		ID: secretID(sec.Scope(), sec.Name), Database: storedDatabase(sec), Org: sec.Org, Name: sec.Name, Type: sec.Type, Fingerprint: sec.Fingerprint, Version: sec.Version,
 		Ciphertext: sec.Ciphertext, Nonce: sec.Nonce, KeyID: sec.KeyID, CreatedAt: sec.CreatedAt, UpdatedAt: sec.UpdatedAt, UpdatedBy: sec.UpdatedBy,
 	})
 	if mongo.IsDuplicateKeyError(err) {

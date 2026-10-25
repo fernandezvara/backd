@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { createClient, AuthenticationError, ConflictError, ForbiddenError, ValidationError, BackdError, parseOAuthReturn } from '../src/index.js'
+import { createClient, AuthenticationError, ConflictError, ForbiddenError, NotAllowedError, ValidationError, BackdError, parseOAuthReturn } from '../src/index.js'
 import { challengeOf, newPKCE } from '../src/oauth.js'
 import { mockFetch } from './helpers.js'
 
@@ -232,4 +232,50 @@ test('completeOnLoad: false leaves the address alone', async () => {
     await assert.rejects(c.auth.completeSignIn(), (/** @type {any} */ e) => e.code === 'cancelled')
   })
   assert.equal(replaced.length, 1) // only the explicit call cleaned it
+})
+
+test('signInWith an organization goes through its connection', async () => {
+  const m = mockFetch([{ body: { authorize_url: 'https://accounts.google.com/o?state=s' } }, { body: { authorize_url: 'https://p/y' } }])
+  const c = clientOf(m)
+  await c.auth.signInWith('google', { org: 'acme-corp', redirectTo: 'https://app.test/in', navigate: () => {} })
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_auth/orgs/acme-corp/oauth/google/start')
+  assert.equal(m.calls[0].headers.Authorization, undefined)
+  assert.equal(m.calls[0].body.intent, 'signin')
+  assert.equal('org' in m.calls[0].body, false, 'the organization is in the address, not the body')
+  // Linking takes the session, at the organization's address too.
+  const linking = clientOf(m, { storage: { get: () => 'bds_have', set() {}, remove() {} } })
+  await linking.auth.linkProvider('microsoft', { org: 'o1', redirectTo: 'https://app.test/in', navigate: () => {} })
+  assert.equal(m.calls[1].url.pathname, '/v1/acme/_auth/orgs/o1/oauth/microsoft/start')
+  assert.equal(m.calls[1].headers.Authorization, 'Bearer bds_have')
+})
+
+test('a person the connection does not admit is a NotAllowedError', async () => {
+  const c = clientOf(mockFetch([]), { oauthStorage: memory() })
+  await assert.rejects(c.auth.completeSignIn('https://app.test/in?backd_error=not_allowed'), (/** @type {any} */ e) => e instanceof NotAllowedError && e instanceof ForbiddenError && e.code === 'not_allowed' && e.status === 403)
+  // The native sign-in answers 403 not_allowed, the same class.
+  const m = mockFetch([{ status: 403, body: { error: { code: 'not_allowed', message: 'no', request_id: 'r' } } }])
+  await assert.rejects(clientOf(m).auth.signInWithIdToken('google', { idToken: 't', nonce: 'n', org: 'o1' }), (/** @type {any} */ e) => e instanceof NotAllowedError)
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_auth/orgs/o1/oauth/google/id-token')
+  assert.equal('org' in m.calls[0].body, false)
+})
+
+test('linkProviderWithIdToken and unlinkProvider take the organization', async () => {
+  const m = mockFetch([{ body: { linked: 'google' } }, { status: 204 }])
+  const c = clientOf(m, { storage: { get: () => 'bds_have', set() {}, remove() {} } })
+  await c.auth.linkProviderWithIdToken('google', { idToken: 't', nonce: 'n', org: 'o1' })
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_auth/orgs/o1/oauth/google/id-token')
+  await c.auth.unlinkProvider('google', { org: 'o1' })
+  assert.equal(m.calls[1].url.pathname, '/v1/acme/_auth/identities/google')
+  assert.equal(m.calls[1].url.searchParams.get('org'), 'o1')
+})
+
+test('providers lists the names to offer, for the realm or an organization', async () => {
+  const m = mockFetch([{ body: { items: ['google', 'apple'] } }, { body: { items: ['microsoft'] } }, { body: { items: [] } }])
+  const c = clientOf(m)
+  assert.deepEqual(await c.auth.providers(), ['google', 'apple'])
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_auth/providers')
+  assert.equal(m.calls[0].headers.Authorization, undefined, 'the list is public')
+  assert.deepEqual(await c.auth.providers({ org: 'acme-corp' }), ['microsoft'])
+  assert.equal(m.calls[1].url.pathname, '/v1/acme/_auth/orgs/acme-corp/providers')
+  assert.deepEqual(await c.auth.providers({ org: 'nobody' }), [])
 })

@@ -296,3 +296,54 @@ func TestErasingAUserRemovesTheirOrganizationIdentities(t *testing.T) {
 		}
 	}
 }
+
+// Every organization keeps a secret of the same name, next to the realm's and a database's: the
+// collection's unique index is (database, name), so an organization's scope must not look like
+// the realm's.
+func TestOrganizationsKeepSecretsOfTheSameName(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	cipher, _ := auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
+	svc := &auth.Users{Store: s, Cipher: cipher}
+	const name = "SSO_GOOGLE_CLIENT_SECRET"
+	for scope, set := range map[string]func() error{
+		"realm":    func() error { return svc.SetSecret(ctx, "", name, "realm", "t") },
+		"database": func() error { return svc.SetSecret(ctx, "app", name, "database", "t") },
+		"org1":     func() error { return svc.SetOrgSecret(ctx, "org1", name, "one", "t") },
+		"org2":     func() error { return svc.SetOrgSecret(ctx, "org2", name, "two", "t") },
+	} {
+		if err := set(); err != nil {
+			t.Fatalf("%s: %v", scope, err)
+		}
+	}
+	// Replacing one doesn't touch the others.
+	if err := svc.SetOrgSecret(ctx, "org1", name, "one-again", "t"); err != nil {
+		t.Fatal(err)
+	}
+	for org, want := range map[string]string{"org1": "one-again", "org2": "two"} {
+		if v, ok, err := svc.OrgSecret(ctx, org, name); err != nil || !ok || v != want {
+			t.Errorf("%s = %q, %v, %v", org, v, ok, err)
+		}
+	}
+	list, err := s.ListSecrets(ctx)
+	if err != nil || len(list) != 4 {
+		t.Fatalf("list = %+v, %v", list, err)
+	}
+	for _, sec := range list {
+		if sec.Org != "" && sec.Database != "" {
+			t.Errorf("an organization's secret reads as a database's: %+v", sec)
+		}
+		if sec.Org == "" && sec.Database == "" && sec.Scope() != "" {
+			t.Errorf("the realm's secret has a scope: %+v", sec)
+		}
+	}
+	if err := svc.DeleteOrgSecret(ctx, "org1", name); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := svc.OrgSecret(ctx, "org2", name); !ok {
+		t.Error("deleting one organization's secret removed another's")
+	}
+	if _, err := s.SecretByScope(ctx, "", name); err != nil {
+		t.Errorf("the realm's secret went: %v", err)
+	}
+}

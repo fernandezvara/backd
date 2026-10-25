@@ -1,5 +1,6 @@
 import { Collection } from './data.js'
 import { Job } from './functions.js'
+import { connectionBody } from './orgs.js'
 
 /**
  * @typedef {import('./orgs.js').OrgMember} OrgMember
@@ -8,6 +9,9 @@ import { Job } from './functions.js'
  * @typedef {import('./orgs.js').OrgInvitation} OrgInvitation
  * @typedef {import('./orgs.js').NewOrgInvitation} NewOrgInvitation
  * @typedef {import('./orgs.js').InviteInput} OrgInviteInput
+* @typedef {import('./orgs.js').OrgConnection} OrgConnection
+* @typedef {import('./orgs.js').OrgConnections} OrgConnections
+* @typedef {import('./orgs.js').OrgConnectionInput} OrgConnectionInput
  */
 
 /**
@@ -1496,6 +1500,41 @@ class AdminOrgs {
    */
   async create(input, opts) {
     return (await this.admin._request({ method: 'POST', path: ['orgs'], body: input, ...opts })).data
+  }
+
+  /**
+   * The organization's sign-in connections (never their client secrets), with the limits of the
+   * realm's `organizations.sso`; a `NotFoundError` while the realm has it off.
+   * @param {string} id
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgConnections>}
+   */
+  async sso(id, opts) {
+    return (await this.admin._request({ method: 'GET', path: ['orgs', id, 'sso'], ...opts })).data
+  }
+
+  /**
+   * Creates or replaces an organization's connection with `google` or `microsoft`, whatever roles
+   * it gives on joining. The client secret goes in and never comes out.
+   * @param {string} id
+   * @param {'google' | 'microsoft'} provider
+   * @param {OrgConnectionInput} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgConnection>}
+   */
+  async setSso(id, provider, input, opts) {
+    return (await this.admin._request({ method: 'PUT', path: ['orgs', id, 'sso', provider], body: connectionBody(input), ...opts })).data
+  }
+
+  /**
+   * Removes an organization's connection and its client secret.
+   * @param {string} id
+   * @param {'google' | 'microsoft'} provider
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async deleteSso(id, provider, opts) {
+    await this.admin._request({ method: 'DELETE', path: ['orgs', id, 'sso', provider], ...opts })
   }
 
   /**

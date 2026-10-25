@@ -592,3 +592,17 @@ test('organizations', async () => {
   assert.deepEqual(await a.assign('main', 'docs', 'o1', { dryRun: true, where: { status: 'old' } }), { job: 'j1', matched: 3 })
   assert.equal(m.calls[17].url.search, '?dry_run=true')
 })
+
+test('orgs.sso, setSso and deleteSso manage any organization\'s connections', async () => {
+  const conn = { provider: 'microsoft', client_id: 'app', tenant: 'guid', enabled: true, client_secret_set: true }
+  const m = mockFetch([{ body: { items: [conn], providers: ['google', 'microsoft'], max_connections: 2 } }, { body: conn }, { status: 204 }])
+  const a = adminOf(m).orgs
+  assert.equal((await a.sso('o1')).items[0].provider, 'microsoft')
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/orgs/o1/sso')
+  assert.equal((await a.setSso('o1', 'microsoft', { clientId: 'app', clientSecret: 's', tenant: 'guid', joinRoles: ['owner'] })).tenant, 'guid')
+  assert.equal(m.calls[1].method, 'PUT')
+  assert.equal(m.calls[1].url.pathname, '/v1/acme/_admin/orgs/o1/sso/microsoft')
+  assert.deepEqual(m.calls[1].body, { client_id: 'app', client_secret: 's', tenant: 'guid', join_roles: ['owner'] })
+  await a.deleteSso('o1', 'microsoft')
+  assert.equal(m.calls[2].method, 'DELETE')
+})

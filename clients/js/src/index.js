@@ -36,6 +36,7 @@ export {
   IndexBuildingError,
   TeamError,
   NotOrgMemberError,
+  NotAllowedError,
   LastOrgManagerError,
   VersionMismatchError,
   RetryableError,
@@ -133,6 +134,9 @@ export { parseReturn as parseOAuthReturn } from './oauth.js'
  * @typedef {import('./orgs.js').OrgInvitation} OrgInvitation
  * @typedef {import('./orgs.js').NewOrgInvitation} NewOrgInvitation
  * @typedef {import('./orgs.js').InviteInput} OrgInviteInput
+ * @typedef {import('./orgs.js').OrgConnection} OrgConnection
+ * @typedef {import('./orgs.js').OrgConnectionInput} OrgConnectionInput
+ * @typedef {import('./orgs.js').OrgConnections} OrgConnections
  * @typedef {import('./admin.js').OwnedReport} OwnedReport
  * @typedef {import('./admin.js').APIKeyInfo} APIKeyInfo
  * @typedef {import('./admin.js').NewAPIKey} NewAPIKey
