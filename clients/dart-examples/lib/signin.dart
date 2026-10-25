@@ -174,8 +174,8 @@ class _SignInScreenState extends State<SignInScreen> {
               TextField(
                 controller: org,
                 decoration: const InputDecoration(
-                  labelText: 'Team (optional)',
-                  hintText: 'sign in through a company',
+                  labelText: 'Team',
+                  hintText: "your team's short name (empty: operator)",
                   border: OutlineInputBorder(),
                 ),
               ),

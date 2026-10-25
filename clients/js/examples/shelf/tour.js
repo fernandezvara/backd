@@ -9,7 +9,9 @@
 //   make shelf-tour           # or:
 //   BACKD_URL=http://localhost:8080 node clients/js/examples/shelf/tour.js
 //
-// signup is invite-only, so on a fresh stack the tour bootstraps the operator
+// A session belongs to one team (chapter 20): every account the tour makes starts a team of its own with
+// the operator's invitation, and signs in to it by its short name. Only the operator, who runs the realm
+// and belongs to no team, signs in without one. Signup is invite-only, so on a fresh stack the tour bootstraps the operator
 // through `docker compose exec` (it needs to reach the stack's backd service —
 // set SHELF_COMPOSE to the compose file if it isn't the default project) and
 // then creates its own invitations. It can run again and again: every account
@@ -56,9 +58,16 @@ const consentVersions = await (async () => {
 })()
 const ALL_CONSENTS = { terms: consentVersions.terms, privacy: consentVersions.privacy, marketing: consentVersions.marketing }
 
-/** Signs in; with no account yet, invites self through the operator and signs up. */
+/** The short name of the team a person starts at sign-up: the part of their address before the @. */
+const teamOf = (/** @type {string} */ email) => email.split('@')[0].toLowerCase()
+
+/**
+ * Signs in to the person's own team; with no account yet, the operator invites them and they start the
+ * team (the account, the team and the session in one call). The client is bound to that team.
+ */
 async function signedIn(/** @type {string} */ email, /** @type {any} */ operator) {
-  const backd = createClient({ url, realm: 'shelf' })
+  const backd = /** @type {any} */ (createClient({ url, realm: 'shelf', org: teamOf(email) }))
+  backd.tourEmail = email
   try {
     await backd.auth.login({ email, password: PASSWORD })
     return backd
@@ -72,8 +81,15 @@ async function signedIn(/** @type {string} */ email, /** @type {any} */ operator
     if (e.status !== 401) throw err
   }
   const invite = await operator.admin.invitations.create({ email })
-  await backd.auth.signup({ email, password: PASSWORD, invitation: invite.token, consents: ALL_CONSENTS })
+  await backd.auth.signUpWithOrg({ email, password: PASSWORD, name: `${teamOf(email)}'s team`, slug: teamOf(email), invitation: invite.token, consents: ALL_CONSENTS })
   return backd
+}
+
+/** A person's client in another team: signs in to it with the invitation that brings them in. */
+async function joinedTeam(/** @type {any} */ person, /** @type {string} */ slug, /** @type {string} */ invitation) {
+  const team = person.org(slug)
+  await team.auth.login({ email: person.tourEmail, password: PASSWORD, invitation })
+  return team
 }
 
 // The admin role requires a second factor (chapter 16): the operator's first
@@ -151,7 +167,8 @@ heading('The accounts (ch2, ch4)')
 check('the operator holds the admin role', (await operator.auth.me()).roles.includes('admin'))
 check('the curator holds the curator role', (await curator.auth.me()).roles.includes('curator'))
 check('the member has no role', (await member.auth.me()).roles.length === 0)
-await refused('signup without an invitation is refused', () => createClient({ url, realm: 'shelf' }).auth.signup({ email: `no-${MEMBER}`, password: PASSWORD }), ForbiddenError, '')
+await refused('starting a team without the operator\'s invitation is refused', () => createClient({ url, realm: 'shelf' }).auth.signUpWithOrg({ email: `no-${MEMBER}`, password: PASSWORD, name: 'No', slug: `no-${teamOf(MEMBER)}` }), ForbiddenError, '')
+check('the member signed in to a team of their own, named by their address', (await member.auth.org())?.slug === teamOf(MEMBER), JSON.stringify(await member.auth.org()))
 
 heading('Drafts, the gallery and publish (ch1, ch3, ch5)')
 const draft = await main(member).collection('assets').create({ title: 'The backd handbook', kind: 'link', url: 'https://example.com/handbook' })
@@ -397,7 +414,7 @@ await member.auth.reauth({ method: 'password', password: PASSWORD })
 const memberSetup = await member.auth.mfa.setup()
 const memberOn = await member.auth.mfa.confirm({ setupId: memberSetup.setup_id, code: totp(memberSetup.secret) })
 check('a member sets up an authenticator app and gets recovery codes', memberOn.recovery_codes.length >= 8, JSON.stringify(memberOn))
-const second = createClient({ url, realm: 'shelf' })
+const second = createClient({ url, realm: 'shelf', org: teamOf(MEMBER) })
 const step = /** @type {any} */ (await second.auth.signIn({ email: MEMBER, password: PASSWORD }))
 check('the password alone no longer opens a session', step.mfaRequired === true && step.methods.includes('totp'), JSON.stringify(step))
 await refused('a wrong code is refused (invalid_code)', () => second.auth.verifyMfa(step.challenge, 'totp', '000000'), ValidationError, 'invalid_code')
@@ -416,7 +433,7 @@ check('the realm asks for the terms (required) and the digest (optional)', terms
 const text17 = await anonymous.consents.text('terms', consentVersions.terms)
 check('the exact text has a SHA-256, public', text17.hash.length === 64 && text17.text.includes('terms of use'), JSON.stringify(text17).slice(0, 200))
 const refusedInvite = await operator.admin.invitations.create({ email: `no-terms-${MEMBER}` })
-await refused('a sign-up without the terms is refused (400 consent_required)', () => createClient({ url, realm: 'shelf' }).auth.signup({ email: `no-terms-${MEMBER}`, password: PASSWORD, invitation: refusedInvite.token }), ConsentRequiredError, 'consent_required')
+await refused('a sign-up without the terms is refused (400 consent_required)', () => createClient({ url, realm: 'shelf' }).auth.signUpWithOrg({ email: `no-terms-${MEMBER}`, password: PASSWORD, name: 'No terms', slug: `no-terms-${teamOf(MEMBER)}`, invitation: refusedInvite.token }), ConsentRequiredError, 'consent_required')
 const held = await member.consents.state()
 check('the member holds both, and has nothing left to accept', held.consents.terms === consentVersions.terms && held.consents.marketing === consentVersions.marketing && held.to_accept.length === 0, JSON.stringify(held))
 check('the history says how: at sign-up, or at the prompt', held.history.every((h) => ['signup', 'prompt'].includes(h.method)), JSON.stringify(held.history))
@@ -548,81 +565,90 @@ heading('Teams as organizations (ch20)')
   const cyId = (await cy.auth.me()).id
   const pinsOf = (/** @type {any} */ c) => c.db('main').collection('pins')
 
-  // A team is an organization: its creator owns it, and holds `member` without being given it.
-  const team = await ben.orgs.create({ name: `Docs ${STAMP}` })
+  // A session belongs to one team: signing up started a team of their own, and the session is its.
+  const home = await ben.auth.org()
+  check('signing up started a team, and the session belongs to it', home?.slug === `ben-${STAMP}` && home.roles.includes('owner'), JSON.stringify(home))
+
+  // A team is an organization: its creator owns it, and holds `member` without being given it. Creating
+  // one opens a session in it, beside the one in the team they came from.
+  const team = await ben.orgs.create({ name: `Docs ${STAMP}`, slug: `docs-${STAMP}` })
   check('creating a team makes its creator the owner', team.roles.includes('owner') && team.roles.includes('member') && team.status === 'active', JSON.stringify(team.roles))
-  const first = /** @type {any} */ (await main(ben).fn('pin', { org: team.id, title: 'Handbook', url: 'https://example.com/handbook' }))
+  const benT = ben.org(team.slug)
+  check('and opens a session in it', (await benT.auth.org())?.id === team.id)
+  const first = /** @type {any} */ (await main(benT).fn('pin', { org: team.id, title: 'Handbook', url: 'https://example.com/handbook' }))
   check('an owner pins, and the pin says how many fit (the free plan)', first.pins === 1 && first.limit === 5, JSON.stringify(first))
 
-  // Joining: the invitation answers its link once; it is a copyable link.
-  const invite = await ben.orgs.invitations(team.id).create({ binding: 'none', roles: ['editor'], maxUses: 2 })
-  check('an invitation answers a link and a token, once', invite.token.startsWith('bdo_') && String(invite.link).includes(invite.token), String(invite.link))
-  const offer = await cy.orgs.invitations.preview(invite.token)
-  check('the person sees what the link offers before taking it', offer.org.id === team.id && offer.roles.includes('editor'), JSON.stringify(offer))
-  await cy.orgs.invitations.accept(invite.token)
-  check('accepting makes them a member with the invited role', (await cy.orgs.get(team.id)).roles.includes('editor'))
-  await refused('an open link can never give a role that manages the team (400)', () => ben.orgs.invitations(team.id).create({ binding: 'none', roles: ['owner'] }), ValidationError, 'validation_error')
+  // Joining: the invitation answers its link once; the person signs in to the team with it.
+  const invite = await benT.orgs.invitations(team.id).create({ binding: 'none', roles: ['editor'], maxUses: 2 })
+  check('an invitation answers a link and a token, once', invite.token.startsWith('bdo_') && String(invite.link).includes(invite.token) && String(invite.link).includes(`org=${team.id}`), String(invite.link))
+  const offer = await cy.auth.previewInvitation(invite.token, { org: team.slug })
+  check('the person sees what the link offers before signing in', offer.org.id === team.id && offer.roles.includes('editor'), JSON.stringify(offer))
+  await refused('a stranger can\'t sign in to the team (401 invalid_credentials): nothing says it exists', () => dee.org(team.slug).auth.login({ email: dee.tourEmail, password: PASSWORD }), AuthenticationError, 'invalid_credentials')
+  const cyT = await joinedTeam(cy, team.slug, invite.token)
+  check('signing in with it makes them a member with the invited role', (await cyT.orgs.get(team.id)).roles.includes('editor'))
+  await refused('an open link can never give a role that manages the team (400)', () => benT.orgs.invitations(team.id).create({ binding: 'none', roles: ['owner'] }), ValidationError, 'validation_error')
 
   // Reading: the read rule is a database filter on the caller's teams.
-  check('a member reads the team\'s pins', (await pinsOf(cy).inOrg(team.id).list()).items.length === 1)
-  const strangerTeam = await dee.orgs.create({ name: `Elsewhere ${STAMP}` })
-  await main(dee).fn('pin', { org: strangerTeam.id, title: 'Not yours' })
-  const deeSees = (await pinsOf(dee).list()).items
+  check('a member reads the team\'s pins', (await pinsOf(cyT).inOrg(team.id).list()).items.length === 1)
+  const strangerTeam = await dee.orgs.create({ name: `Elsewhere ${STAMP}`, slug: `elsewhere-${STAMP}` })
+  const deeT = dee.org(strangerTeam.slug)
+  await main(deeT).fn('pin', { org: strangerTeam.id, title: 'Not yours' })
+  const deeSees = (await pinsOf(deeT).list()).items
   check('another team\'s members see only their own pins', deeSees.length === 1 && deeSees[0]._meta.org === strangerTeam.id, JSON.stringify(deeSees.map((p) => p._meta.org)))
-  await refused('a stranger can\'t pin into the team (403 not_org_member)', () => main(dee).fn('pin', { org: team.id, title: 'x' }), ForbiddenError, 'not_org_member')
-  await refused('nor read its organization (403 not_org_member)', () => dee.orgs.get(team.id), ForbiddenError, 'not_org_member')
+  await refused('a stranger can\'t pin into the team (403 not_org_member)', () => main(deeT).fn('pin', { org: team.id, title: 'x' }), ForbiddenError, 'not_org_member')
+  await refused('nor read its organization (403 not_org_member)', () => deeT.orgs.get(team.id), ForbiddenError, 'not_org_member')
 
   // Roles: an editor pins and removes their own, only an admin removes other people's.
-  const cyPin = /** @type {any} */ (await main(cy).fn('pin', { org: team.id, title: 'Style guide' }))
-  const benPin = (await pinsOf(ben).inOrg(team.id).list()).items.find((p) => p.title === 'Handbook')
-  await refused('an editor can\'t remove somebody else\'s pin (403)', () => pinsOf(cy).delete(benPin.id), ForbiddenError, 'forbidden')
-  await pinsOf(cy).delete(cyPin.id)
-  check('an editor removes their own pin', (await pinsOf(ben).inOrg(team.id).list()).items.length === 1)
+  const cyPin = /** @type {any} */ (await main(cyT).fn('pin', { org: team.id, title: 'Style guide' }))
+  const benPin = (await pinsOf(benT).inOrg(team.id).list()).items.find((p) => p.title === 'Handbook')
+  await refused('an editor can\'t remove somebody else\'s pin (403)', () => pinsOf(cyT).delete(benPin.id), ForbiddenError, 'forbidden')
+  await pinsOf(cyT).delete(cyPin.id)
+  check('an editor removes their own pin', (await pinsOf(benT).inOrg(team.id).list()).items.length === 1)
   await refused('a plain member can\'t pin (403)', async () => {
     const eve = await signedIn(`eve-${STAMP}@shelf.example`, operator)
-    const link = await ben.orgs.invitations(team.id).create({ binding: 'none', roles: [] })
-    await eve.orgs.invitations.accept(link.token)
-    return main(eve).fn('pin', { org: team.id, title: 'x' })
+    const link = await benT.orgs.invitations(team.id).create({ binding: 'none', roles: [] })
+    const eveT = await joinedTeam(eve, team.slug, link.token)
+    return main(eveT).fn('pin', { org: team.id, title: 'x' })
   }, ForbiddenError, 'forbidden')
-  await ben.orgs.members(team.id).update(cyId, ['admin'])
-  await pinsOf(cy).delete(benPin.id)
-  check('an admin removes any pin', (await pinsOf(ben).inOrg(team.id).list()).items.length === 0)
+  await benT.orgs.members(team.id).update(cyId, ['admin'])
+  await pinsOf(cyT).delete(benPin.id)
+  check('an admin removes any pin', (await pinsOf(benT).inOrg(team.id).list()).items.length === 0)
 
   // Teams of access: an "Editors" team carries `editor`; management roles stay direct.
-  const editors = await ben.orgs.teams(team.id).create({ name: 'Editors', roles: ['editor'] })
-  const members = (await ben.orgs.members(team.id).list()).items
+  const editors = await benT.orgs.teams(team.id).create({ name: 'Editors', roles: ['editor'] })
+  const members = (await benT.orgs.members(team.id).list()).items
   const eveId = members.find((m) => m.user !== benId && m.user !== cyId)?.user
-  const made = await ben.orgs.teams(team.id).addMember(editors.id, eveId)
+  const made = await benT.orgs.teams(team.id).addMember(editors.id, eveId)
   check('a team carries roles to its members, and the list says where each came from', made.effective_roles.some((r) => r.role === 'editor' && r.origin.includes('Editors')), JSON.stringify(made.effective_roles))
-  await ben.orgs.teams(team.id).removeMember(editors.id, eveId)
+  await benT.orgs.teams(team.id).removeMember(editors.id, eveId)
 
   // The plan: a claim only operators write, read by the function that counts.
-  for (let i = 0; i < 4; i++) await main(ben).fn('pin', { org: team.id, title: `Pin ${i}` })
-  await main(ben).fn('pin', { org: team.id, title: 'The fifth' })
-  await refused('the free plan holds five pins (409 plan_limit)', () => main(ben).fn('pin', { org: team.id, title: 'The sixth' }), ConflictError, 'plan_limit')
-  await refused('a member can\'t put their own team on a better plan (403)', () => main(ben).fn('team-plan', { org: team.id, plan: 'pro' }), ForbiddenError, '')
+  for (let i = 0; i < 4; i++) await main(benT).fn('pin', { org: team.id, title: `Pin ${i}` })
+  await main(benT).fn('pin', { org: team.id, title: 'The fifth' })
+  await refused('the free plan holds five pins (409 plan_limit)', () => main(benT).fn('pin', { org: team.id, title: 'The sixth' }), ConflictError, 'plan_limit')
+  await refused('a member can\'t put their own team on a better plan (403)', () => main(benT).fn('team-plan', { org: team.id, plan: 'pro' }), ForbiddenError, '')
   await main(operator).fn('team-plan', { org: team.id, plan: 'pro' })
-  check('the claim is on the organization, read-only for its members', (await ben.orgs.get(team.id)).claims.plan === 'pro')
-  const sixth = /** @type {any} */ (await main(ben).fn('pin', { org: team.id, title: 'The sixth' }))
+  check('the claim is on the organization, read-only for its members', (await benT.orgs.get(team.id)).claims.plan === 'pro')
+  const sixth = /** @type {any} */ (await main(benT).fn('pin', { org: team.id, title: 'The sixth' }))
   check('on the pro plan the sixth fits', sixth.pins === 6 && sixth.limit === 100, JSON.stringify(sixth))
 
   // The last manager stays.
-  await refused('the only owner can\'t leave (409 last_org_manager)', () => ben.orgs.leave(team.id), ConflictError, 'last_org_manager')
-  await ben.orgs.members(team.id).update(cyId, ['owner'])
-  await ben.orgs.leave(team.id)
-  check('with another owner, leaving works and ends access at once', await cy.orgs.get(team.id).then(() => true), '')
-  await refused('the one who left is no longer a member (403)', () => ben.orgs.get(team.id), ForbiddenError, 'not_org_member')
+  await refused('the only owner can\'t leave (409 last_org_manager)', () => benT.orgs.leave(team.id), ConflictError, 'last_org_manager')
+  await benT.orgs.members(team.id).update(cyId, ['owner'])
+  await benT.orgs.leave(team.id)
+  check('with another owner, leaving works and ends access at once', await cyT.orgs.get(team.id).then(() => true), '')
+  await refused('the one who left is no longer a member (403)', () => benT.orgs.get(team.id), ForbiddenError, 'not_org_member')
 
   // A second factor for the team: asked with a fresh proof, and a session without one is refused.
-  await cy.auth.reauth({ method: 'password', password: PASSWORD })
-  await refused('a team can\'t require a second factor of someone who has none (403 org_requires_mfa)', () => cy.orgs.update(team.id, { require_mfa: true }), ForbiddenError, 'org_requires_mfa')
+  await cyT.auth.reauth({ method: 'password', password: PASSWORD })
+  await refused('a team can\'t require a second factor of someone who has none (403 org_requires_mfa)', () => cyT.orgs.update(team.id, { require_mfa: true }), ForbiddenError, 'org_requires_mfa')
 
   // Deleting: the report first, then access ends at once and the pins go.
   const report = await (await fetch(`${url}/v1/shelf/_admin/orgs/${team.id}/owned`, { headers: { Authorization: `Bearer ${operatorToken}` } })).json()
   check('the report counts what deleting would remove', report.to_delete === 6 && report.collections.some((c) => c.collection === 'pins' && c.documents === 6), JSON.stringify(report))
-  await cy.auth.reauth({ method: 'password', password: PASSWORD })
-  await cy.orgs.delete(team.id)
-  await refused('a deleted team has no members left (403)', () => cy.orgs.get(team.id), ForbiddenError, 'not_org_member')
+  await cyT.auth.reauth({ method: 'password', password: PASSWORD })
+  await cyT.orgs.delete(team.id)
+  await refused('a deleted team has no members left (403)', () => cyT.orgs.get(team.id), ForbiddenError, 'not_org_member')
   let pinsLeft = -1
   for (let i = 0; i < 100 && pinsLeft !== 0; i++) {
     pinsLeft = (await (await fetch(`${url}/v1/shelf/_admin/orgs/${team.id}/owned`, { headers: { Authorization: `Bearer ${operatorToken}` } })).json()).to_delete
@@ -704,32 +730,34 @@ heading('Search and a dashboard (ch22)')
   const dee = await signedIn(`dee22-${STAMP}@shelf.example`, operator)
   const benId = (await ben.auth.me()).id
   const pinsOf = (/** @type {any} */ c) => c.db('main').collection('pins')
-  const team = await ben.orgs.create({ name: `Dash ${STAMP}` })
+  const team = await ben.orgs.create({ name: `Dash ${STAMP}`, slug: `dash-${STAMP}` })
+  const benT = ben.org(team.slug)
   await main(operator).fn('team-plan', { org: team.id, timezone: 'Pacific/Auckland' })
-  check('an operator gives the team a time zone, a claim next to its plan', (await ben.orgs.get(team.id)).claims.timezone === 'Pacific/Auckland')
+  check('an operator gives the team a time zone, a claim next to its plan', (await benT.orgs.get(team.id)).claims.timezone === 'Pacific/Auckland')
   await refused('a time zone has to be one (400 invalid_timezone)', () => main(operator).fn('team-plan', { org: team.id, timezone: 'Mars/Base' }), ValidationError, 'invalid_timezone')
-  for (let i = 0; i < 3; i++) await main(ben).fn('pin', { org: team.id, title: `Dash pin ${i}` })
-  const { groups, total_groups } = await pinsOf(ben).inOrg(team.id).aggregate({
+  for (let i = 0; i < 3; i++) await main(benT).fn('pin', { org: team.id, title: `Dash pin ${i}` })
+  const { groups, total_groups } = await pinsOf(benT).inOrg(team.id).aggregate({
     groupBy: ['author', '_meta.created_at:month'], metrics: ['count'], tz: 'Pacific/Auckland', orderBy: '-count',
   })
   check('pins per member per month: the author, the month text and the count', total_groups === 1 && groups[0].key.author === benId && /^\d{4}-\d{2}$/.test(String(groups[0].key['_meta.created_at:month'])) && groups[0].count === 3, JSON.stringify(groups))
   // A chart wants a point for every month: group by the month alone, then fill the empty ones.
-  const monthly = await pinsOf(ben).inOrg(team.id).aggregate({ groupBy: '_meta.created_at:month', tz: 'Pacific/Auckland' })
+  const monthly = await pinsOf(benT).inOrg(team.id).aggregate({ groupBy: '_meta.created_at:month', tz: 'Pacific/Auckland' })
   const thisMonth = String(monthly.groups[0].key['_meta.created_at:month'])
   const filled = fillBuckets(monthly.groups, { field: '_meta.created_at', unit: 'month', from: thisMonth, to: thisMonth })
   check('a chart gets its buckets filled', filled.length === 1 && filled[0].count === 3, JSON.stringify(filled))
   await refused('fillBuckets needs groups of one bucket alone', async () => fillBuckets(groups, { field: '_meta.created_at', unit: 'month', from: thisMonth, to: thisMonth }), TypeError, '')
-  await refused('only declared fields can be grouped by (400 invalid_aggregate)', () => pinsOf(ben).inOrg(team.id).aggregate({ groupBy: 'title' }), ValidationError, 'invalid_aggregate')
+  await refused('only declared fields can be grouped by (400 invalid_aggregate)', () => pinsOf(benT).inOrg(team.id).aggregate({ groupBy: 'title' }), ValidationError, 'invalid_aggregate')
   await refused('someone in no team is refused as for a list: the read rule applies first (403)', () => pinsOf(dee).inOrg(team.id).aggregate({ groupBy: 'author' }), ForbiddenError, 'forbidden')
   // A member of another team counts nothing of this one.
-  const other = await dee.orgs.create({ name: `Other ${STAMP}` })
-  const none = await pinsOf(dee).inOrg(team.id).aggregate({ groupBy: 'author' })
+  const other = await dee.orgs.create({ name: `Other ${STAMP}`, slug: `other-${STAMP}` })
+  const deeT = dee.org(other.slug)
+  const none = await pinsOf(deeT).inOrg(team.id).aggregate({ groupBy: 'author' })
   check('a member of another team counts nothing of this one', none.groups.length === 0 && none.total_groups === 0, JSON.stringify(none))
-  await dee.auth.reauth({ method: 'password', password: PASSWORD })
-  await dee.orgs.delete(other.id)
+  await deeT.auth.reauth({ method: 'password', password: PASSWORD })
+  await deeT.orgs.delete(other.id)
   await refused('a collection that declares no aggregate: refuses (400 aggregate_not_enabled)', () => main(ben).collection('shares').aggregate(), ValidationError, 'aggregate_not_enabled')
-  await ben.auth.reauth({ method: 'password', password: PASSWORD })
-  await ben.orgs.delete(team.id)
+  await benT.auth.reauth({ method: 'password', password: PASSWORD })
+  await benT.orgs.delete(team.id)
 }
 
 heading('A pipeline on a status (ch23)')
@@ -786,9 +814,10 @@ heading('Live pins (ch24)')
   const gus = await signedIn(`gus-${STAMP}@shelf.example`, operator)
   const hal = await signedIn(`hal-${STAMP}@shelf.example`, operator)
   const halId = (await hal.auth.me()).id
-  const team = await gus.orgs.create({ name: `Live ${STAMP}` })
-  const invite = await gus.orgs.invitations(team.id).create({ binding: 'none', roles: ['editor'], maxUses: 1 })
-  await hal.orgs.invitations.accept(invite.token)
+  const team = await gus.orgs.create({ name: `Live ${STAMP}`, slug: `live-${STAMP}` })
+  const gusT = gus.org(team.slug)
+  const invite = await gusT.orgs.invitations(team.id).create({ binding: 'none', roles: ['editor'], maxUses: 1 })
+  const halT = await joinedTeam(hal, team.slug, invite.token)
   const until = async (/** @type {() => boolean} */ cond, /** @type {number} */ ms = 15000) => {
     for (const end = Date.now() + ms; Date.now() < end; ) {
       if (cond()) return true
@@ -798,36 +827,36 @@ heading('Live pins (ch24)')
   }
 
   // Gus follows the team's pins; Hal pins and Gus sees it without asking.
-  const live = gus.db('main').collection('pins').inOrg(team.id).subscribe({ load: { sort: '-_meta.created_at', limit: 50 } })
+  const live = gusT.db('main').collection('pins').inOrg(team.id).subscribe({ load: { sort: '-_meta.created_at', limit: 50 } })
   const state = await live.ready
   check('a live list loads first, then follows (status live)', state.status === 'live' && state.items.length === 0, state.status)
-  await main(hal).fn('pin', { org: team.id, title: 'Appears at once' })
+  await main(halT).fn('pin', { org: team.id, title: 'Appears at once' })
   check('a member\'s pin shows up for the others without a reload', await until(() => live.items.some((p) => p.title === 'Appears at once')))
   const pinId = live.items[0].id
-  await hal.db('main').collection('pins').delete(pinId)
+  await halT.db('main').collection('pins').delete(pinId)
   check('a removal reaches the list too', await until(() => live.items.length === 0))
 
   // A stranger can't subscribe to the team.
   const ivy = await signedIn(`ivy-${STAMP}@shelf.example`, operator)
   const peek = ivy.db('main').collection('pins').inOrg(team.id).subscribe({})
   await refused('a stranger can\'t follow the team (403): the read rule shows them nothing', () => peek.ready, ForbiddenError, 'forbidden')
-  await main(hal).fn('pin', { org: team.id, title: 'Not for strangers' })
+  await main(halT).fn('pin', { org: team.id, title: 'Not for strangers' })
   check('and the members\' own view carries on', await until(() => live.items.some((p) => p.title === 'Not for strangers')))
 
   // Hal follows too; when they are removed from the team their list resets and empties.
-  const halLive = hal.db('main').collection('pins').inOrg(team.id).subscribe({ jitterMs: 50 })
+  const halLive = halT.db('main').collection('pins').inOrg(team.id).subscribe({ jitterMs: 50 })
   await halLive.ready
-  await main(gus).fn('pin', { org: team.id, title: 'Before the removal' })
+  await main(gusT).fn('pin', { org: team.id, title: 'Before the removal' })
   check('the other member sees it too', await until(() => halLive.items.length === 2))
   /** @type {string[]} */
   const resets = []
   halLive.on('reset', (e) => resets.push(e.reason))
   let lost = false
   halLive.on('access_lost', () => (lost = true))
-  await gus.orgs.members(team.id).remove(halId)
+  await gusT.orgs.members(team.id).remove(halId)
   check('a removed member\'s list resets at once (access_changed)', await until(() => resets.includes('access_changed')), JSON.stringify(resets))
   check('and loses what it showed', await until(() => lost && halLive.items.length === 0))
-  await main(gus).fn('pin', { org: team.id, title: 'After the removal' })
+  await main(gusT).fn('pin', { org: team.id, title: 'After the removal' })
   await new Promise((r) => setTimeout(r, 500))
   check('nothing more reaches them', halLive.items.length === 0)
   live.close()
@@ -835,13 +864,13 @@ heading('Live pins (ch24)')
 
   // Revoking the session ends the stream.
   const jo = await signedIn(`jo-${STAMP}@shelf.example`, operator)
-  const joInvite = await gus.orgs.invitations(team.id).create({ binding: 'none', roles: ['editor'], maxUses: 1 })
-  await jo.orgs.invitations.accept(joInvite.token)
-  const joLive = jo.db('main').collection('pins').inOrg(team.id).subscribe({})
+  const joInvite = await gusT.orgs.invitations(team.id).create({ binding: 'none', roles: ['editor'], maxUses: 1 })
+  const joT = await joinedTeam(jo, team.slug, joInvite.token)
+  const joLive = joT.db('main').collection('pins').inOrg(team.id).subscribe({})
   await joLive.ready
   let ended = null
   joLive.on('error', (e) => (ended = e))
-  await jo.auth.logout()
+  await joT.auth.logout()
   check('signing out ends the stream (session_ended)', await until(() => ended !== null) && /** @type {any} */ (ended).code === 'session_ended', String(ended))
 }
 
@@ -900,35 +929,39 @@ heading('Private notes (ch25)')
   await refused('a plain secret write can\'t replace a key (409)', () => operator.admin.secrets.set('SHELF_NOTES', 'x'), ConflictError, 'conflict')
 
   // A team: Ben owns it, Cy edits, Eve is a plain member, Dee is an admin.
-  const team = await ben.orgs.create({ name: `Notes ${STAMP}` })
+  const team = await ben.orgs.create({ name: `Notes ${STAMP}`, slug: `notes-${STAMP}` })
+  const benT = ben.org(team.slug)
+  /** @type {any[]} */
+  const joined = []
   for (const [who, roles] of /** @type {const} */ ([[cy, ['editor']], [eve, []], [dee, []]])) {
-    const link = await ben.orgs.invitations(team.id).create({ binding: 'none', roles, maxUses: 1 })
-    await who.orgs.invitations.accept(link.token)
+    const link = await benT.orgs.invitations(team.id).create({ binding: 'none', roles, maxUses: 1 })
+    joined.push(await joinedTeam(who, team.slug, link.token))
   }
-  await ben.orgs.members(team.id).update(deeId, ['admin'])
+  const [cyT, eveT, deeT] = joined
+  await benT.orgs.members(team.id).update(deeId, ['admin'])
 
   // The author writes private notes; who may read them is decided by `reveal`.
-  const made = /** @type {any} */ (await main(cy).fn('pin', { org: team.id, title: 'Quote', private_notes: SECRET }))
+  const made = /** @type {any} */ (await main(cyT).fn('pin', { org: team.id, title: 'Quote', private_notes: SECRET }))
   const seenBy = async (/** @type {any} */ c) => (await pinsOf(c).inOrg(team.id).list()).items.find((p) => p.id === made.id)
-  check('the author reads the private notes', (await seenBy(cy)).private_notes === SECRET)
-  check('the team\'s owner reads them', (await seenBy(ben)).private_notes === SECRET)
-  check('so does an admin', (await seenBy(dee)).private_notes === SECRET)
-  const eves = await seenBy(eve)
+  check('the author reads the private notes', (await seenBy(cyT)).private_notes === SECRET)
+  check('the team\'s owner reads them', (await seenBy(benT)).private_notes === SECRET)
+  check('so does an admin', (await seenBy(deeT)).private_notes === SECRET)
+  const eves = await seenBy(eveT)
   check('a plain member reads the pin, with the notes null and listed in _meta.redacted', eves.title === 'Quote' && hidden(eves), JSON.stringify(eves))
-  const etag = (await fetch(`${url}/v1/shelf/main/pins/${made.id}?org=${team.id}`, { headers: { Authorization: `Bearer ${await eve.storage.get()}` } })).headers.get('etag') ?? ''
+  const etag = (await fetch(`${url}/v1/shelf/main/pins/${made.id}?org=${team.id}`, { headers: { Authorization: `Bearer ${await eveT.storage.get()}` } })).headers.get('etag') ?? ''
   check('what is hidden is part of the ETag, so a change of view never gets a stale 304', /\.r[0-9a-f]{8}"$/.test(etag), etag)
-  check('a team search by the note finds nothing (an encrypted field can\'t be queried)', await pinsOf(cy).inOrg(team.id).list({ where: { private_notes: SECRET } }).then(() => false, (e) => e.code === 'field_encrypted'))
+  check('a team search by the note finds nothing (an encrypted field can\'t be queried)', await pinsOf(cyT).inOrg(team.id).list({ where: { private_notes: SECRET } }).then(() => false, (e) => e.code === 'field_encrypted'))
 
   // The database holds ciphertext.
   const raw = execFileSync('docker', [...composeArgs, 'exec', '-T', 'mongo', 'mongosh', '--quiet', '--eval', `EJSON.stringify(db.getSiblingDB('shelf__main').pins.findOne({_id: '${made.id}'}))`]).toString()
   check('MongoDB holds binary of subtype 6 where the notes are', raw.includes('"subType":"06"') && !raw.includes(SECRET) && raw.includes('Quote'), raw.slice(0, 300))
 
   // Rotating the key is instant: nothing is rewritten, everything still reads, and the new key is shown once.
-  const version = (await seenBy(cy))._meta.version
+  const version = (await seenBy(cyT))._meta.version
   await operatorProof()
   const rotated = /** @type {any} */ (await operator.admin.secrets.rotateKey('SHELF_NOTES'))
   check('rotating returns the new key once, with both fingerprints, and wraps the data keys again', typeof rotated.key === 'string' && rotated.key.length === 43 && rotated.fingerprint !== rotated.previous_fingerprint && rotated.rewrapped >= 1, JSON.stringify({ ...rotated, key: '…' }))
-  const after = await seenBy(cy)
+  const after = await seenBy(cyT)
   check('after the rotation the notes read the same and no pin was rewritten', after.private_notes === SECRET && after._meta.version === version)
 
   // An export: ciphertext unless you hold the key, and the key opens only what it protects.
@@ -963,13 +996,13 @@ heading('Your data (ch26)')
   const privacy = listed.find((c) => c.name === 'privacy')
   check('the realm also asks for the privacy notice (required), with a public text', privacy?.required === true && (await anonymous.consents.text('privacy', privacy.current.version)).text.includes('privacy notice'), JSON.stringify(privacy))
   const invite = await operator.admin.invitations.create({ email: `only-terms-${STAMP}@shelf.example` })
-  await refused('a sign-up with the terms but not the privacy notice is refused (400 consent_required)', () => createClient({ url, realm: 'shelf' }).auth.signup({ email: `only-terms-${STAMP}@shelf.example`, password: PASSWORD, invitation: invite.token, consents: { terms: consentVersions.terms } }), ConsentRequiredError, 'consent_required')
+  await refused('a sign-up with the terms but not the privacy notice is refused (400 consent_required)', () => createClient({ url, realm: 'shelf' }).auth.signUpWithOrg({ email: `only-terms-${STAMP}@shelf.example`, password: PASSWORD, name: 'Only terms', slug: `only-terms-${STAMP}`, invitation: invite.token, consents: { terms: consentVersions.terms } }), ConsentRequiredError, 'consent_required')
 
   // A member with something of their own: a pin in a team, with a private note (chapter 25).
   const ana = await signedIn(`ana26-${STAMP}@shelf.example`, operator)
   const anaEmail = (await ana.auth.me()).email
-  const team = await ana.orgs.create({ name: `Mine ${STAMP}` })
-  await main(ana).fn('pin', { org: team.id, title: 'Quote', private_notes: SECRET })
+  const team = await ana.orgs.create({ name: `Mine ${STAMP}`, slug: `mine-${STAMP}` })
+  await main(ana.org(team.slug)).fn('pin', { org: team.id, title: 'Quote', private_notes: SECRET })
 
   await refused('asking for a copy needs a fresh proof (401 reauth_required)', () => ana.account.requestExport(), AuthenticationError, 'reauth_required')
   await ana.auth.reauth({ method: 'password', password: PASSWORD })

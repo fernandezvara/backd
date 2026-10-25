@@ -40,7 +40,7 @@ function authBase(org) {
 /**
  * The signed-in user with their sign-in methods, oldest first.
  * With `consents` declared in the realm it also has `consents` (name to the version held) and `to_accept` (the required ones still to accept).
- * @typedef {User & { identities: Identity[], reauth_methods: Array<'totp' | 'recovery_code' | 'password' | 'email_code'>, sign_in_methods: string[], consents?: Record<string, string>, to_accept?: Array<{ name: string, version: string }> }} Me
+ * @typedef {User & { identities: Identity[], reauth_methods: Array<'totp' | 'recovery_code' | 'password' | 'email_code'>, sign_in_methods: string[], consents?: Record<string, string>, to_accept?: Array<{ name: string, version: string }>, org?: { id: string, name?: string, slug?: string | null, roles?: string[], teams?: string[] } }} Me
  */
 
 /**
@@ -342,8 +342,7 @@ export class Auth {
    * @returns {Promise<{ id: string, name?: string, slug?: string | null, roles?: string[], teams?: string[] } | null>}
    */
   async org(opts) {
-    const me = await this.me(opts)
-    const org = /** @type {any} */ (me).org ?? null
+    const org = (await this.me(opts)).org ?? null
     if (org?.name && this.client.orgRef) await this.#remember({ name: org.name, org: org.id })
     return org
   }
@@ -353,7 +352,8 @@ export class Auth {
    * The realm's sign-up must be open; `slug` is the name people will type to sign in (`acme-corp`) and is
    * unique (`slug_taken`, a `ConflictError`, makes nothing). The session is scoped to the new organization
    * and stored by the client; the answer holds it with the organization. A realm that verifies addresses
-   * first creates both and rejects with a {@link VerificationRequiredError}.
+   * first creates both and rejects with a {@link VerificationRequiredError}; a person who has a second step to
+   * take (their role requires a second factor, consents to accept) rejects with a {@link SecondStepRequiredError}.
    * `invitation` is the realm's invitation, for a realm that is invite-only.
    * @param {{ email: string, password: string, name: string, slug: string, invitation?: string, locale?: string, redirectTo?: string, consents?: Record<string, string> }} input
    * @param {RequestOptions} [opts]
@@ -368,8 +368,9 @@ export class Auth {
     const { organization, ...session } = data
     // The session is the new organization's: kept under its own client (named as the person will type it:
     // the slug) when the storage can, else in this one.
-    const target = this.client.root.storage.slot ? this.client.org(slug) : this.client
-    return { .../** @type {Session} */ (await target.auth.signedIn(session)), organization }
+    const target = this.client.root.storage.slot ? this.client.org(slug).auth : this
+    // A person whose role needs a second factor, or consents, has a step to take before the session.
+    return { ...target.session(await target.step(session)), organization }
   }
 
   /**
@@ -899,7 +900,8 @@ export class Auth {
   }
 
   /**
-   * The signed-in user, with their sign-in methods in `identities`.
+   * The signed-in user, with their sign-in methods in `identities`; for a session scoped to an organization,
+   * `org` says which and what the person is there.
    * @param {RequestOptions} [opts]
    * @returns {Promise<Me>}
    */

@@ -42,11 +42,13 @@ magic_link:
 sign_in:
   app_url: http://localhost:8080/   # within email.allowed_redirects
 
-# Chapter 20: a team is an organization. People create teams, invite one
-# another and hold roles *inside* a team (these are not the realm roles
-# below: they mean something only in one team). `manage` says what a role
-# may do there: run the team (org), its members, which roles they hold, its
-# teams. A member holds `member` without being given it (default_roles).
+# Chapter 20: a team is an organization, and a session belongs to one team:
+# people sign in *to* a team with its short name (its slug), start a team
+# with the operator's invitation, invite one another and hold roles *inside*
+# a team (these are not the realm roles below: they mean something only in
+# one team). `manage` says what a role may do there: run the team (org), its
+# members, which roles they hold, its teams. A member holds `member` without
+# being given it (default_roles).
 organizations:
   roles:
     owner:  { description: Runs the team, manage: [org, members, roles, teams] }
@@ -55,8 +57,12 @@ organizations:
     member: { description: Reads the team's pins }
   default_roles: [member]
   max_created_per_user: 5
-  # What an invitation's link opens: the app, which reads ?join= and offers it.
-  invitation_link: http://localhost:8080/?join={token}
+  # What an invitation's link opens: the app, which reads ?join= and ?org=, shows
+  # what it offers and signs the person in to the team with it.
+  invitation_link: http://localhost:8080/?join={token}&org={org}
+  # Where a team's sign-in page is: the email that answers "which teams am I in?"
+  # links it (the app reads ?team= into the sign-in form).
+  signin_link: http://localhost:8080/?team={slug}
 
 # The operators hold the keys to everything, so the admin role needs a second
 # factor: the first sign-in sets one up (an authenticator app), the next ones

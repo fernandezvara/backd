@@ -553,13 +553,13 @@ final class Auth {
     final data = Map<String, Object?>.from(res.data as Map);
     final organization =
         Map<String, Object?>.from(data.remove('organization') as Map);
-    final session = Session.fromJson(data);
     // The session is the new organization's: kept under its own client (named
     // as the person will type it: the slug) when the storage can, else in
-    // this one.
+    // this one. A person whose role needs a second factor, or consents, has a
+    // step to take first: that throws a [SecondStepRequiredError].
     final target = client.keepsOrgSessions ? client.org(slug).auth : this;
     return (
-      session: await target._signedIn(session),
+      session: target.session(await target.step(data)),
       organization: organization
     );
   }
