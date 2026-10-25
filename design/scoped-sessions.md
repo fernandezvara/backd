@@ -33,6 +33,9 @@ Principles carried over:
 | Scope | a realm with `organizations.enabled` has **only scoped sessions**: `sessions.org` is always set. Realms without organizations are unchanged |
 | Signing in | only through `/v1/{realm}/_auth/orgs/{org}/…`; the unscoped `login`, `signup`, `magic-link` and `oauth` routes no longer exist in such realms |
 | The organization in a path | the **id**. Only the routes that run before there is a session (§5) also take the **slug** people know (`acme`), because the person does not know an id; every route that needs a session takes the id only (this narrows "the id or the slug" of [org-sso.md §2](./org-sso.md#2-decisions-at-a-glance)) |
+| The slug | **required** when an organization is created; it is the name people type, shown in URLs and emails |
+| Forgot the company | `POST /_auth/orgs/find { email }` always answers `202` and emails the address its companies with sign-in links (§5.4) |
+| Sign-in experience | company from the URL or one prefilled field, then the methods the organization allows; one generic failure message; the browser remembers companies, the API never lists them (§8.3) |
 | No enumeration | there is **no lookup endpoint**: a slug is resolved inside the sign-in call, which answers the same for an unknown organization, a non-member and a wrong password (§5.3) |
 | Choosing an organization | `?org=` and `inOrg()` are **removed**; the session decides |
 | Access | one choke point, `Org.Counts(mfa, scope)`, used by rules, `ctx.user`, realtime and every `/_orgs/{org}` route |
@@ -52,7 +55,8 @@ Principles carried over:
 No new realm key: `organizations.enabled` implies scoped sessions, and `organizations.sso` stays as [org-sso.md §4](./org-sso.md#4-connections-issue-303) defines it. Startup checks gain:
 
 - `invitation_link` must contain `{org}` (the link is how the app learns which organization to sign in to); today it is optional;
-- slugs may not look like an id (`[0-9a-v]{20}`), so a name can never be mistaken for another organization's id; the check is added to creating and renaming slugs;
+- **the slug is required** to create an organization (`POST /_auth/orgs`, `POST /_orgs`, the admin API and `backd orgs create`), because it is what people type. It keeps today's format (lowercase letters and digits separated by single `-`, at most 63 characters) and may not look like an id (`[0-9a-v]{20}`), so a name can never be mistaken for another organization's id. Organizations that exist without one still sign in by id; startup lists them and `backd orgs set-slug <org> <slug>` sets one;
+- `organizations.signin_link` (for example `"https://{slug}.app.example/signin"`; `{slug}` and `{org}` are replaced, and it must be within `allowed_redirects`) is where the emails of §5.4 send people. It is required when the realm has `email:`;
 - the realm's `signup` (`open`, `invite`, `closed`) governs `POST /_auth/orgs` for new addresses (§5.2); joining an existing organization always needs an invitation (or a connection that admits the person, [org-sso.md §6](./org-sso.md#6-accounts-and-joining-issue-305)).
 
 ## 4. Scoped sessions
@@ -117,6 +121,7 @@ Paths are relative to `/v1/{realm}`. **`{org}` is the organization id; the route
 | `POST /_auth/orgs/{org}/reset-password/request` † | request a reset email |
 | `…/oauth/{provider}/{start,callback,id-token}` († `start` and `id-token`) | exists; accepts `invitation`; realm-level providers sign in to the organization through the same routes |
 | `POST /_auth/orgs` | a new person creates an account and an organization (§5.2) |
+| `POST /_auth/orgs/find` | "which companies am I in?": always `202`; the answer goes to the mailbox (§5.4) |
 | `POST /_auth/token` | redeem the one-time login code; the code carries the organization |
 | `POST /_auth/mfa/verify` | second factor; the challenge carries the organization |
 | `POST /_auth/orgs/{org}/invitations/preview` † | name and offer of an invitation, token in the body |
@@ -137,6 +142,7 @@ Removed in realms with organizations: `/_auth/login`, `/_auth/signup`, `/_auth/m
 ### 5.2 Creating an organization
 
 - **A new person:** `POST /_auth/orgs { email, password, name, slug?, locale?, consents? }` creates the account (the sign-up table of [account-lifecycle.md §4.1](./account-lifecycle.md#41-sign-up) and the realm's `signup` mode), the organization with the person as `creator_roles`, and a session scoped to it. With `require_verified_email: true` the answer is `202` and no session: the organization exists, the verification email is sent, and the person signs in to it afterwards. `organizations.create` is **not** evaluated for this first organization (a new account cannot satisfy `user.email_verified`); `max_created_per_user` still applies.
+- **The slug** is asked for with the company name; the form suggests one from the name ("Acme Corp" → `acme-corp`). A taken slug answers `409 slug_taken` with no detail about the other organization. This is the one place where a slug shows that it exists: unique names cannot be handed out without saying so, and it is limited per IP like sign-up.
 - **A registered address:** answers as sign-up does today (`409 email_taken`, or the generic `202` when verification is required). The person signs in to one of their organizations and creates another from there.
 - **From a session:** `POST /_orgs` (with `organizations.create` evaluated as today) creates the organization and answers `{ org, token, expires_at }`: **a new session scoped to the new organization**. The caller's own session stays as it is.
 
@@ -147,7 +153,16 @@ People sign in to "Acme", not to `org_cq…`. The id is what routes take once th
 - **Resolved inside the call.** The slug is looked up as part of the sign-in itself, so there is no endpoint that answers "does this slug exist?". An unknown slug, the slug of an inactive organization, a non-member and a wrong password produce the same answer, with the same work done (the password is hashed anyway). Ids and slugs share one path segment: an id is tried first, and slugs cannot look like an id (§3).
 - **What still shows:** only what a working connection needs to show. `providers` lists the buttons of an organization that has a connection and answers like a plain organization otherwise ([org-sso.md](./org-sso.md), review item A1, accepted there). Nothing is learnt about organizations without a connection.
 - **Everything after sign-in uses the id.** The sign-in answer returns it (`org`), the clients keep it, redirects and emails carry it, and routes that need a session take the id only.
-- **From an email address** the way to find the organization is verified-domain discovery (#601), which answers only for domains an organization has proved.
+- **When the person does not know it,** the "which companies am I in?" email (§5.4) tells the owner of the address, and verified-domain discovery (#601) answers only for domains an organization has proved.
+
+### 5.4 Which companies am I in?
+
+A person on a new device may not remember the slug, or which of their companies they wanted. Nothing in the API lists organizations, so the answer goes where only the owner of the address can read it.
+
+- **`POST /_auth/orgs/find { email, locale? }`** always answers `202 Accepted`, the same body and timing for an address with accounts, one without, and one that belongs to no organization.
+- **The email** (`organizations-found`, an email kind with defaults and localized templates like the others) goes only to an address that has an account with memberships. It lists each active organization by name with its sign-in link (`organizations.signin_link` with the slug and id filled in), and says "if you didn't ask for this, ignore it". Organizations that require SSO are listed too; their link leads to the SSO button.
+- **Limits:** 3 a hour per address and per IP, using the shared email counters; the realm's email limits apply.
+- **Needs** `email:` in the realm.
 
 ## 6. Requiring the connection
 
@@ -205,8 +220,31 @@ await acme.auth.logout()             // signs out of acme only
 - **The redirect:** the state already remembers the organization; the callback adds `backd_org` beside `backd_code`, and `completeSignIn()` (and `completeOnLoad`) saves the token in that organization's slot.
 - **Finding the organization:** by slug in the sign-in calls (a URL per company, or a "company" field on the sign-in page); from an email address through verified-domain discovery (#601).
 
+### 8.3 The sign-in experience
+
+What a person sees decides whether this feels natural or like a chore, so the docs, the Shelf example and the clients follow these rules; a reference sign-in is part of 34.5.
+
+| Person | Flow |
+|---|---|
+| Returning, company in the URL (`acme.app.com`, `/acme`) | the page already knows the company: it shows the methods that organization allows (`providers()`) and nothing else to type |
+| Returning, one sign-in page | **Company** (prefilled with the last one used on this device, a "not yours?" link to change it), then the methods. On a device with one stored company, the field is already filled |
+| Organization with SSO required | only "Continue with <Microsoft/Google>"; no password form that would fail |
+| First time (new company) | email, password, **company name**; the slug is suggested from the name and can be edited; one call creates everything and signs in |
+| Invited | the link carries the organization, so there is no company field: the page previews "Join Acme as editor?" and offers sign-in or sign-up |
+| Another device, forgot the company | "Forgot your company?" under the field sends the `find` email of §5.4: the links in it open the right page |
+| Several companies on this device | a switcher built from `client.orgs.signedIn()` (names are kept when the person signs in); picking one is instant, no new sign-in |
+
+Rules for the page:
+- **Ask the company only when the URL does not say it,** and keep it a single short field that accepts any case and surrounding spaces (`" Acme "` is `acme`).
+- **Show the methods after the company, never before:** the sign-in options depend on it.
+- **Say the same thing for every failure:** "We couldn't sign you in. Check the company, email and password." with the "Forgot your company?" and "Forgot your password?" links next to it. Do not tell which of the three was wrong; the API cannot.
+- **Remember, don't list:** the browser remembers the companies it has signed in to (and their names); the API never lists others.
+- **Come back to where the person was** after an SSO redirect or a magic link: the redirect already carries the organization and the page.
+- **Sign-out** leaves the person on that company's sign-in page, with the company still filled in.
+
 ## 9. Documentation
 
+- **New guide "The sign-in experience"** (in `build/organizations/`): the table and rules of §8.3 with copy-pasteable code for a company-in-the-URL page, a one-page sign-in with a company field, the switcher, the create-your-company page and the invitation page, in JavaScript and Dart.
 - **New page "Where do documents live?"** (in `build/organizations/`): `organization: required | optional | none` as a decision table, what each means for sign-in, rules and clients, and Shelf's profile as the worked example. It states that apps built on organizations keep their data in `required` collections; `none` is for data that belongs to the person across organizations.
 - **Updated:** every page that mentions `?org=` or `inOrg` (`build/organizations/*`, `build/api/*`, `build/clients/*`, `build/configuration/realm.md`, `config-dir.md`), `build/auth/sessions.md`, `providers.md`, the organization sign-in guide of milestone 30, the Shelf tutorial chapters that use organizations (20, 22, 24), the Upgrading page and the CHANGELOG.
 - **OpenAPI:** every route of §5, `400 sso_required`, `401 session_unscoped`, `403 sso_session`, and the removal of `org` parameters.
@@ -243,10 +281,10 @@ New milestone `34-scoped-sessions`, after `30-org-sso` has merged:
 | Issue | Title |
 |---|---|
 | 34.1 | Design: scoped sessions |
-| 34.2 | Scoped sessions: `sessions.org` enforced, `Counts`, `?org=` and `GET /_orgs` removed, jobs, keys, revocation, `session_max_age`, `session_unscoped` |
-| 34.3 | Org-bound sign-in: `login`, `signup`, `magic-link`, reset, `providers`, invitations at sign-in, slugs in the pre-session routes with uniform answers, `POST /_auth/orgs`, `POST /_orgs` with a second session |
+| 34.2 | Scoped sessions: the slug required and `backd orgs set-slug`, `sessions.org` enforced, `Counts`, `?org=` and `GET /_orgs` removed, jobs, keys, revocation, `session_max_age`, `session_unscoped` |
+| 34.3 | Org-bound sign-in: `login`, `signup`, `magic-link`, reset, `providers`, invitations at sign-in, slugs in the pre-session routes with uniform answers, "which companies am I in?" (`organizations-found` email), `POST /_auth/orgs`, `POST /_orgs` with a second session |
 | 34.4 | JavaScript and Dart clients: `createClient({ org })` (id or slug; the id is kept after sign-in), `client.org(id)`, slotted storage, `inOrg` removed, types |
-| 34.5 | Examples, tutorial and documentation (Shelf, adminui, hr, "Where do documents live?") |
+| 34.5 | Examples, tutorial and documentation (Shelf, adminui, hr, a reference sign-in, "The sign-in experience", "Where do documents live?") |
 | 34.6 | Require organization sign-in (`sso_required`, `sso_session`) — replaces #600 |
 | 34.7 | Security review |
 
@@ -258,7 +296,7 @@ New milestone `34-scoped-sessions`, after `30-org-sso` has merged:
 | #598 Apple | No change; its routes follow the id-only rule |
 | #599 Generic OIDC | No change; add that an owner-chosen issuer always refuses private, loopback, link-local and metadata addresses, and `https` only (outside `BACKD_DEV`) |
 | #600 Require organization sign-in | **Close**, replaced by 34.6: a rule about how people may sign in to an organization (`400 sso_required`, `sso_session` limits), not a `403 org_requires_sso` filter on sessions |
-| #601 Verified domains and discovery | Keep. Linking an existing account by verified email only when the domain is verified for the organization **and** the account is already a member or invited, never to a stranger's account. The email lookup is the one way to find an organization from an address; it is the only discovery path in the API, limited per IP and answering only for verified domains |
+| #601 Verified domains and discovery | Keep; it complements the "which companies am I in?" email of §5.4, which needs no proved domain. Linking an existing account by verified email only when the domain is verified for the organization **and** the account is already a member or invited, never to a stranger's account. The email lookup is the one way to find an organization from an address; it is the only discovery path in the API, limited per IP and answering only for verified domains |
 | #602 Review and docs | Add leakage tests over scoped sessions and the enforcement paths; depends on 34.6 |
 
 And one change to milestone `30-org-sso`, before it merges: **the organization routes that need a session (`/_orgs/{org}/sso`, `/_admin/orgs/{org}/sso`) accept the slug as well as the id**. They take the id only; the pre-session routes (`oauth/start`, `id-token`, `providers`) keep the slug (§5.3).
