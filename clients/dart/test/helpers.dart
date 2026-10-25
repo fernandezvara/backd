@@ -105,6 +105,7 @@ BackdClient<Object?> testClient(
   String? types,
   void Function()? onStaleTypes,
   FakeStreamTransport? streamTransport,
+  String? org,
 }) {
   return BackdClient(
     url: 'http://backd.test',
@@ -119,6 +120,7 @@ BackdClient<Object?> testClient(
     streamTransport: streamTransport?.call,
     types: types,
     onStaleTypes: onStaleTypes,
+    org: org,
     backoff: (attempt, retryAfter, maxDelay) => Duration.zero,
   );
 }

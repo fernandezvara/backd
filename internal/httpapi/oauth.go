@@ -35,6 +35,7 @@ const (
 	paramError    = "backd_error"    // what went wrong
 	paramProvider = "backd_provider" // with account_exists: the provider that was used
 	paramLinked   = "backd_linked"   // a link succeeded: the provider
+	paramOrg      = "backd_org"      // with the code: the organization the session will be scoped to
 )
 
 func (a *authAPI) oauthRoutes(r chi.Router, json func(http.Handler) http.Handler) {
@@ -480,6 +481,10 @@ func (a *authAPI) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setActor(r.Context(), "user:"+res.User.ID)
+	if st.ScopeOrg != "" {
+		back(paramCode, loginCode, paramOrg, st.ScopeOrg)
+		return
+	}
 	back(paramCode, loginCode)
 }
 

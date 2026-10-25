@@ -368,6 +368,9 @@ func (a *authAPI) me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out["sign_in_methods"] = signIn
+	if org := principalOf(r).Session.Org; org != "" {
+		out["org"] = a.sessionOrgJSON(r, u.ID, org)
+	}
 	if len(usersOf(r).Settings.Consents) > 0 {
 		for k, v := range consentStateJSON(usersOf(r), u) {
 			out[k] = v
@@ -675,3 +678,19 @@ func userJSON(u auth.User, locale string) map[string]any {
 }
 
 func formatTime(t time.Time) string { return t.UTC().Format(timeFormat) }
+
+// sessionOrgJSON is the organization a session is scoped to as its person sees it: what to call it
+// and what they are there. When they are not a member any more only the id is left.
+func (a *authAPI) sessionOrgJSON(r *http.Request, userID, org string) map[string]any {
+	out := map[string]any{"id": org}
+	m, err := usersOf(r).MembershipOf(r.Context(), userID, org)
+	if err != nil {
+		return out
+	}
+	out["name"], out["slug"] = m.Org.Name, nil
+	if m.Org.Slug != "" {
+		out["slug"] = m.Org.Slug
+	}
+	out["roles"], out["teams"] = nonNil(m.RoleNames()), nonNil(m.Member.Teams)
+	return out
+}

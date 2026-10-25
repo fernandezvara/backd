@@ -171,9 +171,10 @@
 /**
  * A client typed from a realm's generated types.
  * @template {RealmShape} R
- * @typedef {Omit<Client, 'db' | 'config'> & {
+ * @typedef {Omit<Client, 'db' | 'config' | 'org'> & {
  *   db<D extends keyof R['db'] & string>(name: D): TypedDatabase<R, D>,
  *   config: TypedConfig<R>,
+ *   org(ref: string): TypedClient<R>,
  * }} TypedClient
  */
 

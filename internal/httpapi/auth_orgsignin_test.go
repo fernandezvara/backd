@@ -449,3 +449,21 @@ func mustJSON(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)
 }
+
+// A scoped session says so: in the sign-in answer and in /me, which also says what the person is there.
+func TestAScopedSessionSaysWhereItIs(t *testing.T) {
+	f, _, org := newOrgSignInFixture(t)
+	_, out := f.orgLogin(t, org, "ada@example.com", testPassword, "")
+	if out["org"] != org {
+		t.Errorf("sign-in answer: %v", out)
+	}
+	_, me := f.doH(t, "GET", "/v1/acme/_auth/me", "", bearer(out["token"].(string)))
+	got, _ := me["org"].(map[string]any)
+	if got["id"] != org || got["name"] != "Acme Corp" || got["slug"] != "acme-corp" || !containsAny(got["roles"].([]any), "owner") {
+		t.Errorf("me.org = %v", got)
+	}
+	// An unscoped session (the realm's own login still exists) has no org.
+	if _, me := f.doH(t, "GET", "/v1/acme/_auth/me", "", bearer(f.bob)); me["org"] != nil {
+		t.Errorf("an unscoped session has org: %v", me["org"])
+	}
+}

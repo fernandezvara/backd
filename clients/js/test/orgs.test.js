@@ -162,7 +162,7 @@ test('the new codes are typed errors', async () => {
   await assert.rejects(c.db('app').collection('requests').create({}), (e) => e instanceof TeamError && e.code === 'team_required')
 })
 
-test('the company a person comes from travels with sign-in, sign-up and reset requests', async () => {
+test('the organization a person comes to is in the path of sign-in, sign-up and reset requests', async () => {
   const m = mockFetch([
     { status: 202, body: { status: 'accepted' } },
     { status: 202, body: { request_id: 'r1' } },
@@ -170,11 +170,14 @@ test('the company a person comes from travels with sign-in, sign-up and reset re
   ])
   const c = make(m)
   await c.auth.requestPasswordReset({ email: 'ada@example.com', org: 'o1' })
-  assert.deepEqual(m.calls[0].body, { email: 'ada@example.com', org: 'o1' })
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_auth/orgs/o1/reset-password/request')
+  assert.deepEqual(m.calls[0].body, { email: 'ada@example.com' })
   await c.auth.magicLink.request('ada@example.com', { org: 'o1', redirectTo: 'https://app.example/in' })
-  assert.equal(m.calls[1].body.org, 'o1')
-  await assert.rejects(c.auth.signup({ email: 'ada@example.com', password: 'dev-p4ssw0rd!', org: 'o1' }))
-  assert.equal(m.calls[2].body.org, 'o1')
+  assert.equal(m.calls[1].url.pathname, '/v1/acme/_auth/orgs/o1/magic-link')
+  assert.equal(m.calls[1].body.org, undefined)
+  await assert.rejects(c.auth.signup({ email: 'ada@example.com', password: 'dev-p4ssw0rd!', org: 'o1', invitation: 'bdo_x' }))
+  assert.equal(m.calls[2].url.pathname, '/v1/acme/_auth/orgs/o1/signup')
+  assert.equal(m.calls[2].body.org, undefined)
 })
 
 test('an organization writes, previews and tests its own emails', async () => {

@@ -1,9 +1,15 @@
 /**
  * Where the client keeps the session token. Methods may be async.
+ *
+ * A storage that can also hold one token per organization (`slot`) lets one app be signed in to
+ * several organizations at once, with `client.org(id)`. `slot(name)` is an independent storage
+ * under a name; `slots()` lists the names that hold a token. Both built-in storages have them.
  * @typedef {object} TokenStorage
  * @property {() => string | null | undefined | Promise<string | null | undefined>} get
  * @property {(token: string) => void | Promise<void>} set
  * @property {() => void | Promise<void>} remove
+ * @property {(name: string) => TokenStorage} [slot]
+ * @property {() => string[] | Promise<string[]>} [slots]
  */
 
 /**
@@ -21,6 +27,8 @@ export const COOKIE_SESSION = 'cookie-session'
 export function memoryStorage() {
   /** @type {string | null} */
   let token = null
+  /** @type {Map<string, TokenStorage>} */
+  const slots = new Map()
   return {
     get: () => token,
     set: (t) => {
@@ -29,6 +37,12 @@ export function memoryStorage() {
     remove: () => {
       token = null
     },
+    slot: (name) => {
+      let s = slots.get(name)
+      if (!s) slots.set(name, (s = memoryStorage()))
+      return s
+    },
+    slots: () => [...slots].filter(([, s]) => s.get()).map(([name]) => name),
   }
 }
 
@@ -46,5 +60,14 @@ export function localStorageStorage(key = 'backd.session') {
     get: () => ls.getItem(key),
     set: (t) => ls.setItem(key, t),
     remove: () => ls.removeItem(key),
+    slot: (name) => localStorageStorage(key + ':' + name),
+    slots: () => {
+      const names = []
+      for (let i = 0; i < ls.length; i++) {
+        const k = ls.key(i)
+        if (k && k.startsWith(key + ':')) names.push(k.slice(key.length + 1))
+      }
+      return names
+    },
   }
 }

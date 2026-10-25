@@ -4,7 +4,7 @@ import { COOKIE_SESSION } from './storage.js'
 import { defaultOAuthStorage, loadPending, newPKCE, oauthError, parseReturn, savePending, withoutReturn } from './oauth.js'
 
 /**
- * The path of the sign-in routes: the realm's, or those of one organization's connections.
+ * The path of the sign-in routes: the realm's, or those of one organization.
  * @param {string | undefined} org
  */
 function authBase(org) {
@@ -62,6 +62,7 @@ function authBase(org) {
  * @property {string} session_id
  * @property {string} expires_at  RFC3339; pushed forward as the session is used.
  * @property {User} user
+ * @property {string} [org]       The organization the session is scoped to: its token reaches that organization and no other.
  */
 
 /**
@@ -239,8 +240,8 @@ class MagicLink {
    * @param {string} email
    * `consents` are accepted for the account a new address gets (a new account made without them is asked
    * at its first sign-in).
-   * `org` is the company the person comes from: when it is one they belong to (or are invited to), the
-   * email and the page of the link look like the company's; otherwise it is ignored without a word.
+   * `org` is the organization the person signs in to (an id or a slug; the client's own when it was
+   * made with one): only its members are sent a link, and the session it gives is scoped to it.
    * @param {{ redirectTo?: string, locale?: string, org?: string, consents?: Record<string, string> }} [options]
    * @param {RequestOptions} [opts]
    * @returns {Promise<{ requestId: string }>}
@@ -250,8 +251,8 @@ class MagicLink {
     const redirectTo = options.redirectTo ?? (here ? here.origin + here.pathname : undefined)
     const { verifier, challenge } = newPKCE()
     const { data } = await this.auth.client.request({
-      method: 'POST', path: ['_auth', 'magic-link'], auth: false, ...opts,
-      body: compact({ email, redirect_to: redirectTo, code_challenge: challenge, locale: options.locale, org: options.org, consents: options.consents }),
+      method: 'POST', path: [...this.auth.base(options.org), 'magic-link'], auth: false, ...opts,
+      body: compact({ email, redirect_to: redirectTo, code_challenge: challenge, locale: options.locale, consents: options.consents }),
     })
     savePending(this.auth.oauthStorage(), { verifier, provider: 'magic-link', intent: 'signin', requestId: data.request_id })
     return { requestId: data.request_id }
@@ -291,6 +292,13 @@ export class Auth {
     this.client = client
     /** @internal */
     this.listeners = new Set()
+    /**
+     * The session this client signed in with, as the sign-in answered (`org` is the organization it is scoped to), or
+     * null. It is kept in memory only: a page that has just loaded knows nothing until it asks the server
+     * ({@link Auth#me}, {@link Auth#org}).
+     * @type {Session | null}
+     */
+    this.current = null
     /** @type {import('./oauth.js').OAuthStorage | undefined} */
     this._oauthStorage = undefined
     /**
@@ -314,6 +322,79 @@ export class Auth {
         await this.client.request({ method: 'DELETE', path: ['_auth', 'password'], reauth: true, ...opts })
       },
     }
+  }
+
+  /**
+   * The path of the sign-in routes for an organization: the one given, else the client's own, else the realm's.
+   * @internal
+   * @param {string | undefined} [org]
+   * @returns {string[]}
+   */
+  base(org) {
+    return authBase(org?.trim() || this.client.orgRef)
+  }
+
+  /**
+   * The organization this session is scoped to, and what the person is there: `{ id, name, slug, roles,
+   * teams }`; `null` for a session that is not scoped. It asks the server, so it is right after a reload too.
+   * The name is kept for {@link Orgs#signedIn}.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ id: string, name?: string, slug?: string | null, roles?: string[], teams?: string[] } | null>}
+   */
+  async org(opts) {
+    const me = await this.me(opts)
+    const org = /** @type {any} */ (me).org ?? null
+    if (org?.name && this.client.orgRef) await this.#remember({ name: org.name, org: org.id })
+    return org
+  }
+
+  /**
+   * Creates an account and an organization for a new person and signs in to it: how a company starts.
+   * The realm's sign-up must be open; `slug` is the name people will type to sign in (`acme-corp`) and is
+   * unique (`slug_taken`, a `ConflictError`, makes nothing). The session is scoped to the new organization
+   * and stored by the client; the answer holds it with the organization. A realm that verifies addresses
+   * first creates both and rejects with a {@link VerificationRequiredError}.
+   * @param {{ email: string, password: string, name: string, slug: string, locale?: string, redirectTo?: string, consents?: Record<string, string> }} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<Session & { organization: import('./orgs.js').Org }>}
+   */
+  async signUpWithOrg({ email, password, name, slug, locale, redirectTo, consents }, opts) {
+    const body = compact({ email, password, name, slug, locale, redirect_to: redirectTo, consents, cookie: this.client.cookies ? true : undefined })
+    const { status, data } = await this.client.request({ method: 'POST', path: ['_auth', 'orgs'], body, auth: false, ...opts })
+    if (status === 202) {
+      throw new VerificationRequiredError({ status, code: 'verification_required', message: 'the account and the organization were created: verify the email address, then sign in' })
+    }
+    const { organization, ...session } = data
+    // The session is the new organization's: kept under its own client when the storage can, else in this one.
+    const target = this.client.root.storage.slot ? this.client.org(session.org) : this.client
+    return { .../** @type {Session} */ (await target.auth.signedIn(session)), organization }
+  }
+
+  /**
+   * Asks the server to email an address the organizations it belongs to, each with the link to its sign-in
+   * page: for someone on a new device who does not remember the company. It always resolves, whatever the
+   * address is, so it tells the caller nothing; the realm needs `organizations.signin_link`.
+   * @param {{ email: string, locale?: string }} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async findOrgs({ email, locale }, opts) {
+    await this.accepted(['_auth', 'orgs', 'find'], compact({ email, locale }), opts)
+  }
+
+  /**
+   * What an invitation to an organization offers, before the person has signed in: the organization (id and
+   * name), the roles and the teams, so the app can ask "Join Acme as editor?". Every token that does not work
+   * rejects alike with `invalid_invitation`.
+   * @param {string} token
+   * @param {{ org?: string }} [params]  The organization the token is for, by id or slug (the client's own by default).
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ org: { id: string, name: string }, roles: string[], teams: Array<{ id: string, name: string }>, binding: string, expires_at: string }>}
+   */
+  async previewInvitation(token, params = {}, opts) {
+    const base = this.base(params.org)
+    if (base.length < 3) throw new TypeError('previewInvitation: the organization is required (client option `org` or params.org)')
+    return (await this.client.request({ method: 'POST', path: [...base, 'invitations', 'preview'], body: { token }, auth: false, ...opts })).data
   }
 
   /**
@@ -420,7 +501,9 @@ export class Auth {
    * `consents` are the consents accepted, as the consent's name and the version shown (`{ terms: '2026-10' }`):
    * every required one of the realm must be there at its current version, or this rejects with a
    * {@link ConsentRequiredError} that lists them.
-   * `org` is the company the person comes from (see {@link MagicLink#request}).
+   * `org` is the organization the person joins (an id or a slug; the client's own when it was made
+   * with one): the sign-up goes to `/_auth/orgs/{org}/signup`, which needs the organization's
+   * `invitation`, and the session is scoped to the organization.
    * @param {{ email: string, password: string, invitation?: string, locale?: string, redirectTo?: string, org?: string, consents?: Record<string, string> }} input
    * @param {RequestOptions} [opts]
    * @returns {Promise<Session>}
@@ -433,8 +516,7 @@ export class Auth {
     if (invitation) body.invitation = invitation
     if (locale) body.locale = locale
     if (redirectTo) body.redirect_to = redirectTo
-    if (org) body.org = org
-    const { status, data } = await this.client.request({ method: 'POST', path: ['_auth', 'signup'], body, auth: false, ...opts })
+    const { status, data } = await this.client.request({ method: 'POST', path: [...this.base(org), 'signup'], body, auth: false, ...opts })
     if (status === 202) {
       throw new VerificationRequiredError({ status, code: 'verification_required', message: 'the account was created: verify the email address, then sign in' })
     }
@@ -469,16 +551,19 @@ export class Auth {
    * Signs in with email and password. The answer is the session, or, for a user with a second
    * factor, an {@link MfaChallenge} to finish with {@link Auth#verifyMfa}, or an
    * {@link EnrollmentChallenge}: check `'challenge' in result`. Nothing is stored until a session.
-   * `org` is the company the person comes from (see {@link MagicLink#request}). A right password that
-   * an administrator expired rejects with a `PasswordExpiredError` (`resetEmailQueued` says whether
-   * backd queued the email with the link to choose a new one).
-   * @param {{ email: string, password: string, org?: string }} input
+   * `org` is the organization the person signs in to (an id or a slug; the client's own when it was
+   * made with one): the session, or the second step, is scoped to it. A person who is not a member,
+   * an organization that is not there and a wrong password all reject alike, with `invalid_credentials`.
+   * `invitation` is an invitation token of the organization, used as part of the sign-in.
+   * A right password that an administrator expired rejects with a `PasswordExpiredError`
+   * (`resetEmailQueued` says whether backd queued the email with the link to choose a new one).
+   * @param {{ email: string, password: string, org?: string, invitation?: string }} input
    * @param {RequestOptions} [opts]
    * @returns {Promise<SignInResult>}
    */
-  async signIn({ email, password, org }, opts) {
-    const body = compact({ email, password, org, cookie: this.client.cookies ? true : undefined })
-    const { data } = await this.client.request({ method: 'POST', path: ['_auth', 'login'], body, auth: false, ...opts })
+  async signIn({ email, password, org, invitation }, opts) {
+    const body = compact({ email, password, invitation, cookie: this.client.cookies ? true : undefined })
+    const { data } = await this.client.request({ method: 'POST', path: [...this.base(org), 'login'], body, auth: false, ...opts })
     return this.step(data)
   }
 
@@ -486,7 +571,7 @@ export class Auth {
    * Signs in with email and password and promises a session: a user who needs a second step makes
    * this reject with a {@link SecondStepRequiredError} (use {@link Auth#signIn} to get the step as a value).
    * An expired password rejects with a `PasswordExpiredError`.
-   * @param {{ email: string, password: string, org?: string }} input
+   * @param {{ email: string, password: string, org?: string, invitation?: string }} input
    * @param {RequestOptions} [opts]
    * @returns {Promise<Session>}
    */
@@ -533,7 +618,7 @@ export class Auth {
     const { verifier, challenge } = newPKCE()
     const body = compact({ redirect_to: redirectTo, code_challenge: challenge, intent, invitation: options.invitation, locale: options.locale, consents: options.consents })
     const { data } = await this.client.request({
-      method: 'POST', path: [...authBase(options.org), 'oauth', provider, 'start'], body, auth: intent === 'link', ...opts,
+      method: 'POST', path: [...(intent === 'link' ? authBase(options.org) : this.base(options.org)), 'oauth', provider, 'start'], body, auth: intent === 'link', ...opts,
     })
     savePending(this.oauthStorage(), { verifier, provider, intent })
     const authorizeUrl = /** @type {string} */ (data.authorize_url)
@@ -587,7 +672,9 @@ export class Auth {
     const body = { code: ret.code, code_verifier: pending.verifier }
     if (this.client.cookies) body.cookie = true
     const { data } = await this.client.request({ method: 'POST', path: ['_auth', 'token'], body, auth: false, ...opts })
-    return /** @type {any} */ (await this.step(data))
+    // A sign-in to an organization from a client that is not bound to one belongs to that organization's client.
+    const target = ret.org && !this.client.orgRef && !this.client.cookies && this.client.root.storage.slot ? this.client.org(ret.org).auth : this
+    return /** @type {any} */ (await target.step(data))
   }
 
   /**
@@ -606,15 +693,28 @@ export class Auth {
   /**
    * The providers the app may offer right now, for the realm or, with `org`, for one organization's
    * connections: names such as `google` and `microsoft`, only those that are configured and usable
-   * (the check a sign-in start makes). An unknown organization, one without connections and one
-   * with sign-in off all give an empty list.
+   * (the check a sign-in start makes). For an organization they are the realm's own and the
+   * organization's connections; an unknown organization answers like one without connections, so
+   * the list says nothing about who exists.
    * @param {{ org?: string }} [params]
    * @param {RequestOptions} [opts]
    * @returns {Promise<string[]>}
    */
   async providers(params = {}, opts) {
-    const { data } = await this.client.request({ method: 'GET', path: [...authBase(params.org), 'providers'], auth: false, ...opts })
-    return /** @type {string[]} */ (data.items)
+    return (await this.options(params, opts)).providers
+  }
+
+  /**
+   * What an organization's sign-in page can offer: the providers (see {@link Auth#providers}) and the
+   * other ways in, `password` and, when the realm has them, `magic_link`. `org` defaults to the
+   * client's own; without either the realm's providers are listed and `methods` is empty.
+   * @param {{ org?: string }} [params]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ providers: string[], methods: Array<'password' | 'magic_link'> }>}
+   */
+  async options(params = {}, opts) {
+    const { data } = await this.client.request({ method: 'GET', path: [...this.base(params.org), 'providers'], auth: false, ...opts })
+    return { providers: /** @type {string[]} */ (data.items), methods: data.methods ?? [] }
   }
 
   /**
@@ -630,7 +730,7 @@ export class Auth {
    */
   async signInWithIdToken(provider, input, opts) {
     const { data } = await this.client.request({
-      method: 'POST', path: [...authBase(input.org), 'oauth', provider, 'id-token'], body: this.#idTokenBody(input), auth: false, ...opts,
+      method: 'POST', path: [...this.base(input.org), 'oauth', provider, 'id-token'], body: this.#idTokenBody(input), auth: false, ...opts,
     })
     return /** @type {any} */ (await this.step(data))
   }
@@ -687,13 +787,14 @@ export class Auth {
    * Asks for a password reset email. Always resolves, whatever the address is.
    * Rejects with a `RetryableError` once the realm's limits for reset
    * requests (per address and per client) are reached.
-   * `org` is the company the person comes from (see {@link MagicLink#request}).
+   * `org` is the organization whose page the person asks from (see {@link MagicLink#request}): its members get
+   * the organization's context in the email.
    * @param {{ email: string, redirectTo?: string, org?: string }} input
    * @param {RequestOptions} [opts]
    * @returns {Promise<void>}
    */
   async requestPasswordReset({ email, redirectTo, org }, opts) {
-    await this.accepted(['_auth', 'reset-password', 'request'], { email, redirect_to: redirectTo, org }, opts)
+    await this.accepted([...this.base(org), 'reset-password', 'request'], { email, redirect_to: redirectTo }, opts)
   }
 
   /**
@@ -946,9 +1047,28 @@ export class Auth {
     this.client.clearCache() // what was read as someone else (or no one) isn't theirs
     this.client.config.clear()
     await this.client.storage.set(session.token ?? COOKIE_SESSION)
+    this.current = session
+    await this.#remember({ org: session.org, expires_at: session.expires_at })
     this.client.config.credentialChanged()
     this.emit('SIGNED_IN', session)
     return session
+  }
+
+  /**
+   * Keeps a note of the session beside the token of an organization's client, for {@link Orgs#signedIn}.
+   * @param {Record<string, unknown>} fields
+   */
+  async #remember(fields) {
+    const c = this.client
+    if (!c.orgRef || !c.root.storage.slot) return
+    const note = c.root.storage.slot('meta:' + c.orgRef)
+    let held = {}
+    try {
+      held = JSON.parse((await note.get()) ?? '{}')
+    } catch {
+      // a damaged note is replaced
+    }
+    await note.set(JSON.stringify({ ...held, ...Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined)) }))
   }
 
   /**
@@ -960,6 +1080,8 @@ export class Auth {
     this.client.clearCache()
     this.client.config.clear()
     await this.client.storage.remove()
+    this.current = null
+    if (this.client.orgRef) await this.client.root.storage.slot?.('meta:' + this.client.orgRef).remove()
     this.client.config.credentialChanged()
     this.emit(event, null)
   }

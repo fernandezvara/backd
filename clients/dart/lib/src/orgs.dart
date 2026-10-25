@@ -1,4 +1,8 @@
+import 'dart:convert';
+
+import 'auth.dart';
 import 'client.dart';
+import 'storage.dart';
 
 /// Organizations of the signed-in user: `client.orgs`. Members, teams and
 /// invitations hang off one organization: `client.orgs.members(id)`,
@@ -10,7 +14,8 @@ final class Orgs {
   final BackdClient<Object?> client;
 
   /// Creates an organization; the caller holds the realm's `creator_roles`
-  /// in it.
+  /// in it. The answer also holds `session`, a new session scoped to it:
+  /// the client keeps it, so `client.org(id)` is signed in.
   Future<Map<String, Object?>> create(Map<String, Object?> input,
       {RequestOptions? options}) async {
     final res = await client.request(RequestInit(
@@ -21,7 +26,48 @@ final class Orgs {
       retry: options?.retry,
       cache: options?.cache ?? true,
     ));
-    return Map<String, Object?>.from(res.data as Map);
+    final data = Map<String, Object?>.from(res.data as Map);
+    final made = data['session'];
+    if (made is Map && made['token'] is String && client.keepsOrgSessions) {
+      await client.org('${data['id']}').auth.signedInWith(Session(
+            token: made['token'] as String,
+            sessionId: '',
+            expiresAt: '${made['expires_at'] ?? ''}',
+            user: null,
+            org: made['org'] as String?,
+          ));
+    }
+    return data;
+  }
+
+  /// The organizations this app holds a session for, as clients made with
+  /// `client.org`: one entry for each, with the id the sign-in answered
+  /// (when it did), when the session ends and, once `auth.org()` has been
+  /// asked, its name. It is what an organization switcher lists; the API
+  /// never lists the organizations a person is in.
+  Future<List<({String ref, String? id, String? expiresAt, String? name})>>
+      signedIn() async {
+    final storage = client.root.storage;
+    final names = await storage.slots();
+    final out = <({String ref, String? id, String? expiresAt, String? name})>[];
+    for (final ref in names.where((n) => !n.startsWith(orgNotePrefix))) {
+      Map<String, Object?> meta = const {};
+      try {
+        final text = await storage.slot('$orgNotePrefix$ref')?.get();
+        if (text != null) {
+          meta = Map<String, Object?>.from(jsonDecode(text) as Map);
+        }
+      } on Object {
+        // A damaged note is as if there was none.
+      }
+      out.add((
+        ref: ref,
+        id: meta['org'] as String?,
+        expiresAt: meta['expires_at'] as String?,
+        name: meta['name'] as String?,
+      ));
+    }
+    return out;
   }
 
   /// The organizations the user belongs to, with their roles there and

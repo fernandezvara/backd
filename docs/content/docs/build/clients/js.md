@@ -226,6 +226,35 @@ await backd.auth.linkProviderWithIdToken('google', { idToken, nonce })   // for 
 
 `nonce` is the raw value the sign-in was started with. An invalid token rejects with an `AuthenticationError` (`invalid_token`). Apple's `authorizationCode` is required unless the provider sets `revoke_on_delete: false`.
 
+### Working in an organization
+
+An organization's people sign in to *it*, and the session they get is **scoped to it**: its token reaches that organization and no other. Bind the client to one, by its id or by the slug people know:
+
+```js
+const backd = createClient({ url, realm: 'shelf', org: 'acme-corp' })   // 'acme-corp' from the URL, or a "company" field
+const { providers, methods } = await backd.auth.options()          // what Acme's sign-in page can offer
+await backd.auth.login({ email, password })                        // POST /_auth/orgs/acme-corp/login
+const session = backd.auth.current                                 // session.org: the organization's id
+await backd.auth.org()                                             // { id, name, slug, roles, teams }
+```
+
+`login`, `signup`, `magicLink.request`, `requestPasswordReset`, `signInWith` and the other sign-in calls go to the organization, and every one takes `org` to name another. A wrong password, an address that is not a member and an organization that is not there all reject alike, with `invalid_credentials`. An invitation is used as part of the sign-in: `login({ email, password, invitation })`, `signup({ …, invitation })` (the invitation is required there) and `signInWith(provider, { invitation })`; `auth.previewInvitation(token)` says what it offers before the person signs in.
+
+An app that works in several organizations keeps one client per organization, each with a token of its own:
+
+```js
+const acme = backd.org('acme-corp')       // the same client for the same organization
+const beta = backd.org('beta')
+await acme.auth.login({ email, password })
+await beta.auth.login({ email, password })
+await acme.auth.logout()                  // beta stays signed in
+await backd.orgs.signedIn()               // [{ ref: 'beta', id, expiresAt, name }]: what a switcher lists
+```
+
+`client.org` needs a storage that can keep a token per organization: `memoryStorage()` and `localStorageStorage()` can (a custom one adds `slot(name)` and `slots()`). With `cookies: true` the browser holds one session at a time, so an app that works in several organizations uses tokens. The API never lists the organizations a person is in; the browser remembers the ones it signed in to.
+
+A new person starts a company with `auth.signUpWithOrg({ email, password, name, slug })` (the account, the organization and a session in one call), `orgs.create(...)` opens a session for the organization it made, and `auth.findOrgs({ email })` emails an address the companies it belongs to for someone who does not remember the slug. See [Signing in to an organization](../../organizations/api/#signing-in-to-an-organization).
+
 ### Auth events
 
 ```js

@@ -2172,7 +2172,8 @@ paths:
         then answers `302` to the app's `redirect_to` with one of:
 
         - `backd_code`: a one-time login code (valid one minute, bound to the app's PKCE
-          challenge) to redeem at `POST /_auth/token`;
+          challenge) to redeem at `POST /_auth/token`; with it `backd_org`, the organization the
+          session will be scoped to, when the sign-in was to one;
         - `backd_linked=<provider>`: the provider account was added to the signed-in user;
         - `backd_error=<code>`: `cancelled`, `account_exists` (with `backd_provider`), `signup_closed`,
           `invitation_invalid`, `link_conflict`, `email_not_verified`, `email_required`,
@@ -10696,6 +10697,19 @@ components:
           type: array
           description: The user's sign-in methods, oldest first.
           items: { $ref: "#/components/schemas/Identity" }
+        org:
+          type: object
+          description: >-
+            Only for a session scoped to an organization (opened by signing in to one): the organization
+            and what the user is there. When they are not a member any more, only `id` is left.
+          additionalProperties: false
+          required: [id]
+          properties:
+            id: { type: string }
+            name: { type: string }
+            slug: { type: [string, "null"] }
+            roles: { type: array, items: { type: string }, description: "Their effective roles there." }
+            teams: { type: array, items: { type: string }, description: "Their teams there, by id." }
         consents: { $ref: "#/components/schemas/ConsentsGiven" }
         to_accept:
           type: array

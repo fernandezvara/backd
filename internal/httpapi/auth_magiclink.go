@@ -178,6 +178,10 @@ func (a *authAPI) useMagicLink(w http.ResponseWriter, r *http.Request) {
 		authError(w, r, err)
 		return
 	}
+	viaOrg := ""
+	if c, cerr := svc.MagicLinkByToken(r.Context(), token); cerr == nil {
+		viaOrg = c.ViaOrg
+	}
 	code, dest, err := svc.UseMagicLink(r.Context(), token, clientIP(r))
 	switch {
 	case errors.Is(err, auth.ErrNoRedirect):
@@ -204,6 +208,10 @@ func (a *authAPI) useMagicLink(w http.ResponseWriter, r *http.Request) {
 			logger(r.Context()).Error("use a magic link", "error", err)
 		}
 		a.redirectToApp(w, r, dest, paramError, failure)
+		return
+	}
+	if viaOrg != "" {
+		a.redirectToApp(w, r, dest, paramCode, code, paramOrg, viaOrg)
 		return
 	}
 	a.redirectToApp(w, r, dest, paramCode, code)

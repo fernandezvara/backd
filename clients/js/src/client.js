@@ -30,6 +30,9 @@ import { COOKIE_SESSION, memoryStorage } from './storage.js'
  * @property {string} realm               The realm to talk to.
  * @property {string} [apiKey]            Server-side only: an API key (`bdk_…`). Full access to the realm.
  * @property {boolean} [dangerouslyAllowBrowser] Allow `apiKey` in a browser. Anyone who loads the page gets the key.
+ * @property {string} [org]              The organization this client signs in to and works in, by id or by the slug people
+ *   know (`'acme'`). Sign-in calls go to `/_auth/orgs/{org}/…`, so the session is scoped to it; the answer carries the id.
+ *   Without it, the sign-in calls take `org` as an argument. See {@link Client#org} for an app that works in several.
  * @property {TokenStorage} [storage]     Where the session token lives; memory by default.
  * @property {boolean} [cookies]          Browser apps: keep the session in an HttpOnly cookie that scripts can't read,
  *   instead of a token. The realm must enable `sessions.cookie` and list the app's origin in `cors.origins`; the
@@ -113,9 +116,27 @@ export function createClient(options) {
   return /** @type {any} */ (new Client(options))
 }
 
+/**
+ * An organization as the person types it or the app keeps it: an id or a slug. Case and
+ * surrounding spaces do not matter to the server, so they do not matter here.
+ * @param {string | undefined} ref
+ * @returns {string}
+ */
+export function normalizeOrgRef(ref) {
+  return (ref ?? '').trim().toLowerCase()
+}
+
 export class Client {
-  /** @param {ClientOptions} options */
-  constructor(options) {
+  /** @type {Map<string, Client>} */
+  #orgClients = new Map()
+  /** @type {Client | undefined} */
+  #root
+
+  /**
+   * @param {ClientOptions} options
+   * @param {Client} [root]  The client this one was made from by {@link Client#org}.
+   */
+  constructor(options, root) {
     if (!options?.url) throw new TypeError('createClient: `url` is required')
     if (!options.realm) throw new TypeError('createClient: `realm` is required')
     if (options.apiKey && isBrowser() && !options.dangerouslyAllowBrowser) {
@@ -128,6 +149,14 @@ export class Client {
     if (options.cookies && options.apiKey) {
       throw new TypeError('createClient: `cookies` is for sessions in a browser; an API key is sent in a header')
     }
+    /** @internal */
+    this.options = options
+    this.#root = root
+    /**
+     * The organization this client is bound to, as it was given (an id or a slug), or "".
+     * @readonly
+     */
+    this.orgRef = normalizeOrgRef(options.org)
     /** @readonly */
     this.url = options.url.replace(/\/+$/, '')
     /** @readonly */
@@ -202,6 +231,41 @@ export class Client {
   /** Forgets everything the revalidation cache holds. */
   clearCache() {
     this.cache?.clear()
+  }
+
+  /**
+   * The client of one organization, for an app that is signed in to several at once: it has the same
+   * address, realm and settings and a token of its own, so its calls reach that organization and
+   * no other, and signing out of it leaves the others signed in. The organization is its id or the
+   * slug people know; asking again for the same gives the same client. It needs a storage that can
+   * keep a token per organization (`memoryStorage()` and `localStorageStorage()` can). With
+   * `cookies: true` the browser holds one session at a time, so an app that works in several
+   * organizations uses tokens.
+   * @param {string} ref
+   * @returns {Client}
+   */
+  org(ref) {
+    const key = normalizeOrgRef(ref)
+    if (!key) throw new TypeError('client.org: the organization (an id or a slug) is required')
+    const root = this.#root ?? this
+    if (root.orgRef === key) return root
+    let c = root.#orgClients.get(key)
+    if (!c) {
+      if (root.cookies) throw new TypeError('client.org: with `cookies: true` the browser keeps one session; create a client per organization or use tokens')
+      if (!root.storage.slot) throw new TypeError('client.org: this storage cannot keep a token per organization; use memoryStorage() or localStorageStorage()')
+      c = new Client({ ...root.options, org: key, storage: root.storage.slot(key), completeOnLoad: false }, root)
+      root.#orgClients.set(key, c)
+    }
+    return c
+  }
+
+  /**
+   * The client that made this one (the one without an organization), or this client.
+   * @internal
+   * @returns {Client}
+   */
+  get root() {
+    return this.#root ?? this
   }
 
   /**

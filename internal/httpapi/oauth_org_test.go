@@ -726,7 +726,7 @@ func TestRealmProviderSignsInToAnOrganization(t *testing.T) {
 
 	// A member: ada's address is verified, the provider says so, so it is her account.
 	a := signIn(base, googleUser("g-ada-plain", "ada@example.com", true), nil)
-	if a.errorCode() != "" || scopeOfSession(a) != made.Org.ID {
+	if a.errorCode() != "" || a.result.Query().Get("backd_org") != made.Org.ID || scopeOfSession(a) != made.Org.ID {
 		t.Fatalf("a member: %v", a.result)
 	}
 	// By slug too.

@@ -210,6 +210,35 @@ final linked = await backd.auth.linkProviderWithIdToken('google', idToken: token
 
 `nonce` is the raw value the sign-in was started with. An invalid token throws an `AuthenticationError` (`invalid_token`). Apple's `authorizationCode` is required unless the provider sets `revoke_on_delete: false`.
 
+### Working in an organization
+
+An organization's people sign in to *it*, and the session they get is **scoped to it**: its token reaches that organization and no other. Bind the client to one, by its id or by the slug people know:
+
+```dart
+final backd = BackdClient(url: url, realm: 'shelf', org: 'acme-corp');
+final offer = await backd.auth.options();           // (providers:, methods:) Acme's sign-in page can offer
+await backd.auth.login(email, password);            // POST /_auth/orgs/acme-corp/login
+backd.auth.current?.org;                            // the organization's id
+await backd.auth.org();                             // {id, name, slug, roles, teams}
+```
+
+`login`, `signup`, `magicLink.request`, `requestPasswordReset`, `signInWith` and the other sign-in calls go to the organization, and every one takes `org` to name another. A wrong password, an address that is not a member and an organization that is not there all fail alike, with `invalid_credentials`. An invitation is used as part of the sign-in (`login(…, invitation: …)`, `signup(…, invitation: …)`, `signInWith(…, invitation: …)`); `auth.previewInvitation(token)` says what it offers before the person signs in.
+
+An app that works in several organizations keeps one client per organization, each with a token of its own:
+
+```dart
+final acme = backd.org('acme-corp');   // the same client for the same organization
+final beta = backd.org('beta');
+await acme.auth.login(email, password);
+await beta.auth.login(email, password);
+await acme.auth.logout();               // beta stays signed in
+await backd.orgs.signedIn();            // [(ref:, id:, expiresAt:, name:)]: what a switcher lists
+```
+
+`client.org` needs a storage that can keep a token per organization: `MemoryTokenStorage` and `FileTokenStorage` can (a custom `TokenStorage` implements `slot(name)` and `slots()`, or returns null from `slot` to say it cannot). The API never lists the organizations a person is in; the app remembers the ones it signed in to.
+
+A new person starts a company with `auth.signUpWithOrg(email, password, name:, slug:)`, `orgs.create(...)` opens a session for the organization it made, and `auth.findOrgs(email)` emails an address the companies it belongs to. See [Signing in to an organization](../../organizations/api/#signing-in-to-an-organization).
+
 ### Auth events
 
 ```dart

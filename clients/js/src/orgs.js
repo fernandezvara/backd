@@ -231,7 +231,36 @@ export class Orgs {
    * @returns {Promise<Org>}
    */
   async create(input, opts) {
-    return (await this.client.request({ method: 'POST', path: ['_orgs'], body: input, ...opts })).data
+    const { data } = await this.client.request({ method: 'POST', path: ['_orgs'], body: input, ...opts })
+    // The organization comes with a session of its own: keep it, so `client.org(id)` is signed in.
+    if (data.session?.token && this.client.root.storage.slot) {
+      await this.client.org(data.id).auth.signedIn(/** @type {any} */ ({ token: data.session.token, session_id: '', expires_at: data.session.expires_at, org: data.session.org }))
+    }
+    return data
+  }
+
+  /**
+   * The organizations this app holds a session for, as clients made with {@link Client#org}: one entry
+   * for each, with the id the sign-in answered (when it did), when the session ends and, once
+   * {@link Auth#org} has been asked, its name. It is what an organization switcher lists; the API never
+   * lists the organizations a person is in.
+   * @returns {Promise<Array<{ ref: string, id: string | undefined, expiresAt: string | undefined, name: string | undefined }>>}
+   */
+  async signedIn() {
+    const storage = this.client.root.storage
+    const names = (await storage.slots?.()) ?? []
+    /** @type {Array<{ ref: string, id: string | undefined, expiresAt: string | undefined, name: string | undefined }>} */
+    const out = []
+    for (const ref of names.filter((n) => !n.startsWith('meta:'))) {
+      let meta = {}
+      try {
+        meta = JSON.parse((await storage.slot?.('meta:' + ref).get()) ?? '{}')
+      } catch {
+        // a damaged note is as if there was none
+      }
+      out.push({ ref, id: /** @type {any} */ (meta).org, expiresAt: /** @type {any} */ (meta).expires_at, name: /** @type {any} */ (meta).name })
+    }
+    return out
   }
 
   /**
