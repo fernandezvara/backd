@@ -103,8 +103,9 @@ import { Job } from './functions.js'
  * error, `429` or `503` (see `retry`).
  * `team` is the team of the session's organization a document of a collection with `team` is
  * created in (a member, or a holder of a team role there; `?team=` on the wire). A session works
- * in the organization it was opened for, so there is no organization to name.
- * @typedef {RequestOptions & { idempotencyKey?: string, team?: string }} CreateOptions
+ * in the organization it was opened for, so there is no organization to name. `org` is for the
+ * administrators' data route (`admin.data(...)`), which creates in any active organization.
+ * @typedef {RequestOptions & { idempotencyKey?: string, team?: string, org?: string }} CreateOptions
  */
 
 /**
@@ -604,8 +605,8 @@ function scopeQuery(team) {
  * @returns {RequestOptions & { query?: Record<string, string> }}
  */
 function keyed(opts = {}) {
-  const { idempotencyKey, team, ...rest } = opts
-  const scope = scopeQuery(team)
+  const { idempotencyKey, team, org, ...rest } = opts
+  const scope = { ...scopeQuery(team), ...(org === undefined ? {} : { org }) }
   /** @type {RequestOptions & { query?: Record<string, string> }} */
   const out = Object.keys(scope).length === 0 ? rest : { ...rest, query: scope }
   return idempotencyKey === undefined ? out : { ...out, headers: { ...out.headers, 'Idempotency-Key': idempotencyKey } }

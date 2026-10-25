@@ -61,7 +61,7 @@ In a realm with organizations **every session is scoped to one organization**: t
 - **A provider of the realm signs in to an organization too:** the person must be a member (or hold the invitation) when they come back from the provider, otherwise the flow ends with `backd_error=not_allowed`, the same for an organization that is not there. A connection of the organization takes the place of the realm's provider of the same name.
 - **A second session:** `POST /_orgs` leaves the caller's session as it is and answers a new one for the organization it made, `session: {token, expires_at, org}`, for the app to keep beside the other.
 - **Operators sign in to the realm.** A realm administrator (a user with an admin role) signs in at `POST /_auth/login`, which answers `401 invalid_credentials` to everybody else; their session belongs to no organization and reaches the admin API alone. Everything else in the realm, including `/_auth/signup`, the unscoped magic link and the realm's own `oauth/{provider}/start`, answers `404`: a person always signs in to an organization.
-- **Sessions from before** the realm had organizations, or from before they were scoped, answer `401 session_unscoped`: the person signs in again (the clients treat it as an expired session). See [Upgrading](../../../operate/upgrading/).
+- **Sessions from before** the realm had organizations, or from before they were scoped, answer `401 session_unscoped`: the person signs in again (the clients treat it as an expired session). See [Upgrading](../../../operate/#upgrading-from-v092-to-the-next-release).
 
 ### Which companies am I in?
 
@@ -97,7 +97,7 @@ An organization can require its members to use [multi-factor authentication](../
 
 ## How long sessions last
 
-An organization can shorten the lifetime of the sessions opened in it: `PATCH /_orgs/{org}` with `{"session_max_age": 28800}` (seconds, at least 3600, never more than the realm's [`sessions.max_lifetime`](../../configuration/realm/#sessions); `0` goes back to the realm's), by `manage: org`, with a fresh proof of identity. The expiry of a session is fixed when it is opened, from the organization's value, and never extended, so the change applies to the sessions opened from then on. It is also how a company limits how long someone removed at their identity provider keeps access until the provider can tell backd directly. Audited as `org.update`.
+An organization can shorten the lifetime of the sessions opened in it: `PATCH /_orgs/{org}` with `{"session_max_age": 28800}` (seconds, at least 3600, never more than the realm's [`sessions.max_lifetime`](../../configuration/realm/#keys); `0` goes back to the realm's), by `manage: org`, with a fresh proof of identity. The expiry of a session is fixed when it is opened, from the organization's value, and never extended, so the change applies to the sessions opened from then on. It is also how a company limits how long someone removed at their identity provider keeps access until the provider can tell backd directly. Audited as `org.update`.
 
 ## API keys on behalf of a user
 
