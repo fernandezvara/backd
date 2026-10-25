@@ -71,6 +71,8 @@ personal_data:
 
 ## 4. Personal data export (issue 19.2)
 
+> **Sessions opened through an organization's connection** cannot ask for the export (`403 sso_session`): it would gather the person's documents in every organization. Administrators export for them ([scoped-sessions.md](./scoped-sessions.md) §7).
+
 ### 4.1 Requesting
 
 - **Self-service:** `POST /_auth/me/export` with `X-Backd-Reauth` starts a job (progress as job steps). It's limited to one per user per 24 hours (`429` with `Retry-After`), and `GET /_auth/me/exports` lists exports with status and expiry.

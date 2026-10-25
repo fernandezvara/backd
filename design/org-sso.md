@@ -15,7 +15,7 @@ An organization **connection** is a provider configured for one organization: it
 | Topic | Decision |
 |---|---|
 | Secrets | A third scope for the existing secrets store: **organization**, owned by the realm, written by the organization's managers, **never readable by anyone** (not by them, not by functions); realm admins can replace and delete them. No dependency on field encryption (that protects document fields; secrets already use the instance's secrets key) |
-| Addresses | `/v1/{realm}/_auth/orgs/{org}/oauth/{provider}/{start,callback,id-token}`: inside the reserved `_auth` namespace, so it can't clash with a database, and it needs no session. `{org}` is the id or the slug; the callback address always uses the id |
+| Addresses | `/v1/{realm}/_auth/orgs/{org}/oauth/{provider}/{start,callback,id-token}`: inside the reserved `_auth` namespace, so it can't clash with a database, and it needs no session. `{org}` is the id (slugs are resolved to the id by one public lookup, [scoped-sessions.md](./scoped-sessions.md) §5.3) |
 | Who manages | Roles that hold a new `manage: sso` capability (the docs' example gives it to `owner` and `admin`), with reauth for changes |
 | Providers | `google` and `microsoft` only (milestone 30). Apple and generic OpenID Connect follow in `31-org-sso-extensions` |
 | Realm control | Off unless `organizations.sso.enabled: true` in `realm.yaml`; the realm lists the allowed providers and caps connections per organization |
@@ -89,7 +89,7 @@ Two prefixes, each already in use, and the rule that picks one: **`_orgs` is the
 
 - **Why no email link:** the organization's manager controls the connection, and a provider they control could assert anyone's address. Tenant and Workspace restrictions prove the *company* of the person, not that the email belongs to an account in this realm.
 - **Removal:** a manager removing a member (or a member being removed by any path) adds them to `blocked` while a connection exists; accepting an invitation to the organization removes them from it. Leaving by oneself does not block.
-- **Sessions** record the organization they were opened through (`LoginCode` and session `org`; the second-step and consent challenges carry it as `via_org`, since `org` there already names a magic link's company context). Nothing enforces it yet ([31](#9-follow-ups)); recording it now avoids a later migration.
+- **Sessions** record the organization they were opened through (`LoginCode` and session `org`; the second-step and consent challenges carry it as `via_org`, since `org` there already names a magic link's company context). Milestone `34-scoped-sessions` makes it the scope of the session and enforces it ([scoped-sessions.md](./scoped-sessions.md)).
 - **MFA:** the provider's own second factor isn't trusted; the organization's `require_mfa` applies as it does for any member.
 - **Audit:** `org.sso.login` (user, provider, whether this sign-in joined them) and, for a join, the existing `org.member_add` with `by: sso`. A connection switched off because its setter lost the roles is `org.sso.disabled`.
 
@@ -137,7 +137,7 @@ Two prefixes, each already in use, and the rule that picks one: **`_orgs` is the
 
 ## 12. Follow-ups
 
-Milestone `31-org-sso-extensions`: Apple (a team per organization), generic OpenID Connect (issuer allow-list and egress), `require_sso` per organization (membership counts only for sessions opened through its connection, like `require_mfa`), verified domains (DNS proof, realm-admin approval) with automatic email linking and "which organization is this email?" discovery, and review.
+Milestone `31-org-sso-extensions`: Apple (a team per organization), generic OpenID Connect (issuer allow-list and egress), enforced sign-in per organization (`sso_required`, designed in [scoped-sessions.md](./scoped-sessions.md) §6, replacing the membership-counting `require_sso`), verified domains (DNS proof, realm-admin approval) with automatic email linking and "which organization is this email?" discovery, and review.
 
 ## 13. As built (milestone 30)
 

@@ -173,6 +173,8 @@ All of these are under `/v1/{realm}/_orgs` and require a session. **A non-member
 
 ### 6.1 Creating and querying
 
+> **Changed by [scoped-sessions.md](./scoped-sessions.md) §4.2:** `?org=` and `.inOrg()` are removed. A scoped session creates in, and lists from, its own organization; `_meta.org` comes from the session. The bullets below describe what stays (membership first, `organization` policies, immutability, batches) with the organization taken from the session.
+
 - **Creating:** `POST .../{collection}?org=<id>`, or `.inOrg(id)` in the JS client, sets `_meta.org`.
   - **Membership first:** backd checks the caller is a counting member (§11) before evaluating `create`. A non-member or unknown organization answers `403 not_org_member`, the same either way.
   - **Missing organization:** `required` without `?org=` answers `400 org_required`.
@@ -199,6 +201,8 @@ All of these are under `/v1/{realm}/_orgs` and require a session. **A non-member
 - **Tests:** the existing property tests (pushdown against in-memory evaluation) gain callers with memberships, teams, claims and MFA-required organizations.
 
 ### 6.3 Loading memberships
+
+> **Changed by [scoped-sessions.md](./scoped-sessions.md) §4.2:** only the session's organization counts (`Org.Counts(mfa, scope)`), so `user.orgs` has one entry.
 
 - **Lazy:** one aggregation per request, made only when an organization helper or `user.orgs` is evaluated. It reads `org_members` by user, with the user's teams and their roles and the organizations' `status`, `require_mfa` and `claims`.
 - **No cache:** changes to roles, teams and members apply on every instance at the next request.
@@ -227,6 +231,8 @@ All of these are under `/v1/{realm}/_orgs` and require a session. **A non-member
 - **Storage:** the token is stored hash-only. Invitations expire after 7 days by default. When an email carries the link the worker needs the token to write it, so that one is also kept **sealed with the instance's secrets key** until the invitation is used up, revoked or expired (sending needs `BACKD_SECRETS_KEY`).
 
 ### 7.2 Accepting
+
+> **Changed by [scoped-sessions.md](./scoped-sessions.md) §5.1:** acceptance happens while signing in (`invitation` in the org-bound `login`, `signup` and `oauth/start`), and previews need no session. `POST /_orgs/invitations/accept` is removed. The binding rules and errors below stay.
 
 - **Preview:** `POST /_orgs/invitations/preview` with the token, with a session, returns the organization name and the roles and teams on offer, so the app can ask "Join Acme as editor?". Previews need a session, so anonymous callers can't probe tokens.
 - **Accepting:** `POST /_orgs/invitations/accept` with the token, with a session.

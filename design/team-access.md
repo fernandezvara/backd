@@ -2,6 +2,7 @@
 
 - **Issues:** features 24.1–24.12 (milestone `24-team-access`)
 - **Status:** decided
+- **Changed by:** [scoped-sessions.md](./scoped-sessions.md) (§10 company context: sign-in flows take the organization from the path)
 - **Extends:** [organizations.md](./organizations.md) (§2.1: the roles machinery is shared, and nothing here duplicates it), whose backlog item "data owned by a team" this is; related to [mfa-passwordless.md](./mfa-passwordless.md), [query-language.md](./query-language.md), [triggers-and-realtime.md](./triggers-and-realtime.md), [internal-functions.md](./internal-functions.md)
 
 ## 1. The idea
@@ -155,6 +156,7 @@ organizations:
 backd's own emails (organization invitations, verification, password reset, magic links, MFA, consent and export notices) and hosted pages are realm-wide today. Apps serving many companies need them to look like each company's.
 
 - **Company context:**
+  - **Changed by [scoped-sessions.md](./scoped-sessions.md) §5.1:** in realms with organizations the sign-in, magic-link, reset and sign-up routes live under `/_auth/orgs/{org}/…`, so the organization comes from the path and the optional `org` field below is gone; emails go only to members, with the same answer and timing otherwise. The rest of this section (invitations, `ctx.email.send({ org })`, hooks, templates) is unchanged.
   - sign-in, `POST /v1/{realm}/_auth/magic-link`, `POST /v1/{realm}/_auth/reset-password/request` and sign-up accept an optional `org`;
   - it's used only if the organization exists and, except for invitations, the address belongs to a member; otherwise it's **silently ignored**, with the same answer and timing, so it can't be used to probe membership;
   - invitations carry their organization;
