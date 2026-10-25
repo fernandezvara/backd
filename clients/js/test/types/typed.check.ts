@@ -70,12 +70,12 @@ client.db('main').fn('refund', {})
 // @ts-expect-error unknown configuration path
 client.config.get('shop.nope')
 
-// A collection scoped to an organization keeps its types.
-export const scoped: Promise<{ id: string }> = orders.inOrg('org-1').create({ status: 'new', items: [] })
+// A collection scoped to a team keeps its types.
+export const scoped: Promise<{ id: string }> = orders.inTeam('team-1').create({ status: 'new', items: [] })
 // @ts-expect-error the scoped collection is typed too
-orders.inOrg('org-1').create({ status: 'refunded', items: [] })
+orders.inTeam('team-1').create({ status: 'refunded', items: [] })
 // The organizations API: a role is a string, the app narrows it with the realm's OrgRole.
-export const myOrgs = client.orgs.list()
+export const myOrgs = client.orgs.signedIn()
 
 // Untyped, nothing changes.
 const plain = createClient({ url: 'https://api.example.com', realm: 'shop' })

@@ -32,6 +32,9 @@ func (a *authAPI) magicLinkPost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *authAPI) requestMagicLink(w http.ResponseWriter, r *http.Request) {
+	if !a.signInToAnOrg(w, r) {
+		return
+	}
 	obj, ok := readObject(w, r)
 	if !ok {
 		return

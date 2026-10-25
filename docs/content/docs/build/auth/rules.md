@@ -122,8 +122,8 @@ rules:
 ```
 
 - **They count only memberships that count:** the organization is active (or orphaned) and, when it [requires a second factor](../mfa/), the session used one. For anyone else the helpers are false.
-- **In a read rule they are database filters.** `inOrg(document._meta.org)` becomes "`_meta.org` is one of the caller's organizations", so lists and counts show only what the caller may see. In a read rule the first argument must be `document._meta.org`, and the role of `hasOrgRole` a string literal or a single-valued field of the document, such as `document.audience`.
-- **On create** the organization is `data._meta.org`: the one in `?org=`, which the caller already belongs to.
+- **In a read rule they are database filters.** `inOrg(document._meta.org)` becomes "`_meta.org` is the session's organization, if the caller counts there", so lists and counts show only what the caller may see. In a read rule the first argument must be `document._meta.org`, and the role of `hasOrgRole` a string literal or a single-valued field of the document, such as `document.audience`.
+- **On create** the organization is `data._meta.org`: the one the session belongs to.
 - **Claims** are facts about an organization that only realm administrators and functions write. `orgClaims(document._meta.org).plan == "pro"`, `.seats >= 3` and `.plan in ["pro", "team"]` are allowed, and `"a" in orgClaims(document._meta.org).features` for an array claim. A claim can only be compared with a value that doesn't depend on the document, and the comparison is false for organizations the caller doesn't belong to.
 - **Roles, not teams:** rules see the roles a member holds, whether granted directly, by default or through a team.
 - **`user.orgs`** is a map from organization id to `{roles, teams, claims}`, for `create` and `invoke` rules, which are evaluated in memory.

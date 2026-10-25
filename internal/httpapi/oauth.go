@@ -40,12 +40,13 @@ const (
 
 func (a *authAPI) oauthRoutes(r chi.Router, json func(http.Handler) http.Handler) {
 	oauthRoutes := func(r chi.Router) {
-		r.Get("/oauth/{provider}/start", a.oauthStartGet)
-		r.With(json).Post("/oauth/{provider}/start", a.oauthStartPost)
+		r.With(a.signInOfOrgs).Get("/oauth/{provider}/start", a.oauthStartGet)
+		r.With(json, a.signInOfOrgs).Post("/oauth/{provider}/start", a.oauthStartPost)
+		// The provider sends the person back to one address, the realm's: the attempt knows the organization.
 		r.Get("/oauth/{provider}/callback", a.oauthCallback)
 		r.Post("/oauth/{provider}/callback", a.oauthCallback) // Apple answers with a form
-		r.With(json).Post("/oauth/{provider}/id-token", a.oauthIDToken)
-		r.Get("/providers", a.providerList)
+		r.With(json, a.signInOfOrgs).Post("/oauth/{provider}/id-token", a.oauthIDToken)
+		r.With(a.signInOfOrgs).Get("/providers", a.providerList)
 	}
 	oauthRoutes(r)
 	// The same flow for the providers an organization's managers connected (design/org-sso.md).

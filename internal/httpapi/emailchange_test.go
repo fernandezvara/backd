@@ -22,6 +22,7 @@ func newChangeFixture(t *testing.T) (*rulesFixture, *Worker) {
 // undo link at the old one, and the undo.
 func TestEmailChangeFlowAndRevert(t *testing.T) {
 	f, w := newChangeFixture(t)
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	ctx := context.Background()
 	login := func(address, password string) int {
 		return f.page(t, "POST", "/v1/acme/_auth/login", "application/json", `{"email": "`+address+`", "password": "`+password+`"}`, "").Code
@@ -102,6 +103,7 @@ func TestEmailChangeFlowAndRevert(t *testing.T) {
 
 func TestEmailChangeRules(t *testing.T) {
 	f, w := newChangeFixture(t)
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	ctx := context.Background()
 
 	for name, tc := range map[string]struct {

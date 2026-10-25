@@ -175,7 +175,8 @@ organizations:
 	out = c.expect(0, "created (Acme Corp), owned by ada@example.com", "", "orgs", "create", "--realm", "acme", "--name", "Acme Corp", "--slug", "acme", "--owner", "ada@example.com")
 	orgID := strings.Fields(out)[1]
 	c.expect(1, "slug_taken", "", "orgs", "create", "--realm", "acme", "--name", "Other", "--slug", "acme", "--owner", "bob@example.com")
-	c.expect(1, "user not found: nobody@example.com", "", "orgs", "create", "--realm", "acme", "--name", "Other", "--owner", "nobody@example.com")
+	c.expect(1, "user not found: nobody@example.com", "", "orgs", "create", "--realm", "acme", "--name", "Other", "--slug", "other", "--owner", "nobody@example.com")
+	c.expect(2, "--slug", "", "orgs", "create", "--realm", "acme", "--name", "Other", "--owner", "bob@example.com")
 	c.expect(0, "acme", "", "orgs", "list", "--realm", "acme", "--status", "active")
 	c.expect(0, "bob@example.com added to "+orgID, "", "orgs", "add-member", "--realm", "acme", "--id", orgID, "--email", "bob@example.com", "--roles", "editor")
 	out = c.expect(0, "USER", "", "orgs", "members", "--realm", "acme", "--id", orgID)
@@ -348,9 +349,10 @@ organizations:
 	c.expect(1, "admin commands need a user holding an admin role", "", "user", "list", "--realm", "acme")
 	delete(c.env, "BACKD_API_KEY")
 
-	// A user without an admin role can log in, but not administer.
-	c.expect(0, "logged in", pw+"\n", "login", "--realm", "acme", "--email", "eve@example.com")
-	c.expect(1, "403 forbidden", "", "user", "list", "--realm", "acme")
+	// A realm with organizations lets only its administrators log in here: anyone else is refused
+	// like a wrong password, and the session that was stored stays.
+	c.expect(1, "401 invalid_credentials", pw+"\n", "login", "--realm", "acme", "--email", "eve@example.com")
+	c.expect(0, "ada@example.com", "", "user", "list", "--realm", "acme")
 	c.expect(1, "realm not found or authentication disabled", pw+"\n", "login", "--realm", "nope", "--email", "eve@example.com")
 
 	// Logging out ends the session on the server too; a session the server

@@ -18,6 +18,7 @@ func (f *rulesFixture) resetRequest(t *testing.T, address string) (int, string) 
 // every session ends, the address becomes verified and the owner is told.
 func TestPasswordResetFlow(t *testing.T) {
 	f, w := newVerifyFixture(t)
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	ctx := context.Background()
 	const newPassword = "dev-p4ssw0rd!2"
 

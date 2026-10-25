@@ -412,6 +412,10 @@ func (s *Users) deleteConnection(ctx context.Context, orgID, provider, by string
 	if err := s.DeleteOrgSecret(ctx, orgID, SSOSecretName(provider)); err != nil && !errors.Is(err, ErrSecretNotFound) {
 		return err
 	}
+	// The sessions the connection opened end with it.
+	if _, err := s.Store.DeleteOrgSessions(context.WithoutCancel(ctx), orgID, "", provider); err != nil && s.Log != nil {
+		s.Log.Warn("end the sessions a removed connection opened", "org", orgID, "provider", provider, "error", err)
+	}
 	s.Audit(ctx, AuditOrgSSODeleted, orgTarget(orgID), map[string]any{"provider": provider, "by": by})
 	return nil
 }

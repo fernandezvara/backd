@@ -51,7 +51,8 @@ test('a wrong password and a user without an admin role are refused', async ({ p
   await page.getByLabel('Email').fill(users.plain)
   await page.getByLabel('Password').fill('dev-p4ssw0rd!')
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page.getByRole('alert')).toContainText('not an administrator')
+  // The realm has organizations: its sign-in is the administrators' alone and refuses anyone else like a wrong password.
+  await expect(page.getByRole('alert')).toContainText('email or password is wrong')
   await expect(page).toHaveURL(/signin/)
 })
 

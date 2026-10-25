@@ -42,8 +42,9 @@ Realm administrators and functions are not bound by `max_created_per_user`.
 
 | Status and `code` | When | What to do |
 |---|---|---|
-| `400 org_required` | create in a collection with `organization: required` without `?org=` | send the organization (`inOrg(id)` in the client) |
-| `400 org_not_allowed` | `?org=` on a collection with `organization: none` | remove it |
+| `400 org_required` | a key acting for nobody, or a user with no organization in the key, creating in a collection with `organization: required` | sessions always have one; bind the key to one (`--org`) |
+| `400 validation_error` on `org` (`org_not_allowed` in a collection without organizations) | `?org=` on a session's request | remove it: the session decides |
+| `401 session_unscoped` | a session from before sessions were scoped | sign in again, to an organization |
 | `400 immutable_field` | `PUT` or `PATCH` changes `_meta.org` | don't; transfers are for administrators |
 | `400 invalid_invitation` | unknown, expired, revoked or used token | ask for a new invitation |
 | `403 not_org_member` | not a member, or the organization doesn't exist (the same answer) | check the id; join first |

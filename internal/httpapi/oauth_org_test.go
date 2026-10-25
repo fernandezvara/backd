@@ -28,7 +28,7 @@ type orgSignIn struct {
 
 func newOrgSignIn(t *testing.T) *orgSignIn {
 	t.Helper()
-	f := newOAuthFixture(t)
+	f := newOrgOAuthFixture(t)
 	ctx := context.Background()
 	made, err := f.svc.AdminCreateOrg(ctx, "Acme Corp", "acme-corp", f.adaID)
 	if err != nil {
@@ -190,16 +190,12 @@ func TestOrganizationSignInNeverLinksByEmail(t *testing.T) {
 	if ids, _ := o.svc.Store.ListIdentities(ctx, o.adaID); len(ids) != 1 {
 		t.Errorf("an identity was added to the account: %+v", ids)
 	}
-	// The same realm sign-in through Google would have linked (the control).
-	if a := o.signIn(t, "google", googleUser("g-ada-realm", "ada@example.com", true), nil); a.errorCode() != "" {
-		t.Errorf("realm google: %v", a.result)
-	}
 }
 
 // What the callback of one place can't finish for another.
 func TestOrganizationStateStaysWhereItBegan(t *testing.T) {
 	o := newOrgSignIn(t)
-	other, err := o.svc.AdminCreateOrg(context.Background(), "Other Corp", "", o.adaID)
+	other, err := o.svc.AdminCreateOrg(context.Background(), "Other Corp", "other-corp", o.adaID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +220,6 @@ func TestOrganizationStateStaysWhereItBegan(t *testing.T) {
 	}
 	try("org A finished at org B", o.base, "/v1/acme/_auth/orgs/"+other.Org.ID+"/oauth")
 	try("org finished at the realm", o.base, oauthBase)
-	try("realm finished at the org", oauthBase, o.base)
 	if u, err := o.svc.Store.UserByEmail(context.Background(), "mix@acme.example"); err == nil {
 		t.Errorf("a user was made: %+v", u)
 	}
@@ -248,9 +243,9 @@ func TestOrganizationProvidersAnswerAlikeWhenUnavailable(t *testing.T) {
 	if code, names, cache := listOf(orgAuth + o.org); code != 200 || strings.Join(names, ",") != "apple,google,microsoft" || cache != "public, max-age=60" {
 		t.Fatalf("list = %d %v %q", code, names, cache)
 	}
-	// The realm's own list: the providers realm.yaml declares.
-	if code, names, _ := listOf("/v1/acme/_auth"); code != 200 || strings.Join(names, ",") != "apple,google,microsoft" {
-		t.Errorf("realm list = %d %v", code, names)
+	// A realm with organizations has no list of its own: people sign in to an organization.
+	if rec, _ := o.doH(t, "GET", "/v1/acme/_auth/providers", "", nil); rec.Code != http.StatusNotFound {
+		t.Errorf("realm list = %d", rec.Code)
 	}
 	setConn := func(in auth.ConnectionInput) {
 		if _, err := o.svc.AdminSetOrgConnection(ctx, o.org, "google", in); err != nil {
@@ -349,7 +344,7 @@ func TestOrganizationNativeSignIn(t *testing.T) {
 
 // A person holds one identity per provider per organization, and may hold the realm's too.
 func TestIdentitiesAreKeyedByOrganization(t *testing.T) {
-	f := newOAuthFixture(t)
+	f := newOrgOAuthFixture(t)
 	ctx := context.Background()
 	put := func(id, user, org, subject string) error {
 		return f.svc.Store.PutIdentity(ctx, auth.Identity{ID: id, UserID: user, Provider: "google", Org: org, Subject: subject, CreatedAt: time.Now(), UpdatedAt: time.Now()})
@@ -399,16 +394,6 @@ func (o *orgSignIn) memberOf(t *testing.T, user string) (bool, []string) {
 		return false, nil
 	}
 	return true, m.DirectRoles(time.Now())
-}
-
-// loginAs signs in with a password and returns the session token.
-func (o *orgSignIn) loginAs(t *testing.T, email, password string) string {
-	t.Helper()
-	rec, out := o.do(t, "POST", "/v1/acme/_auth/login", `{"email": "`+email+`", "password": "`+password+`"}`)
-	if rec.Code != 200 {
-		t.Fatalf("login: %d %v", rec.Code, out)
-	}
-	return out["token"].(string)
 }
 
 func (o *orgSignIn) connect(t *testing.T, provider string, in auth.ConnectionInput) {
@@ -464,10 +449,6 @@ func TestOrganizationSignInIgnoresTheSignupMode(t *testing.T) {
 		if a.errorCode() != "" {
 			t.Errorf("sign-up %s: an allowed person was refused: %v", mode, a.result)
 		}
-		// The realm's own providers still follow the mode.
-		if r := o.signIn(t, "google", googleUser("realm-"+mode, "realm-"+mode+"@example.com", true), nil); r.errorCode() == "" {
-			t.Errorf("sign-up %s: the realm's google admitted a stranger", mode)
-		}
 	}
 }
 
@@ -508,10 +489,7 @@ func TestRemovedMembersAreNotRejoinedBySignIn(t *testing.T) {
 		t.Error("the Microsoft connection does not block them")
 	}
 
-	// They link the connection again (their identity is gone): signed in, not joined.
-	if err := o.svc.UnlinkIn(ctx, userID, "google", o.org, "self"); err == nil {
-		t.Fatal("unlinked the only method") // the account has no other: give it a password
-	}
+	// Their identity is gone, and the block holds: signing in again through the connection does not rejoin them.
 	pw := "dev-p4ssw0rd!"
 	if err := o.svc.SetPassword(ctx, "removed@acme.example", pw); err != nil {
 		t.Fatal(err)
@@ -519,18 +497,12 @@ func TestRemovedMembersAreNotRejoinedBySignIn(t *testing.T) {
 	if err := o.svc.UnlinkIn(ctx, userID, "google", o.org, "self"); err != nil {
 		t.Fatal(err)
 	}
-	session := o.loginAs(t, "removed@acme.example", pw)
 	o.idp.SetUser(orgGoogle("g-rm", "removed@acme.example", "acme.example", true))
-	verifier, challenge, _ := auth.NewPKCE()
-	rec, body := o.doH(t, "POST", o.base+"/google/start", `{"redirect_to": "`+appRedirect+`", "code_challenge": "`+challenge+`", "intent": "link"}`, jsonHdr(session))
-	if rec.Code != 200 {
-		t.Fatalf("link start: %d %v", rec.Code, body)
-	}
-	if res := o.finish(t, "google", body["authorize_url"].(string), verifier, false); res.result.Query().Get("backd_linked") != "google" {
-		t.Fatalf("link: %v", res.result)
+	if a := o.signInOrg(t, "google", orgGoogle("g-rm", "removed@acme.example", "acme.example", true)); a.errorCode() == "" {
+		t.Fatalf("a blocked person signed in again: %v", a.result)
 	}
 	if member, _ := o.memberOf(t, userID); member {
-		t.Error("a blocked person rejoined by linking")
+		t.Error("a blocked person rejoined by signing in")
 	}
 
 	// An invitation is the way back, and it lifts the block.
@@ -538,39 +510,12 @@ func TestRemovedMembersAreNotRejoinedBySignIn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, _ := o.svc.Authenticate(ctx, session)
-	if _, err := o.svc.AcceptOrgInvitation(ctx, p, inv.Token); err != nil {
+	user, _ := o.svc.Store.UserByEmail(ctx, "removed@acme.example")
+	if _, err := o.svc.AcceptOrgInvitation(ctx, auth.Principal{User: user}, inv.Token); err != nil {
 		t.Fatal(err)
 	}
 	if blocked() {
 		t.Error("accepting an invitation did not lift the block")
-	}
-}
-
-// An explicit link through the connection joins the person who is not a member yet.
-func TestLinkingAConnectionJoins(t *testing.T) {
-	o := newOrgSignIn(t)
-	ctx := context.Background()
-	o.connect(t, "google", auth.ConnectionInput{ClientID: "org-g-client", HostedDomain: "acme.example", JoinRoles: []string{"member"}})
-	o.idp.SetUser(orgGoogle("g-bob", "bob@example.com", "acme.example", true))
-	verifier, challenge, _ := auth.NewPKCE()
-	rec, body := o.doH(t, "POST", o.base+"/google/start", `{"redirect_to": "`+appRedirect+`", "code_challenge": "`+challenge+`", "intent": "link"}`, jsonHdr(o.bob))
-	if rec.Code != 200 {
-		t.Fatalf("start: %d %v", rec.Code, body)
-	}
-	if res := o.finish(t, "google", body["authorize_url"].(string), verifier, false); res.result.Query().Get("backd_linked") != "google" {
-		t.Fatalf("link: %v", res.result)
-	}
-	if member, roles := o.memberOf(t, o.bobID); !member || strings.Join(roles, ",") != "member" {
-		t.Errorf("membership after linking = %v %v", member, roles)
-	}
-	id, err := o.svc.Store.IdentityOfIn(ctx, o.bobID, "google", o.org)
-	if err != nil || id.Org != o.org {
-		t.Errorf("identity = %+v, %v", id, err)
-	}
-	// Bob's own account is unchanged: same address, no new user.
-	if u, _ := o.svc.Store.UserByEmail(ctx, "bob@example.com"); u.ID != o.bobID {
-		t.Errorf("user = %+v", u)
 	}
 }
 
@@ -582,7 +527,7 @@ func TestConnectionIsDisabledWhenItsSetterLosesTheRoles(t *testing.T) {
 	if _, err := o.svc.AdminAddMember(ctx, o.org, o.bobID, []string{"owner"}); err != nil {
 		t.Fatal(err)
 	}
-	proof := o.withProof(t, o.bob)
+	proof := o.withProof(t, o.sessionIn(t, o.bob, o.org))
 	rec, out := o.doH(t, "PUT", "/v1/acme/_orgs/"+o.org+"/sso/google", `{"client_id": "org-g-client", "hosted_domain": "acme.example", "join_roles": ["admin"]}`, proof)
 	if rec.Code != 200 {
 		t.Fatalf("set: %d %v", rec.Code, out)
@@ -694,7 +639,7 @@ func TestOrganizationSignInLogsNoSecrets(t *testing.T) {
 // to it; anyone else, and anyone at an organization that is not there, is refused alike, after the
 // provider has vouched for them. An invitation lets a person in and joins them.
 func TestRealmProviderSignsInToAnOrganization(t *testing.T) {
-	f := newOAuthFixture(t)
+	f := newOrgOAuthFixture(t)
 	ctx := context.Background()
 	made, err := f.svc.AdminCreateOrg(ctx, "Plain Inc", "plain-inc", f.adaID)
 	if err != nil {
@@ -751,7 +696,7 @@ func TestRealmProviderSignsInToAnOrganization(t *testing.T) {
 	// account it lets them make one, in a realm that is closed.
 	invite := func(body string) string {
 		t.Helper()
-		rec, out := f.doH(t, "POST", orgsPath+"/"+made.Org.ID+"/invitations", body, jsonHdr(f.ada))
+		rec, out := f.doH(t, "POST", orgsPath+"/"+made.Org.ID+"/invitations", body, jsonHdr(f.sessionIn(t, f.ada, made.Org.ID)))
 		if rec.Code != 201 {
 			t.Fatalf("invite: %d %v", rec.Code, out)
 		}

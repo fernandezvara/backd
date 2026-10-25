@@ -9,10 +9,9 @@ const make = (m, extra = {}) => createClient({ url: 'http://api.test', realm: 'a
 
 const org = { id: 'o1', name: 'Acme', slug: 'acme', status: 'active', require_mfa: false, mfa_met: true, claims: {}, created_at: 't', roles: ['owner'], effective_roles: [], teams: [] }
 
-test('create, list, get, update, leave and delete an organization', async () => {
+test('create, get, update, leave and delete an organization', async () => {
   const m = mockFetch([
     { status: 201, body: org },
-    { body: { items: [org] } },
     { body: org },
     { body: { ...org, name: 'Acme Inc' } },
     { status: 204 },
@@ -22,15 +21,14 @@ test('create, list, get, update, leave and delete an organization', async () => 
   assert.equal((await c.orgs.create({ name: 'Acme', slug: 'acme' })).id, 'o1')
   assert.deepEqual(m.calls[0].body, { name: 'Acme', slug: 'acme' })
   assert.equal(m.calls[0].url.pathname, '/v1/acme/_orgs')
-  assert.equal((await c.orgs.list()).length, 1)
   assert.equal((await c.orgs.get('o1')).name, 'Acme')
-  assert.equal(m.calls[2].url.pathname, '/v1/acme/_orgs/o1')
+  assert.equal(m.calls[1].url.pathname, '/v1/acme/_orgs/o1')
   assert.equal((await c.orgs.update('o1', { name: 'Acme Inc' })).name, 'Acme Inc')
-  assert.equal(m.calls[3].method, 'PATCH')
+  assert.equal(m.calls[2].method, 'PATCH')
   await c.orgs.leave('o1')
-  assert.equal(m.calls[4].url.pathname, '/v1/acme/_orgs/o1/leave')
+  assert.equal(m.calls[3].url.pathname, '/v1/acme/_orgs/o1/leave')
   await c.orgs.delete('o1')
-  assert.equal(m.calls[5].method, 'DELETE')
+  assert.equal(m.calls[4].method, 'DELETE')
 })
 
 test('members, teams and invitations hang off one organization', async () => {
@@ -79,36 +77,6 @@ test('team members and holders of a team role', async () => {
   assert.equal(m.calls[0].url.searchParams.get('limit'), '5')
 })
 
-test('preview and accept an invitation by its token', async () => {
-  const m = mockFetch([{ body: { org: { id: 'o1', name: 'Acme' }, roles: ['editor'], teams: [], binding: 'email', expires_at: 't' } }, { body: org }])
-  const c = make(m)
-  const pv = await c.orgs.invitations.preview('bdo_x')
-  assert.equal(pv.org.name, 'Acme')
-  assert.equal(m.calls[0].url.pathname, '/v1/acme/_orgs/invitations/preview')
-  assert.deepEqual(m.calls[0].body, { token: 'bdo_x' })
-  assert.equal((await c.orgs.invitations.accept('bdo_x')).id, 'o1')
-  assert.equal(m.calls[1].url.pathname, '/v1/acme/_orgs/invitations/accept')
-})
-
-test('documents are created and listed in an organization with inOrg', async () => {
-  const m = mockFetch([
-    { status: 201, body: { id: 'd1', title: 'x', _meta: { org: 'o1' } } },
-    { body: { items: [], limit: 50, skip: 0, has_more: false } },
-    { status: 201, body: { id: 'd2' } },
-  ])
-  const c = make(m)
-  const projects = c.db('app').collection('projects')
-  await projects.inOrg('o1').create({ title: 'x' }, { idempotencyKey: 'k1' })
-  assert.equal(m.calls[0].url.searchParams.get('org'), 'o1')
-  assert.equal(m.calls[0].headers['Idempotency-Key'], 'k1')
-  await projects.inOrg('o1').list({ where: { title: 'x' } })
-  assert.equal(m.calls[1].url.searchParams.get('org'), 'o1')
-  assert.equal(m.calls[1].url.searchParams.get('where'), '{"title":"x"}')
-  // The plain collection sends none, and an explicit org wins.
-  await projects.create({ title: 'y' }, { org: 'o2' })
-  assert.equal(m.calls[2].url.searchParams.get('org'), 'o2')
-})
-
 test('documents are created and listed in a team with inTeam', async () => {
   const m = mockFetch([
     { status: 201, body: { id: 'd1', _meta: { org: 'o1', team: 't1' } } },
@@ -116,15 +84,17 @@ test('documents are created and listed in a team with inTeam', async () => {
     { status: 201, body: { id: 'd2' } },
   ])
   const requests = make(m).db('app').collection('requests')
-  await requests.inOrg('o1').inTeam('t1').create({ title: 'x' })
-  assert.equal(m.calls[0].url.searchParams.get('org'), 'o1')
+  await requests.inTeam('t1').create({ title: 'x' }, { idempotencyKey: 'k1' })
   assert.equal(m.calls[0].url.searchParams.get('team'), 't1')
-  await requests.inOrg('o1').inTeam('t1').list()
+  assert.equal(m.calls[0].url.searchParams.get('org'), null)
+  assert.equal(m.calls[0].headers['Idempotency-Key'], 'k1')
+  await requests.inTeam('t1').list({ where: { title: 'x' } })
   assert.equal(m.calls[1].url.searchParams.get('team'), 't1')
-  // Moving to another organization drops the team, and an explicit one wins.
-  await requests.inOrg('o1').inTeam('t1').create({ title: 'y' }, { team: 't2' })
+  assert.equal(m.calls[1].url.searchParams.get('where'), '{"title":"x"}')
+  // The plain collection sends no team, and an explicit one wins.
+  await requests.inTeam('t1').create({ title: 'y' }, { team: 't2' })
   assert.equal(m.calls[2].url.searchParams.get('team'), 't2')
-  assert.equal(requests.inOrg('o1').inTeam('t1').inOrg('o2').team, undefined)
+  await requests.create({ title: 'z' }).catch(() => {})
 })
 
 test('team roles are granted, re-windowed and revoked', async () => {

@@ -37,7 +37,7 @@ func TestFunctionsManageOrganizations(t *testing.T) {
 	if code, _ := f.orgsCall(t, "GET", "", "", auth.CallbackClaims{}); code != 403 {
 		t.Errorf("without admin access: %d", code)
 	}
-	code, out := f.orgsCall(t, "POST", "", `{"name": "Paid Co", "owner": "`+f.adaID+`"}`, admin)
+	code, out := f.orgsCall(t, "POST", "", `{"name": "Paid Co", "slug": "paid-co", "owner": "`+f.adaID+`"}`, admin)
 	if code != 201 {
 		t.Fatalf("create: %d %v", code, out)
 	}
@@ -55,7 +55,7 @@ func TestFunctionsManageOrganizations(t *testing.T) {
 	if code, out := f.orgsCall(t, "POST", "/"+id+"/invitations", `{"binding": "email", "email": "new@example.com", "roles": ["editor"]}`, admin); code != 201 || out["token"] == nil {
 		t.Errorf("invitation: %d %v", code, out)
 	}
-	if code, out := f.orgsCall(t, "GET", "?status=active", "", admin); code != 200 || len(out["items"].([]any)) != 1 {
+	if code, out := f.orgsCall(t, "GET", "?status=active", "", admin); code != 200 || len(out["items"].([]any)) != 4 { // the three home teams and this one
 		t.Errorf("list: %d %v", code, out)
 	}
 	if code, _ := f.orgsCall(t, "DELETE", "/"+id+"/members/"+f.adaID, "", admin); code != 409 {
@@ -67,7 +67,7 @@ func TestFunctionsManageOrganizations(t *testing.T) {
 		t.Errorf("audit: %+v", trail)
 	}
 	// ctx.user.orgs: the caller's memberships, with what counts.
-	env := f.functionsUserEnvelope(t, f.bobID)
+	env := f.functionsUserEnvelope(t, f.bobID, id)
 	orgs, _ := env["orgs"].(map[string]any)
 	m, _ := orgs[id].(map[string]any)
 	if m == nil || m["counts"] != true || m["name"] != "Paid Co" || m["claims"].(map[string]any)["plan"] != "pro" {
@@ -80,13 +80,13 @@ func TestFunctionsManageOrganizations(t *testing.T) {
 }
 
 // functionsUserEnvelope is ctx.user for a user, as the runner receives it.
-func (f *rulesFixture) functionsUserEnvelope(t *testing.T, userID string) map[string]any {
+func (f *rulesFixture) functionsUserEnvelope(t *testing.T, userID, org string) map[string]any {
 	t.Helper()
 	u, err := f.svc.Store.UserByID(context.Background(), userID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	c := auth.Caller{User: &auth.Principal{User: u}}
+	c := auth.Caller{User: &auth.Principal{User: u, Session: auth.Session{Org: org}}}
 	fns := &functions{docs: &documents{reg: f.reg, users: func(string) *auth.Users { return f.svc }}}
 	var env map[string]any
 	if err := json.Unmarshal(userEnvelope(c, fns.userOrgsEnvelope(context.Background(), "acme", c)), &env); err != nil {
@@ -111,11 +111,14 @@ func TestFunctionsCreateInOrganizations(t *testing.T) {
 		_ = json.Unmarshal(rec.Body.Bytes(), &out)
 		return rec.Code, out
 	}
-	if code, out := post(auth.CallbackClaims{UserID: f.adaID}, "?org="+org); code != 201 || out["_meta"].(map[string]any)["org"] != org {
+	if code, out := post(auth.CallbackClaims{UserID: f.adaID, Org: org}, ""); code != 201 || out["_meta"].(map[string]any)["org"] != org {
 		t.Errorf("as a member: %d %v", code, out)
 	}
-	if code, out := post(auth.CallbackClaims{UserID: f.bobID}, "?org="+org); code != 403 || errCode(out) != "not_org_member" {
+	if code, out := post(auth.CallbackClaims{UserID: f.bobID, Org: org}, ""); code != 403 || errCode(out) != "not_org_member" {
 		t.Errorf("as a stranger: %d %v", code, out)
+	}
+	if code, out := post(auth.CallbackClaims{UserID: f.adaID, Org: org}, "?org="+org); code != 400 {
+		t.Errorf("asking for the organization: %d %v", code, out)
 	}
 	if code, out := post(auth.CallbackClaims{UserID: f.adaID}, ""); code != 400 || errCode(out) != "org_required" {
 		t.Errorf("without one: %d %v", code, out)
@@ -151,7 +154,7 @@ func TestFunctionsTeamRoles(t *testing.T) {
 	}
 	teamRolesOf := func() []any {
 		t.Helper()
-		env := f.functionsUserEnvelope(t, f.bobID)
+		env := f.functionsUserEnvelope(t, f.bobID, org)
 		return env["orgs"].(map[string]any)[org].(map[string]any)["team_roles"].([]any)
 	}
 	if got := teamRolesOf(); len(got) != 0 {

@@ -1172,7 +1172,7 @@ document.addEventListener('alpine:init', () => {
       this.liveStatus = 'connecting'
       this.invite.link = null
       if (!id) return
-      liveTeam = pins.inOrg(id).subscribe({ load: { sort: '-_meta.created_at', limit: 50 } })
+      liveTeam = pins.subscribe({ load: { sort: '-_meta.created_at', limit: 50 } })
       liveTeam.on('change', (state) => {
         this.pinList = state.items
       })
@@ -1191,7 +1191,7 @@ document.addEventListener('alpine:init', () => {
           liveTeam?.close()
           liveTeam = null
           try {
-            const page = await pins.inOrg(id).list({ orderBy: '-_meta.created_at', limit: 50 })
+            const page = await pins.list({ orderBy: '-_meta.created_at', limit: 50 })
             if (this.team === id) this.pinList = page.items
             this.liveStatus = 'not live'
           } catch (err) {
@@ -1216,7 +1216,7 @@ document.addEventListener('alpine:init', () => {
         const org = await backd.orgs.get(this.team)
         const tz = typeof org.claims?.timezone === 'string' ? org.claims.timezone : 'UTC'
         this.dashboardZone = tz
-        const { groups } = await pins.inOrg(this.team).aggregate({
+        const { groups } = await pins.aggregate({
           groupBy: ['author', '_meta.created_at:month'],
           metrics: ['count'],
           tz,

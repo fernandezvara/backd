@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"maps"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -76,6 +79,7 @@ type rulesFixture struct {
 	callbackKey  []byte
 	internal     http.Handler      // the internal listener, for functions calling back
 	proofs       map[string]string // session token → re-authentication token (freshProof)
+	orgSessions  map[string]string // session token|org → the same person's session in that org (scopedFor)
 }
 
 func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
@@ -292,20 +296,52 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 	})
 	ctx := context.Background()
 	_, rf.key, _ = svc.CreateAPIKey(ctx, "svc", auth.KeyOptions{Role: auth.KeyRoleAdmin})
-	signup := func(email string, verified bool) (string, string) {
-		p, tok, err := svc.Signup(ctx, email, "dev-p4ssw0rd!", "")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if verified {
-			_ = svc.SetEmailVerified(ctx, email, true)
-		}
-		return tok, p.User.ID
-	}
-	rf.ada, rf.adaID = signup("ada@example.com", true)
-	rf.bob, rf.bobID = signup("bob@example.com", true)
-	rf.carl, _ = signup("carl@example.com", false)
+	rf.ada, rf.adaID = scopedSignup(t, svc, "ada@example.com", true)
+	rf.bob, rf.bobID = scopedSignup(t, svc, "bob@example.com", true)
+	rf.carl, _ = scopedSignup(t, svc, "carl@example.com", false)
 	return rf
+}
+
+// scopedSignup signs a person up and gives them a team of their own and a session scoped to it,
+// as everybody has in a realm with organizations (the team is named after their address: ada's is
+// home-ada). It returns the token and the user's id.
+func scopedSignup(t testing.TB, svc *auth.Users, email string, verified bool) (token, id string) {
+	t.Helper()
+	ctx := context.Background()
+	p, _, err := svc.Signup(ctx, email, "dev-p4ssw0rd!", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verified {
+		_ = svc.SetEmailVerified(ctx, email, true)
+		p.User.EmailVerified = true
+	}
+	slug := "home-" + strings.Split(email, "@")[0]
+	m, err := svc.AdminCreateOrg(ctx, slug, slug, p.User.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, token, err = svc.OpenOrgSession(auth.WithSessionMFA(ctx, false), p, m.Org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return token, p.User.ID
+}
+
+// sessionIn gives the person whose session is token a new session scoped to an organization they
+// belong to: how a test works in it (a session reaches one organization and no other).
+func (f *rulesFixture) sessionIn(t *testing.T, token, org string) string {
+	t.Helper()
+	ctx := context.Background()
+	p, err := f.svc.Authenticate(ctx, token)
+	if err != nil {
+		t.Fatalf("session in %s: %v", org, err)
+	}
+	_, tok, err := f.svc.OpenOrgSession(auth.WithSessionMFA(ctx, p.Session.MFA), p, org)
+	if err != nil {
+		t.Fatalf("session in %s: %v", org, err)
+	}
+	return tok
 }
 
 // as sends a request with the given credential ("" for anonymous).
@@ -691,4 +727,70 @@ func TestChangedSeesNestedPatch(t *testing.T) {
 	if _, out := f.doH(t, "GET", id, "", bearer(tok)); out["author"].(map[string]any)["email"] != "ada@example.com" {
 		t.Errorf("author changed: %v", out["author"])
 	}
+}
+
+var orgPathRE = regexp.MustCompile(`/_orgs/([0-9a-v]{20})(?:[/?]|$)`)
+
+// doH sends the request; a request for one organization's routes goes with the sender's session
+// scoped to that organization (opened on first use), as a client signed in to it would. A sender
+// who isn't a member keeps the session they have.
+func (f *rulesFixture) doH(t *testing.T, method, path, body string, hdr map[string]string) (*httptest.ResponseRecorder, map[string]any) {
+	t.Helper()
+	org := ""
+	if m := orgPathRE.FindStringSubmatch(path); m != nil {
+		org = m[1]
+	}
+	tok, isSession := strings.CutPrefix(hdr["Authorization"], "Bearer ")
+	isSession = isSession && strings.HasPrefix(tok, auth.SessionTokenPrefix)
+	if u, err := url.Parse(path); err == nil && isSession && !strings.Contains(path, "/_admin/") {
+		// ?org= was how a session chose its organization: now it signs in to one.
+		if q := u.Query(); q.Has("org") && org == "" {
+			org = q.Get("org")
+			q.Del("org")
+			u.RawQuery = q.Encode()
+			path = u.String()
+		}
+	}
+	if org != "" {
+		if isSession {
+			if scoped := f.scopedFor(tok, org); scoped != tok {
+				h := maps.Clone(hdr)
+				h["Authorization"] = "Bearer " + scoped
+				if _, has := h[reauthHeader]; has {
+					if proof := f.freshProof(t, scoped); proof != "" {
+						h[reauthHeader] = proof
+					}
+				}
+				hdr = h
+			}
+		}
+	}
+	return f.fixture.doH(t, method, path, body, hdr)
+}
+
+// scopedFor is the session of the same person scoped to org, or token when that isn't possible.
+func (f *rulesFixture) scopedFor(token, org string) string {
+	key := token + "|" + org
+	ctx := context.Background()
+	if tok, ok := f.orgSessions[key]; ok {
+		if _, err := f.svc.Authenticate(ctx, tok); err == nil {
+			return tok
+		}
+	}
+	p, err := f.svc.Authenticate(ctx, token)
+	if err != nil {
+		return token
+	}
+	if p.Session.Org == org {
+		return token
+	}
+	_, tok, err := f.svc.OpenOrgSession(auth.WithSessionMFA(ctx, p.Session.MFA), p, org)
+	if err != nil {
+		return token
+	}
+	if f.orgSessions == nil {
+		f.orgSessions = map[string]string{}
+	}
+	f.orgSessions[key] = tok
+	return tok
 }

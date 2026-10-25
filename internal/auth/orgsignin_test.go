@@ -11,7 +11,7 @@ func TestSlugsMayNotLookLikeIDs(t *testing.T) {
 		"0123456789abcdefghi":   true,  // one short
 		"0123456789abcdefghijk": true,  // one long
 		"0123456789abcdefghiw":  true,  // w is not in an id's alphabet
-		"":                      true,
+		"":                      false, // a slug is required
 	} {
 		if err := validSlug(slug); (err == nil) != ok {
 			t.Errorf("validSlug(%q) = %v, want ok=%v", slug, err, ok)

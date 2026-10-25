@@ -73,7 +73,7 @@ func TestExpansionSecurity(t *testing.T) {
 		t.Errorf("bodies differ:\n%s\n%s", rec.Body, rec2.Body)
 	}
 	// The member of the organization does get it.
-	if _, out := read(f.ada, news+"/"+hidden+"?expand=related(title)"); expanded(out, "related") == nil {
+	if _, out := read(f.sessionIn(t, f.ada, orgA), news+"/"+hidden+"?expand=related(title)"); expanded(out, "related") == nil {
 		t.Errorf("a member must read her own organization's project: %v", out)
 	}
 

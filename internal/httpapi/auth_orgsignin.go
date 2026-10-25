@@ -144,3 +144,23 @@ func (a *authAPI) findOrgs(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"status": "accepted"})
 }
+
+// signInToAnOrg answers 404 to a sign-in that names no organization in a realm that has them: the
+// person signs in to an organization (/_auth/orgs/{org}/…), and only the operators have a door of
+// their own (POST /_auth/login). It returns false when it answered.
+func (a *authAPI) signInToAnOrg(w http.ResponseWriter, r *http.Request) bool {
+	if usersOf(r).Settings.Organizations != nil && chi.URLParam(r, "org") == "" {
+		writeError(w, r, http.StatusNotFound, codeNotFound, "resource not found: in a realm with organizations people sign in to one, at /_auth/orgs/{org}/…")
+		return false
+	}
+	return true
+}
+
+// signInOfOrgs is signInToAnOrg as middleware, for the routes that only make sense for an organization.
+func (a *authAPI) signInOfOrgs(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if a.signInToAnOrg(w, r) {
+			next.ServeHTTP(w, r)
+		}
+	})
+}

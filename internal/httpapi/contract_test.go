@@ -508,7 +508,10 @@ func TestContract(t *testing.T) {
 		t.Errorf("readyz down: %d", rec.Code)
 	}
 
-	// Auth.
+	// Auth: in a realm without organizations, where people sign in at the realm's own routes
+	// (a realm with them signs in to one: the Organizations block below).
+	withOrgs := f.svc.Settings.Organizations
+	f.svc.Settings.Organizations = nil
 	a := authBase
 	req("POST", a+"/signup", `{"email": "new@example.com", "password": "dev-p4ssw0rd!"}`, nil, 201)
 	req("POST", a+"/signup", `{"email": "nope", "password": "dev-p4ssw0rd!"}`, nil, 400)
@@ -748,8 +751,11 @@ func TestContract(t *testing.T) {
 		f.svc.Settings.Providers["unset"] = &registry.Provider{Name: "google", ClientID: "g-client", ClientSecret: "NEVER_SET"}
 		req("GET", o+"/unset/start?redirect_to="+redirect+"&code_challenge="+challenge, "", nil, 503)
 		req("POST", o+"/unset/start", `{"redirect_to": "https://app.acme.example/x", "code_challenge": "`+challenge+`"}`, nil, 503)
-		// An organization's connection: the same flow at the organization's address.
-		made, err := f.svc.AdminCreateOrg(context.Background(), "Connected Inc", "", f.adaID)
+		req("GET", a+"/providers", "", nil, 200)
+		// An organization's connection: the same flow at the organization's address, in a realm with
+		// organizations.
+		f.svc.Settings.Organizations = withOrgs
+		made, err := f.svc.AdminCreateOrg(context.Background(), "Connected Inc", "connected-inc", f.adaID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -757,7 +763,6 @@ func TestContract(t *testing.T) {
 			t.Fatal(err)
 		}
 		oo := a + "/orgs/" + made.Org.ID
-		req("GET", a+"/providers", "", nil, 200)
 		req("GET", oo+"/providers", "", nil, 200)
 		req("GET", a+"/orgs/nope/providers", "", nil, 200)
 		ostart := oo + "/oauth/google/start?redirect_to=" + redirect + "&code_challenge=" + challenge
@@ -809,6 +814,7 @@ func TestContract(t *testing.T) {
 		req("POST", oex, `{"id_token": "bad", "nonce": "n1"}`, nil, 401)
 		req("POST", oo+"/oauth/nope/id-token", orgNative(orgGoogle("g-org-n", "orgnative@acme.example", "acme.example", true)), nil, 404)
 		// Too many starts from one address.
+		f.svc.Settings.Organizations = nil
 		for range 40 {
 			if rec, _ := f.doH(t, "GET", start, "", nil); rec.Code == 429 {
 				break
@@ -816,13 +822,10 @@ func TestContract(t *testing.T) {
 		}
 		req("GET", start, "", nil, 429)
 		req("POST", o+"/google/start", `{"redirect_to": "https://app.acme.example/x", "code_challenge": "`+challenge+`"}`, nil, 429)
-		req("GET", ostart, "", nil, 429)
-		req("POST", oo+"/oauth/google/start", `{"redirect_to": "https://app.acme.example/x", "code_challenge": "`+challenge+`"}`, nil, 429)
 		for range 70 {
 			f.doH(t, "GET", a+"/providers", "", nil)
 		}
 		req("GET", a+"/providers", "", nil, 429)
-		req("GET", oo+"/providers", "", nil, 429)
 		req("POST", a+"/token", `{"code": "x", "code_verifier": "y"}`, nil, 401)
 		for range 31 {
 			f.doH(t, "POST", a+"/token", `{"code": "x", "code_verifier": "y"}`, map[string]string{"Content-Type": "application/json"})
@@ -832,7 +835,13 @@ func TestContract(t *testing.T) {
 			f.doH(t, "POST", ex, `{"id_token": "bad", "nonce": "n1"}`, map[string]string{"Content-Type": "application/json"})
 		}
 		req("POST", ex, `{"id_token": "bad", "nonce": "n1"}`, nil, 429)
+		// The organization's routes share the address's limits.
+		f.svc.Settings.Organizations = withOrgs
+		req("GET", ostart, "", nil, 429)
+		req("POST", oo+"/oauth/google/start", `{"redirect_to": "https://app.acme.example/x", "code_challenge": "`+challenge+`"}`, nil, 429)
+		req("GET", oo+"/providers", "", nil, 429)
 		req("POST", oex, `{"id_token": "bad", "nonce": "n1"}`, nil, 429)
+		f.svc.Settings.Organizations = nil
 	}
 	// A second factor: the login answers with a challenge, which the code turns into a session.
 	{
@@ -1013,6 +1022,8 @@ func TestContract(t *testing.T) {
 	fourth := req("POST", a+"/login", `{"email": "new@example.com", "password": "dev-p4ssw0rd!2"}`, nil, 200)
 	req("DELETE", a+"/me", "", proofOf(fourth["token"].(string), "dev-p4ssw0rd!2"), 204)
 
+	f.svc.Settings.Organizations = withOrgs
+
 	// Admin: every operation refuses callers without a key.
 	ad := admin
 	adminOps := [][3]string{
@@ -1100,6 +1111,10 @@ func TestContract(t *testing.T) {
 	req("GET", ad+"/apikeys", "", ada, 403)
 	req("POST", ad+"/apikeys", `{"name": "contract", "role": "data", "expires_in": "1d", "networks": ["192.0.2.0/24"]}`, key, 201)
 	req("POST", ad+"/apikeys", `{"name": "contract"}`, key, 409)
+	req("POST", ad+"/apikeys", `{"name": "contract-org", "org": "no-such-organization"}`, key, 400)
+	req("POST", ad+"/apikeys", `{"name": "contract-org", "role": "admin", "org": "home-ada"}`, key, 400)
+	req("POST", ad+"/apikeys", `{"name": "contract-org", "org": "home-ada"}`, key, 201)
+	req("DELETE", ad+"/apikeys/contract-org", "", key, 204)
 	req("POST", ad+"/apikeys", `{"name": "x", "role": "root"}`, key, 400)
 	req("POST", ad+"/apikeys", `{"name": "x"}`, nil, 401)
 	req("POST", ad+"/apikeys", `{"name": "x"}`, ada, 403)
@@ -1142,7 +1157,11 @@ func TestContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := f.svc.Login(context.Background(), temp.Email, "dev-p4ssw0rd!", "203.0.113.50"); err != nil {
+	tempOrg, err := f.svc.AdminCreateOrg(context.Background(), "Sessions contract", "sessions-contract", temp.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := f.svc.OpenOrgSession(context.Background(), auth.Principal{User: temp}, tempOrg.Org.ID); err != nil {
 		t.Fatal(err)
 	}
 	sessList := req("GET", ad+"/users/"+temp.ID+"/sessions", "", key, 200)
@@ -1735,7 +1754,7 @@ func TestContract(t *testing.T) {
 			Texts:    map[string]map[string]registry.ConsentText{"1": {"en": {Body: "terms", Hash: strings.Repeat("b", 64)}}},
 		}
 		f.svc.Settings.Consents = withTerms
-		ch := req("POST", "/v1/acme/_auth/login", `{"email": "bob@example.com", "password": "dev-p4ssw0rd!"}`, nil, 200)
+		ch := req("POST", "/v1/acme/_auth/orgs/home-bob/login", `{"email": "bob@example.com", "password": "dev-p4ssw0rd!"}`, nil, 200)
 		if ch["consent_required"] != true {
 			t.Fatalf("login asks no consent: %v", ch)
 		}
@@ -2132,7 +2151,7 @@ func TestContract(t *testing.T) {
 	// is refused while the first has not finished. No worker is running yet, so the first job
 	// stays queued: with a worker it could be done before the second request arrives.
 	{
-		orgID := req("POST", "/v1/acme/_orgs", `{"name": "Early"}`, ada, 201)["id"].(string)
+		orgID := req("POST", "/v1/acme/_orgs", `{"name": "Early", "slug": "early"}`, ada, 201)["id"].(string)
 		const assign = "/v1/acme/_admin/data/app/shared/_assign_org"
 		req("POST", assign, `{"org": "`+orgID+`"}`, key, 202)
 		req("POST", assign, `{"org": "`+orgID+`"}`, key, 409) // one at a time per collection
@@ -2264,10 +2283,14 @@ func TestContract(t *testing.T) {
 	{
 		ctx := context.Background()
 		pw := "dev-p4ssw0rd!"
-		if _, err := f.svc.Create(ctx, "hammer@example.com", &pw); err != nil {
+		hu, err := f.svc.Create(ctx, "hammer@example.com", &pw)
+		if err != nil {
 			t.Fatal(err)
 		}
-		hammer := with(map[string]string{"Authorization": "Bearer " + req("POST", a+"/login", `{"email": "hammer@example.com", "password": "dev-p4ssw0rd!"}`, nil, 200)["token"].(string)}, "Content-Type", "application/json")
+		if _, err := f.svc.AdminCreateOrg(ctx, "Hammer", "hammer-co", hu.ID); err != nil {
+			t.Fatal(err)
+		}
+		hammer := with(map[string]string{"Authorization": "Bearer " + req("POST", a+"/orgs/hammer-co/login", `{"email": "hammer@example.com", "password": "dev-p4ssw0rd!"}`, nil, 200)["token"].(string)}, "Content-Type", "application/json")
 		for range 12 {
 			if rec, _ := f.doH(t, "POST", a+"/reauth", `{"method": "password", "password": "wrong-wrong-wrong"}`, hammer); rec.Code == 429 {
 				break
@@ -2279,7 +2302,11 @@ func TestContract(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		out, err := f.svc.StartProviderSession(ctx, u, "google", false, nil)
+		uo, err := f.svc.AdminCreateOrg(ctx, "Providers only", "providers-only", u.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := f.svc.StartProviderSessionIn(ctx, u, "google", false, nil, uo.Org.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -2300,6 +2327,7 @@ func TestContract(t *testing.T) {
 	// Magic links: a request, the page its link opens, the button, the code typed in the app.
 	{
 		ctx := context.Background()
+		f.svc.Settings.Organizations = nil
 		f.svc.Settings.MagicLink = registry.MagicLinkSettings{Enabled: true, Signup: true}
 		f.svc.Settings.SignInAppURL = "https://app.acme.example/signed-in"
 		if f.svc.Cipher == nil {
@@ -2396,6 +2424,7 @@ func TestContract(t *testing.T) {
 			f.doH(t, "POST", verify, body("nope", "000000", verifier), map[string]string{"Content-Type": "application/json"})
 		}
 		req("POST", verify, body("nope", "000000", verifier), nil, 429)
+		f.svc.Settings.Organizations = withOrgs
 	}
 
 	// Devices for push notifications: nothing without a push: section, then a registry.
@@ -2454,7 +2483,7 @@ func TestContract(t *testing.T) {
 		}
 		req("POST", dev, `{"platform": "android", "token": "contract-token-2"}`, ada, 429)
 		// A device of the temporary user, removed by an administrator.
-		tmp, _, err := f.svc.Login(context.Background(), temp.Email, "dev-p4ssw0rd!", "203.0.113.51")
+		tmp, _, err := f.svc.OpenOrgSession(context.Background(), auth.Principal{User: temp}, tempOrg.Org.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -2505,19 +2534,19 @@ func TestContract(t *testing.T) {
 	// Organizations.
 	{
 		orgs, adm := "/v1/acme/_orgs", "/v1/acme/_admin/orgs"
+		// (Everybody's own team counts against the limit of teams one person creates.)
+		f.svc.Settings.Organizations.MaxCreatedPerUser = 50
 		bob := bearer(f.bob)
 		withJSON := func(h map[string]string) map[string]string { return with(h, "Content-Type", "application/json") }
-		req("POST", orgs, `{"name": "Contract Inc"}`, nil, 401)
-		req("POST", orgs, `{"name": "Contract Inc"}`, carl, 403)
+		req("POST", orgs, `{"name": "Contract Inc", "slug": "contract-inc"}`, nil, 401)
+		req("POST", orgs, `{"name": "Contract Inc", "slug": "contract-inc"}`, carl, 403)
 		req("POST", orgs, `{}`, ada, 400)
 		req("POST", "/v1/nope/_orgs", `{"name": "x"}`, ada, 404)
 		created := req("POST", orgs, `{"name": "Contract Inc", "slug": "contract-inc"}`, ada, 201)
 		id := created["id"].(string)
 		req("POST", orgs, `{"name": "Dup", "slug": "contract-inc"}`, bob, 409)
 		other := req("POST", orgs, `{"name": "Bob's", "slug": "bobs-org"}`, bob, 201)
-		req("GET", orgs, "", nil, 401)
-		req("GET", orgs, "", ada, 200)
-		req("GET", "/v1/nope/_orgs", "", ada, 404)
+		req("GET", "/v1/nope/_orgs/"+id, "", ada, 404)
 		req("GET", orgs+"/"+id, "", nil, 401)
 		req("GET", orgs+"/"+id, "", bob, 403)
 		req("GET", orgs+"/"+id, "", ada, 200)
@@ -2558,12 +2587,12 @@ func TestContract(t *testing.T) {
 		req("GET", adm+"?status=active", "", key, 200)
 		req("GET", adm+"?q=ac", "", key, 200)
 		req("GET", "/v1/nope/_admin/orgs", "", key, 404)
-		req("POST", adm, `{"name": "Staff made", "owner": "`+f.bobID+`"}`, nil, 401)
-		req("POST", adm, `{"name": "Staff made", "owner": "`+f.bobID+`"}`, ada, 403)
+		req("POST", adm, `{"name": "Staff made", "slug": "staff-made", "owner": "`+f.bobID+`"}`, nil, 401)
+		req("POST", adm, `{"name": "Staff made", "slug": "staff-made", "owner": "`+f.bobID+`"}`, ada, 403)
 		req("POST", adm, `{"name": "Staff made"}`, key, 400)
-		req("POST", adm, `{"name": "Staff made", "owner": "nosuchuser"}`, key, 404)
+		req("POST", adm, `{"name": "Staff made", "slug": "staff-made", "owner": "nosuchuser"}`, key, 404)
 		req("POST", adm, `{"name": "Staff made", "slug": "bobs-org", "owner": "`+f.bobID+`"}`, key, 409)
-		made := req("POST", adm, `{"name": "Staff made", "owner": "`+f.bobID+`"}`, key, 201)
+		made := req("POST", adm, `{"name": "Staff made", "slug": "staff-made", "owner": "`+f.bobID+`"}`, key, 201)
 		madeID := made["id"].(string)
 		req("GET", adm+"/"+id, "", nil, 401)
 		req("GET", adm+"/"+id, "", ada, 403)
@@ -2578,6 +2607,12 @@ func TestContract(t *testing.T) {
 		req("PUT", adm+"/nosuch/claims", `{"plan": "pro"}`, key, 404)
 		req("PUT", adm+"/"+id+"/claims", `{"x": "`+strings.Repeat("a", 1100)+`"}`, key, 400)
 		req("PUT", adm+"/"+id+"/claims", `{"plan": "pro"}`, key, 200)
+		req("PUT", adm+"/"+madeID+"/slug", `{"slug": "staff-made-2"}`, nil, 401)
+		req("PUT", adm+"/"+madeID+"/slug", `{"slug": "staff-made-2"}`, ada, 403)
+		req("PUT", adm+"/nosuch/slug", `{"slug": "staff-made-2"}`, key, 404)
+		req("PUT", adm+"/"+madeID+"/slug", `{"slug": ""}`, key, 400)
+		req("PUT", adm+"/"+madeID+"/slug", `{"slug": "bobs-org"}`, key, 409)
+		req("PUT", adm+"/"+madeID+"/slug", `{"slug": "staff-made-2"}`, key, 200)
 		mem := adm + "/" + madeID + "/members/" + f.bobID
 		req("PATCH", mem, `{"roles": ["editor"]}`, withJSON(nil), 401)
 		req("PATCH", mem, `{"roles": ["editor"]}`, withJSON(ada), 403)
@@ -2595,7 +2630,7 @@ func TestContract(t *testing.T) {
 		req("POST", adm+"/"+madeID+"/owner", `{"user": "nosuchuser"}`, key, 404)
 		// A user at the limit of memberships can't be added to another organization.
 		// Deleting an organization.
-		doomed := req("POST", adm, `{"name": "Doomed", "owner": "`+f.adaID+`"}`, key, 201)["id"].(string)
+		doomed := req("POST", adm, `{"name": "Doomed", "slug": "doomed", "owner": "`+f.adaID+`"}`, key, 201)["id"].(string)
 		req("GET", adm+"/"+doomed+"/owned", "", nil, 401)
 		req("GET", adm+"/"+doomed+"/owned", "", ada, 403)
 		req("GET", adm+"/nosuch/owned", "", key, 404)
@@ -2608,7 +2643,7 @@ func TestContract(t *testing.T) {
 		req("DELETE", adm+"/"+doomed, "", ada, 403)
 		req("DELETE", adm+"/nosuch", "", key, 404)
 		req("DELETE", adm+"/"+doomed, "", key, 409) // deleted already
-		adminGone := req("POST", adm, `{"name": "Admin deleted", "owner": "`+f.adaID+`"}`, key, 201)["id"].(string)
+		adminGone := req("POST", adm, `{"name": "Admin deleted", "slug": "admin-deleted", "owner": "`+f.adaID+`"}`, key, 201)["id"].(string)
 		req("DELETE", adm+"/"+adminGone, "", key, 204)
 		req("POST", adm+"/"+doomed+"/reactivate", `{}`, nil, 401)
 		req("POST", adm+"/"+doomed+"/reactivate", `{}`, ada, 403)
@@ -2627,7 +2662,7 @@ func TestContract(t *testing.T) {
 		req("POST", dataRoute+"/nosuch/_transfer", `{"org": "`+to+`"}`, key, 404)
 		req("POST", tr, `{"org": "nosuch"}`, key, 404)
 		req("POST", tr, `{"org": "`+to+`"}`, with(key, "If-Match", `"99"`), 412)
-		gone := req("POST", adm, `{"name": "Gone", "owner": "`+f.adaID+`"}`, key, 201)["id"].(string)
+		gone := req("POST", adm, `{"name": "Gone", "slug": "gone", "owner": "`+f.adaID+`"}`, key, 201)["id"].(string)
 		req("DELETE", adm+"/"+gone, "", key, 204)
 		req("POST", tr, `{"org": "`+gone+`"}`, key, 409)
 		req("POST", tr, `{"org": "`+to+`"}`, key, 200)
@@ -2880,23 +2915,12 @@ func TestContract(t *testing.T) {
 		req("POST", inv, `{"binding": "email", "email": "inv@example.com", "send": true}`, ada, 409)
 		f.svc.Settings.Email = withEmail
 		invited := req("POST", inv, `{"binding": "none", "roles": ["editor"], "max_uses": 3}`, ada, 201)
-		invID, invTok := invited["id"].(string), invited["token"].(string)
+		invID := invited["id"].(string)
 		req("GET", inv, "", nil, 401)
 		req("GET", inv, "", bob, 403)
 		req("GET", inv, "", ada, 200)
-		req("POST", orgs+"/invitations/preview", `{"token": "`+invTok+`"}`, nil, 401)
-		req("POST", orgs+"/invitations/preview", `{"token": "nope"}`, ada, 400)
 		boundTo := req("POST", inv, `{"binding": "user", "user": "`+f.bobID+`"}`, ada, 201)
-		req("POST", orgs+"/invitations/preview", `{"token": "`+boundTo["token"].(string)+`"}`, carl, 403)
-		req("POST", orgs+"/invitations/preview", `{"token": "`+invTok+`"}`, bob, 200)
-		req("POST", orgs+"/invitations/accept", `{"token": "`+invTok+`"}`, nil, 401)
-		req("POST", orgs+"/invitations/accept", `{"token": "nope"}`, bob, 400)
-		req("POST", orgs+"/invitations/accept", `{"token": "`+boundTo["token"].(string)+`"}`, carl, 403)
-		limitOne := f.svc.Settings.Organizations
-		limitOne.MaxMembershipsPerUser = 1
-		req("POST", orgs+"/invitations/accept", `{"token": "`+invTok+`"}`, bob, 409)
-		limitOne.MaxMembershipsPerUser = registry.DefaultMaxMembershipsPerUser
-		req("POST", orgs+"/invitations/accept", `{"token": "`+invTok+`"}`, bob, 200)
+		_ = boundTo
 		req("POST", inv+"/"+invID+"/link", "", nil, 401)
 		req("POST", inv+"/"+invID+"/link", "", bob, 403)
 		req("POST", inv+"/nosuch/link", "", ada, 404)
@@ -3011,7 +3035,7 @@ func TestContract(t *testing.T) {
 	{
 		orgs, adm := "/v1/acme/_orgs", "/v1/acme/_admin/orgs"
 		const google = `{"client_id": "123-abc.apps.googleusercontent.com", "client_secret": "contract-secret", "hosted_domain": "acme.example", "join_roles": ["editor"]}`
-		made, err := f.svc.AdminCreateOrg(context.Background(), "Sign-in Inc", "", f.adaID)
+		made, err := f.svc.AdminCreateOrg(context.Background(), "Sign-in Inc", "sign-in-inc", f.adaID)
 		if err != nil {
 			t.Fatal(err)
 		}

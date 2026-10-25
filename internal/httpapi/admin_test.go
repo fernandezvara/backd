@@ -71,6 +71,7 @@ func TestAdminAccess(t *testing.T) {
 
 func TestAdminUsers(t *testing.T) {
 	f := newRulesFixture(t)
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	key := func(extra ...string) map[string]string {
 		h := map[string]string{"Authorization": "Bearer " + f.key}
 		if len(extra) > 0 {
@@ -224,6 +225,7 @@ func TestAdminUsers(t *testing.T) {
 
 func TestInvitationsOverHTTP(t *testing.T) {
 	f := newRulesFixture(t)
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	f.svc.Settings.Signup = "invite"
 	keyJSON := map[string]string{"Authorization": "Bearer " + f.key, "Content-Type": "application/json"}
 
@@ -282,6 +284,7 @@ func TestInvitationsOverHTTP(t *testing.T) {
 
 func TestAdminAPIKeysAndNetworks(t *testing.T) {
 	f := newRulesFixture(t)
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	h := map[string]string{"Authorization": "Bearer " + f.key, "Content-Type": "application/json"}
 	rec, out := f.doH(t, "POST", admin+"/apikeys", `{"name": "billing", "networks": ["192.0.2.0/24", "2001:db8::1"], "expires_in": "30d"}`, h)
 	key, _ := out["key"].(string)

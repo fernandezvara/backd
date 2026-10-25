@@ -187,7 +187,8 @@ export function connectionBody(input) {
 /**
  * Organizations of the signed-in user: `client.orgs`. Members, teams and invitations hang off
  * one organization: `client.orgs.members(id)`, `client.orgs.teams(id)`, `client.orgs.invitations(id)`.
- * Documents in an organization are created and listed with `collection.inOrg(id)`.
+ * A session works in the one organization it was opened for, so its documents need no organization
+ * named; teams of it are reached with `collection.inTeam(id)`.
  */
 export class Orgs {
   /** @param {Client} client */
@@ -195,33 +196,12 @@ export class Orgs {
     /** @internal */
     this.client = client
     /**
-     * Invitations of an organization: `client.orgs.invitations(id).create(...)`. The function
-     * also holds `preview(token)` and `accept(token)` for the person who got a link.
+     * Invitations of an organization: `client.orgs.invitations(id).create(...)`. The person who got
+     * a link previews it with `client.auth.previewInvitation(token, { org })` and takes it by signing
+     * in to the organization with it.
+     * @param {string} org
      */
-    this.invitations = Object.assign(
-      /** @param {string} org */
-      (org) => new OrgInvitations(this.client, org),
-      {
-        /**
-         * What a token offers (the organization, roles and teams), without taking it: "Join Acme as
-         * editor?". Needs a session. An unknown, expired, revoked or used-up token is
-         * `invalid_invitation`; a token bound to someone else is `invitation_not_for_you`.
-         * @param {string} token
-         * @param {RequestOptions} [opts]
-         * @returns {Promise<{ org: { id: string, name: string }, roles: string[], teams: Array<{ id: string, name: string }>, binding: string, expires_at: string }>}
-         */
-        preview: async (token, opts) =>
-          (await this.client.request({ method: 'POST', path: ['_orgs', 'invitations', 'preview'], body: { token }, ...opts })).data,
-        /**
-         * Takes an invitation: the user becomes a member, or gains its roles and teams.
-         * @param {string} token
-         * @param {RequestOptions} [opts]
-         * @returns {Promise<Org>}
-         */
-        accept: async (token, opts) =>
-          (await this.client.request({ method: 'POST', path: ['_orgs', 'invitations', 'accept'], body: { token }, ...opts })).data,
-      },
-    )
+    this.invitations = (org) => new OrgInvitations(this.client, org)
   }
 
   /**
@@ -264,16 +244,6 @@ export class Orgs {
   }
 
   /**
-   * The organizations the user belongs to, with their roles there and whether this session
-   * meets each one's second-factor requirement (`mfa_met`).
-   * @param {RequestOptions} [opts]
-   * @returns {Promise<Org[]>}
-   */
-  async list(opts) {
-    return (await this.client.request({ method: 'GET', path: ['_orgs'], ...opts })).data.items
-  }
-
-  /**
    * One organization. `ForbiddenError` (`not_org_member`) for a non-member and an unknown
    * organization alike.
    * @param {string} id
@@ -285,15 +255,16 @@ export class Orgs {
   }
 
   /**
-   * Renames an organization, changes its slug, or sets `require_mfa` (which asks for a fresh proof
-   * of identity: see `client.auth.withProof`).
+   * Renames an organization, changes its slug, sets `require_mfa` or shortens the lifetime of its
+   * sessions with `session_max_age` (seconds, at least 3600; `0` goes back to the realm's). The last
+   * two ask for a fresh proof of identity: see `client.auth.withProof`.
    * @param {string} id
-   * @param {{ name?: string, slug?: string, require_mfa?: boolean }} patch
+   * @param {{ name?: string, slug?: string, require_mfa?: boolean, session_max_age?: number }} patch
    * @param {RequestOptions} [opts]
    * @returns {Promise<Org>}
    */
   async update(id, patch, opts) {
-    return (await this.client.request({ method: 'PATCH', path: ['_orgs', id], body: patch, reauth: patch.require_mfa !== undefined, ...opts })).data
+    return (await this.client.request({ method: 'PATCH', path: ['_orgs', id], body: patch, reauth: patch.require_mfa !== undefined || patch.session_max_age !== undefined, ...opts })).data
   }
 
   /**

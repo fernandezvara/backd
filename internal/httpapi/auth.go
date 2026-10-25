@@ -45,7 +45,7 @@ func (a *authAPI) routes(r chi.Router) {
 	r.Route("/v1/{realm}/_auth", func(r chi.Router) {
 		r.Use(noStore, a.resolveRealm, withTimeout(a.opTimeout))
 		json := requireContentType("application/json")
-		r.With(json).Post("/signup", a.signup)
+		r.With(json, a.signInOfOrgs).Post("/signup", a.signup)
 		// The public key a browser subscribes with: no session, cacheable.
 		r.Get("/devices/web-key", a.webKey)
 		r.With(json).Post("/login", a.login)
@@ -629,6 +629,11 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 		writeError(w, r, http.StatusForbidden, codeEmailNotVerified, err.Error())
 	case errors.Is(err, auth.ErrUnauthenticated):
 		unauthenticated(w, r, true, err.Error())
+	case errors.Is(err, auth.ErrSessionUnscoped):
+		// The session is good but has no organization (it is from before sessions were scoped): the
+		// person signs in again, to one.
+		w.Header().Set("WWW-Authenticate", `Bearer realm="`+chi.URLParam(r, "realm")+`", error="invalid_token"`)
+		writeError(w, r, http.StatusUnauthorized, codeSessionUnscoped, err.Error())
 	case errors.Is(err, auth.ErrEmailTaken):
 		writeError(w, r, http.StatusConflict, codeEmailTaken, err.Error(), Detail{Path: "email", Reason: "is already registered"})
 	case errors.Is(err, auth.ErrSignupClosed), errors.Is(err, auth.ErrInvitationRequired), errors.Is(err, auth.ErrInvalidInvitation):
@@ -692,5 +697,9 @@ func (a *authAPI) sessionOrgJSON(r *http.Request, userID, org string) map[string
 		out["slug"] = m.Org.Slug
 	}
 	out["roles"], out["teams"] = nonNil(m.RoleNames()), nonNil(m.Member.Teams)
+	// Whether the organization asks for a second factor and this session has one: the app uses it
+	// to ask for the factor.
+	out["require_mfa"] = m.Org.RequireMFA
+	out["mfa_met"] = !m.Org.RequireMFA || principalOf(r).Session.MFA
 	return out
 }

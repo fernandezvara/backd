@@ -79,7 +79,7 @@ The sign-in form has a **Team** field, and a person who starts one gives its nam
 const team = await backd.orgs.create({ name: 'Docs', slug: 'docs' })   // the caller is the owner, and has a session in it
 const docs = backd.org('docs')                                         // the client of that session
 await docs.db('main').fn('pin', { org: team.id, title: 'Handbook', url })   // the plan decides
-const { items } = await pins.inOrg(team.id).list()                     // ?org= is a filter
+const { items } = await docs.db('main').collection('pins').list()      // the session's team is the filter
 ```
 
 An invitation answers its link **once**, as a link to copy, and can also be emailed:

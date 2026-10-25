@@ -255,7 +255,7 @@ final class InvalidIdError extends ValidationError {
 }
 
 /// 403 `org_requires_mfa`: the organization requires a second factor and this
-/// session used none. Ask for one (see `mfa_met` of `client.orgs.list()`);
+/// session used none. Ask for one (see `mfa_met` of the organization in `client.auth.me()`);
 /// leaving the organization still works.
 final class OrgRequiresMFAError extends ForbiddenError {
   const OrgRequiresMFAError({

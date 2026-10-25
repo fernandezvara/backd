@@ -1056,7 +1056,7 @@
     "create": {
       "open": "Create organization",
       "title": "Create organization",
-      "slugHelp": "Optional: lowercase letters, digits and dashes.",
+      "slugHelp": "How people name the organization when they sign in: lowercase letters, digits and dashes.",
       "owner": "Owner's email",
       "ownerHelp": "A user of the realm; they hold the realm's creator roles.",
       "done": "Organization {name} created."

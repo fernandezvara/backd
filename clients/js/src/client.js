@@ -337,7 +337,7 @@ export class Client {
     }
     if (res.ok) return res
     const err = await errorFromResponse(res)
-    if (err.code === 'unauthenticated' && sentSession) await this.auth._expired()
+    if (isSessionGone(err) && sentSession) await this.auth._expired()
     throw err
   }
 
@@ -442,7 +442,7 @@ export class Client {
         return { status: res.status, headers: res.headers, data: text ? JSON.parse(text) : undefined }
       }
       const err = await errorFromResponse(res)
-      if (err.code === 'unauthenticated' && sentSession && req.expire !== false) {
+      if (isSessionGone(err) && sentSession && req.expire !== false) {
         await this.auth._expired()
       }
       if (err instanceof RetryableError && attempt < attempts) {
@@ -483,4 +483,14 @@ function sleep(ms, signal) {
       { once: true },
     )
   })
+}
+
+/**
+ * Whether the server no longer accepts the session: it expired or was ended (`unauthenticated`), or
+ * it belongs to no organization in a realm that has them (`session_unscoped`, a session from before
+ * sessions were scoped). Either way the person signs in again.
+ * @param {{ code?: string }} err
+ */
+function isSessionGone(err) {
+  return err.code === 'unauthenticated' || err.code === 'session_unscoped'
 }

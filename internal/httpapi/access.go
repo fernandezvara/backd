@@ -459,7 +459,7 @@ func (d *documents) userOrgs(r *http.Request, realm string, caller auth.Caller) 
 		return map[string]*rules.UserOrg{}
 	}
 	mfa, _ := caller.SignInMethods()
-	orgs, err := svc.RuleOrgs(r.Context(), caller.User.User.ID, mfa)
+	orgs, err := svc.RuleOrgs(r.Context(), caller.User.User.ID, mfa, caller.User.Session.Org)
 	if err != nil {
 		logger(r.Context()).Error("memberships unreadable for a rule", "realm", realm, "error", err)
 		return map[string]*rules.UserOrg{}

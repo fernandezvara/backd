@@ -20,6 +20,7 @@ func sessionCookie(rec *httptest.ResponseRecorder) *http.Cookie {
 
 func TestSessionCookies(t *testing.T) {
 	f := newRulesFixture(t)
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	post := func(path, body string, hdr map[string]string) (*httptest.ResponseRecorder, map[string]any) {
 		t.Helper()
 		h := map[string]string{"Content-Type": "application/json"}
@@ -135,6 +136,7 @@ func TestSessionCookies(t *testing.T) {
 // Sign-up can ask for a cookie too, and a realm that doesn't use them refuses.
 func TestSignupCookieAndRealmsWithoutCookies(t *testing.T) {
 	f := newRulesFixture(t)
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	rec, out := f.doH(t, "POST", "/v1/acme/_auth/signup", `{"email": "new@example.com", "password": "dev-p4ssw0rd!x", "cookie": true}`,
 		map[string]string{"Content-Type": "application/json", "Origin": appOrigin})
 	if c := sessionCookie(rec); rec.Code != http.StatusCreated && rec.Code != http.StatusAccepted || (rec.Code == http.StatusCreated && (c == nil || out["token"] != nil)) {

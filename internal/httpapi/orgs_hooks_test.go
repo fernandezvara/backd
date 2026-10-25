@@ -51,7 +51,7 @@ func TestMembershipHooks(t *testing.T) {
 	if rec.Code != 201 {
 		t.Fatalf("invite: %d %v", rec.Code, out)
 	}
-	if rec, out := f.doH(t, "POST", orgsPath+"/invitations/accept", fmt.Sprintf(`{"token": %q}`, out["token"]), jsonHdr(f.bob)); rec.Code != 200 {
+	if rec, out := f.acceptInvite(t, org, f.bob, out["token"].(string)); rec.Code != 200 {
 		t.Fatalf("accept: %d %v", rec.Code, out)
 	}
 	joined = hookEvents(t, f, auth.OrgMemberJoinedOrigin)
@@ -123,7 +123,15 @@ func TestMembershipHooks(t *testing.T) {
 	if _, err := f.svc.Erase(ctx, f.bobID, "req"); err != nil {
 		t.Fatal(err)
 	}
-	if left = hookEvents(t, f, auth.OrgMemberLeftOrigin); len(left) != 3 || left[2]["reason"] != "erased" {
+	// Bob's own team goes with him too: two departures, one of them from this organization.
+	left = hookEvents(t, f, auth.OrgMemberLeftOrigin)
+	var erased int
+	for _, e := range left[2:] {
+		if e["reason"] == "erased" && e["org"] == org {
+			erased++
+		}
+	}
+	if len(left) != 4 || erased != 1 {
 		t.Fatalf("erased: %v", left)
 	}
 	// Without the hooks nothing is queued.

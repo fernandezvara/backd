@@ -30,6 +30,10 @@ var (
 	// ErrUnauthenticated means the token is unknown, expired, revoked or
 	// belongs to a disabled user.
 	ErrUnauthenticated = errors.New("invalid or expired token")
+	// ErrSessionUnscoped: in a realm with organizations every session belongs to one, and this one
+	// does not (it was opened before the realm had them, or by another way): the person signs in
+	// again, to an organization. Operators, who run the realm and belong to none, are the exception.
+	ErrSessionUnscoped = errors.New("this session belongs to no organization: sign in to one")
 	// ErrSignupClosed means the realm doesn't allow self sign-up.
 	ErrSignupClosed = errors.New("sign-up is not open in this realm")
 	// ErrEmailNotVerified answers a login with the right password for an
@@ -47,6 +51,9 @@ type Session struct {
 	CreatedAt  time.Time
 	LastUsedAt time.Time
 	ExpiresAt  time.Time
+	// MaxLifetime is the organization's own limit on the lifetime of its sessions, fixed when the
+	// session opened (0: the realm's).
+	MaxLifetime time.Duration
 	// Methods are how the session was created: the first factor, plus "totp" or "recovery"
 	// when a second factor was used; MFA says it was. Empty for sessions from before
 	// they were recorded.
@@ -83,7 +90,7 @@ func HashToken(token string) string {
 // last use, but never later than its maximum lifetime. Users who hold an
 // admin role have their own (shorter) limits, judged by the roles they hold
 // now: a promotion shortens their sessions from the next request on.
-func (s *Users) expiry(u User, created, lastUsed time.Time) time.Time {
+func (s *Users) expiry(u User, created, lastUsed time.Time, orgMax time.Duration) time.Time {
 	idleTimeout, maxLifetime := s.Settings.IdleTimeout, s.Settings.MaxLifetime
 	if s.Settings.IsAdmin(u.Roles) {
 		if d := s.Settings.AdminIdleTimeout; d > 0 {
@@ -92,6 +99,9 @@ func (s *Users) expiry(u User, created, lastUsed time.Time) time.Time {
 		if d := s.Settings.AdminMaxLifetime; d > 0 {
 			maxLifetime = d
 		}
+	}
+	if orgMax > 0 && orgMax < maxLifetime {
+		maxLifetime = orgMax
 	}
 	idle := lastUsed.Add(idleTimeout)
 	if max := created.Add(maxLifetime); max.Before(idle) {
@@ -102,12 +112,15 @@ func (s *Users) expiry(u User, created, lastUsed time.Time) time.Time {
 
 // MaxSessionExpiry is the latest a session started at created can last for
 // this user: the absolute limit, whatever the idle timeout slides to.
-func (s *Users) MaxSessionExpiry(u User, created time.Time) time.Time {
+func (s *Users) MaxSessionExpiry(u User, sess Session) time.Time {
 	maxLifetime := s.Settings.MaxLifetime
 	if d := s.Settings.AdminMaxLifetime; d > 0 && s.Settings.IsAdmin(u.Roles) {
 		maxLifetime = d
 	}
-	return created.Add(maxLifetime)
+	if d := sess.MaxLifetime; d > 0 && d < maxLifetime {
+		maxLifetime = d
+	}
+	return sess.CreatedAt.Add(maxLifetime)
 }
 
 // Signup creates a user with a password and signs them in. Realms with
@@ -171,9 +184,22 @@ func (s *Users) Login(ctx context.Context, email, password, ip string) (Principa
 }
 
 // SignIn is Login for callers that can answer a second step: the outcome is a session,
-// or a challenge the user trades for one with VerifyMFA.
+// or a challenge the user trades for one with VerifyMFA. In a realm with organizations it is the
+// operators' door alone.
 func (s *Users) SignIn(ctx context.Context, email, password, ip string) (Redeemed, error) {
-	return s.signIn(ctx, email, password, ip, signInHooks{})
+	var hooks signInHooks
+	if s.Settings.Organizations != nil {
+		// A realm with organizations has one more door than organizations: the realm's own, for the
+		// people who run it. Anyone else signs in to an organization (SignInToOrg), and is refused
+		// here like a wrong password (design/scoped-sessions.md §5.5).
+		hooks.Gate = func(u User) error {
+			if !s.Settings.IsAdmin(u.Roles) {
+				return ErrInvalidCredentials
+			}
+			return nil
+		}
+	}
+	return s.signIn(ctx, email, password, ip, hooks)
 }
 
 // signInHooks lets a sign-in add to the password's: Gate runs inside the throttled check as soon
@@ -289,7 +315,13 @@ func (s *Users) startSessionWith(ctx context.Context, u User, methods []string, 
 	}
 	now := s.now()
 	sess := Session{ID: xid.New().String(), UserID: u.ID, TokenHash: HashToken(token), CreatedAt: now, LastUsedAt: now, Methods: methods, MFA: mfa, Org: org}
-	sess.ExpiresAt = s.expiry(u, now, now)
+	if org != "" {
+		// The organization may shorten the lifetime; it is fixed now and never extended.
+		if o, err := s.Store.OrgByID(ctx, org); err == nil {
+			sess.MaxLifetime = o.SessionMaxAge
+		}
+	}
+	sess.ExpiresAt = s.expiry(u, now, now, sess.MaxLifetime)
 	if err := s.Store.CreateSession(ctx, sess); err != nil {
 		return Principal{}, "", err
 	}
@@ -329,12 +361,15 @@ func (s *Users) AuthenticateIgnoringConsents(ctx context.Context, token string) 
 	now := s.now()
 	// The stored expiry was set at the last write; the user's roles may have
 	// changed since, so the limits are applied again.
-	if !now.Before(sess.ExpiresAt) || !now.Before(s.expiry(u, sess.CreatedAt, sess.LastUsedAt)) || u.Disabled {
+	if !now.Before(sess.ExpiresAt) || !now.Before(s.expiry(u, sess.CreatedAt, sess.LastUsedAt, sess.MaxLifetime)) || u.Disabled {
 		return Principal{}, ErrUnauthenticated
+	}
+	if s.Settings.Organizations != nil && sess.Org == "" && !s.Settings.IsAdmin(u.Roles) {
+		return Principal{}, ErrSessionUnscoped
 	}
 	if now.Sub(sess.LastUsedAt) >= touchInterval {
 		sess.LastUsedAt = now
-		sess.ExpiresAt = s.expiry(u, sess.CreatedAt, now)
+		sess.ExpiresAt = s.expiry(u, sess.CreatedAt, now, sess.MaxLifetime)
 		if err := s.Store.TouchSession(ctx, sess.ID, sess.LastUsedAt, sess.ExpiresAt); err != nil {
 			return Principal{}, err
 		}

@@ -571,8 +571,8 @@ live.on('status', (s) => showBanner(s))             // 'connecting' | 'live' | '
 await live.ready                                    // the first load
 live.close()
 
-// The same, from a collection (an organization or team scope becomes a `where` on `_meta.org`/`_meta.team`):
-const mine = client.db('main').collection('items').inOrg(orgId).subscribe({ load: { sort: '-_meta.created_at' } })
+// The same, from a collection (a team scope becomes a `where` on `_meta.team`):
+const mine = client.db('main').collection('items').inTeam(teamId).subscribe({ load: { sort: '-_meta.created_at' } })
 ```
 
 What the client does for you:
@@ -759,8 +759,8 @@ await backd.auth.logout()                     // also clears the cookie
 `backd.orgs` is the [organizations API](../../organizations/api/): the groups of users a person belongs to, with their members, teams and invitations.
 
 ```js
-const org = await backd.orgs.create({ name: 'Acme Corp', slug: 'acme' })
-const mine = await backd.orgs.list()                // each with roles, require_mfa and mfa_met
+const org = await backd.orgs.create({ name: 'Acme Corp', slug: 'acme' })   // also opens a session scoped to it, kept by the client
+const mine = await backd.orgs.signedIn()              // [{ ref, id, name, expiresAt }]: the organizations this client holds a session in
 
 await backd.orgs.members(org.id).list()
 await backd.orgs.members(org.id).update(userId, ['editor'])   // direct roles
@@ -776,27 +776,25 @@ const inv = await backd.orgs.invitations(org.id).create({ binding: 'email', emai
 inv.link   // https://app.acme.example/join?token=…
 const again = await backd.orgs.invitations(org.id).newLink(inv.id)   // a new token and link for a pending one; the old link stops working
 
-// The person who got the link:
-const offer = await backd.orgs.invitations.preview(token)   // { org, roles, teams }
-await backd.orgs.invitations.accept(token)
+// The person who got the link previews it, then signs in to the organization with it:
+const offer = await backd.auth.previewInvitation(token, { org: 'acme' })   // { org, roles, teams }
+await backd.org('acme').auth.login({ email, password, invitation: token })
 ```
 
-The rest of the surface, by object: `orgs` has `create`, `list`, `get`, `update`, `leave` (allowed without a second factor; the last manager cannot) and `delete`; `members(id)` has `list`, `update` and `remove`; `teams(id)` has `list`, `create`, `update`, `delete`, `members`, `addMember`, `removeMember`, `grantRole`, `setRoleWindow` and `revokeRole`; `invitations(id)` has `create`, `list`, `revoke`, `send` and `newLink`; `templates(id)` has `list`, `get`, `put`, `delete`, `preview` and `test`; `sso(id)` has `list`, `get`, `set` and `delete` (the organization's [sign-in connections](#through-an-organizations-own-google-or-microsoft)). Each maps to a route of the [organizations API](../../organizations/api/).
+The rest of the surface, by object: `orgs` has `create`, `signedIn`, `get`, `update` (`name`, `slug`, `require_mfa` and `session_max_age`), `leave` (allowed without a second factor; the last manager cannot) and `delete`; `members(id)` has `list`, `update` and `remove`; `teams(id)` has `list`, `create`, `update`, `delete`, `members`, `addMember`, `removeMember`, `grantRole`, `setRoleWindow` and `revokeRole`; `invitations(id)` has `create`, `list`, `revoke`, `send` and `newLink`; `templates(id)` has `list`, `get`, `put`, `delete`, `preview` and `test`; `sso(id)` has `list`, `get`, `set` and `delete` (the organization's [sign-in connections](#through-an-organizations-own-google-or-microsoft)). Each maps to a route of the [organizations API](../../organizations/api/).
 
-**Documents belong to an organization** when their collection says so: `inOrg(id)` scopes a collection, so creates go there and lists show only that organization's documents (the read rule still decides what is seen).
+**Documents belong to an organization** when their collection says so: the one the session was opened for. There is nothing to name: creates go there and lists show only that organization's documents (the read rule still decides what is seen). To work in another organization use its client, `backd.org('beta')`.
 
 ```js
-const projects = backd.db('main').collection('projects').inOrg(org.id)
+const projects = backd.org('acme').db('main').collection('projects')
 await projects.create({ title: 'Plan' })
 const { items } = await projects.list({ where: { status: 'open' } })
 ```
 
-`org` in the options of `create` and `batch` does the same for one call.
-
-In a collection with [teams](../../organizations/team-roles/#documents-that-belong-to-a-team), `inTeam(id)` narrows a collection of an organization further: creates go to that team (the caller must belong to it or hold a team role in it, or the create throws `NotTeamMemberError`) and lists show only its documents.
+In a collection with [teams](../../organizations/team-roles/#documents-that-belong-to-a-team), `inTeam(id)` narrows a collection of the organization further: creates go to that team (the caller must belong to it or hold a team role in it, or the create throws `NotTeamMemberError`) and lists show only its documents.
 
 ```js
-const requests = backd.db('main').collection('requests').inOrg(org.id).inTeam(sales.id)
+const requests = backd.db('main').collection('requests').inTeam(sales.id)
 await requests.create({ title: 'Leave' })
 ```
 

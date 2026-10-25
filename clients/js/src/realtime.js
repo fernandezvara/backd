@@ -14,7 +14,7 @@ import { AuthenticationError, BackdError, ForbiddenError, InvalidResumeTokenErro
  * @property {string} db             The database.
  * @property {string} collection     A collection that declares `realtime: true`.
  * @property {object} [where]        The filter, in the query language limited to comparisons, `$in`, `$nin`,
- *   `$between` and `$isNull` with `$and`/`$or`. Subscribe with an equality on a grouping field (`_meta.org`)
+ *   `$between` and `$isNull` with `$and`/`$or`. Subscribe with an equality on a grouping field (`_meta.team`)
  *   to keep the server's work small.
  * @property {string} [doc]          Follow one document by id instead of a filter.
  * @property {{ sort?: string | string[], limit?: number }} [load] The initial list and how the live list is kept:
@@ -126,7 +126,7 @@ export class Realtime {
    *
    * ```js
    * const live = client.realtime.subscribe([
-   *   { db: 'main', collection: 'items', where: { '_meta.org': orgId }, load: { sort: '-_meta.created_at', limit: 50 } },
+   *   { db: 'main', collection: 'items', where: { '_meta.team': teamId }, load: { sort: '-_meta.created_at', limit: 50 } },
    * ])
    * live.on('change', (state) => render(state.items))
    * // later

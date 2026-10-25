@@ -12,10 +12,11 @@ Organizations group users, such as the people of a customer's company. They are 
 
 | Request | Who | Answers |
 |---|---|---|
-| `POST /_orgs` `{"name", "slug"?}` | anyone the realm's `create` rule allows, below `max_created_per_user` | `201` with the organization; the creator holds `creator_roles`. The answer also holds `session`, a new session scoped to it ([below](#signing-in-to-an-organization)) |
-| `GET /_orgs` | any user | `200` with the caller's organizations, each with their effective roles |
+| `POST /_orgs` `{"name", "slug"}` | anyone the realm's `create` rule allows, below `max_created_per_user` | `201` with the organization; the creator holds `creator_roles`. The answer also holds `session`, a new session scoped to it ([below](#signing-in-to-an-organization)) |
 | `GET /_orgs/{org}` | members | `200` with name, slug, status and claims |
-| `PATCH /_orgs/{org}` `{"name"?, "slug"?}` | `manage: org` | `200` |
+| `PATCH /_orgs/{org}` `{"name"?, "slug"?, "require_mfa"?, "session_max_age"?}` | `manage: org` | `200` |
+
+There is no list of the caller's organizations: **a session belongs to one organization**, the one it was opened for, and `GET /_auth/me` names it. The app keeps one session per organization the person signs in to (the [clients](../../clients/js/#working-in-an-organization) do), and the [sign-in page](../sign-in-experience/) is where a person chooses.
 
 ```json
 {
@@ -34,14 +35,14 @@ Organizations group users, such as the people of a customer's company. They are 
 }
 ```
 
-- **Slugs** are unique among organizations that aren't deleted (`409 slug_taken`): lowercase letters and digits separated by single `-`, at most 63 characters.
+- **Slugs** are required, and unique among organizations that aren't deleted (`409 slug_taken`): lowercase letters and digits separated by single `-`, at most 63 characters, and never something that looks like an id. People name the organization by its slug when they sign in. Organizations made before slugs were required get theirs with `backd orgs set-slug` (`PUT /_admin/orgs/{org}/slug`); startup warns about the ones without.
 - **Claims** are facts about the organization that only realm administrators and functions write (`plan`, `seats`…). Members read them.
 - **A non-member and an unknown organization answer the same** `403 not_org_member`, so the answer never says whether an organization exists.
 - **`409 org_limit_reached`** means the caller created the most organizations they may.
 
 ## Signing in to an organization
 
-A session can be **scoped to one organization**: the token then reaches that organization and no other. Sessions are scoped by signing in *to* an organization, at `/v1/{realm}/_auth/orgs/{org}/…`. These routes need no session and take the organization's **id or its slug** (case and surrounding spaces do not matter; a slug can never look like an id). Everything after signing in uses the id, which the answer returns as `org`.
+In a realm with organizations **every session is scoped to one organization**: the token reaches that organization and no other, and documents, rules and `ctx.user.orgs` see only it. Sessions are scoped by signing in *to* an organization, at `/v1/{realm}/_auth/orgs/{org}/…`. These routes need no session and take the organization's **id or its slug** (case and surrounding spaces do not matter; a slug can never look like an id). Everything after signing in uses the id, which the answer returns as `org`.
 
 | Request | Does |
 |---|---|
@@ -59,6 +60,8 @@ A session can be **scoped to one organization**: the token then reaches that org
 - **Invitations are accepted as part of the sign-in.** `invitation` in `login` (an `email` or `user` binding must fit the person; an open link fits anyone), in `signup`, or in `oauth/start` (`?invitation=bdo_…`) uses it and makes the person a member before the session is opened. An invitation sent to the address of a new account makes it verified; an open link does not.
 - **A provider of the realm signs in to an organization too:** the person must be a member (or hold the invitation) when they come back from the provider, otherwise the flow ends with `backd_error=not_allowed`, the same for an organization that is not there. A connection of the organization takes the place of the realm's provider of the same name.
 - **A second session:** `POST /_orgs` leaves the caller's session as it is and answers a new one for the organization it made, `session: {token, expires_at, org}`, for the app to keep beside the other.
+- **Operators sign in to the realm.** A realm administrator (a user with an admin role) signs in at `POST /_auth/login`, which answers `401 invalid_credentials` to everybody else; their session belongs to no organization and reaches the admin API alone. Everything else in the realm, including `/_auth/signup`, the unscoped magic link and the realm's own `oauth/{provider}/start`, answers `404`: a person always signs in to an organization.
+- **Sessions from before** the realm had organizations, or from before they were scoped, answer `401 session_unscoped`: the person signs in again (the clients treat it as an expired session). See [Upgrading](../../../operate/upgrading/).
 
 ### Which companies am I in?
 
@@ -85,12 +88,20 @@ The last member who can manage the organization (`manage: org`) can't leave, be 
 
 An organization can require its members to use [multi-factor authentication](../../auth/mfa/): `PATCH /_orgs/{org}` with `{"require_mfa": true}`, by `manage: org`, with a fresh proof of identity, when the realm's [`allow_require_mfa`](../../configuration/realm/#organizations) is true (otherwise `409 require_mfa_not_allowed`). It is audited as `org.require_mfa`. The caller's own session needs a second factor too, or their access would end at once.
 
-- **A session without a second factor doesn't count** as a member there. Rule helpers (`inOrg`, `hasOrgRole`, `orgClaims`) are false for it and leave the organization out of lists; `?org=` on a create answers `403 not_org_member`; and the organization's own routes answer `403 org_requires_mfa`, so the app can start the enrollment.
+- **A session without a second factor doesn't count** as a member there. Rule helpers (`inOrg`, `hasOrgRole`, `orgClaims`) are false for it, so its documents are empty and creating answers `403`; and the organization's own routes answer `403 org_requires_mfa`, so the app can start the enrollment.
 - **Leaving stays possible** without one.
-- **`GET /_orgs` marks it:** each organization has `require_mfa` and `mfa_met` (false when this session used no second factor).
+- **`GET /_auth/me` marks it:** its `org` has `require_mfa` and `mfa_met` (false when this session used no second factor).
 - **Other organizations are unaffected:** the requirement is enforced where it matters, not at sign-in, so one strict organization doesn't force a second factor everywhere.
 - **Managers see who is missing one:** the members list carries `mfa` for them.
 - **API keys** acting on behalf of a user have no second factor, so they can't reach these organizations.
+
+## How long sessions last
+
+An organization can shorten the lifetime of the sessions opened in it: `PATCH /_orgs/{org}` with `{"session_max_age": 28800}` (seconds, at least 3600, never more than the realm's [`sessions.max_lifetime`](../../configuration/realm/#sessions); `0` goes back to the realm's), by `manage: org`, with a fresh proof of identity. The expiry of a session is fixed when it is opened, from the organization's value, and never extended, so the change applies to the sessions opened from then on. It is also how a company limits how long someone removed at their identity provider keeps access until the provider can tell backd directly. Audited as `org.update`.
+
+## API keys on behalf of a user
+
+A key that acts for a user (`X-Backd-On-Behalf-Of`) is **bound to one organization when it is made**: `backd apikey create --org acme-corp` (`org` in `POST /_admin/apikeys`, by id or slug). It counts only that organization, as a session scoped to it would. A key without one counts none, so it can't reach documents of collections that belong to organizations. Keys that act on their own still bypass the rules, as before.
 
 ## Teams
 
@@ -134,8 +145,8 @@ POST /v1/acme/_orgs/{org}/invitations
 The answer always has `id`, `token` and `link` (the realm's [`invitation_link`](../../configuration/realm/#organizations) with the token, or `null` when it sets none), and they are shown only now: a lost link can't be shown again, issue a new one instead. The app can show the link as a QR code, send it some other way or offer copy and paste. `send: true` also emails it to an `email` binding (the `org-invitation` [email](../../functions/email/)), within the realm's email limits; backd keeps that token sealed with the instance's secrets key (`BACKD_SECRETS_KEY`) until the invitation ends.
 
 - **What can be given:** `roles` and `teams` follow the granting rules above, and a team counts as the roles it carries. An open link (`none`) can't give a role that manages the organization, directly or through a team.
-- **Accepting:** with a session, `POST /_orgs/invitations/preview` says what a token offers (`{org, roles, teams}`, so an app can ask "Join Acme as editor?") and `POST /_orgs/invitations/accept` takes it, both with `{"token"}`. An existing member's roles and teams are added to. There is no hosted page: accepting needs a session.
-- **Errors:** an unknown, expired, revoked or used-up token answers the same `400 invalid_invitation`; a binding that doesn't fit answers `403 invitation_not_for_you`, only after the token has proved valid.
+- **Accepting:** `POST /_auth/orgs/{org}/invitations/preview` `{"token"}` says what a token offers (`{org, roles, teams}`, so an app can ask "Join Acme as editor?") and the token is taken by [signing in to the organization with it](#signing-in-to-an-organization) (`invitation` in `login`, `signup` or `oauth/start`). An existing member's roles and teams are added to. There is no hosted page.
+- **Errors:** the preview answers an unknown, expired, revoked or used-up token the same `400 invalid_invitation`. Signing in with one that doesn't work, or that is not the person's, is the uniform `401 invalid_credentials`.
 - **Managing:** `GET /_orgs/{org}/invitations` (status, binding, uses and expiry, never tokens), `DELETE .../{id}` revokes, `POST .../{id}/link` issues a new token and invalidates the old one, `POST .../{id}/send` sends the email again. At most `max_pending_invitations` (500) pending ones per organization (`409 invitations_limit`).
 
 ## Deleting an organization
@@ -224,7 +235,7 @@ Realm administrators use the same under `/_admin/orgs/{org}/sso[/{provider}]` (t
 
 ## JavaScript client
 
-`backd.orgs` and `collection.inOrg(id)` wrap all of this: see [the client](../../clients/js/#organizations).
+`backd.orgs`, `createClient({ org })` and `client.org(ref)` wrap all of this: see [the client](../../clients/js/#organizations).
 
 ## Functions
 

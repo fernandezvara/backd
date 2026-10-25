@@ -94,7 +94,7 @@ func sameSite(s registry.RealmSettings) http.SameSite {
 // setSessionCookie sends the session's token in an HttpOnly cookie, valid for
 // the longest the session can live (the server decides when it ends sooner).
 func setSessionCookie(w http.ResponseWriter, r *http.Request, svc *auth.Users, p auth.Principal, token string) {
-	maxAge := int(max(svc.MaxSessionExpiry(p.User, p.Session.CreatedAt).Sub(svc.Clock()), time.Second) / time.Second)
+	maxAge := int(max(svc.MaxSessionExpiry(p.User, p.Session).Sub(svc.Clock()), time.Second) / time.Second)
 	http.SetCookie(w, &http.Cookie{
 		Name: cookieName, Value: token, Path: "/v1/" + chi.URLParam(r, "realm"), MaxAge: maxAge,
 		HttpOnly: true, Secure: true, SameSite: sameSite(svc.Settings),

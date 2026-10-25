@@ -81,10 +81,9 @@ test('the server enforces the levels, whatever the interface shows', async ({ re
   }
   expect((await request.get(`/v1/${REALM}/_admin/users?limit=1`, { headers: support })).status()).toBe(200)
 
-  // A user with no admin role has no admin API at all.
-  const plain = await login(request, 'plain')
-  expect((await request.get(`/v1/${REALM}/_admin/whoami`, { headers: plain })).status()).toBe(403)
-  expect((await request.get(`/v1/${REALM}/_admin/data/main/products`, { headers: plain })).status()).toBe(403)
+  // A user with no admin role has no admin API at all: the realm's sign-in does not let them in.
+  const refused = await request.post(`/v1/${REALM}/_auth/login`, { data: { email: users.plain, password: PASSWORD } })
+  expect(refused.status()).toBe(401)
 })
 
 test('writes through the data route are audited, never their content', async () => {

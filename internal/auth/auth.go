@@ -264,6 +264,10 @@ type Store interface {
 	// DeleteSession revokes one session of the user; ErrNotFound if the
 	// user has no session with that id.
 	DeleteSession(ctx context.Context, userID, id string) error
+	// DeleteOrgSessions revokes the sessions scoped to an organization and says how many: those of
+	// one user when user is not empty, and those a provider opened (the first method of the session)
+	// when provider is not empty.
+	DeleteOrgSessions(ctx context.Context, org, user, provider string) (int64, error)
 	// DeleteOtherSessions revokes every session of the user except keepID
 	// and says how many.
 	DeleteOtherSessions(ctx context.Context, userID, keepID string) (int64, error)

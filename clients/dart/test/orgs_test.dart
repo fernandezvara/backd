@@ -7,24 +7,17 @@ import 'helpers.dart';
 
 void main() {
   group('orgs', () {
-    test('create, list and get hit the _orgs routes', () async {
+    test('create and get hit the _orgs routes', () async {
       final t = FakeTransport()
         ..answer(respond(200, {'id': 'org_1', 'name': 'Acme'}))
-        ..answer(respond(200, {
-          'items': [
-            {'id': 'org_1', 'name': 'Acme', 'mfa_met': true},
-          ],
-        }))
         ..answer(respond(200, {'id': 'org_1', 'name': 'Acme'}));
       final orgs = testClient(t, apiKey: 'k').orgs;
       expect((await orgs.create({'name': 'Acme'}))['id'], 'org_1');
       expect(t.requests[0].method, 'POST');
       expect(t.requests[0].url.path, '/v1/shelf/_orgs');
-      final list = await orgs.list();
-      expect(list.single['mfa_met'], isTrue);
-      expect(t.requests[1].method, 'GET');
       await orgs.get('org_1');
-      expect(t.requests[2].url.path, '/v1/shelf/_orgs/org_1');
+      expect(t.requests[1].method, 'GET');
+      expect(t.requests[1].url.path, '/v1/shelf/_orgs/org_1');
     });
 
     test('update requires reauth only for require_mfa', () async {
@@ -48,18 +41,6 @@ void main() {
       await orgs.delete('org_1');
       expect(t.requests[1].method, 'DELETE');
       expect(t.requests[1].url.path, '/v1/shelf/_orgs/org_1');
-    });
-
-    test('invitation preview and accept are org-level routes', () async {
-      final t = FakeTransport()
-        ..answer(respond(200, {'org': {'id': 'org_1', 'name': 'Acme'}}))
-        ..answer(respond(200, {'id': 'org_1'}));
-      final orgs = testClient(t, apiKey: 'k').orgs;
-      expect(((await orgs.previewInvitation('tok'))['org'] as Map)['name'], 'Acme');
-      expect(t.requests[0].url.path,
-          '/v1/shelf/_orgs/invitations/preview');
-      await orgs.acceptInvitation('tok');
-      expect(t.requests[1].url.path, '/v1/shelf/_orgs/invitations/accept');
     });
   });
 

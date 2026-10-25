@@ -6,8 +6,9 @@ import 'storage.dart';
 
 /// Organizations of the signed-in user: `client.orgs`. Members, teams and
 /// invitations hang off one organization: `client.orgs.members(id)`,
-/// `client.orgs.teams(id)`, `client.orgs.invitations(id)`. Documents in an
-/// organization are created and listed with `collection.inOrg(id)`.
+/// `client.orgs.teams(id)`, `client.orgs.invitations(id)`. A session works in
+/// the one organization it was opened for, so its documents need none named;
+/// teams of it are reached with `collection.inTeam(id)`.
 final class Orgs {
   Orgs(this.client);
 
@@ -70,23 +71,6 @@ final class Orgs {
     return out;
   }
 
-  /// The organizations the user belongs to, with their roles there and
-  /// whether this session meets each one's second-factor requirement
-  /// (`mfa_met`).
-  Future<List<Map<String, Object?>>> list({RequestOptions? options}) async {
-    final res = await client.request(RequestInit(
-      method: 'GET',
-      path: const ['_orgs'],
-      headers: options?.headers,
-      retry: options?.retry,
-      cache: options?.cache ?? true,
-    ));
-    return [
-      for (final o in (res.data as Map?)?['items'] as List? ?? const [])
-        if (o is Map) Map<String, Object?>.from(o),
-    ];
-  }
-
   /// One organization. `ForbiddenError` (`not_org_member`) for a non-member
   /// and an unknown organization alike.
   Future<Map<String, Object?>> get(String id,
@@ -101,13 +85,16 @@ final class Orgs {
     return Map<String, Object?>.from(res.data as Map);
   }
 
-  /// Renames an organization, changes its slug, or sets `require_mfa`
-  /// (which asks for a fresh proof of identity: see `client.auth.reauth`).
+  /// Renames an organization, changes its slug, sets `require_mfa` or
+  /// shortens the lifetime of its sessions with [sessionMaxAge] (at least an
+  /// hour; `Duration.zero` goes back to the realm's). The last two ask for a
+  /// fresh proof of identity: see `client.auth.reauth`.
   Future<Map<String, Object?>> update(
     String id, {
     String? name,
     String? slug,
     bool? requireMfa,
+    Duration? sessionMaxAge,
     RequestOptions? options,
   }) async {
     final res = await client.request(RequestInit(
@@ -117,8 +104,9 @@ final class Orgs {
         if (name != null) 'name': name,
         if (slug != null) 'slug': slug,
         if (requireMfa != null) 'require_mfa': requireMfa,
+        if (sessionMaxAge != null) 'session_max_age': sessionMaxAge.inSeconds,
       },
-      reauth: requireMfa != null,
+      reauth: requireMfa != null || sessionMaxAge != null,
       headers: options?.headers,
       retry: options?.retry,
       cache: options?.cache ?? true,
@@ -164,38 +152,6 @@ final class Orgs {
 
   /// The invitations of an organization.
   OrgInvitations invitations(String org) => OrgInvitations(client, org);
-
-  /// What a token offers (the organization, roles and teams), without
-  /// taking it: "Join Acme as editor?". Needs a session. An unknown,
-  /// expired, revoked or used-up token is `invalid_invitation`; a token
-  /// bound to someone else is `invitation_not_for_you`.
-  Future<Map<String, Object?>> previewInvitation(String token,
-      {RequestOptions? options}) async {
-    final res = await client.request(RequestInit(
-      method: 'POST',
-      path: const ['_orgs', 'invitations', 'preview'],
-      body: {'token': token},
-      headers: options?.headers,
-      retry: options?.retry,
-      cache: options?.cache ?? true,
-    ));
-    return Map<String, Object?>.from(res.data as Map);
-  }
-
-  /// Takes an invitation: the user becomes a member, or gains its roles and
-  /// teams.
-  Future<Map<String, Object?>> acceptInvitation(String token,
-      {RequestOptions? options}) async {
-    final res = await client.request(RequestInit(
-      method: 'POST',
-      path: const ['_orgs', 'invitations', 'accept'],
-      body: {'token': token},
-      headers: options?.headers,
-      retry: options?.retry,
-      cache: options?.cache ?? true,
-    ));
-    return Map<String, Object?>.from(res.data as Map);
-  }
 }
 
 /// The members of one organization.

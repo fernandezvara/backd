@@ -31,7 +31,17 @@ type oauthFixture struct {
 
 // newOAuthFixture serves realm acme with Google, Microsoft and Apple, all played by one fake
 // provider, and the users ada and bob (verified) and carl (not) of the rules fixture.
+// newOAuthFixture is a realm with providers and without organizations: people sign in with them
+// directly. The tests of providers in organizations use newOrgOAuthFixture.
 func newOAuthFixture(t *testing.T) *oauthFixture {
+	t.Helper()
+	f := newOrgOAuthFixture(t)
+	f.svc.Settings.Organizations = nil
+	return f
+}
+
+// newOrgOAuthFixture is a realm with providers and with organizations.
+func newOrgOAuthFixture(t *testing.T) *oauthFixture {
 	t.Helper()
 	idp := oauthtest.New(t)
 	f := newRulesFixture(t, func(c *Config) { c.OAuth = idp.Service() })

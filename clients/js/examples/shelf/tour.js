@@ -589,7 +589,7 @@ heading('Teams as organizations (ch20)')
   await refused('an open link can never give a role that manages the team (400)', () => benT.orgs.invitations(team.id).create({ binding: 'none', roles: ['owner'] }), ValidationError, 'validation_error')
 
   // Reading: the read rule is a database filter on the caller's teams.
-  check('a member reads the team\'s pins', (await pinsOf(cyT).inOrg(team.id).list()).items.length === 1)
+  check('a member reads the team\'s pins', (await pinsOf(cyT).list()).items.length === 1)
   const strangerTeam = await dee.orgs.create({ name: `Elsewhere ${STAMP}`, slug: `elsewhere-${STAMP}` })
   const deeT = dee.org(strangerTeam.slug)
   await main(deeT).fn('pin', { org: strangerTeam.id, title: 'Not yours' })
@@ -600,10 +600,10 @@ heading('Teams as organizations (ch20)')
 
   // Roles: an editor pins and removes their own, only an admin removes other people's.
   const cyPin = /** @type {any} */ (await main(cyT).fn('pin', { org: team.id, title: 'Style guide' }))
-  const benPin = (await pinsOf(benT).inOrg(team.id).list()).items.find((p) => p.title === 'Handbook')
+  const benPin = (await pinsOf(benT).list()).items.find((p) => p.title === 'Handbook')
   await refused('an editor can\'t remove somebody else\'s pin (403)', () => pinsOf(cyT).delete(benPin.id), ForbiddenError, 'forbidden')
   await pinsOf(cyT).delete(cyPin.id)
-  check('an editor removes their own pin', (await pinsOf(benT).inOrg(team.id).list()).items.length === 1)
+  check('an editor removes their own pin', (await pinsOf(benT).list()).items.length === 1)
   await refused('a plain member can\'t pin (403)', async () => {
     const eve = await signedIn(`eve-${STAMP}@shelf.example`, operator)
     const link = await benT.orgs.invitations(team.id).create({ binding: 'none', roles: [] })
@@ -612,7 +612,7 @@ heading('Teams as organizations (ch20)')
   }, ForbiddenError, 'forbidden')
   await benT.orgs.members(team.id).update(cyId, ['admin'])
   await pinsOf(cyT).delete(benPin.id)
-  check('an admin removes any pin', (await pinsOf(benT).inOrg(team.id).list()).items.length === 0)
+  check('an admin removes any pin', (await pinsOf(benT).list()).items.length === 0)
 
   // Teams of access: an "Editors" team carries `editor`; management roles stay direct.
   const editors = await benT.orgs.teams(team.id).create({ name: 'Editors', roles: ['editor'] })
@@ -736,21 +736,21 @@ heading('Search and a dashboard (ch22)')
   check('an operator gives the team a time zone, a claim next to its plan', (await benT.orgs.get(team.id)).claims.timezone === 'Pacific/Auckland')
   await refused('a time zone has to be one (400 invalid_timezone)', () => main(operator).fn('team-plan', { org: team.id, timezone: 'Mars/Base' }), ValidationError, 'invalid_timezone')
   for (let i = 0; i < 3; i++) await main(benT).fn('pin', { org: team.id, title: `Dash pin ${i}` })
-  const { groups, total_groups } = await pinsOf(benT).inOrg(team.id).aggregate({
+  const { groups, total_groups } = await pinsOf(benT).aggregate({
     groupBy: ['author', '_meta.created_at:month'], metrics: ['count'], tz: 'Pacific/Auckland', orderBy: '-count',
   })
   check('pins per member per month: the author, the month text and the count', total_groups === 1 && groups[0].key.author === benId && /^\d{4}-\d{2}$/.test(String(groups[0].key['_meta.created_at:month'])) && groups[0].count === 3, JSON.stringify(groups))
   // A chart wants a point for every month: group by the month alone, then fill the empty ones.
-  const monthly = await pinsOf(benT).inOrg(team.id).aggregate({ groupBy: '_meta.created_at:month', tz: 'Pacific/Auckland' })
+  const monthly = await pinsOf(benT).aggregate({ groupBy: '_meta.created_at:month', tz: 'Pacific/Auckland' })
   const thisMonth = String(monthly.groups[0].key['_meta.created_at:month'])
   const filled = fillBuckets(monthly.groups, { field: '_meta.created_at', unit: 'month', from: thisMonth, to: thisMonth })
   check('a chart gets its buckets filled', filled.length === 1 && filled[0].count === 3, JSON.stringify(filled))
   await refused('fillBuckets needs groups of one bucket alone', async () => fillBuckets(groups, { field: '_meta.created_at', unit: 'month', from: thisMonth, to: thisMonth }), TypeError, '')
-  await refused('only declared fields can be grouped by (400 invalid_aggregate)', () => pinsOf(benT).inOrg(team.id).aggregate({ groupBy: 'title' }), ValidationError, 'invalid_aggregate')
+  await refused('only declared fields can be grouped by (400 invalid_aggregate)', () => pinsOf(benT).aggregate({ groupBy: 'title' }), ValidationError, 'invalid_aggregate')
   // A member of another team counts nothing of this one.
   const other = await dee.orgs.create({ name: `Other ${STAMP}`, slug: `other-${STAMP}` })
   const deeT = dee.org(other.slug)
-  const none = await pinsOf(deeT).inOrg(team.id).aggregate({ groupBy: 'author' })
+  const none = await pinsOf(deeT).aggregate({ groupBy: 'author' })
   check('a member of another team counts nothing of this one', none.groups.length === 0 && none.total_groups === 0, JSON.stringify(none))
   await deeT.auth.reauth({ method: 'password', password: PASSWORD })
   await deeT.orgs.delete(other.id)
@@ -826,7 +826,7 @@ heading('Live pins (ch24)')
   }
 
   // Gus follows the team's pins; Hal pins and Gus sees it without asking.
-  const live = gusT.db('main').collection('pins').inOrg(team.id).subscribe({ load: { sort: '-_meta.created_at', limit: 50 } })
+  const live = gusT.db('main').collection('pins').subscribe({ load: { sort: '-_meta.created_at', limit: 50 } })
   const state = await live.ready
   check('a live list loads first, then follows (status live)', state.status === 'live' && state.items.length === 0, state.status)
   await main(halT).fn('pin', { org: team.id, title: 'Appears at once' })
@@ -837,7 +837,7 @@ heading('Live pins (ch24)')
 
   // A stranger can't subscribe to the team.
   const ivy = await signedIn(`ivy-${STAMP}@shelf.example`, operator)
-  const peek = ivy.db('main').collection('pins').inOrg(team.id).subscribe({})
+  const peek = ivy.db('main').collection('pins').subscribe({})
   await peek.ready.catch(() => undefined)
   await main(halT).fn('pin', { org: team.id, title: 'Not for strangers' })
   check('and the members\' own view carries on', await until(() => live.items.some((p) => p.title === 'Not for strangers')))
@@ -845,7 +845,7 @@ heading('Live pins (ch24)')
   peek.close()
 
   // Hal follows too; when they are removed from the team their list resets and empties.
-  const halLive = halT.db('main').collection('pins').inOrg(team.id).subscribe({ jitterMs: 50 })
+  const halLive = halT.db('main').collection('pins').subscribe({ jitterMs: 50 })
   await halLive.ready
   await main(gusT).fn('pin', { org: team.id, title: 'Before the removal' })
   check('the other member sees it too', await until(() => halLive.items.length === 2))
@@ -867,7 +867,7 @@ heading('Live pins (ch24)')
   const jo = await signedIn(`jo-${STAMP}@shelf.example`, operator)
   const joInvite = await gusT.orgs.invitations(team.id).create({ binding: 'none', roles: ['editor'], maxUses: 1 })
   const joT = await joinedTeam(jo, team.slug, joInvite.token)
-  const joLive = joT.db('main').collection('pins').inOrg(team.id).subscribe({})
+  const joLive = joT.db('main').collection('pins').subscribe({})
   await joLive.ready
   let ended = null
   joLive.on('error', (e) => (ended = e))
@@ -943,15 +943,15 @@ heading('Private notes (ch25)')
 
   // The author writes private notes; who may read them is decided by `reveal`.
   const made = /** @type {any} */ (await main(cyT).fn('pin', { org: team.id, title: 'Quote', private_notes: SECRET }))
-  const seenBy = async (/** @type {any} */ c) => (await pinsOf(c).inOrg(team.id).list()).items.find((p) => p.id === made.id)
+  const seenBy = async (/** @type {any} */ c) => (await pinsOf(c).list()).items.find((p) => p.id === made.id)
   check('the author reads the private notes', (await seenBy(cyT)).private_notes === SECRET)
   check('the team\'s owner reads them', (await seenBy(benT)).private_notes === SECRET)
   check('so does an admin', (await seenBy(deeT)).private_notes === SECRET)
   const eves = await seenBy(eveT)
   check('a plain member reads the pin, with the notes null and listed in _meta.redacted', eves.title === 'Quote' && hidden(eves), JSON.stringify(eves))
-  const etag = (await fetch(`${url}/v1/shelf/main/pins/${made.id}?org=${team.id}`, { headers: { Authorization: `Bearer ${await eveT.storage.get()}` } })).headers.get('etag') ?? ''
+  const etag = (await fetch(`${url}/v1/shelf/main/pins/${made.id}`, { headers: { Authorization: `Bearer ${await eveT.storage.get()}` } })).headers.get('etag') ?? ''
   check('what is hidden is part of the ETag, so a change of view never gets a stale 304', /\.r[0-9a-f]{8}"$/.test(etag), etag)
-  check('a team search by the note finds nothing (an encrypted field can\'t be queried)', await pinsOf(cyT).inOrg(team.id).list({ where: { private_notes: SECRET } }).then(() => false, (e) => e.code === 'field_encrypted'))
+  check('a team search by the note finds nothing (an encrypted field can\'t be queried)', await pinsOf(cyT).list({ where: { private_notes: SECRET } }).then(() => false, (e) => e.code === 'field_encrypted'))
 
   // The database holds ciphertext.
   const raw = execFileSync('docker', [...composeArgs, 'exec', '-T', 'mongo', 'mongosh', '--quiet', '--eval', `EJSON.stringify(db.getSiblingDB('shelf__main').pins.findOne({_id: '${made.id}'}))`]).toString()

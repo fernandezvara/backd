@@ -22,6 +22,7 @@ import { connectionBody } from './orgs.js'
  * @property {string | null} slug
  * @property {'active' | 'orphaned' | 'deleted'} status
  * @property {boolean} require_mfa
+ * @property {number | null} session_max_age   Seconds its sessions last at most; null: the realm's limit.
  * @property {Record<string, unknown>} claims
  * @property {string} created_at
  * @property {number} [members]   How many members it has; only in `list`.
@@ -184,6 +185,7 @@ import { connectionBody } from './orgs.js'
  * @property {string} created_at
  * @property {string | null} last_used_at
  * @property {string | null} expires_at
+ * @property {string | null} org           The organization it is bound to when it acts on behalf of a user.
  */
 
 /**
@@ -962,20 +964,22 @@ class AdminAPIKeys {
 
   /**
    * Creates a key; store its `key` now, it is never shown again.
-   * @param {{ name: string, role?: 'data' | 'admin', expiresIn?: string, networks?: string[], scopes?: string[] }} input
-   *   `role` defaults to data; `expiresIn`: days (`90d`) or Go durations (`12h`). `scopes` limit what a
+   * @param {{ name: string, role?: 'data' | 'admin', expiresIn?: string, networks?: string[], scopes?: string[], org?: string }} input
+   *   `org` binds a data key that acts on behalf of users to one organization (id or slug), as a
+   *   session scoped to it would be. `role` defaults to data; `expiresIn`: days (`90d`) or Go durations (`12h`). `scopes` limit what a
    *   data key reaches: `read`, `write` or `call`, optionally followed by `:<database>` or
    *   `:<database>/<collection or function>`; none means everything.
    * @param {RequestOptions} [opts]
    * @returns {Promise<NewAPIKey>}
    */
-  async create({ name, role, expiresIn, networks, scopes }, opts) {
+  async create({ name, role, expiresIn, networks, scopes, org }, opts) {
     /** @type {Record<string, unknown>} */
     const body = { name }
     if (role !== undefined) body.role = role
     if (expiresIn !== undefined) body.expires_in = expiresIn
     if (networks !== undefined) body.networks = networks
     if (scopes !== undefined) body.scopes = scopes
+    if (org !== undefined) body.org = org
     return (await this.admin._request({ method: 'POST', path: ['apikeys'], body, reauth: true, ...opts })).data
   }
 
@@ -1494,7 +1498,7 @@ class AdminOrgs {
 
   /**
    * Creates an organization for a user, who holds the realm's `creator_roles`.
-   * @param {{ name: string, owner: string, slug?: string }} input `owner`: a user id.
+   * @param {{ name: string, slug: string, owner: string }} input `owner`: a user id; `slug`: how people name the organization when they sign in.
    * @param {RequestOptions} [opts]
    * @returns {Promise<AdminOrg>}
    */
@@ -1566,6 +1570,17 @@ class AdminOrgs {
    */
   async reactivate(id, input = {}, opts) {
     return (await this.admin._request({ method: 'POST', path: ['orgs', id, 'reactivate'], body: input, ...opts })).data
+  }
+
+  /**
+   * Gives an organization its slug, or changes it: how those made before slugs were required get one.
+   * @param {string} id
+   * @param {string} slug
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<AdminOrg>}
+   */
+  async setSlug(id, slug, opts) {
+    return (await this.admin._request({ method: 'PUT', path: ['orgs', id, 'slug'], body: { slug }, ...opts })).data
   }
 
   /**

@@ -30,7 +30,7 @@ An HR module for a B2B app: each company is an organization, each department a t
 {{< example-file path="hr/main/absences/collection.yaml" >}}
 
 - **`read`** is filtered inside the query: Ana's list is her own absences; Marta's is Sales'; Hugo's the company's. Nobody receives a document to hide it later.
-- **`create`** needs the department in the request (`?org=&team=`) and a team the person belongs to, and an absence is born `requested`.
+- **`create`** needs the department in the request (`?team=`) and a team the person belongs to, and an absence is born `requested`.
 - **`update`** lets the employee edit their own request and nothing more, and lets a manager or delegate decide.
 - **`on_team_delete: keep`**: when a department is deleted its absences stay, with the old team id, readable by HR.
 
@@ -53,4 +53,4 @@ The fixture says what each person is in `orgs`: roles, teams and team roles, as 
 
 - **Onboarding:** an `on_member_joined` [hook](../membership-hooks/) creates the employee's profile, subscribed to their department.
 - **Emails in the organization's name:** with [organization context](../organization-context/) and [organization templates](../email-templates/), the "absence requested" and "absence decided" emails carry the organization's brand, and each one edits its own text.
-- **The app:** `client.db('main').collection('absences').inOrg(org).inTeam(team).create({...})` in the [JavaScript client](../../clients/js/#organizations); the department's managers come from `client.orgs.teams(org).members(team, { role: 'manager' })`.
+- **The app:** `client.db('main').collection('absences').inTeam(team).create({...})` in the [JavaScript client](../../clients/js/#organizations); the department's managers come from `client.orgs.teams(org).members(team, { role: 'manager' })`.

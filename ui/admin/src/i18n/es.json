@@ -1056,7 +1056,7 @@
     "create": {
       "open": "Crear organización",
       "title": "Crear organización",
-      "slugHelp": "Opcional: minúsculas, dígitos y guiones.",
+      "slugHelp": "Con él se nombra la organización al iniciar sesión: minúsculas, dígitos y guiones.",
       "owner": "Correo del propietario",
       "ownerHelp": "Un usuario del realm; recibe los roles de creador del realm.",
       "done": "Organización {name} creada."

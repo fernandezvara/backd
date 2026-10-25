@@ -221,11 +221,11 @@ test('referenced documents are read in one batched call and kept beside the list
   live.close()
 })
 
-test('a collection scoped to an organization subscribes with its _meta.org', async () => {
+test('a collection scoped to a team subscribes with its _meta.team', async () => {
   const srv = server()
-  const live = client(srv).db('main').collection('items').inOrg('o_1').subscribe({ where: { done: false } })
+  const live = client(srv).db('main').collection('items').inTeam('t_1').subscribe({ where: { done: false } })
   await until(() => srv.streams.length === 1)
-  assert.deepEqual(srv.streams[0].body.subscriptions[0].where, { done: false, '_meta.org': 'o_1' })
+  assert.deepEqual(srv.streams[0].body.subscriptions[0].where, { done: false, '_meta.team': 't_1' })
   live.close()
 })
 

@@ -362,8 +362,14 @@ func registerRemote(cfg *kli.Config) {
 		Func(act("orgs create", orgsCreate)).Config(func(cc *kli.CommandConfig) {
 		remote(cc)
 		required(cc, "name", "the organization's name")
-		optional(cc, "slug", "a unique short name: lowercase letters, digits and '-'")
+		required(cc, "slug", "a unique short name people sign in with: lowercase letters, digits and '-'")
 		required(cc, "owner", "the email of the user who becomes its owner")
+	})
+	og.SubCommand("set-slug").ShortHelp("give an organization its slug, or change it").
+		Func(act("orgs set-slug", orgsSetSlug)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+		required(cc, "slug", "a unique short name people sign in with: lowercase letters, digits and '-'")
 	})
 	og.SubCommand("members").ShortHelp("list an organization's members with their roles").
 		Func(act("orgs members", orgsMembers)).Config(func(cc *kli.CommandConfig) {
@@ -471,6 +477,7 @@ func registerRemote(cfg *kli.Config) {
 		optional(cc, "expires", "how long the key is valid, such as 90d or 12h")
 		optional(cc, "networks", "where the key may be used from: comma-separated IP addresses or CIDR networks")
 		optional(cc, "scopes", "what a data key reaches: comma-separated grants such as read:blog/posts,write:blog,call:main/export (default: everything)")
+		optional(cc, "org", "in a realm with organizations, the organization (id or slug) a data key acting on behalf of users works in")
 	})
 	k.SubCommand("list").ShortHelp("list the realm's API keys (never the keys themselves)").
 		Func(act("apikey list", apikeyList)).Config(remote)

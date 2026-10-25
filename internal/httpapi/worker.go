@@ -573,7 +573,7 @@ func (w *Worker) callerFor(ctx context.Context, realm string, svc *auth.Users, j
 	}
 	if job.CallerUserID != "" {
 		if u, err := svc.UserByID(ctx, job.CallerUserID); err == nil {
-			c.User = &auth.Principal{User: u}
+			c.User = &auth.Principal{User: u, Session: auth.Session{Org: job.CallerOrg}}
 		}
 	}
 	if job.CallerKeyHash != "" {

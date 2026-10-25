@@ -13,6 +13,7 @@ const (
 	codeFieldEncrypted    = "field_encrypted"
 	codeInvalidPath       = "invalid_path"
 	codeUnauthenticated   = "unauthenticated"
+	codeSessionUnscoped   = "session_unscoped"
 	codeInvalidCreds      = "invalid_credentials"
 	codePasswordExpired   = "password_expired"
 	codeForbidden         = "forbidden"

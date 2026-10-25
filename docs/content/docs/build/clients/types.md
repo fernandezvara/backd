@@ -71,7 +71,7 @@ Keywords that only validate (`minimum`, `pattern`, `maxLength`, other `format` v
 
 ## Organization roles
 
-In a realm with [organizations](../../organizations/api/) the generated `Realm` has `org_roles`, the union of the roles declared under `organizations.roles` (`"owner" | "admin" | "editor" | "member"`). Use it to type what an app gives: `const roles: Realm["org_roles"][] = ["editor"]`. Collections that belong to organizations list `_meta.org` among the fields of `where` and `orderBy`, and `inOrg(id)` keeps the types of the collection.
+In a realm with [organizations](../../organizations/api/) the generated `Realm` has `org_roles`, the union of the roles declared under `organizations.roles` (`"owner" | "admin" | "editor" | "member"`). Use it to type what an app gives: `const roles: Realm["org_roles"][] = ["editor"]`. Collections that belong to organizations list `_meta.org` among the fields of `where` and `orderBy`, and `inTeam(id)` keeps the types of the collection.
 
 ## In TypeScript and in plain JavaScript
 

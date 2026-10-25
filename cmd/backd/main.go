@@ -257,6 +257,7 @@ func serve(ctx context.Context, a *app) error {
 	a.logProviders(ctx, a.realmUsers())
 	a.logPush(ctx, a.realmUsers())
 	a.logConsents(ctx, a.realmUsers())
+	a.logOrgsWithoutSlug(ctx, a.realmUsers())
 	if err := a.logAPIKeyExpiry(ctx, a.realmUsers(), time.Now()); err != nil {
 		return err
 	}
@@ -890,6 +891,32 @@ func (a *app) logConsents(ctx context.Context, users func(string) *auth.Users) {
 				a.log.Warn("consent records refer to a version whose text is not in the config: keep every published text (_realm/consents/<name>/<version>/<locale>.md), they are the proof of what was accepted",
 					"realm", rl.Name, "consent", ref.Consent, "version", ref.Version)
 			}
+		}
+	}
+}
+
+// logOrgsWithoutSlug reports the organizations of realms that have them and no slug: people sign in
+// to an organization by its slug, so those made before slugs were required can't be reached by name
+// until `backd orgs set-slug` gives them one.
+func (a *app) logOrgsWithoutSlug(ctx context.Context, users func(string) *auth.Users) {
+	for _, rl := range a.reg.SortedRealms() {
+		svc := users(rl.Name)
+		if svc == nil || rl.Settings.Organizations == nil {
+			continue
+		}
+		orgs, err := svc.AdminOrgs(ctx, auth.OrgActive)
+		if err != nil {
+			a.log.Warn("could not list the organizations", "realm", rl.Name, "err", err)
+			continue
+		}
+		var names []string
+		for _, o := range orgs {
+			if o.Slug == "" {
+				names = append(names, o.ID)
+			}
+		}
+		if len(names) > 0 {
+			a.log.Warn("organizations without a slug can't be named at sign-in: give each one with `backd orgs set-slug`", "realm", rl.Name, "count", len(names), "orgs", names)
 		}
 	}
 }

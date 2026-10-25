@@ -182,7 +182,9 @@ export interface CallUser {
   id: string;
   email: string;
   roles: string[];
-  /** The organizations the user belongs to, by id (only in realms with organizations). */
+  /** The organization the session belongs to (only in realms with organizations). */
+  org?: string;
+  /** The user's membership of that organization, by id (only in realms with organizations): the session reaches it and no other. */
   orgs?: Record<string, CallOrg>;
 }
 

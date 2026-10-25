@@ -84,6 +84,7 @@ type jobDoc struct {
 	Input          any                `bson:"input"`
 	CallerActor    string             `bson:"caller_actor"`
 	CallerUserID   string             `bson:"caller_user_id,omitempty"`
+	CallerOrg      string             `bson:"caller_org,omitempty"`
 	CallerKeyHash  string             `bson:"caller_key_hash,omitempty"`
 	Scheduled      bool               `bson:"scheduled,omitempty"`
 	ActsAsFunction bool               `bson:"acts_as_function,omitempty"`
@@ -449,7 +450,7 @@ func emailJobToDoc(e *auth.EmailJob) *emailJobDoc {
 func jobFromDoc(d jobDoc) auth.Job {
 	j := auth.Job{
 		ID: d.ID, Database: d.Database, Function: d.Function, Input: encodeJSONAny(d.Input),
-		CallerActor: d.CallerActor, CallerUserID: d.CallerUserID, CallerKeyHash: d.CallerKeyHash, Scheduled: d.Scheduled,
+		CallerActor: d.CallerActor, CallerUserID: d.CallerUserID, CallerOrg: d.CallerOrg, CallerKeyHash: d.CallerKeyHash, Scheduled: d.Scheduled,
 		ActsAsFunction: d.ActsAsFunction, Email: emailJobFromDoc(d.Email), Erase: eraseFromDoc(d.Erase), Revoke: revokeFromDoc(d.Revoke), Push: pushFromDoc(d.Push), Check: checkFromDoc(d.Check), PasswordNotice: passwordNoticeFromDoc(d.PasswordNotice), Encrypt: encryptFromDoc(d.Encrypt), Export: exportFromDoc(d.Export), Image: imageFromDoc(d.Image), Assign: assignFromDoc(d.Assign), OrgDelete: orgDeleteFromDoc(d.OrgDelete), Exclusive: d.Exclusive, Origin: d.Origin, ParentID: d.ParentID, RerunOf: d.RerunOf, Depth: int(d.Depth),
 		EventID: d.EventID, ChainRoot: d.ChainRoot, ChainDepth: int(d.ChainDepth),
 		SerialKey: d.SerialKey, SerialOrder: d.SerialOrder,
@@ -483,7 +484,7 @@ func jobToDoc(j auth.Job) (jobDoc, error) {
 	}
 	return jobDoc{
 		ID: j.ID, Database: j.Database, Function: j.Function, Input: input,
-		CallerActor: j.CallerActor, CallerUserID: j.CallerUserID, CallerKeyHash: j.CallerKeyHash, Scheduled: j.Scheduled, Status: j.Status,
+		CallerActor: j.CallerActor, CallerUserID: j.CallerUserID, CallerOrg: j.CallerOrg, CallerKeyHash: j.CallerKeyHash, Scheduled: j.Scheduled, Status: j.Status,
 		ActsAsFunction: j.ActsAsFunction, Email: emailJobToDoc(j.Email), Erase: eraseToDoc(j.Erase), Revoke: revokeToDoc(j.Revoke), Push: pushToDoc(j.Push), Check: checkToDoc(j.Check), PasswordNotice: passwordNoticeToDoc(j.PasswordNotice), Encrypt: encryptToDoc(j.Encrypt), Export: exportToDoc(j.Export), Image: imageToDoc(j.Image), Assign: assignToDoc(j.Assign), OrgDelete: orgDeleteToDoc(j.OrgDelete), Exclusive: j.Exclusive, Origin: j.Origin, ParentID: j.ParentID, RerunOf: j.RerunOf, Depth: int32(j.Depth),
 		EventID: j.EventID, ChainRoot: j.ChainRoot, ChainDepth: int32(j.ChainDepth),
 		SerialKey: j.SerialKey, SerialOrder: j.SerialOrder,

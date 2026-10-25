@@ -1105,8 +1105,8 @@ paths:
       description: |
         Creates an organization with the caller as a member holding the realm's `creator_roles`.
         Allowed when the realm's `organizations.create` rule says so (by default: a verified
-        address) and below `max_created_per_user` (`409 org_limit_reached`). `slug` is optional and
-        unique among organizations that aren't deleted (`409 slug_taken`). Needs a session: an API
+        address) and below `max_created_per_user` (`409 org_limit_reached`). `slug` is required, unique among
+        organizations that aren't deleted (`409 slug_taken`) and may not look like an organization id. Needs a session: an API
         key can't create organizations. Realm administrators create them for any user with the
         admin API.
 
@@ -1122,7 +1122,7 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [name]
+              required: [name, slug]
               properties:
                 name: { type: string, minLength: 1, maxLength: 100 }
                 slug: { type: string, maxLength: 63, pattern: "^[a-z0-9]+(-[a-z0-9]+)*$" }
@@ -1138,29 +1138,6 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
-        default: { $ref: "#/components/responses/Error" }
-    get:
-      tags: [organizations]
-      summary: The caller's organizations
-      description: With the caller's effective roles and teams in each. Deleted organizations aren't listed.
-      operationId: listOrganizations
-      security: [{ session: [] }]
-      responses:
-        "200":
-          description: The organizations.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: false
-                required: [items]
-                properties:
-                  items:
-                    type: array
-                    items: { $ref: "#/components/schemas/Organization" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_orgs/{org}:
@@ -1206,8 +1183,15 @@ paths:
               additionalProperties: false
               properties:
                 name: { type: string, minLength: 1, maxLength: 100 }
-                slug: { type: string, maxLength: 63, description: "An empty string removes the slug." }
+                slug: { type: string, minLength: 1, maxLength: 63 }
                 require_mfa: { type: boolean }
+                session_max_age:
+                  type: integer
+                  minimum: 0
+                  description: |
+                    Seconds the sessions opened in the organization last, at most (at least 3600, never
+                    more than the realm's `sessions.max_lifetime`); `0` goes back to the realm's. It
+                    applies to the sessions opened from then on and needs a fresh proof.
       responses:
         "200":
           description: The organization.
@@ -1562,75 +1546,6 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
-        default: { $ref: "#/components/responses/Error" }
-
-  /v1/{realm}/_orgs/invitations/preview:
-    parameters: [{ $ref: "#/components/parameters/realm" }]
-    post:
-      tags: [organizations]
-      summary: See what an invitation offers
-      description: |
-        Says which organization, roles and teams a token offers, so an app can ask "Join Acme as
-        editor?". Needs a session, so anonymous callers can't probe tokens. Unknown, expired, revoked
-        and used-up tokens answer the same `400 invalid_invitation`; a token bound to someone else
-        answers `403 invitation_not_for_you`, only after it has proved valid.
-      operationId: previewOrganizationInvitation
-      security: [{ session: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [token]
-              properties:
-                token: { type: string }
-      responses:
-        "200":
-          description: What accepting would do.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/OrganizationInvitationPreview" }
-        "400": { $ref: "#/components/responses/Error" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Error" }
-        default: { $ref: "#/components/responses/Error" }
-
-  /v1/{realm}/_orgs/invitations/accept:
-    parameters: [{ $ref: "#/components/parameters/realm" }]
-    post:
-      tags: [organizations]
-      summary: Accept an invitation
-      description: |
-        Makes the caller a member of the organization, or gives an existing member the invitation's
-        roles and teams. Needs a session. The same errors as the preview; `409 org_limit_reached`
-        when the caller belongs to the most organizations a user may. An organization that
-        requires a second factor counts the membership only for sessions that used one.
-      operationId: acceptOrganizationInvitation
-      security: [{ session: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [token]
-              properties:
-                token: { type: string }
-      responses:
-        "200":
-          description: The organization, as the new member sees it.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Organization" }
-        "400": { $ref: "#/components/responses/Error" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/Error" }
-        "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_orgs/{org}/teams:
@@ -4316,7 +4231,7 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [name, owner]
+              required: [name, slug, owner]
               properties:
                 name: { type: string, minLength: 1, maxLength: 100 }
                 slug: { type: string, maxLength: 63 }
@@ -4566,6 +4481,44 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}/slug:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+    put:
+      tags: [admin]
+      summary: Give an organization its slug, or change it
+      description: |
+        People name an organization by its slug when they sign in, so every organization needs one.
+        This is how those made before slugs were required (`backd orgs set-slug`) get theirs. The
+        slug is unique among organizations that aren't deleted (`409 slug_taken`) and may not look
+        like an organization id. Audited as `org.update`. Needs the `users` area.
+      operationId: adminSetOrganizationSlug
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [slug]
+              properties:
+                slug: { type: string, minLength: 1, maxLength: 63, pattern: "^[a-z0-9]+(-[a-z0-9]+)*$" }
+      responses:
+        "200":
+          description: The organization.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationRecord" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_admin/orgs/{org}/sso:
@@ -5555,6 +5508,13 @@ paths:
                     optionally followed by `:<database>` or `:<database>/<collection or function>`. `write` means
                     create, update and delete (not read); `call` also lets the key read the jobs of the functions
                     it may call. Anything not granted answers `403`. Not for admin keys.
+                org:
+                  type: string
+                  description: >-
+                    In a realm with organizations, binds a data key that acts on behalf of users
+                    (`X-Backd-On-Behalf-Of`) to one organization, by id or slug: it counts only that
+                    organization, as a session scoped to it would. Without it such a key counts no
+                    organization. Not for admin keys.
       responses:
         "201":
           description: The key, shown only here.
@@ -10172,7 +10132,7 @@ components:
     OrganizationRecord:
       type: object
       additionalProperties: false
-      required: [id, name, slug, status, require_mfa, claims, created_at]
+      required: [id, name, slug, status, require_mfa, session_max_age, claims, created_at]
       properties:
         members: { type: integer, description: How many members it has; only in the administrators' list. }
         id: { type: string }
@@ -10180,6 +10140,7 @@ components:
         slug: { type: [string, "null"] }
         status: { type: string, enum: [active, orphaned, deleted] }
         require_mfa: { type: boolean }
+        session_max_age: { type: [integer, "null"], description: "Seconds the sessions opened in the organization last at most; null: the realm's limit." }
         claims: { type: object, description: "Set by realm administrators and functions; at most 1 KiB." }
         created_at: { type: string, format: date-time }
 
@@ -10187,13 +10148,14 @@ components:
       type: object
       description: An organization as a member sees it.
       additionalProperties: false
-      required: [id, name, slug, status, require_mfa, mfa_met, claims, created_at, roles, effective_roles, teams, team_roles]
+      required: [id, name, slug, status, require_mfa, session_max_age, mfa_met, claims, created_at, roles, effective_roles, teams, team_roles]
       properties:
         id: { type: string }
         name: { type: string }
         slug: { type: [string, "null"] }
         status: { type: string, enum: [active, orphaned, deleted] }
         require_mfa: { type: boolean }
+        session_max_age: { type: [integer, "null"], description: "Seconds the sessions opened in the organization last at most; null: the realm's limit." }
         mfa_met: { type: boolean, description: "False when the organization requires a second factor and this session used none: the app asks for one. Such a session answers `403 org_requires_mfa` on the organization's routes, except leaving." }
         session:
           type: object
@@ -10764,9 +10726,10 @@ components:
     APIKey:
       type: object
       additionalProperties: false
-      required: [name, role, prefix, networks, scopes, created_at, last_used_at, expires_at]
+      required: [name, role, prefix, networks, scopes, created_at, last_used_at, expires_at, org]
       properties:
         name: { type: string }
+        org: { type: [string, "null"], description: "The organization the key is bound to when it acts on behalf of a user; null: none." }
         role: { enum: [data, admin] }
         prefix: { type: string, description: "The first characters of the key, to recognize it.", pattern: "^bdk_" }
         networks: { type: array, items: { type: string }, description: "Where the key may be used from; empty means anywhere." }
@@ -10779,9 +10742,10 @@ components:
       description: An API key as listed, plus the key itself, shown only here.
       type: object
       additionalProperties: false
-      required: [name, role, prefix, networks, scopes, created_at, last_used_at, expires_at, key]
+      required: [name, role, prefix, networks, scopes, created_at, last_used_at, expires_at, org, key]
       properties:
         name: { type: string }
+        org: { type: [string, "null"] }
         role: { enum: [data, admin] }
         prefix: { type: string, pattern: "^bdk_" }
         networks: { type: array, items: { type: string } }

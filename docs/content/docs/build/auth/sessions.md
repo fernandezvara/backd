@@ -106,6 +106,10 @@ All request bodies are JSON objects sent with `Content-Type: application/json`. 
 
 Paths are relative to `/v1/{realm}`.
 
+{{< hint style="note" >}}
+These are the routes of a realm **without** [organizations](../../organizations/api/). In a realm with them, every session belongs to one organization: people sign in, sign up, ask for a magic link or a reset **to an organization**, at `/_auth/orgs/{org}/…` ([the list](../../organizations/api/#signing-in-to-an-organization)). `POST /_auth/login` is then the door of the realm's administrators alone, and `/_auth/signup` and the unscoped magic link answer `404`. Everything after signing in (`/me`, `/logout`, `/sessions`…) is the same.
+{{< /hint >}}
+
 ### Sign-up
 
 ```sh
@@ -262,7 +266,8 @@ An invitation [sent by email](../../../operate/administration/admin/#emailing-an
 |---|---|---|
 | 400 | `validation_error` | Missing, wrongly typed or unknown fields; invalid email; password breaks the policy |
 | 401 | `unauthenticated` | No `Authorization: Bearer` header, or the token is unknown, expired, revoked, or its user is disabled |
-| 401 | `invalid_credentials` | Wrong email or password, or wrong current password |
+| 401 | `invalid_credentials` | Wrong email or password, or wrong current password; in a realm with organizations, also not being a member of the organization signed in to, or an administrator at `/_auth/login` who is not one |
+| 401 | `session_unscoped` | A session from before the realm had organizations (or before sessions were scoped to one): sign in again, to an organization |
 | 401 | `password_expired` | The password is right but was [expired](../users/#expiring-a-password): reset it |
 | 400 | `invalid_redirect` | `redirect_to` isn't within the realm's `email.allowed_redirects` |
 | 400 | `invalid_token` | An email link's token is unknown, expired, used or for another purpose (JSON endpoints) |

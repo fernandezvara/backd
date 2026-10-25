@@ -92,19 +92,20 @@ Location: /v1/shop/billing/invoices/INV-2026-0042
 
 ### Organizations
 
-In a collection with [`organization:`](../../configuration/config-dir/#organizations) a document is created in an organization, named with `?org=<id>` (`.inOrg(id)` in the clients):
+In a collection with [`organization:`](../../configuration/config-dir/#organizations) a document is created in the organization **the session belongs to** (a session is [scoped to one](../../organizations/api/#signing-in-to-an-organization)); the request does not say which:
 
 ```
-POST /v1/acme/app/projects?org=d3c9ljp8hc2g00b6s1m0
+POST /v1/acme/app/projects
 ```
 
-- The caller must be a member that counts, checked **before** the `create` rule: a non-member and an unknown organization both answer `403 not_org_member`.
-- A `required` collection answers `400 org_required` without `?org=`; a collection without organizations answers `400 org_not_allowed` with it.
+- The caller must be a member that counts, checked **before** the `create` rule; the organization is `_meta.org`.
+- `?org=` is **refused** on a session's request (`400 validation_error`; `400 org_not_allowed` in a collection without organizations): sign in to the other organization to work in it. The same `?org=` is what the admin data route and functions with `admin: true` use to choose any active organization.
+- A `required` collection answers `400 org_required` to a caller with no organization: a key acting on its own, or for a user without being [bound to one](../../organizations/api/#api-keys-on-behalf-of-a-user).
 - The organization is `_meta.org`, server-owned and fixed: a PUT or PATCH naming another one answers `400 immutable_field`. Moving a document is an administrator's transfer.
-- A [batch](#batch-writes) takes `?org=` for all its creates.
-- API keys without a user have no memberships, so they answer `403 not_org_member`; administrators use the admin data route, which accepts any active organization.
+- A [batch](#batch-writes) creates in the session's organization.
+- Administrators use the admin data route, which accepts any active organization.
 
-A list takes `?org=<id>` as a shorthand for `where={"_meta.org": "<id>"}`, ANDed with `where`. The read rule still decides what is seen: an organization the caller doesn't belong to lists nothing. In a collection with [teams](../../configuration/config-dir/#teams), `?team=<id>` is the same shorthand for `_meta.team` (and `_meta.team` can be used in `where` and `order_by`); a create names its team with `?team=` next to `?org=` (`.inTeam(id)` in the clients).
+A list shows only the documents of the session's organization (a filter on `_meta.org`, ANDed with `where`); the read rule still decides what is seen within it. In a collection with [teams](../../configuration/config-dir/#teams), `?team=<id>` is a shorthand for `where={"_meta.team": "<id>"}` (and `_meta.team` can be used in `where` and `order_by`); a create names its team with `?team=` (`.inTeam(id)` in the clients).
 
 ### Safe retries with `Idempotency-Key`
 

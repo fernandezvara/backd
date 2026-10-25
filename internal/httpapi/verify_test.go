@@ -39,6 +39,7 @@ func newVerifyFixture(t *testing.T) (*rulesFixture, *Worker) {
 // the stored redirect and never gives a session.
 func TestVerifyEmailFlow(t *testing.T) {
 	f, w := newVerifyFixture(t)
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	f.svc.Settings.Account.WelcomeEmail = true
 	ctx := context.Background()
 
@@ -85,6 +86,7 @@ func TestVerifyEmailFlow(t *testing.T) {
 
 func TestVerifyEmailTokenLifetime(t *testing.T) {
 	f, w := newVerifyFixture(t)
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	f.svc.Settings.Account.VerifyEmailTTL = 2 * time.Hour
 	f.page(t, "POST", "/v1/acme/_auth/signup", "application/json", signupBody, "")
 	in := deliver(t, f, w)
@@ -102,6 +104,7 @@ func TestVerifyEmailTokenLifetime(t *testing.T) {
 // verified, and the gate only speaks to someone who knows the password.
 func TestRequireVerifiedEmail(t *testing.T) {
 	f, w := newVerifyFixture(t)
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	f.svc.Settings.Account.RequireVerifiedEmail = true
 
 	rec := f.page(t, "POST", "/v1/acme/_auth/signup", "application/json", signupBody, "")
@@ -148,6 +151,7 @@ func TestRequireVerifiedEmail(t *testing.T) {
 // a message.
 func TestResendVerification(t *testing.T) {
 	f, w := newVerifyFixture(t)
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	ctx := context.Background()
 	f.page(t, "POST", "/v1/acme/_auth/signup", "application/json", signupBody, "")
 	deliver(t, f, w)
@@ -232,6 +236,7 @@ func TestPurgeUnverified(t *testing.T) {
 // still 409, because a session at sign-up can't hide who is registered.
 func TestSignupWithARegisteredAddress(t *testing.T) {
 	f, w := newVerifyFixture(t)
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	ctx := context.Background()
 	body := func(addr string) string {
 		return `{"email": "` + addr + `", "password": "dev-p4ssw0rd!"}`

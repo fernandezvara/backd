@@ -104,7 +104,7 @@ func TestSignInToAnOrganizationWithAnInvitation(t *testing.T) {
 	f, _, org := newOrgSignInFixture(t)
 	invite := func(body string) string {
 		t.Helper()
-		rec, out := f.doH(t, "POST", orgsPath+"/"+org+"/invitations", body, jsonHdr(f.ada))
+		rec, out := f.doH(t, "POST", orgsPath+"/"+org+"/invitations", body, jsonHdr(f.sessionIn(t, f.ada, org)))
 		if rec.Code != 201 {
 			t.Fatalf("invite: %d %v", rec.Code, out)
 		}
@@ -140,7 +140,7 @@ func TestSignInToAnOrganizationWithAnInvitation(t *testing.T) {
 	// An invitation to one organization does not open another.
 	other := f.orgOf(t, f.ada, "Other")
 	tokenOther := func() string {
-		rec, o := f.doH(t, "POST", orgsPath+"/"+other+"/invitations", `{"binding": "none"}`, jsonHdr(f.ada))
+		rec, o := f.doH(t, "POST", orgsPath+"/"+other+"/invitations", `{"binding": "none"}`, jsonHdr(f.sessionIn(t, f.ada, other)))
 		if rec.Code != 201 {
 			t.Fatalf("invite other: %d %v", rec.Code, o)
 		}
@@ -156,7 +156,7 @@ func TestSignInToAnOrganizationWithAnInvitation(t *testing.T) {
 func TestSignUpToAnOrganization(t *testing.T) {
 	f, _, org := newOrgSignInFixture(t)
 	invite := func(body string) string {
-		rec, out := f.doH(t, "POST", orgsPath+"/"+org+"/invitations", body, jsonHdr(f.ada))
+		rec, out := f.doH(t, "POST", orgsPath+"/"+org+"/invitations", body, jsonHdr(f.sessionIn(t, f.ada, org)))
 		if rec.Code != 201 {
 			t.Fatalf("invite: %d %v", rec.Code, out)
 		}
@@ -216,7 +216,7 @@ func TestSignUpToAnOrganization(t *testing.T) {
 // What an invitation offers can be read before signing in, and only by someone who holds the token.
 func TestPreviewAnInvitationWithoutASession(t *testing.T) {
 	f, _, org := newOrgSignInFixture(t)
-	_, out := f.doH(t, "POST", orgsPath+"/"+org+"/invitations", `{"binding": "email", "email": "bob@example.com", "roles": ["editor"]}`, jsonHdr(f.ada))
+	_, out := f.doH(t, "POST", orgsPath+"/"+org+"/invitations", `{"binding": "email", "email": "bob@example.com", "roles": ["editor"]}`, jsonHdr(f.sessionIn(t, f.ada, org)))
 	token := out["token"].(string)
 	preview := func(ref, tok string) (int, map[string]any) {
 		rec, out := f.doH(t, "POST", orgAuthPath+"/"+ref+"/invitations/preview", `{"token": "`+tok+`"}`, anon)
@@ -354,12 +354,12 @@ func TestWhichCompaniesAmIIn(t *testing.T) {
 		}
 		return rec.Code
 	}
-	for _, email := range []string{"nobody@example.com", "bob@example.com"} {
+	for _, email := range []string{"nobody@example.com"} {
 		if code := ask(email); code != 202 {
 			t.Errorf("%s: %d", email, code)
 		}
 		if w.RunOnce(context.Background()) {
-			t.Errorf("%s: a message was sent to an address with no companies", email)
+			t.Errorf("%s: a message was sent to an address with no account", email)
 		}
 	}
 	if code := ask("ada@example.com"); code != 202 {
@@ -369,8 +369,8 @@ func TestWhichCompaniesAmIIn(t *testing.T) {
 	if in.Kind != "organizations-found" || in.To[0].Email != "ada@example.com" {
 		t.Fatalf("message: %+v", in)
 	}
-	// An organization with no slug is reached by its id.
-	for _, want := range []string{"Acme Corp", "https://app.acme.example/acme-corp/signin", "Beta Inc", "https://app.acme.example/" + beta + "/signin"} {
+	_ = beta
+	for _, want := range []string{"Acme Corp", "https://app.acme.example/acme-corp/signin", "Beta Inc", "https://app.acme.example/beta-inc/signin"} {
 		if !strings.Contains(in.Text, want) {
 			t.Errorf("the message lacks %q:\n%s", want, in.Text)
 		}
@@ -462,9 +462,9 @@ func TestAScopedSessionSaysWhereItIs(t *testing.T) {
 	if got["id"] != org || got["name"] != "Acme Corp" || got["slug"] != "acme-corp" || !containsAny(got["roles"].([]any), "owner") {
 		t.Errorf("me.org = %v", got)
 	}
-	// An unscoped session (the realm's own login still exists) has no org.
-	if _, me := f.doH(t, "GET", "/v1/acme/_auth/me", "", bearer(f.bob)); me["org"] != nil {
-		t.Errorf("an unscoped session has org: %v", me["org"])
+	// Everyone's session in a realm with organizations belongs to one: bob's is his own team.
+	if _, me := f.doH(t, "GET", "/v1/acme/_auth/me", "", bearer(f.bob)); me["org"].(map[string]any)["slug"] != "home-bob" {
+		t.Errorf("bob's session: %v", me["org"])
 	}
 }
 

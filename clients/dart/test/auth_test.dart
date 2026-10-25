@@ -120,6 +120,25 @@ void main() {
       await sub.cancel();
     });
 
+    test('a session that belongs to no organization expires like a refused one',
+        () async {
+      final storage = MemoryTokenStorage();
+      await storage.set('tok');
+      final t = FakeTransport()
+        ..answer(respond(401, {'error': {'code': 'session_unscoped', 'message': 'x'}}));
+      final client = testClient(t, storage: storage);
+      final seen = <AuthEvent>[];
+      final sub = client.auth.events.listen((c) => seen.add(c.event));
+      await expectLater(
+        client.request(const RequestInit(method: 'GET', path: ['a', 'b'])),
+        throwsA(isA<AuthenticationError>()),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, [AuthEvent.sessionExpired]);
+      expect(await storage.get(), isNull);
+      await sub.cancel();
+    });
+
     test('logout removes the token even when the request fails', () async {
       final storage = MemoryTokenStorage();
       await storage.set('tok');

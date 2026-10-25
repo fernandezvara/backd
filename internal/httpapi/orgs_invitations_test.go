@@ -32,30 +32,25 @@ func TestOrganizationInvitations(t *testing.T) {
 	if rec.Code != 200 || strings.Contains(rec.Body.String(), token) || len(out["items"].([]any)) != 1 {
 		t.Errorf("list: %d %s", rec.Code, rec.Body)
 	}
-	// Preview and accept need a session; anonymous callers can't probe tokens.
-	if rec, _ := f.doH(t, "POST", orgsPath+"/invitations/preview", `{"token": "`+token+`"}`, jsonHdr("")); rec.Code != 401 {
-		t.Errorf("anonymous preview: %d", rec.Code)
-	}
-	for name, c := range map[string]struct {
-		token, who string
-		code       int
-		err        string
-	}{
-		"nonsense":        {"nope", f.bob, 400, "invalid_invitation"},
-		"unknown":         {"bdo_unknownunknownunknownunknownunknownunknown", f.bob, 400, "invalid_invitation"},
-		"someone else":    {token, f.ada, 403, "invitation_not_for_you"},
-		"unverified user": {token, f.carl, 403, "invitation_not_for_you"},
-	} {
-		rec, out := f.doH(t, "POST", orgsPath+"/invitations/preview", `{"token": "`+c.token+`"}`, jsonHdr(c.who))
-		if rec.Code != c.code || errCode(out) != c.err {
+	// The preview needs the token and nothing else; a token that doesn't work answers alike.
+	for name, tok := range map[string]string{"nonsense": "nope", "unknown": "bdo_unknownunknownunknownunknownunknownunknown"} {
+		rec, out := f.previewInvite(t, id, tok)
+		if rec.Code != 400 || errCode(out) != "invalid_invitation" {
 			t.Errorf("preview %s: %d %v", name, rec.Code, out)
 		}
 	}
-	rec, out = f.doH(t, "POST", orgsPath+"/invitations/preview", `{"token": "`+token+`"}`, jsonHdr(f.bob))
+	// Accepting is signing in with it: the invitation must be for the person.
+	for name, c := range map[string]struct{ who string }{"someone else": {f.ada}, "unverified user": {f.carl}} {
+		rec, out := f.acceptInvite(t, id, c.who, token)
+		if rec.Code == 200 {
+			t.Errorf("accept %s: %d %v", name, rec.Code, out)
+		}
+	}
+	rec, out = f.previewInvite(t, id, token)
 	if rec.Code != 200 || out["org"].(map[string]any)["name"] != "Invite" || out["roles"].([]any)[0] != "editor" {
 		t.Errorf("preview: %d %v", rec.Code, out)
 	}
-	rec, out = f.doH(t, "POST", orgsPath+"/invitations/accept", `{"token": "`+token+`"}`, jsonHdr(f.bob))
+	rec, out = f.acceptInvite(t, id, f.bob, token)
 	if rec.Code != 200 || out["id"] != id {
 		t.Fatalf("accept: %d %v", rec.Code, out)
 	}
@@ -63,7 +58,7 @@ func TestOrganizationInvitations(t *testing.T) {
 		t.Errorf("roles after accepting: %v", roles)
 	}
 	// A bound invitation is used up by one acceptance.
-	if rec, out := f.doH(t, "POST", orgsPath+"/invitations/accept", `{"token": "`+token+`"}`, jsonHdr(f.bob)); rec.Code != 400 || errCode(out) != "invalid_invitation" {
+	if rec, out := f.acceptInvite(t, id, f.bob, token); rec.Code != 401 || errCode(out) != "invalid_credentials" {
 		t.Errorf("accept again: %d %v", rec.Code, out)
 	}
 	_, out = f.doH(t, "GET", base, "", bearer(f.ada))
@@ -77,7 +72,7 @@ func TestOrganizationInvitations(t *testing.T) {
 		t.Fatalf("user binding: %d %v", rec.Code, out)
 	}
 	userTok := out["token"].(string)
-	if rec, out := f.doH(t, "POST", orgsPath+"/invitations/accept", `{"token": "`+userTok+`"}`, jsonHdr(f.carl)); rec.Code != 403 || errCode(out) != "invitation_not_for_you" {
+	if rec, out := f.acceptInvite(t, id, f.carl, userTok); rec.Code != 401 || errCode(out) != "invalid_credentials" {
 		t.Errorf("another user: %d %v", rec.Code, out)
 	}
 
@@ -96,10 +91,10 @@ func TestOrganizationInvitations(t *testing.T) {
 		t.Fatalf("open: %d %v", rec.Code, out)
 	}
 	open := out["token"].(string)
-	if rec, out := f.doH(t, "POST", orgsPath+"/invitations/accept", `{"token": "`+open+`"}`, jsonHdr(f.carl)); rec.Code != 200 {
+	if rec, out := f.acceptInvite(t, id, f.carl, open); rec.Code != 200 {
 		t.Errorf("carl joins by the open link: %d %v", rec.Code, out)
 	}
-	if rec, out := f.doH(t, "POST", orgsPath+"/invitations/accept", `{"token": "`+open+`"}`, jsonHdr(f.ada)); rec.Code != 400 {
+	if rec, out := f.acceptInvite(t, id, f.ada, open); rec.Code != 401 {
 		t.Errorf("a used-up open link: %d %v", rec.Code, out)
 	}
 
@@ -111,16 +106,16 @@ func TestOrganizationInvitations(t *testing.T) {
 	if rec.Code != 200 || newTok == "" || newTok == oldTok {
 		t.Fatalf("new link: %d %v", rec.Code, out)
 	}
-	if rec, _ := f.doH(t, "POST", orgsPath+"/invitations/preview", `{"token": "`+oldTok+`"}`, jsonHdr(f.bob)); rec.Code != 400 {
+	if rec, _ := f.previewInvite(t, id, oldTok); rec.Code != 400 {
 		t.Errorf("the old link: %d", rec.Code)
 	}
-	if rec, _ := f.doH(t, "POST", orgsPath+"/invitations/preview", `{"token": "`+newTok+`"}`, jsonHdr(f.bob)); rec.Code != 200 {
+	if rec, _ := f.previewInvite(t, id, newTok); rec.Code != 200 {
 		t.Errorf("the new link: %d", rec.Code)
 	}
 	if rec, _ := f.doH(t, "DELETE", base+"/"+oldID, "", bearer(f.ada)); rec.Code != 204 {
 		t.Errorf("revoke: %d", rec.Code)
 	}
-	if rec, _ := f.doH(t, "POST", orgsPath+"/invitations/preview", `{"token": "`+newTok+`"}`, jsonHdr(f.bob)); rec.Code != 400 {
+	if rec, _ := f.previewInvite(t, id, newTok); rec.Code != 400 {
 		t.Errorf("a revoked link: %d", rec.Code)
 	}
 	if rec, _ := f.doH(t, "DELETE", base+"/nosuch", "", bearer(f.ada)); rec.Code != 404 {
@@ -172,7 +167,7 @@ func TestOrganizationInvitationTeams(t *testing.T) {
 	if rec, out := f.doH(t, "POST", base, `{"binding": "none", "teams": ["team2"]}`, jsonHdr(f.ada)); rec.Code != 400 {
 		t.Errorf("team of owners on an open link: %d %v", rec.Code, out)
 	}
-	rec, out = f.doH(t, "POST", orgsPath+"/invitations/accept", `{"token": "`+tok+`"}`, jsonHdr(f.bob))
+	rec, out = f.acceptInvite(t, id, f.bob, tok)
 	if rec.Code != 200 || len(out["teams"].([]any)) != 1 {
 		t.Errorf("accept with a team: %d %v", rec.Code, out)
 	}
@@ -230,16 +225,16 @@ func TestOpenLinkDoesNotFollowATeamIntoManaging(t *testing.T) {
 		t.Fatalf("open link: %d %v", rec.Code, out)
 	}
 	token := out["token"].(string)
-	body := `{"token": "` + token + `"}`
-	if rec, out := f.doH(t, "POST", orgsPath+"/invitations/preview", body, jsonHdr(f.bob)); rec.Code != 200 {
+	if rec, out := f.previewInvite(t, id, token); rec.Code != 200 {
 		t.Fatalf("preview: %d %v", rec.Code, out)
 	}
 	if rec, out := f.doH(t, "PATCH", teams+"/"+team, `{"roles": ["owner"]}`, jsonHdr(f.ada)); rec.Code != 200 {
 		t.Fatalf("team gains owner: %d %v", rec.Code, out)
 	}
-	for _, path := range []string{"/preview", "/accept"} {
-		if rec, out := f.doH(t, "POST", orgsPath+"/invitations"+path, body, jsonHdr(f.bob)); rec.Code != 400 || errCode(out) != "invalid_invitation" {
-			t.Errorf("%s once the team manages: %d %v", path, rec.Code, out)
-		}
+	if rec, out := f.previewInvite(t, id, token); rec.Code != 400 || errCode(out) != "invalid_invitation" {
+		t.Errorf("preview once the team manages: %d %v", rec.Code, out)
+	}
+	if rec, out := f.acceptInvite(t, id, f.bob, token); rec.Code == 200 {
+		t.Errorf("accept once the team manages: %d %v", rec.Code, out)
 	}
 }

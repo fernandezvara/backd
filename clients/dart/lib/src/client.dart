@@ -320,7 +320,8 @@ class BackdClient<R> {
   ReauthProof? proof;
 
   /// Called by the request pipeline when a session token the server refused
-  /// (`unauthenticated`) should expire: `auth` clears storage and emits
+  /// (`unauthenticated`, or `session_unscoped`: a session from before sessions
+  /// were scoped to an organization) should expire: `auth` clears storage and emits
   /// `sessionExpired`.
   @internal
   FutureOr<void> Function()? onSessionExpired;
@@ -478,7 +479,7 @@ class BackdClient<R> {
       headers: res.headers,
       body: bytes,
     ));
-    if (err.code == 'unauthenticated' && sentSession) {
+    if (_sessionGone(err) && sentSession) {
       await onSessionExpired?.call();
     }
     throw err;
@@ -691,7 +692,7 @@ class BackdClient<R> {
         );
       }
       final err = errorFromResponse(res);
-      if (err.code == 'unauthenticated' && sentSession && req.expire) {
+      if (_sessionGone(err) && sentSession && req.expire) {
         await onSessionExpired?.call();
       }
       if (err is RetryableError && attempt < attempts) {
@@ -712,3 +713,9 @@ Duration _defaultBackoff(int attempt, Duration? retryAfter, Duration max) {
   final delay = retryAfter ?? fallback;
   return delay > max ? max : delay;
 }
+
+/// Whether the server no longer accepts the session: it expired or was ended
+/// (`unauthenticated`), or it belongs to no organization in a realm that has
+/// them (`session_unscoped`). Either way the person signs in again.
+bool _sessionGone(BackdException err) =>
+    err.code == 'unauthenticated' || err.code == 'session_unscoped';

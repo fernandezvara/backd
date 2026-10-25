@@ -69,8 +69,8 @@ test('API keys and networks', async () => {
   assert.equal(created.key, 'bdk_secret')
   assert.equal(m.calls[1].method, 'POST')
   assert.deepEqual(m.calls[1].body, { name: 'billing', role: 'admin', expires_in: '90d', networks: ['10.0.0.0/8'] })
-  await a.apiKeys.create({ name: 'plain', scopes: ['read:blog/posts', 'call:main/export'] })
-  assert.deepEqual(m.calls[2].body, { name: 'plain', scopes: ['read:blog/posts', 'call:main/export'] })
+  await a.apiKeys.create({ name: 'plain', scopes: ['read:blog/posts', 'call:main/export'], org: 'acme-corp' })
+  assert.deepEqual(m.calls[2].body, { name: 'plain', scopes: ['read:blog/posts', 'call:main/export'], org: 'acme-corp' })
 
   await a.apiKeys.revoke('billing')
   assert.equal(m.calls[3].method, 'DELETE')
@@ -550,20 +550,21 @@ test('team members and holders of a team role', async () => {
 })
 
 test('organizations', async () => {
-  const org = { id: 'o1', name: 'Acme', slug: 'acme', status: 'active', require_mfa: false, claims: {}, created_at: '2026-09-26T12:00:00.000Z', members: 2 }
+  const org = { id: 'o1', name: 'Acme', slug: 'acme', status: 'active', require_mfa: false, session_max_age: null, claims: {}, created_at: '2026-09-26T12:00:00.000Z', members: 2 }
   const m = mockFetch([
     { body: { items: [org] } }, { body: org }, { status: 201, body: org }, { body: { org, collections: [], to_delete: 0, to_keep: 0 } },
     { status: 204 }, { body: org }, { body: org }, { body: { user: 'u1' } }, { body: { items: [], has_more: false } },
     { body: { user: 'u2' } }, { body: { user: 'u2' } }, { status: 204 }, { body: { items: [] } }, { body: { items: [] } },
     { status: 201, body: { id: 'i1', token: 'bdo_t', link: null } }, { status: 204 }, { body: { id: 'd1' } }, { status: 202, body: { job: 'j1', matched: 3 } },
+    { body: org },
   ])
   const a = adminOf(m).orgs
   assert.deepEqual(await a.list({ status: 'orphaned', q: 'ac' }), [org])
   assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/orgs')
   assert.equal(m.calls[0].url.search, '?status=orphaned&q=ac')
   assert.equal((await a.get('o1')).name, 'Acme')
-  await a.create({ name: 'Acme', owner: 'u1' })
-  assert.deepEqual(m.calls[2].body, { name: 'Acme', owner: 'u1' })
+  await a.create({ name: 'Acme', slug: 'acme', owner: 'u1' })
+  assert.deepEqual(m.calls[2].body, { name: 'Acme', slug: 'acme', owner: 'u1' })
   assert.equal((await a.owned('o1')).to_delete, 0)
   await a.delete('o1')
   assert.equal(m.calls[4].method, 'DELETE')
@@ -591,6 +592,10 @@ test('organizations', async () => {
   assert.equal(m.calls[16].headers['If-Match'], '3')
   assert.deepEqual(await a.assign('main', 'docs', 'o1', { dryRun: true, where: { status: 'old' } }), { job: 'j1', matched: 3 })
   assert.equal(m.calls[17].url.search, '?dry_run=true')
+  await a.setSlug('o1', 'acme-3')
+  assert.equal(m.calls[18].method, 'PUT')
+  assert.equal(m.calls[18].url.pathname, '/v1/acme/_admin/orgs/o1/slug')
+  assert.deepEqual(m.calls[18].body, { slug: 'acme-3' })
 })
 
 test('orgs.sso, setSso and deleteSso manage any organization\'s connections', async () => {

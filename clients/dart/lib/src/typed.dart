@@ -37,9 +37,6 @@ final class TypedCollection<D, I, C> {
   final Map<String, Object?> Function(I) _encode;
   final Map<String, Object?> Function(C) _encodeCreate;
 
-  TypedCollection<D, I, C> inOrg(String org) =>
-      TypedCollection(raw.inOrg(org), _decode, _encode, _encodeCreate);
-
   TypedCollection<D, I, C> inTeam(String team) =>
       TypedCollection(raw.inTeam(team), _decode, _encode, _encodeCreate);
 
@@ -235,12 +232,11 @@ final class TypedCollection<D, I, C> {
   Future<D> create(
     C doc, {
     String? idempotencyKey,
-    String? org,
     String? team,
     RequestOptions? options,
   }) async =>
       _decode(await raw.create(_encodeCreate(doc),
-          idempotencyKey: idempotencyKey, org: org, team: team, options: options));
+          idempotencyKey: idempotencyKey, team: team, options: options));
 
   Future<D> replace(
     String id,

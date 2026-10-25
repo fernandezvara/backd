@@ -1,19 +1,22 @@
 import { ConflictError, createClient } from 'backd-js'
 import { PASSWORD, REALM, users } from './users'
 
-// The realm lists the admin users by email and gives them their roles when
-// they sign up, so signing up is the whole provisioning (a rerun finds
-// them there already).
+// The realm has organizations, so nobody signs up to it: its first administrator is made offline
+// (`backd bootstrap`, in scripts/ui-e2e.sh) and makes the others, whom the realm gives their roles
+// by email as they are created (a rerun finds them there already).
 export default async function globalSetup() {
   const url = process.env.E2E_URL ?? 'http://localhost:8080'
+  const admin = createClient({ url, realm: REALM })
+  await admin.auth.login({ email: users.admin, password: PASSWORD })
   for (const email of Object.values(users)) {
-    const client = createClient({ url, realm: REALM })
+    if (email === users.admin) continue
     try {
-      await client.auth.signup({ email, password: PASSWORD })
+      await admin.admin.users.create({ email, password: PASSWORD })
     } catch (e) {
       if (!(e instanceof ConflictError)) throw e
     }
   }
+  await admin.auth.logout()
   await seedProducts(url)
   await setStorageKeys(url)
 }

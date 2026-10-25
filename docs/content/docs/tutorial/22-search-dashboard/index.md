@@ -82,7 +82,7 @@ A month starts at midnight **somewhere**. A pin made at 23:30 UTC on March 31st 
 ```js
 const org = await backd.orgs.get(team)
 const tz = org.claims.timezone ?? 'UTC'
-const { groups } = await pins.inOrg(team).aggregate({
+const { groups } = await pins.aggregate({
   groupBy: ['author', '_meta.created_at:month'],
   metrics: ['count'],
   tz,
