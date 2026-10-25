@@ -467,3 +467,44 @@ func TestAScopedSessionSaysWhereItIs(t *testing.T) {
 		t.Errorf("an unscoped session has org: %v", me["org"])
 	}
 }
+
+// In an invite-only realm, an operator's invitation is what lets a new person start their company.
+func TestANewPersonInAnInviteOnlyRealm(t *testing.T) {
+	f, _, _ := newOrgSignInFixture(t)
+	f.svc.Settings.Signup = "invite"
+	create := func(email, invitation string) (int, map[string]any) {
+		body := `{"email": "` + email + `", "password": "` + testPassword + `", "name": "Starters", "slug": "starters-` + strings.Split(email, "@")[0] + `"`
+		if invitation != "" {
+			body += `, "invitation": "` + invitation + `"`
+		}
+		rec, out := f.doH(t, "POST", orgAuthPath, body+`}`, anon)
+		return rec.Code, out
+	}
+	if code, out := create("nobody@example.com", ""); code != 403 {
+		t.Errorf("without an invitation: %d %v", code, out)
+	}
+	if code, out := create("nobody@example.com", "bdi_nope"); code != 403 {
+		t.Errorf("an invitation that is nothing: %d %v", code, out)
+	}
+	if _, err := f.svc.Find(context.Background(), "nobody@example.com"); err == nil {
+		t.Fatal("a refused request made an account")
+	}
+	_, token, err := f.svc.CreateInvitation(context.Background(), "invited@example.com", 0, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code, out := create("someone-else@example.com", token); code != 403 {
+		t.Errorf("an invitation for another address: %d %v", code, out)
+	}
+	code, out := create("invited@example.com", token)
+	if code != 201 || out["org"] == nil || f.scopeOf(t, out["token"].(string)) != out["org"] {
+		t.Fatalf("with the invitation: %d %v", code, out)
+	}
+	if u, _ := f.svc.Find(context.Background(), "invited@example.com"); !u.EmailVerified {
+		t.Error("an account made from an invitation to its address starts unverified")
+	}
+	// It is used up.
+	if code, _ := create("invited@example.com", token); code != 403 && code != 409 {
+		t.Errorf("the invitation twice: %d", code)
+	}
+}

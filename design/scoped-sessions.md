@@ -31,7 +31,7 @@ Principles carried over:
 | Topic | Decision |
 |---|---|
 | Scope | a realm with `organizations.enabled` has **only scoped sessions**: `sessions.org` is always set. Realms without organizations are unchanged |
-| Signing in | only through `/v1/{realm}/_auth/orgs/{org}/…`; the unscoped `login`, `signup`, `magic-link` and `oauth` routes no longer exist in such realms |
+| Signing in | only through `/v1/{realm}/_auth/orgs/{org}/…`; the unscoped `signup`, `magic-link` and `oauth` routes no longer exist in such realms, and `login` stays for **operators** alone (§5.5) |
 | The organization in a path | the **id**. Only the routes that run before there is a session (§5) also take the **slug** people know (`acme`), because the person does not know an id; every route that needs a session takes the id only (this narrows "the id or the slug" of [org-sso.md §2](./org-sso.md#2-decisions-at-a-glance)) |
 | The slug | **required** when an organization is created; it is the name people type, shown in URLs and emails |
 | Forgot the company | `POST /_auth/orgs/find { email }` always answers `202` and emails the address its companies with sign-in links (§5.4) |
@@ -45,6 +45,7 @@ Principles carried over:
 | Invitations | accepted **while signing in** (`invitation` in the org-bound `login`, `signup` and `oauth/start`); there is no separate accept call |
 | Background work and API keys | jobs carry the scope of the session that queued them; a key acting on behalf of a user is bound to one organization |
 | Enforcing the connection | `sso_required` on the organization (§6) replaces the membership-counting `require_sso` of #600 |
+| Operators | realm administrators sign in with `POST /_auth/login` (admin role only, uniform failure otherwise); their session has no organization and reaches the admin API alone (§5.5) |
 | Account-level actions | a session opened through a connection cannot change credentials, link identities, delete or export the account (`403 sso_session`) |
 | Session lifetime | an organization may shorten the lifetime of its sessions (`session_max_age`); never longer than the realm's |
 | Removing access | removing a member, leaving, deleting the organization or removing its connection revokes the sessions it scopes |
@@ -57,7 +58,7 @@ No new realm key: `organizations.enabled` implies scoped sessions, and `organiza
 - `invitation_link` must contain `{org}` (the link is how the app learns which organization to sign in to); today it is optional;
 - **the slug is required** to create an organization (`POST /_auth/orgs`, `POST /_orgs`, the admin API and `backd orgs create`), because it is what people type. It keeps today's format (lowercase letters and digits separated by single `-`, at most 63 characters) and may not look like an id (`[0-9a-v]{20}`), so a name can never be mistaken for another organization's id. Organizations that exist without one still sign in by id; startup lists them and `backd orgs set-slug <org> <slug>` sets one;
 - `organizations.signin_link` (for example `"https://{slug}.app.example/signin"`; `{slug}` and `{org}` are replaced, and it must be within `allowed_redirects`) is where the emails of §5.4 send people. It is optional: without it (or without `email:`) `POST /_auth/orgs/find` answers `404`;
-- the realm's `signup` (`open`, `invite`, `closed`) governs `POST /_auth/orgs` for new addresses (§5.2); joining an existing organization always needs an invitation (or a connection that admits the person, [org-sso.md §6](./org-sso.md#6-accounts-and-joining-issue-305)).
+- the realm's `signup` (`open`, `invite`, `closed`) governs `POST /_auth/orgs` for new addresses (§5.2): an invite-only realm lets a person start a company with the realm's invitation; joining an existing organization always needs an invitation of that organization (or a connection that admits the person, [org-sso.md §6](./org-sso.md#6-accounts-and-joining-issue-305)). An account that exists without a team (made before the upgrade) is given one by an operator (`backd orgs create --owner`).
 
 ## 4. Scoped sessions
 
@@ -128,7 +129,7 @@ Paths are relative to `/v1/{realm}`. **`{org}` is the organization id; the route
 
 Unchanged, because they act on the token or an emailed token: `logout`, `logout-all`, `me`, `sessions`, `reauth`, `mfa/*`, `consents`, `email` change, `reset-password` (the emailed token), `verify-email`.
 
-Removed in realms with organizations: `/_auth/login`, `/_auth/signup`, `/_auth/magic-link`, `/_auth/oauth/…`, `/_auth/providers`, `/_orgs/invitations/accept`, the anonymous `POST /_orgs`, and the `org` field in their bodies (the path replaces it).
+Removed in realms with organizations (`login` stays for operators, §5.5): `/_auth/signup`, `/_auth/magic-link`, `/_auth/oauth/…`, `/_auth/providers`, `/_orgs/invitations/accept`, the anonymous `POST /_orgs`, and the `org` field in their bodies (the path replaces it).
 
 ### 5.1 Rules shared by the routes
 
@@ -141,7 +142,7 @@ Removed in realms with organizations: `/_auth/login`, `/_auth/signup`, `/_auth/m
 
 ### 5.2 Creating an organization
 
-- **A new person:** `POST /_auth/orgs { email, password, name, slug?, locale?, consents? }` creates the account (the sign-up table of [account-lifecycle.md §4.1](./account-lifecycle.md#41-sign-up) and the realm's `signup` mode), the organization with the person as `creator_roles`, and a session scoped to it. With `require_verified_email: true` the answer is `202` and no session: the organization exists, the verification email is sent, and the person signs in to it afterwards. `organizations.create` is **not** evaluated for this first organization (a new account cannot satisfy `user.email_verified`); `max_created_per_user` still applies.
+- **A new person:** `POST /_auth/orgs { email, password, name, slug, invitation?, locale?, consents? }` creates the account (the sign-up table of [account-lifecycle.md §4.1](./account-lifecycle.md#41-sign-up) and the realm's `signup` mode: anyone when it is `open`, a person holding the `invitation` of the realm when it is `invite`, nobody when it is `closed`), the organization with the person as `creator_roles`, and a session scoped to it. With `require_verified_email: true` the answer is `202` and no session: the organization exists, the verification email is sent, and the person signs in to it afterwards. `organizations.create` is **not** evaluated for this first organization (a new account cannot satisfy `user.email_verified`); `max_created_per_user` still applies.
 - **The slug** is asked for with the company name; the form suggests one from the name ("Acme Corp" → `acme-corp`). A taken slug answers `409 slug_taken` with no detail about the other organization. This is the one place where a slug shows that it exists: unique names cannot be handed out without saying so, and it is limited per IP like sign-up.
 - **A registered address:** answers as sign-up does today (`409 email_taken`, or the generic `202` when verification is required). The person signs in to one of their organizations and creates another from there.
 - **From a session:** `POST /_orgs` (with `organizations.create` evaluated as today) creates the organization and answers it as before with `session: { token, expires_at, org }` added: **a new session scoped to the new organization**. The caller's own session stays as it is.
@@ -163,6 +164,14 @@ A person on a new device may not remember the slug, or which of their companies 
 - **The email** (`organizations-found`, an email kind with defaults and localized templates like the others) goes only to an address that has an account with memberships. It lists each active organization by name with its sign-in link (`organizations.signin_link` with the slug and id filled in), and says "if you didn't ask for this, ignore it". Organizations that require SSO are listed too; their link leads to the SSO button.
 - **Limits:** 3 a hour per address and per IP, using the shared email counters; the realm's email limits apply.
 - **Needs** `email:` in the realm.
+
+### 5.5 Operators
+
+Realm administrators (users holding a role with `admin`) are not members of anything: their power is the admin API, and the admin UI, the CLI and the tools sign them in with a user session. They sign in at the realm level, so no organization has to be invented for them:
+
+- `POST /_auth/login` (and its second step, `POST /_auth/mfa/verify`) stays, **for users who hold an admin role**. For anyone else it answers `401 invalid_credentials` after the same work, as a wrong password does, so nothing says who is an operator.
+- The session has no `org`. It reaches the admin API and, through `Counts(mfa, scope)`, no organization at all; an operator who needs a team's data signs in to that team like anyone.
+- Operators are created as today (`backd bootstrap`, the admin API); the MFA a realm requires of its admin role works as it does.
 
 ## 6. Requiring the connection
 

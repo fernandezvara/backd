@@ -74,7 +74,7 @@ func (a *authAPI) signUpWithOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f, ok := fields(w, r, obj, map[string]string{
-		"email": "string", "password": "string", "name": "string", "slug": "string", "locale": "string?", "redirect_to": "string?", "cookie": "bool?",
+		"email": "string", "password": "string", "name": "string", "slug": "string", "invitation": "string?", "locale": "string?", "redirect_to": "string?", "cookie": "bool?",
 	})
 	if !ok {
 		return
@@ -94,9 +94,10 @@ func (a *authAPI) signUpWithOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	requested, _ := f["locale"].(string)
+	invitation, _ := f["invitation"].(string)
 	res, m, err := svc.SignUpWithOrg(r.Context(), auth.NewOrgSignupRequest{
 		SignupRequest: auth.SignupRequest{
-			Email: email, Password: f["password"].(string), RedirectTo: redirectTo, ClientIP: clientIP(r), RequestID: requestID(r.Context()),
+			Email: email, Password: f["password"].(string), Invitation: invitation, RedirectTo: redirectTo, ClientIP: clientIP(r), RequestID: requestID(r.Context()),
 			Locales:  append([]string{requested}, acceptLanguages(r.Header.Get("Accept-Language"))...),
 			Consents: consents, UserAgent: r.UserAgent(),
 		},

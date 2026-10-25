@@ -217,6 +217,18 @@ void main() {
     expect(await root.storage.get(), isNull);
   });
 
+  test('a company in an invite-only realm starts with the realm invitation',
+      () async {
+    final t = FakeTransport()
+      ..answer(respond(201, {
+        ...scoped('bds_n', 'on'),
+        'organization': {'id': 'on', 'name': 'S', 'slug': 's-inc'},
+      }));
+    await testClient(t).auth.signUpWithOrg('f@b.c', 'dev-p4ssw0rd!',
+        name: 'S', slug: 's-inc', invitation: 'bdi_x');
+    expect(bodyOf(t, 0)['invitation'], 'bdi_x');
+  });
+
   test('a company that needs its address verified first starts no session',
       () async {
     final t = FakeTransport()

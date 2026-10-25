@@ -509,12 +509,14 @@ final class Auth {
   /// (`slug_taken`, a [ConflictError], makes nothing). The session is scoped
   /// to the new organization and stored by the client; the answer holds it
   /// with the organization. A realm that verifies addresses first creates
-  /// both and throws a [VerificationRequiredError].
+  /// both and throws a [VerificationRequiredError]. [invitation] is the realm's
+  /// invitation, for a realm that is invite-only.
   Future<({Session session, Map<String, Object?> organization})> signUpWithOrg(
     String email,
     String password, {
     required String name,
     required String slug,
+    String? invitation,
     String? locale,
     String? redirectTo,
     Map<String, String>? consents,
@@ -530,6 +532,7 @@ final class Auth {
         'name': name,
         'slug': slug,
         ..._compact({
+          'invitation': invitation,
           'locale': locale,
           'redirect_to': redirectTo,
           'consents': consents,

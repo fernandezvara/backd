@@ -2248,8 +2248,9 @@ paths:
       description: |
         How a company starts (design/scoped-sessions.md §5.2): one call makes the account, the
         organization, with the person as its creator (`creator_roles`), and a session **scoped to it**.
-        The realm's `signup` must be `open` (`403 signup_closed` otherwise). `organizations.create` is
-        not asked for this first organization (a new account cannot satisfy `user.email_verified`);
+        The realm's `signup` decides who may: anyone when it is `open`, whoever holds an `invitation` of the
+        realm (`bdi_…`, made by an administrator) when it is `invite`, and nobody when it is `closed`
+        (`403` otherwise). `organizations.create` is not asked for this first organization (a new account cannot satisfy `user.email_verified`);
         `max_created_per_user` is. `slug` is required, unique among organizations that aren't deleted
         (`409 slug_taken`, which creates nothing) and may not look like an organization id.
 
@@ -2273,6 +2274,7 @@ paths:
                 password: { type: string, minLength: 8, maxLength: 128 }
                 name: { type: string, minLength: 1, maxLength: 100, description: "The organization's name." }
                 slug: { type: string, maxLength: 63, pattern: "^[a-z0-9]+(-[a-z0-9]+)*$" }
+                invitation: { type: string, description: "A realm invitation (`bdi_…`), for `signup: invite`." }
                 locale: { type: string }
                 redirect_to: { type: string, description: "Where the page after the verification link may send the user." }
                 cookie: { type: boolean }

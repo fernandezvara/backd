@@ -184,18 +184,17 @@ type NewOrgSignupRequest struct {
 }
 
 // SignUpWithOrg makes an account and an organization for someone new, with the person as its
-// creator, and signs them in to it. The realm's sign-up must be open: this is how a company
-// starts, and organizations.create does not apply to the first one (a new account cannot satisfy
-// user.email_verified); max_created_per_user does. The organization is returned when it was made;
+// creator, and signs them in to it. The realm's sign-up decides who may: anyone when it is open,
+// whoever holds an invitation of the realm (SignupRequest.Invitation) when it is invite-only, and
+// nobody when it is closed. This is how a company starts, and organizations.create does not apply
+// to the first one (a new account cannot satisfy user.email_verified); max_created_per_user does.
+// The organization is returned when it was made;
 // the answer for a registered address, when the realm verifies addresses, is the same as for a
 // new one and makes nothing.
 func (s *Users) SignUpWithOrg(ctx context.Context, r NewOrgSignupRequest) (SignupResult, Membership, error) {
 	o, err := s.orgs()
 	if err != nil {
 		return SignupResult{}, Membership{}, err
-	}
-	if s.Settings.Signup != registry.SignupOpen {
-		return SignupResult{}, Membership{}, ErrSignupClosed
 	}
 	name, err := validOrgName(r.Name)
 	if err != nil {
@@ -215,7 +214,7 @@ func (s *Users) SignUpWithOrg(ctx context.Context, r NewOrgSignupRequest) (Signu
 	if err := s.checkSignupConsents(r.Consents); err != nil {
 		return SignupResult{}, Membership{}, err
 	}
-	u, err := s.signup(ctx, r.Email, r.Password, "", append([]string{}, r.Locales...))
+	u, err := s.signup(ctx, r.Email, r.Password, r.Invitation, append([]string{}, r.Locales...))
 	if errors.Is(err, ErrEmailTaken) && s.Settings.Account.RequireVerifiedEmail {
 		s.sendAccountExists(ctx, r.SignupRequest)
 		return SignupResult{Pending: true}, Membership{}, nil

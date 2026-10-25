@@ -354,12 +354,13 @@ export class Auth {
    * unique (`slug_taken`, a `ConflictError`, makes nothing). The session is scoped to the new organization
    * and stored by the client; the answer holds it with the organization. A realm that verifies addresses
    * first creates both and rejects with a {@link VerificationRequiredError}.
-   * @param {{ email: string, password: string, name: string, slug: string, locale?: string, redirectTo?: string, consents?: Record<string, string> }} input
+   * `invitation` is the realm's invitation, for a realm that is invite-only.
+   * @param {{ email: string, password: string, name: string, slug: string, invitation?: string, locale?: string, redirectTo?: string, consents?: Record<string, string> }} input
    * @param {RequestOptions} [opts]
    * @returns {Promise<Session & { organization: import('./orgs.js').Org }>}
    */
-  async signUpWithOrg({ email, password, name, slug, locale, redirectTo, consents }, opts) {
-    const body = compact({ email, password, name, slug, locale, redirect_to: redirectTo, consents, cookie: this.client.cookies ? true : undefined })
+  async signUpWithOrg({ email, password, name, slug, invitation, locale, redirectTo, consents }, opts) {
+    const body = compact({ email, password, name, slug, invitation, locale, redirect_to: redirectTo, consents, cookie: this.client.cookies ? true : undefined })
     const { status, data } = await this.client.request({ method: 'POST', path: ['_auth', 'orgs'], body, auth: false, ...opts })
     if (status === 202) {
       throw new VerificationRequiredError({ status, code: 'verification_required', message: 'the account and the organization were created: verify the email address, then sign in' })

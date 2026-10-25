@@ -190,3 +190,10 @@ test('a sign-in that returns for an organization is kept by that organization\'s
   assert.equal(await root.org('oa').auth.token(), 'bds_a')
   assert.equal(await root.auth.token(), null)
 })
+
+test('a company in an invite-only realm starts with the realm invitation', async () => {
+  const m = mockFetch([{ status: 201, body: { ...scoped('bds_n', 'on'), organization: { id: 'on', name: 'S', slug: 's-inc' } } }])
+  const root = createClient({ url: 'http://api.test', realm: 'acme', fetch: m.fetch })
+  await root.auth.signUpWithOrg({ email: 'f@example.com', password: 'dev-p4ssw0rd!', name: 'S', slug: 's-inc', invitation: 'bdi_x' })
+  assert.equal(m.calls[0].body.invitation, 'bdi_x')
+})
