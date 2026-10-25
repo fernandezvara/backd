@@ -65,10 +65,14 @@ type User struct {
 // any number of providers. The password identity has no email of its own: the
 // user's is the one that counts.
 type Identity struct {
-	ID           string
-	UserID       string
-	Provider     string
-	Subject      string // unique per provider
+	ID       string
+	UserID   string
+	Provider string
+	Subject  string // unique per provider (and organization)
+	// Org is the organization whose connection signed the person in (design/org-sso.md); empty for
+	// the realm's own providers and the password. A user holds one identity per provider per
+	// organization.
+	Org          string
 	PasswordHash string // ProviderPassword only: argon2id, PHC string format
 	// Email and EmailVerified are what an external provider last reported.
 	Email         string
@@ -225,6 +229,11 @@ type Store interface {
 	// identity of the provider, or the provider account belongs to another user.
 	PutIdentity(ctx context.Context, id Identity) error
 	Identity(ctx context.Context, provider, subject string) (Identity, error)
+	// IdentityIn, IdentityOfIn and DeleteIdentityIn are the three lookups above for the identities of
+	// an organization's connection; the plain ones are the realm's (org "").
+	IdentityIn(ctx context.Context, provider, org, subject string) (Identity, error)
+	IdentityOfIn(ctx context.Context, userID, provider, org string) (Identity, error)
+	DeleteIdentityIn(ctx context.Context, userID, provider, org string) error
 	// ListIdentities returns a user's identities, oldest first.
 	ListIdentities(ctx context.Context, userID string) ([]Identity, error)
 	// IdentityOf returns a user's identity of a provider; ErrNotFound if none.
@@ -354,6 +363,8 @@ type Store interface {
 	CreateOrg(ctx context.Context, o Org, first OrgMember) error
 	// OrgByID returns the organization, deleted ones too; ErrNotFound if none.
 	OrgByID(ctx context.Context, id string) (Org, error)
+	// OrgBySlug returns the organization with that slug that isn't deleted; ErrNotFound if none.
+	OrgBySlug(ctx context.Context, slug string) (Org, error)
 	// OrgsByIDs returns the organizations that exist, by id.
 	OrgsByIDs(ctx context.Context, ids []string) (map[string]Org, error)
 	// UpdateOrg applies upd, sets UpdatedAt and returns the result; ErrSlugTaken, ErrNotFound.
@@ -427,6 +438,18 @@ type Store interface {
 	// ReplaceOrgInvitationToken swaps the token hash (and the sealed token, "" for none).
 	ReplaceOrgInvitationToken(ctx context.Context, org, id, tokenHash, sealed string) error
 	DeleteOrgInvitation(ctx context.Context, org, id string) error
+	// Organization sign-in connections (design/org-sso.md): one per organization and provider.
+	// PutOrgConnection creates or replaces it, keeping Blocked, CreatedAt and the id of an
+	// existing one. OrgConnection and DeleteOrgConnection return ErrNotFound for none.
+	PutOrgConnection(ctx context.Context, c OrgConnection) error
+	OrgConnection(ctx context.Context, org, provider string) (OrgConnection, error)
+	// OrgConnections lists an organization's connections, sorted by provider.
+	OrgConnections(ctx context.Context, org string) ([]OrgConnection, error)
+	DeleteOrgConnection(ctx context.Context, org, provider string) error
+	// BlockOrgMember adds the user to Blocked in every connection of the organization (keeping the
+	// most recent MaxConnectionBlocked), and UnblockOrgMember takes them out of all of them.
+	BlockOrgMember(ctx context.Context, org, user string) error
+	UnblockOrgMember(ctx context.Context, org, user string) error
 	// ForgetUserInOrgs removes a user from the organization data (for an erase): their
 	// memberships (and so their teams), the invitations bound to their id or address, and
 	// created_by of the organizations and invitations they made. It returns the organizations
@@ -590,8 +613,9 @@ type Store interface {
 	SetScheduleState(ctx context.Context, st ScheduleState) error
 	// ListScheduleStates returns every stored state.
 	ListScheduleStates(ctx context.Context) ([]ScheduleState, error)
-	// UpsertSecret creates or replaces the secret at (database, name),
-	// keeping its original CreatedAt on an update.
+	// UpsertSecret creates or replaces the secret at (s.Scope(), s.Name),
+	// keeping its original CreatedAt on an update. A scope is the database
+	// name, "" for the realm, or OrgScope(id) for an organization.
 	UpsertSecret(ctx context.Context, s Secret) error
 	// CreateSecret stores a new secret, ErrSecretExists if the scope and name are taken.
 	CreateSecret(ctx context.Context, s Secret) error
@@ -599,10 +623,10 @@ type Store interface {
 	// when it does not (another rotation got there first).
 	ReplaceKeySecret(ctx context.Context, s Secret, ifVersion int) (bool, error)
 	// SecretByScope returns one secret; ErrSecretNotFound if none.
-	SecretByScope(ctx context.Context, database, name string) (Secret, error)
-	// ListSecrets returns every secret's metadata, sorted by database
+	SecretByScope(ctx context.Context, scope, name string) (Secret, error)
+	// ListSecrets returns every secret's metadata, sorted by scope
 	// (realm scope, "", first) then name.
 	ListSecrets(ctx context.Context) ([]Secret, error)
 	// DeleteSecret removes one; ErrSecretNotFound if none.
-	DeleteSecret(ctx context.Context, database, name string) error
+	DeleteSecret(ctx context.Context, scope, name string) error
 }

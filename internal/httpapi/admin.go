@@ -123,6 +123,10 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 			r.Delete("/", a.deleteOrg)
 			r.Get("/owned", a.orgOwned)
 			r.With(json).Post("/reactivate", a.reactivateOrg)
+			r.Get("/sso", a.orgSSOList)
+			r.Get("/sso/{provider}", a.orgSSOGet)
+			r.With(json).Put("/sso/{provider}", a.orgSSOSet)
+			r.Delete("/sso/{provider}", a.orgSSODelete)
 			r.Get("/members", a.orgMembers)
 			r.With(json).Post("/members", a.addOrgMember)
 			r.With(json).Patch("/members/{user}", a.setOrgMemberRoles)
@@ -1082,7 +1086,7 @@ func secretMetaJSON(m auth.SecretMeta) map[string]any {
 	if t == "" {
 		t = "secret"
 	}
-	return map[string]any{
+	out := map[string]any{
 		"database":   m.Database,
 		"name":       m.Name,
 		"type":       t,
@@ -1090,6 +1094,10 @@ func secretMetaJSON(m auth.SecretMeta) map[string]any {
 		"updated_at": formatTime(m.UpdatedAt),
 		"updated_by": m.UpdatedBy,
 	}
+	if m.Org != "" {
+		out["org"] = m.Org
+	}
+	return out
 }
 
 func (a *adminAPI) listSecrets(w http.ResponseWriter, r *http.Request) {
@@ -1126,13 +1134,13 @@ func (a *adminAPI) knownDatabase(realm, database string) bool {
 }
 
 // setSecret creates or replaces a secret's value: database scope (its
-// own database) with "database", realm scope without it.
+// own database) with "database", an organization's with "org", realm scope without either.
 func (a *adminAPI) setSecret(w http.ResponseWriter, r *http.Request) {
 	obj, ok := readObject(w, r)
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"value": "string", "database": "string?"})
+	f, ok := fields(w, r, obj, map[string]string{"value": "string", "database": "string?", "org": "string?"})
 	if !ok {
 		return
 	}
@@ -1151,8 +1159,29 @@ func (a *adminAPI) setSecret(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "database", Reason: "is not a database of this realm"})
 		return
 	}
+	org, _ := f["org"].(string)
+	if org != "" && database != "" {
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "org", Reason: "an organization's secret has no database: give one of them"})
+		return
+	}
+	if org != "" {
+		if _, err := usersOf(r).Store.OrgByID(r.Context(), org); err != nil {
+			if errors.Is(err, auth.ErrNotFound) {
+				writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "org", Reason: "is not an organization of this realm"})
+				return
+			}
+			adminError(w, r, err)
+			return
+		}
+	}
 	caller, _ := callerOf(r)
-	if err := usersOf(r).SetSecret(r.Context(), database, name, value, caller.Actor()); err != nil {
+	var err error
+	if org != "" {
+		err = usersOf(r).SetOrgSecret(r.Context(), org, name, value, caller.Actor())
+	} else {
+		err = usersOf(r).SetSecret(r.Context(), database, name, value, caller.Actor())
+	}
+	if err != nil {
 		if errors.Is(err, auth.ErrSecretIsKey) {
 			writeError(w, r, http.StatusConflict, codeConflict, err.Error())
 			return
@@ -1164,15 +1193,24 @@ func (a *adminAPI) setSecret(w http.ResponseWriter, r *http.Request) {
 }
 
 // deleteSecret removes a secret's value; ?database= selects the database
-// scope, absent means the realm scope. A function that declares it
+// scope, ?org= an organization's, neither means the realm scope. A function that declares it
 // starts answering secret_missing again.
 func (a *adminAPI) deleteSecret(w http.ResponseWriter, r *http.Request) {
-	database := r.URL.Query().Get("database")
-	if have, err := usersOf(r).Store.SecretByScope(r.Context(), database, chi.URLParam(r, "name")); err == nil && have.Type == auth.SecretTypeKey {
-		a.deleteKey(w, r)
+	database, org := r.URL.Query().Get("database"), r.URL.Query().Get("org")
+	if org != "" && database != "" {
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "org", Reason: "an organization's secret has no database: give one of them"})
 		return
 	}
-	err := usersOf(r).DeleteSecret(r.Context(), database, chi.URLParam(r, "name"))
+	var err error
+	if org != "" {
+		err = usersOf(r).DeleteOrgSecret(r.Context(), org, chi.URLParam(r, "name"))
+	} else {
+		if have, err := usersOf(r).Store.SecretByScope(r.Context(), database, chi.URLParam(r, "name")); err == nil && have.Type == auth.SecretTypeKey {
+			a.deleteKey(w, r)
+			return
+		}
+		err = usersOf(r).DeleteSecret(r.Context(), database, chi.URLParam(r, "name"))
+	}
 	if errors.Is(err, auth.ErrSecretNotFound) {
 		writeError(w, r, http.StatusNotFound, codeNotFound, "secret not found")
 		return

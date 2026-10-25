@@ -40,28 +40,27 @@ func (w *Worker) runOrgDelete(ctx context.Context, log *slog.Logger, realm strin
 				return p.DeleteInTeam(ctx, team, fileFields, orgDeleteBatch)
 			}}
 	}
+	// A deleted organization's sign-in connections and their secrets go first: they were
+	// unavailable since it was deleted, and nothing about them is kept.
+	connections := 0
+	if team == "" {
+		var cerr error
+		if connections, cerr = svc.RemoveOrgConnections(ctx, org); cerr != nil {
+			w.retryOrFail(ctx, log, svc, job, scope.what, cerr)
+			return
+		}
+	}
 	counts, err := w.purge(ctx, realm, svc, scope)
 	if err != nil {
-		if failed := job.Failures + 1; failed < orgDeleteAttempts {
-			wait := 30 * time.Second << (failed - 1)
-			log.Warn(scope.what+" cleanup attempt failed; it will be tried again", "attempt", failed, "of", orgDeleteAttempts, "retry_in", wait.String(), "error", err)
-			if rerr := svc.RetryJob(ctx, job.ID, wait); rerr != nil {
-				log.Error("queue the retry", "error", rerr)
-			}
-			return
-		}
-		log.Error(scope.what+" cleanup attempts used up; the job fails", "org", org, "team", team, "error", err)
-		if cerr := svc.CompleteJob(ctx, job.ID, auth.JobResult{Status: executor.StatusError, Message: err.Error()}); cerr != nil {
-			log.Error("complete the failed cleanup", "error", cerr)
-			return
-		}
-		w.fns.metrics.JobFinished(svc.Realm, "org", executor.StatusError)
+		w.retryOrFail(ctx, log, svc, job, scope.what, err)
 		return
 	}
 	output, _ := json.Marshal(counts)
 	details := map[string]any{"job_id": job.ID, "counts": counts}
 	if team != "" {
 		details["team"] = team
+	} else {
+		details["connections"] = connections
 	}
 	svc.AuditAs(ctx, auth.ActorSystem, scope.audit, scope.target, details)
 	if err := svc.CompleteJob(ctx, job.ID, auth.JobResult{Status: executor.StatusOK, Output: output}); err != nil {
@@ -70,6 +69,26 @@ func (w *Worker) runOrgDelete(ctx context.Context, log *slog.Logger, realm strin
 	}
 	w.fns.metrics.JobFinished(svc.Realm, "org", executor.StatusOK)
 	log.Info(scope.what+" cleaned up", "org", org, "team", team)
+}
+
+// retryOrFail queues another attempt of a cleanup that failed, with a growing wait, and fails the
+// job when the attempts are used up.
+func (w *Worker) retryOrFail(ctx context.Context, log *slog.Logger, svc *auth.Users, job auth.Job, what string, err error) {
+	org, team := job.OrgDelete.Org, job.OrgDelete.Team
+	if failed := job.Failures + 1; failed < orgDeleteAttempts {
+		wait := 30 * time.Second << (failed - 1)
+		log.Warn(what+" cleanup attempt failed; it will be tried again", "attempt", failed, "of", orgDeleteAttempts, "retry_in", wait.String(), "error", err)
+		if rerr := svc.RetryJob(ctx, job.ID, wait); rerr != nil {
+			log.Error("queue the retry", "error", rerr)
+		}
+		return
+	}
+	log.Error(what+" cleanup attempts used up; the job fails", "org", org, "team", team, "error", err)
+	if cerr := svc.CompleteJob(ctx, job.ID, auth.JobResult{Status: executor.StatusError, Message: err.Error()}); cerr != nil {
+		log.Error("complete the failed cleanup", "error", cerr)
+		return
+	}
+	w.fns.metrics.JobFinished(svc.Realm, "org", executor.StatusError)
 }
 
 // purgeScope says what a cleanup removes: the documents of an organization or of a team.

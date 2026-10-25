@@ -21,6 +21,7 @@ const (
 	codeSignupClosed      = "signup_closed"
 	codeInvitationInvalid = "invitation_invalid"
 	codeSignInRefused     = "signin_refused"
+	codeNotAllowed        = "not_allowed"
 	codeEmailRequired     = "email_required"
 	codeInvalidChallenge  = "invalid_challenge"
 	codeInvalidCode       = "invalid_code"
@@ -54,7 +55,7 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 	}
 	str := func(k string) string { v, _ := f[k].(string); return v }
 	svc := usersOf(r)
-	p, ok := a.provider(w, r)
+	p, sc, ok := a.provider(w, r)
 	if !ok {
 		return
 	}
@@ -102,6 +103,20 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 		a.providerUnavailable(w, r, "the provider could not be reached")
 		return
 	}
+	if p.Org != "" {
+		if !sc.conns[p.Name].Admits(signInClaimsOf(claims)) {
+			logger(r.Context()).Info("a native person the connection does not admit", "provider", p.Name, "org", p.Org)
+			writeError(w, r, http.StatusForbidden, codeNotAllowed, "this account is not allowed to sign in through this organization")
+			return
+		}
+		if err := svc.CheckConnectionAuthority(r.Context(), sc.conns[p.Name]); err != nil {
+			if !errors.Is(err, auth.ErrConnectionUnusable) {
+				logger(r.Context()).Error("check a connection", "org", p.Org, "error", err)
+			}
+			writeError(w, r, http.StatusNotFound, codeNotFound, "this organization has no such sign-in provider")
+			return
+		}
+	}
 	var refresh string
 	if p.Name == registry.ProviderApple && p.RevokeOnDelete {
 		if refresh, ok = a.appleRefreshToken(w, r, p, claims, str("authorization_code")); !ok {
@@ -109,7 +124,7 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	login := auth.ProviderLogin{
-		Provider: p.Name, Subject: claims.Subject, Email: claims.Email, EmailVerified: claims.EmailVerified, TrustsEmail: p.TrustsEmail(),
+		Provider: p.Name, Org: p.Org, Subject: claims.Subject, Email: claims.Email, EmailVerified: claims.EmailVerified, TrustsEmail: p.TrustsEmail(),
 		Intent: intent, LinkUserID: who.User.ID, Locales: append([]string{str("locale")}, acceptLanguages(r.Header.Get("Accept-Language"))...), IP: clientIP(r),
 		Profile:  profileOf(claims, nil),
 		Consents: consents, UserAgent: r.UserAgent(),
@@ -126,13 +141,16 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 		a.nativeFailure(w, r, svc, p.Name, err)
 		return
 	}
+	if p.Org != "" {
+		svc.AfterOrgSignIn(r.Context(), p.Org, p.Name, res)
+	}
 	if intent == auth.IntentLink {
 		a.keepAppleToken(r, svc, p, res.User.ID, claims.Audience, refresh)
 		writeJSON(w, http.StatusOK, map[string]any{"linked": p.Name})
 		return
 	}
 	a.keepAppleToken(r, svc, p, res.User.ID, claims.Audience, refresh)
-	out, err := svc.StartProviderSession(r.Context(), res.User, p.Name, res.NewUser, res.Profile)
+	out, err := svc.StartProviderSessionIn(r.Context(), res.User, p.Name, res.NewUser, res.Profile, p.Org)
 	if err != nil {
 		authError(w, r, err)
 		return

@@ -45,6 +45,10 @@ func (a *authAPI) orgRoutes(r chi.Router) {
 			r.With(json).Patch("/members/{user}", a.updateOrgMember)
 			r.Delete("/members/{user}", a.removeOrgMember)
 			r.Post("/leave", a.leaveOrg)
+			r.Get("/sso", a.orgSSOList)
+			r.Get("/sso/{provider}", a.orgSSOGet)
+			r.With(json).Put("/sso/{provider}", a.orgSSOSet)
+			r.Delete("/sso/{provider}", a.orgSSODelete)
 			r.Get("/teams", a.listOrgTeams)
 			r.With(json).Post("/teams", a.createOrgTeam)
 			r.With(json).Patch("/teams/{team}", a.updateOrgTeam)
@@ -107,6 +111,14 @@ func orgError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, auth.ErrInvitationsLimit):
 		writeError(w, r, http.StatusConflict, "invitations_limit", err.Error())
 	case errors.Is(err, auth.ErrNeedsSecretsKey):
+		writeError(w, r, http.StatusServiceUnavailable, codeUnavailable, err.Error())
+	case errors.Is(err, auth.ErrSSODisabled), errors.Is(err, auth.ErrSSOProviderUnknown):
+		writeError(w, r, http.StatusNotFound, codeNotFound, err.Error())
+	case errors.Is(err, auth.ErrConnectionNotFound):
+		writeError(w, r, http.StatusNotFound, codeNotFound, err.Error())
+	case errors.Is(err, auth.ErrSSOLimit):
+		writeError(w, r, http.StatusConflict, "sso_limit", err.Error())
+	case errors.Is(err, auth.ErrSecretsNotConfigured):
 		writeError(w, r, http.StatusServiceUnavailable, codeUnavailable, err.Error())
 	case errors.Is(err, auth.ErrOrgNotActive):
 		writeError(w, r, http.StatusConflict, "org_not_active", err.Error())

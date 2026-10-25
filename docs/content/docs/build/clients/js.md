@@ -178,9 +178,36 @@ try {
 
 - The client reads the `backd_code` (or `backd_error`, `backd_linked`) that backd added to the address, removes it from the address bar and trades the one-time code for a session (stored like a login's) and resolves with it, plus `new_user` and, for a new user, the `profile`. Use [`account.on_signup`](../../auth/providers/#the-profile-and-the-sign-up-hook) to create the profile document on the server instead of depending on the page. `completeOnLoad: false` in `createClient` turns this off, and `completeSignIn()` does the same on demand.
 - A page opened where the sign-in was not started (the link was opened on another device or in another tab) has no verifier to redeem the code with: `ready` rejects with a `ValidationError`, `code: "wrong_device"`; show "open this on the device where you asked".
-- Failures reject with the error the code means: `account_exists` and `link_conflict` are a `ConflictError`; `signup_closed`, `email_not_verified` and `signin_refused` a `ForbiddenError`; `cancelled` an `AuthenticationError`; `invitation_invalid` and `email_required` a `ValidationError`; `provider_error` a `BackdError`. `code` is the code.
+- Failures reject with the error the code means: `account_exists` and `link_conflict` are a `ConflictError`; `signup_closed`, `email_not_verified` and `signin_refused` a `ForbiddenError`; `not_allowed` a `NotAllowedError`; `cancelled` an `AuthenticationError`; `invitation_invalid` and `email_required` a `ValidationError`; `provider_error` a `BackdError`. `code` is the code.
 - The PKCE verifier waits in the tab's `sessionStorage` between the two pages (`oauthStorage` in `createClient` replaces it). `redirectTo` is the current page unless given; the realm's `sign_in.app_url` takes over only when the client sends none. `navigate(url)` in the options replaces `location.assign` for apps that open a browser session of their own (React Native, Capacitor); `redirectTo` may be an app scheme (`acme://signed-in`) there, and `completeSignIn(url)` takes the address the app was opened with.
 - `signInWith(provider, { invitation, locale })` passes an invitation for realms with `signup: invite`.
+- **Which buttons to show:** `await backd.auth.providers()` lists the providers the realm has configured *and* that work now (`['google', 'microsoft']`), the check a sign-in start makes. Nothing but names comes back.
+
+#### Through an organization's own Google or Microsoft
+
+A company can sign its people in with its own Google Workspace or Microsoft tenant (see [Sign-in connections](../../organizations/api/#sign-in-connections)). The same calls take `org`, the organization's id or slug:
+
+```js
+const names = await backd.auth.providers({ org: 'acme-corp' })     // ['google'], the connections usable now ([] for an unknown organization too)
+await backd.auth.signInWith('google', { org: 'acme-corp' })        // the same flow, at the organization's address
+await backd.auth.signInWithIdToken('google', { idToken, nonce, org: 'acme-corp' })   // a native app
+await backd.auth.linkProvider('google', { org: 'acme-corp' })     // a person who already has an account links the connection, and joins
+await backd.auth.unlinkProvider('google', { org: 'acme-corp' })   // identities through an organization are separate from the realm's
+```
+
+A person the connection does not admit (another Workspace domain or tenant, or an address outside its `email_domains`) gets a **`NotAllowedError`** (a `ForbiddenError`, `code: "not_allowed"`) from `ready`, `completeSignIn()` and `signInWithIdToken()`, and nothing is created. An organization sign-in never links to an existing account by address: that is `account_exists`, and the person links the connection from a session they already have.
+
+Its managers keep the connections with `backd.orgs.sso(orgId)`:
+
+```js
+const sso = backd.orgs.sso(org.id)
+const { items, providers, max_connections } = await sso.list()
+await backd.auth.withProof(() => sso.set('google', { clientId, clientSecret, hostedDomain: 'acme.example', joinRoles: ['member'] }))
+// items[n].redirect_uri is the address to register with the provider; the secret is never returned (client_secret_set says it is stored)
+await backd.auth.withProof(() => sso.delete('google'))
+```
+
+`list()` and `get(provider)` need `manage: sso`; `set` and `delete` also a fresh proof. Leave `clientSecret` out of a `set` to keep the stored one. Administrators use `backd.admin.orgs.sso(id)`, `setSso(id, provider, input)` and `deleteSso(id, provider)`.
 
 For a signed-in user:
 
@@ -725,7 +752,7 @@ const offer = await backd.orgs.invitations.preview(token)   // { org, roles, tea
 await backd.orgs.invitations.accept(token)
 ```
 
-The rest of the surface, by object: `orgs` has `create`, `list`, `get`, `update`, `leave` (allowed without a second factor; the last manager cannot) and `delete`; `members(id)` has `list`, `update` and `remove`; `teams(id)` has `list`, `create`, `update`, `delete`, `members`, `addMember`, `removeMember`, `grantRole`, `setRoleWindow` and `revokeRole`; `invitations(id)` has `create`, `list`, `revoke`, `send` and `newLink`; `templates(id)` has `list`, `get`, `put`, `delete`, `preview` and `test`. Each maps to a route of the [organizations API](../../organizations/api/).
+The rest of the surface, by object: `orgs` has `create`, `list`, `get`, `update`, `leave` (allowed without a second factor; the last manager cannot) and `delete`; `members(id)` has `list`, `update` and `remove`; `teams(id)` has `list`, `create`, `update`, `delete`, `members`, `addMember`, `removeMember`, `grantRole`, `setRoleWindow` and `revokeRole`; `invitations(id)` has `create`, `list`, `revoke`, `send` and `newLink`; `templates(id)` has `list`, `get`, `put`, `delete`, `preview` and `test`; `sso(id)` has `list`, `get`, `set` and `delete` (the organization's [sign-in connections](#through-an-organizations-own-google-or-microsoft)). Each maps to a route of the [organizations API](../../organizations/api/).
 
 **Documents belong to an organization** when their collection says so: `inOrg(id)` scopes a collection, so creates go there and lists show only that organization's documents (the read rule still decides what is seen).
 
@@ -760,6 +787,7 @@ Every answer that isn't 2xx throws a `BackdError`, or one of its subclasses:
 | `AuthenticationError` | 401 | `unauthenticated`, `invalid_credentials` |
 | `PasswordExpiredError` (an `AuthenticationError`) | 401 | `password_expired`: the password is right but an administrator [expired it](../../auth/users/#expiring-every-password); `resetEmailQueued` says whether backd queued the email with the link to choose a new one. Only the right password gets this answer, from `auth.login()`, `auth.signIn()` and `auth.reauth()` |
 | `ForbiddenError` | 403 | `forbidden` |
+| `NotAllowedError` (a `ForbiddenError`) | 403 | `not_allowed`: the person is not of the organization the connection they signed in through admits; nothing was created |
 | `NotFoundError` | 404 | `not_found` |
 | `ConflictError` | 409 | `email_taken`, `conflict`, `write_conflict` |
 | `IdTakenError` (a `ConflictError`) | 409 | `id_taken`: a document with that [custom id](#custom-ids) exists, and nothing was overwritten |

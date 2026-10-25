@@ -266,6 +266,9 @@ mfa:
 #   creator_roles: [owner]           # the roles the creator holds
 #   max_created_per_user: 5
 #   invitation_link: "https://app.example.com/join?token={token}"   # within sign_in.allowed_redirects
+#   # Let organizations connect their own Google Workspace or Microsoft tenant (needs a role
+#   # with manage: sso, e.g. owner: { manage: [org, members, roles, teams, sso] }):
+#   sso: { providers: [google, microsoft] }
 
 # Roles that access rules can check. `users` lists emails that get the role
 # at startup (seed assignments): plain emails, or objects with an `email`.

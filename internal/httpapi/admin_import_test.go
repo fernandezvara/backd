@@ -372,6 +372,51 @@ func TestAdminImportAuthData(t *testing.T) {
 	if out := post("validate", "_system/auth/mfa.jsonl", sealed); out["counts"].(map[string]any)["invalid"] != float64(1) {
 		t.Errorf("a secret that arrives sealed: %v", out)
 	}
+	// An organization's connection arrives as it was exported; its client secret is not part of
+	// the package, so it answers unavailable until a secret is set again.
+	conn := line(map[string]any{"id": "org1:google", "org": "org1", "provider": "google", "client_id": "123-abc.apps.googleusercontent.com", "hosted_domain": "acme.example",
+		"email_domains": []any{}, "native_client_ids": []any{}, "join_roles": []any{"member"}, "enabled": true, "blocked": []any{}, "created_at": at, "updated_at": at})
+	if out := post("validate", "_system/auth/org_connections.jsonl", conn); out["counts"].(map[string]any)["created"] != float64(1) || len(mem.Portable("org_connections")) != 0 {
+		t.Errorf("validate a connection: %v", out)
+	}
+	if out := post("write", "_system/auth/org_connections.jsonl", conn); out["counts"].(map[string]any)["created"] != float64(1) || len(mem.Portable("org_connections")) != 1 {
+		t.Errorf("write a connection: %v", out)
+	}
+	if out := post("write", "_system/auth/org_connections.jsonl", conn); out["counts"].(map[string]any)["unchanged"] != float64(1) {
+		t.Errorf("a connection again: %v", out)
+	}
+	if _, ok, _ := f.svc.OrgSecret(ctx, "org1", "SSO_GOOGLE_CLIENT_SECRET"); ok {
+		t.Error("an import made a client secret appear")
+	}
+	// A connection that an API call could not have set is refused, and so is one the stores would
+	// read inconsistently (an id that isn't <org>:<provider>).
+	good := map[string]any{"id": "org2:microsoft", "org": "org2", "provider": "microsoft", "client_id": "", "tenant": "11111111-2222-3333-4444-555555555555",
+		"email_domains": []any{}, "native_client_ids": []any{}, "join_roles": []any{}, "enabled": true, "blocked": []any{}, "created_at": at, "updated_at": at}
+	with := func(k string, v any) string {
+		d := map[string]any{}
+		for key, val := range good {
+			d[key] = val
+		}
+		d[k] = v
+		return line(d)
+	}
+	for name, body := range map[string]string{
+		"an id that is not org:provider": with("id", "x"),
+		"a provider organizations lack":  with("provider", "apple"),
+		"a shared tenant":                with("tenant", "common"),
+		"a tenant that is not an id":     with("tenant", "acme"),
+		"a domain with a capital":        with("email_domains", []any{"Acme.example"}),
+		"a hosted domain on microsoft":   with("hosted_domain", "acme.example"),
+		"a client id that is not valid":  with("client_id", "not a guid"),
+	} {
+		if out := post("validate", "_system/auth/org_connections.jsonl", body); out["counts"].(map[string]any)["invalid"] != float64(1) {
+			t.Errorf("%s: %v", name, out)
+		}
+	}
+	// An anonymized export's connection, with its client id blanked, is valid.
+	if out := post("validate", "_system/auth/org_connections.jsonl", line(good)); out["counts"].(map[string]any)["created"] != float64(1) {
+		t.Errorf("a blanked client id: %v", out)
+	}
 	// The users of the package are owners that exist for its documents.
 	doc := importLines(t, 1, func(i int, d map[string]any) { d["_meta"].(map[string]any)["owner"] = "u1" })
 	if out := post("validate", "app/notes.jsonl", doc); out["missing_owners"] != float64(0) {

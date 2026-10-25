@@ -748,6 +748,62 @@ func TestContract(t *testing.T) {
 		f.svc.Settings.Providers["unset"] = &registry.Provider{Name: "google", ClientID: "g-client", ClientSecret: "NEVER_SET"}
 		req("GET", o+"/unset/start?redirect_to="+redirect+"&code_challenge="+challenge, "", nil, 503)
 		req("POST", o+"/unset/start", `{"redirect_to": "https://app.acme.example/x", "code_challenge": "`+challenge+`"}`, nil, 503)
+		// An organization's connection: the same flow at the organization's address.
+		made, err := f.svc.AdminCreateOrg(context.Background(), "Connected Inc", "", f.adaID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.svc.AdminSetOrgConnection(context.Background(), made.Org.ID, "google", auth.ConnectionInput{ClientID: "org-g-client", ClientSecret: "org-g-secret", HostedDomain: "acme.example", NativeClientIDs: []string{"org-g-native"}}); err != nil {
+			t.Fatal(err)
+		}
+		oo := a + "/orgs/" + made.Org.ID
+		req("GET", a+"/providers", "", nil, 200)
+		req("GET", oo+"/providers", "", nil, 200)
+		req("GET", a+"/orgs/nope/providers", "", nil, 200)
+		ostart := oo + "/oauth/google/start?redirect_to=" + redirect + "&code_challenge=" + challenge
+		idp.SetUser(orgGoogle("g-org-contract", "orgperson@acme.example", "acme.example", true))
+		orec, _ := f.doH(t, "GET", ostart, "", nil)
+		if orec.Code != 302 {
+			t.Fatalf("organization start: %d %s", orec.Code, orec.Body)
+		}
+		req("GET", ostart, "", nil, 302)
+		req("GET", oo+"/oauth/google/start?redirect_to="+redirect, "", nil, 400)
+		req("GET", oo+"/oauth/apple/start?redirect_to="+redirect+"&code_challenge="+challenge, "", nil, 404)
+		req("GET", a+"/orgs/nope/oauth/google/start?redirect_to="+redirect+"&code_challenge="+challenge, "", nil, 404)
+		req("POST", oo+"/oauth/google/start", `{"redirect_to": "https://app.acme.example/x", "code_challenge": "`+challenge+`"}`, nil, 200)
+		req("POST", oo+"/oauth/google/start", `{"redirect_to": "https://app.acme.example/x", "code_challenge": "`+challenge+`", "intent": "link"}`, nil, 401)
+		req("POST", oo+"/oauth/google/start", `{"redirect_to": "https://evil.example/x", "code_challenge": "`+challenge+`"}`, nil, 400)
+		req("POST", oo+"/oauth/apple/start", `{"redirect_to": "https://app.acme.example/x", "code_challenge": "`+challenge+`"}`, nil, 404)
+		// Backd's public address unknown: the organization's provider can't be offered.
+		publicURL := f.svc.Settings.Email.PublicURL
+		f.svc.Settings.Email.PublicURL = ""
+		req("GET", ostart, "", nil, 503)
+		req("POST", oo+"/oauth/google/start", `{"redirect_to": "https://app.acme.example/x", "code_challenge": "`+challenge+`"}`, nil, 503)
+		f.svc.Settings.Email.PublicURL = publicURL
+		oback, _ := url.Parse(idp.Authorize(orec.Header().Get("Location")))
+		ocb, _ := f.doH(t, "GET", oback.Path+"?"+oback.RawQuery, "", nil)
+		oto, _ := url.Parse(ocb.Header().Get("Location"))
+		if ocb.Code != 302 || oto.Query().Get("backd_code") == "" {
+			t.Fatalf("organization callback: %d %v", ocb.Code, oto)
+		}
+		req("GET", "/v1/nope/_auth/orgs/x/oauth/google/callback?state=x", "", nil, 404)
+		req("POST", "/v1/nope/_auth/orgs/x/oauth/google/callback", "state=x", map[string]string{"Content-Type": "application/x-www-form-urlencoded"}, 404)
+		req("GET", oo+"/oauth/google/callback?state=nope&code=x", "", nil, 400)
+		req("POST", oo+"/oauth/google/callback", "state=nope&code=x", map[string]string{"Content-Type": "application/x-www-form-urlencoded"}, 400)
+		frec, _ := f.doH(t, "GET", ostart, "", nil)
+		fback, _ := url.Parse(idp.Authorize(frec.Header().Get("Location")))
+		req("POST", fback.Path, fback.RawQuery, map[string]string{"Content-Type": "application/x-www-form-urlencoded"}, 303)
+		orgNative := func(claims map[string]any) string {
+			claims["aud"], claims["nonce"] = "org-g-native", "n1"
+			return `{"id_token": "` + idp.IDToken(t, claims) + `", "nonce": "n1"}`
+		}
+		oex := oo + "/oauth/google/id-token"
+		req("POST", oex, orgNative(orgGoogle("g-org-n", "orgnative@acme.example", "acme.example", true)), nil, 200)
+		req("POST", oex, orgNative(orgGoogle("g-org-n2", "other@elsewhere.example", "elsewhere.example", true)), nil, 403)
+		req("POST", oex, orgNative(orgGoogle("g-org-n3", "ada@example.com", "acme.example", true)), nil, 409)
+		req("POST", oex, orgNative(orgGoogle("g-org-n4", "", "acme.example", true)), nil, 400)
+		req("POST", oex, `{"id_token": "bad", "nonce": "n1"}`, nil, 401)
+		req("POST", oo+"/oauth/apple/id-token", orgNative(orgGoogle("g-org-n", "orgnative@acme.example", "acme.example", true)), nil, 404)
 		// Too many starts from one address.
 		for range 40 {
 			if rec, _ := f.doH(t, "GET", start, "", nil); rec.Code == 429 {
@@ -756,6 +812,13 @@ func TestContract(t *testing.T) {
 		}
 		req("GET", start, "", nil, 429)
 		req("POST", o+"/google/start", `{"redirect_to": "https://app.acme.example/x", "code_challenge": "`+challenge+`"}`, nil, 429)
+		req("GET", ostart, "", nil, 429)
+		req("POST", oo+"/oauth/google/start", `{"redirect_to": "https://app.acme.example/x", "code_challenge": "`+challenge+`"}`, nil, 429)
+		for range 70 {
+			f.doH(t, "GET", a+"/providers", "", nil)
+		}
+		req("GET", a+"/providers", "", nil, 429)
+		req("GET", oo+"/providers", "", nil, 429)
 		req("POST", a+"/token", `{"code": "x", "code_verifier": "y"}`, nil, 401)
 		for range 31 {
 			f.doH(t, "POST", a+"/token", `{"code": "x", "code_verifier": "y"}`, map[string]string{"Content-Type": "application/json"})
@@ -765,6 +828,7 @@ func TestContract(t *testing.T) {
 			f.doH(t, "POST", ex, `{"id_token": "bad", "nonce": "n1"}`, map[string]string{"Content-Type": "application/json"})
 		}
 		req("POST", ex, `{"id_token": "bad", "nonce": "n1"}`, nil, 429)
+		req("POST", oex, `{"id_token": "bad", "nonce": "n1"}`, nil, 429)
 	}
 	// A second factor: the login answers with a challenge, which the code turns into a session.
 	{
@@ -1169,7 +1233,7 @@ func TestContract(t *testing.T) {
 	req("PUT", ad+"/secrets/KEY", `{"value": "x", "database": "nope"}`, json(key), 400)
 	req("PUT", ad+"/secrets/KEY", `{"value": "x"}`, nil, 401)
 	req("PUT", ad+"/secrets/KEY", `{"value": "x"}`, with(ada, "Content-Type", "application/json"), 403)
-	if out := req("GET", ad+"/secrets", "", key, 200); len(out["items"].([]any)) != 2+3 { // plus the provider secrets of setUpProviders
+	if out := req("GET", ad+"/secrets", "", key, 200); len(out["items"].([]any)) != 2+3+1 { // plus the provider secrets of setUpProviders and the secret of an organization's connection
 		t.Errorf("secrets listed: %v", out["items"])
 	}
 	req("DELETE", ad+"/secrets/SHARED", "", key, 204)
@@ -2937,6 +3001,79 @@ func TestContract(t *testing.T) {
 		}
 		*st = was
 		f.reg.Realms["acme"].Settings.Compliance = prior
+	}
+
+	// Organization sign-in connections (design/org-sso.md §4).
+	{
+		orgs, adm := "/v1/acme/_orgs", "/v1/acme/_admin/orgs"
+		const google = `{"client_id": "123-abc.apps.googleusercontent.com", "client_secret": "contract-secret", "hosted_domain": "acme.example", "join_roles": ["editor"]}`
+		made, err := f.svc.AdminCreateOrg(context.Background(), "Sign-in Inc", "", f.adaID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		org := made.Org.ID
+		sso := orgs + "/" + org + "/sso"
+		proof := func() map[string]string { return with(ada, reauthHeader, f.freshProof(t, f.ada)) }
+		// Without a secrets key the secret can't be kept; nothing is saved.
+		cipher := f.svc.Cipher
+		f.svc.Cipher = nil
+		req("PUT", sso+"/google", google, proof(), 503)
+		f.svc.Cipher, _ = auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
+		_ = cipher
+		req("GET", sso, "", nil, 401)
+		req("GET", sso, "", carl, 403)
+		req("GET", sso+"/google", "", nil, 401)
+		req("GET", sso+"/google", "", carl, 403)
+		req("GET", sso+"/google", "", ada, 404)
+		req("PUT", sso+"/google", google, nil, 401)
+		req("PUT", sso+"/google", google, carl, 403)
+		req("PUT", sso+"/google", `{"client_id": "c-1"}`, proof(), 400)
+		req("PUT", sso+"/apple", google, proof(), 404)
+		saved := req("PUT", sso+"/google", google, proof(), 200)
+		if saved["client_secret_set"] != true {
+			t.Errorf("connection = %v", saved)
+		}
+		req("GET", sso, "", ada, 200)
+		req("GET", sso+"/google", "", ada, 200)
+		req("GET", "/v1/nope/_orgs/"+org+"/sso", "", ada, 404)
+		// The limit: one connection per provider, as many as the realm allows.
+		limit := f.svc.Settings.Organizations.SSO.MaxPerOrg
+		f.svc.Settings.Organizations.SSO.MaxPerOrg = 1
+		req("PUT", sso+"/microsoft", `{"client_id": "11111111-2222-3333-4444-555555555555", "client_secret": "s", "tenant": "11111111-2222-3333-4444-555555555555"}`, proof(), 409)
+		f.svc.Settings.Organizations.SSO.MaxPerOrg = limit
+		req("DELETE", sso+"/google", "", nil, 401)
+		req("DELETE", sso+"/google", "", carl, 403)
+		req("DELETE", sso+"/microsoft", "", proof(), 404)
+		req("DELETE", sso+"/google", "", proof(), 204)
+
+		// The administrator's side.
+		asso := adm + "/" + org + "/sso"
+		req("GET", asso, "", nil, 401)
+		req("GET", asso, "", ada, 403)
+		req("GET", asso, "", key, 200)
+		req("GET", adm+"/nope/sso", "", key, 404)
+		req("GET", asso+"/google", "", nil, 401)
+		req("GET", asso+"/google", "", ada, 403)
+		req("GET", asso+"/google", "", key, 404)
+		req("PUT", asso+"/google", google, nil, 401)
+		req("PUT", asso+"/google", google, ada, 403)
+		req("PUT", asso+"/google", `{"client_id": "c-1"}`, json(key), 400)
+		req("PUT", adm+"/nope/sso/google", google, json(key), 404)
+		req("PUT", asso+"/google", google, json(key), 200)
+		req("GET", asso+"/google", "", key, 200)
+		f.svc.Cipher = nil
+		req("PUT", asso+"/microsoft", `{"client_id": "11111111-2222-3333-4444-555555555555", "client_secret": "s", "tenant": "11111111-2222-3333-4444-555555555555"}`, json(key), 503)
+		f.svc.Cipher = cipher
+		if cipher == nil {
+			f.svc.Cipher, _ = auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
+		}
+		req("DELETE", asso+"/google", "", nil, 401)
+		req("DELETE", asso+"/google", "", ada, 403)
+		req("DELETE", asso+"/google", "", key, 204)
+		req("DELETE", asso+"/google", "", key, 404)
+		// A deleted organization takes none.
+		req("DELETE", orgs+"/"+org, "", proof(), 204)
+		req("PUT", asso+"/google", google, json(key), 409)
 	}
 
 	// The actions of a breach come last: they end every session the checks above used.

@@ -2,7 +2,7 @@
 
 - **Issues:** features 17.1–17.8 (milestone `17-export-import`); encrypted fields in 16.6
 - **Status:** decided
-- **Related designs:** [field-encryption.md](./field-encryption.md) (keys, format, 16.6), [account-lifecycle.md](./account-lifecycle.md) (`on_owner_delete` anonymize policies), [file-storage.md](./file-storage.md), [organizations.md](./organizations.md), [mfa-passwordless.md](./mfa-passwordless.md) (reauth), f6 (job steps)
+- **Related designs:** [field-encryption.md](./field-encryption.md) (keys, format, 16.6), [account-lifecycle.md](./account-lifecycle.md) (`on_owner_delete` anonymize policies), [file-storage.md](./file-storage.md), [organizations.md](./organizations.md), [org-sso.md](./org-sso.md) (connections as an auth part), [mfa-passwordless.md](./mfa-passwordless.md) (reauth), f6 (job steps)
 
 ## 1. The idea
 
@@ -153,7 +153,7 @@ The audit trail stays in `_system` and gets its own `backd audit export` later (
 ## 7. Authentication data (issue 17.4)
 
 - **When:** only with `--include auth`, at realm scope, by a full admin with reauth. It's audited as a separate event (`export.auth`).
-- **What's included:** users, identities including password hashes, organizations, memberships, teams, MFA enrollments and push devices. Still-valid invitations are excluded — they're tokens, like sessions (§6).
+- **What's included:** users, identities including password hashes, organizations, organization sign-in connections, memberships, teams, MFA enrollments and push devices. Connections travel **without their client secrets** ([org-sso.md §7](./org-sso.md#7-lifecycle-and-portability-issue-306)): after an import a connection answers unavailable until its secret is set again, and anonymized packages blank the client ids. Still-valid invitations are excluded — they're tokens, like sessions (§6).
 - **The export key:** parts encrypted with realm secrets (TOTP secrets, recovery-code hashes keyed by the realm, device tokens, Apple refresh tokens) are decrypted by the server and **re-encrypted with a one-time export key**, generated per export and returned **once** to the operator (fingerprint in the manifest).
 - **On import,** the operator supplies the key (`--auth-key env:…`), and the target re-encrypts with its own realm secrets.
 - **Without the key,** users are imported without MFA and devices, and the report says so. Required-MFA users then enroll at their next sign-in.

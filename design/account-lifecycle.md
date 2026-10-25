@@ -2,7 +2,7 @@
 
 - **Issues:** design 4.1 (#5) → features 4.3 (#11), 4.4 (#12), 4.5 (#13), 4.6 (#14), 4.7 (#15), 4.8, 4.9
 - **Status:** decided; §4.6 and §5 revised 2026-10-02 (deactivate by default, tombstone, opt-in policies)
-- **Related designs:** [email-delivery.md](./email-delivery.md) (templates, tokens, hosted pages, limits), [internal-functions.md](./internal-functions.md) (the deferred `account.on_delete` hook)
+- **Related designs:** [email-delivery.md](./email-delivery.md) (templates, tokens, hosted pages, limits), [internal-functions.md](./internal-functions.md) (the deferred `account.on_delete` hook), [org-sso.md](./org-sso.md) (organization sign-in creates users even when sign-up is `closed`; erasure removes organization-bound identities)
 
 ## 1. Decisions at a glance
 
@@ -61,6 +61,8 @@ Rules (from [email-delivery.md §8](./email-delivery.md#8-tokens)): created when
 
 ### 4.1 Sign-up
 
+> **In realms with organizations** sign-up is `POST /_auth/orgs` (a new person and their organization) or `POST /_auth/orgs/{org}/signup` with an invitation ([scoped-sessions.md](./scoped-sessions.md) §5). The table below describes the answers for the address.
+
 | Realm | New address | Address already registered |
 |---|---|---|
 | no `email:` | `201` + session (today) | `409 email_taken` (today) |
@@ -100,6 +102,8 @@ Only when `allow_email_change: true` (otherwise the route doesn't exist: `404`).
 **Admin changes:** `POST /_admin/users/{id}/email { email }` works in any realm with `email:`, regardless of `allow_email_change`; both addresses are notified, the revert link applies, the change is audited.
 
 ### 4.5 Invitations by email (issue 4.9)
+
+> Organization invitations are accepted while signing in to the organization ([scoped-sessions.md](./scoped-sessions.md) §5.1).
 
 - `POST /_admin/invitations { email, send: true, redirect_to? }` (and `backd user invite --send`): for invitations bound to an address, backd emails an `invitation` with a link.
 - Link → hosted `accept-invitation` page (email shown, not editable; password twice; optional locale) or the app's sign-up page via `links.invitation`, which calls `POST /_auth/accept-invitation { token, password, locale? }`.

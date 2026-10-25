@@ -24,7 +24,7 @@ type MemStore struct {
 	mu          sync.Mutex
 	portable    map[string]map[string]map[string]any // collection -> id -> raw document (SeedPortable)
 	users       map[string]auth.User
-	identities  map[string]auth.Identity // provider/subject → identity
+	identities  map[string]auth.Identity // provider/org/subject → identity
 	sessions    map[string]auth.Session  // id → session
 	keys        map[string]auth.APIKey   // hash → key
 	attempts    map[string]memAttempts
@@ -62,44 +62,44 @@ func NewMemStore() *MemStore {
 	return &MemStore{users: map[string]auth.User{}, identities: map[string]auth.Identity{}, sessions: map[string]auth.Session{}, keys: map[string]auth.APIKey{}, attempts: map[string]memAttempts{}, invites: map[string]auth.Invitation{}, secrets: map[string]auth.Secret{}, schedules: map[string]auth.ScheduleState{}, checks: map[string]auth.CheckReport{}, journal: map[string]auth.FileJournalEntry{}, oauthStates: map[string]auth.OAuthState{}, loginCodes: map[string]auth.LoginCode{}, deletions: map[string]auth.FileDeletion{}, jobs: map[string]memJob{}, idempotency: map[string]auth.IdempotencyRecord{}}
 }
 
-func secretKey(database, name string) string { return database + "\x00" + name }
+func secretKey(scope, name string) string { return scope + "\x00" + name }
 
 func (m *MemStore) UpsertSecret(_ context.Context, s auth.Secret) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if existing, ok := m.secrets[secretKey(s.Database, s.Name)]; ok {
+	if existing, ok := m.secrets[secretKey(s.Scope(), s.Name)]; ok {
 		s.CreatedAt = existing.CreatedAt
 	}
-	m.secrets[secretKey(s.Database, s.Name)] = s
+	m.secrets[secretKey(s.Scope(), s.Name)] = s
 	return nil
 }
 
 func (m *MemStore) CreateSecret(_ context.Context, s auth.Secret) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.secrets[secretKey(s.Database, s.Name)]; ok {
+	if _, ok := m.secrets[secretKey(s.Scope(), s.Name)]; ok {
 		return auth.ErrSecretExists
 	}
-	m.secrets[secretKey(s.Database, s.Name)] = s
+	m.secrets[secretKey(s.Scope(), s.Name)] = s
 	return nil
 }
 
 func (m *MemStore) ReplaceKeySecret(_ context.Context, s auth.Secret, ifVersion int) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	have, ok := m.secrets[secretKey(s.Database, s.Name)]
+	have, ok := m.secrets[secretKey(s.Scope(), s.Name)]
 	if !ok || max(have.Version, 1) != ifVersion {
 		return false, nil
 	}
 	s.CreatedAt = have.CreatedAt
-	m.secrets[secretKey(s.Database, s.Name)] = s
+	m.secrets[secretKey(s.Scope(), s.Name)] = s
 	return true, nil
 }
 
-func (m *MemStore) SecretByScope(_ context.Context, database, name string) (auth.Secret, error) {
+func (m *MemStore) SecretByScope(_ context.Context, scope, name string) (auth.Secret, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	s, ok := m.secrets[secretKey(database, name)]
+	s, ok := m.secrets[secretKey(scope, name)]
 	if !ok {
 		return auth.Secret{}, auth.ErrSecretNotFound
 	}
@@ -114,7 +114,7 @@ func (m *MemStore) ListSecrets(context.Context) ([]auth.Secret, error) {
 		out = append(out, s)
 	}
 	slices.SortFunc(out, func(a, b auth.Secret) int {
-		if c := strings.Compare(a.Database, b.Database); c != 0 {
+		if c := strings.Compare(a.Scope(), b.Scope()); c != 0 {
 			return c
 		}
 		return strings.Compare(a.Name, b.Name)
@@ -122,10 +122,10 @@ func (m *MemStore) ListSecrets(context.Context) ([]auth.Secret, error) {
 	return out, nil
 }
 
-func (m *MemStore) DeleteSecret(_ context.Context, database, name string) error {
+func (m *MemStore) DeleteSecret(_ context.Context, scope, name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	k := secretKey(database, name)
+	k := secretKey(scope, name)
 	if _, ok := m.secrets[k]; !ok {
 		return auth.ErrSecretNotFound
 	}
@@ -305,7 +305,7 @@ func (m *MemStore) PutIdentity(_ context.Context, id auth.Identity) error {
 	if m.FailPutIdentity != nil {
 		return m.FailPutIdentity
 	}
-	k := id.Provider + "/" + id.Subject
+	k := identityKey(id.Provider, id.Org, id.Subject)
 	if cur, ok := m.identities[k]; ok {
 		if cur.UserID != id.UserID {
 			return auth.ErrIdentityExists
@@ -318,7 +318,7 @@ func (m *MemStore) PutIdentity(_ context.Context, id auth.Identity) error {
 		return nil
 	}
 	for _, other := range m.identities {
-		if other.UserID == id.UserID && other.Provider == id.Provider {
+		if other.UserID == id.UserID && other.Provider == id.Provider && other.Org == id.Org {
 			return auth.ErrIdentityExists
 		}
 	}
@@ -334,7 +334,7 @@ func (m *MemStore) PutIdentity(_ context.Context, id auth.Identity) error {
 func (m *MemStore) ForgetPasswordChangedAt(id auth.Identity) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	k := id.Provider + "/" + id.Subject
+	k := identityKey(id.Provider, id.Org, id.Subject)
 	cur, ok := m.identities[k]
 	if !ok {
 		return auth.ErrNotFound
@@ -373,11 +373,15 @@ func (m *MemStore) ListIdentities(_ context.Context, userID string) ([]auth.Iden
 	return out, nil
 }
 
-func (m *MemStore) IdentityOf(_ context.Context, userID, provider string) (auth.Identity, error) {
+func (m *MemStore) IdentityOf(ctx context.Context, userID, provider string) (auth.Identity, error) {
+	return m.IdentityOfIn(ctx, userID, provider, "")
+}
+
+func (m *MemStore) IdentityOfIn(_ context.Context, userID, provider, org string) (auth.Identity, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, i := range m.identities {
-		if i.UserID == userID && i.Provider == provider {
+		if i.UserID == userID && i.Provider == provider && i.Org == org {
 			return i, nil
 		}
 	}
@@ -413,11 +417,15 @@ func (m *MemStore) UpdateIdentity(_ context.Context, id string, upd auth.Identit
 	return auth.ErrNotFound
 }
 
-func (m *MemStore) DeleteIdentity(_ context.Context, userID, provider string) error {
+func (m *MemStore) DeleteIdentity(ctx context.Context, userID, provider string) error {
+	return m.DeleteIdentityIn(ctx, userID, provider, "")
+}
+
+func (m *MemStore) DeleteIdentityIn(_ context.Context, userID, provider, org string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for k, i := range m.identities {
-		if i.UserID == userID && i.Provider == provider {
+		if i.UserID == userID && i.Provider == provider && i.Org == org {
 			delete(m.identities, k)
 			return nil
 		}
@@ -425,10 +433,16 @@ func (m *MemStore) DeleteIdentity(_ context.Context, userID, provider string) er
 	return auth.ErrNotFound
 }
 
-func (m *MemStore) Identity(_ context.Context, provider, subject string) (auth.Identity, error) {
+func (m *MemStore) Identity(ctx context.Context, provider, subject string) (auth.Identity, error) {
+	return m.IdentityIn(ctx, provider, "", subject)
+}
+
+func identityKey(provider, org, subject string) string { return provider + "/" + org + "/" + subject }
+
+func (m *MemStore) IdentityIn(_ context.Context, provider, org, subject string) (auth.Identity, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	i, ok := m.identities[provider+"/"+subject]
+	i, ok := m.identities[identityKey(provider, org, subject)]
 	if !ok {
 		return auth.Identity{}, auth.ErrNotFound
 	}

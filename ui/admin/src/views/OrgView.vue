@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { AdminOrg, OrgInvitation, OrgMember, OrgOwnedReport, OrgTeam, OrgTeamRoleGrant } from 'backd-js'
+import type { AdminOrg, AuditRecord, OrgConnection, OrgConnections, OrgInvitation, OrgMember, OrgOwnedReport, OrgTeam, OrgTeamRoleGrant } from 'backd-js'
+import { NotFoundError } from 'backd-js'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppAlert from '@/components/AppAlert.vue'
@@ -27,6 +28,10 @@ const members = ref<OrgMember[]>([])
 const teams = ref<OrgTeam[]>([])
 const invitations = ref<OrgInvitation[]>([])
 const loadError = ref('')
+// The organization's own sign-in connections: null while the realm has the feature off.
+const sso = ref<OrgConnections | null>(null)
+const ssoLogins = ref<AuditRecord[]>([])
+const ssoLoginsError = ref('')
 
 const deleted = computed(() => org.value?.status === 'deleted')
 const teamName = (id: string) => teams.value.find((x) => x.id === id)?.name ?? id
@@ -60,8 +65,30 @@ async function load() {
     members.value = page.items
     teams.value = ts
     invitations.value = invs
+    await loadSso()
   } catch (e) {
     loadError.value = errorText(e, t('orgs.loadOneFailed'))
+  }
+}
+
+// A realm without organizations.sso answers 404: the section is then not shown at all.
+async function loadSso() {
+  try {
+    sso.value = await admin.orgs.sso(props.id)
+  } catch (e) {
+    if (e instanceof NotFoundError) {
+      sso.value = null
+      return
+    }
+    throw e
+  }
+  ssoLoginsError.value = ''
+  try {
+    ssoLogins.value = (await admin.audit.list({ action: 'org.sso.login', target: `org:${props.id}`, limit: 20 })).items
+  } catch (e) {
+    // The audit trail is another area: without it the connections still work.
+    ssoLogins.value = []
+    ssoLoginsError.value = errorText(e, t('common.unexpected'))
   }
 }
 onMounted(() => {
@@ -338,6 +365,69 @@ function askRevoke(i: OrgInvitation) {
 }
 const invWho = (i: OrgInvitation) => i.email ?? i.user ?? t('orgs.invitations.anyone')
 
+// ---- Sign-in connections ----
+type Provider = 'google' | 'microsoft'
+const connecting = ref(false)
+const conn = ref({ provider: 'google' as Provider, clientId: '', clientSecret: '', tenant: '', hostedDomain: '', emailDomains: '', joinRoles: '', enabled: true, existing: false })
+const connError = ref('')
+const connBusy = ref(false)
+// Providers the realm offers that this organization hasn't connected yet.
+const freeProviders = computed<Provider[]>(() => {
+  const taken = new Set((sso.value?.items ?? []).map((c) => c.provider))
+  return ((sso.value?.providers ?? []) as Provider[]).filter((p) => !taken.has(p))
+})
+const canAddConnection = computed(() => freeProviders.value.length > 0 && (sso.value?.items.length ?? 0) < (sso.value?.max_connections ?? 0))
+function openConnect(existing?: OrgConnection) {
+  connError.value = ''
+  conn.value = existing
+    ? {
+        provider: existing.provider, clientId: existing.client_id, clientSecret: '', tenant: existing.tenant ?? '', hostedDomain: existing.hosted_domain ?? '',
+        emailDomains: existing.email_domains.join(', '), joinRoles: existing.join_roles.join(', '), enabled: existing.enabled, existing: true,
+      }
+    : { provider: freeProviders.value[0] ?? 'google', clientId: '', clientSecret: '', tenant: '', hostedDomain: '', emailDomains: '', joinRoles: '', enabled: true, existing: false }
+  connecting.value = true
+}
+// "invalid request body" says nothing: the field and the reason are in the details.
+function connectionErrorText(e: unknown): string {
+  const details = (e as { details?: Array<{ path: string; reason: string }> }).details ?? []
+  const base = errorText(e, t('common.unexpected'))
+  return details.length ? `${base}: ${details.map((d) => `${d.path} ${d.reason}`).join('; ')}` : base
+}
+async function saveConnection() {
+  connBusy.value = true
+  connError.value = ''
+  try {
+    const v = conn.value
+    await admin.orgs.setSso(props.id, v.provider, {
+      clientId: v.clientId.trim(),
+      // Left empty on an existing connection, the stored secret stays: it is never shown.
+      clientSecret: v.clientSecret === '' ? undefined : v.clientSecret,
+      tenant: v.provider === 'microsoft' ? v.tenant.trim() : undefined,
+      hostedDomain: v.provider === 'google' ? v.hostedDomain.trim() : undefined,
+      emailDomains: parseList(v.emailDomains),
+      joinRoles: parseList(v.joinRoles),
+      enabled: v.enabled,
+    })
+    connecting.value = false
+    conn.value.clientSecret = ''
+    toasts.push(t('orgs.sso.saved'))
+    await load()
+  } catch (e) {
+    connError.value = connectionErrorText(e)
+  } finally {
+    connBusy.value = false
+  }
+}
+const removingConn = ref(false)
+const removeConn = ref<OrgConnection>()
+function askRemoveConn(c: OrgConnection) {
+  removeConn.value = c
+  removingConn.value = true
+}
+const loginUser = (r: AuditRecord) => String((r.details as Record<string, unknown> | undefined)?.user ?? '—')
+const loginProvider = (r: AuditRecord) => String((r.details as Record<string, unknown> | undefined)?.provider ?? '—')
+const loginJoined = (r: AuditRecord) => (r.details as Record<string, unknown> | undefined)?.joined === true
+
 const box = 'rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'
 const th = 'px-3 py-2'
 </script>
@@ -514,6 +604,56 @@ const th = 'px-3 py-2'
         </div>
       </section>
 
+      <section v-if="sso" class="mt-8" aria-labelledby="sso-h" data-testid="org-sso">
+        <div class="flex flex-wrap items-end justify-between gap-3">
+          <h2 id="sso-h" class="text-lg font-semibold">{{ t('orgs.sso.title') }}</h2>
+          <AppButton v-if="canWrite && canAddConnection" variant="secondary" @click="openConnect()">{{ t('orgs.sso.add') }}</AppButton>
+        </div>
+        <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">{{ t('orgs.sso.help') }}</p>
+        <div :class="[box, 'mt-2 overflow-x-auto']">
+          <table class="w-full text-left text-sm" data-testid="org-connections">
+            <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
+              <tr>
+                <th scope="col" :class="th">{{ t('orgs.sso.provider') }}</th>
+                <th scope="col" :class="th">{{ t('orgs.sso.limitedTo') }}</th>
+                <th scope="col" :class="th">{{ t('orgs.sso.joinRoles') }}</th>
+                <th scope="col" :class="th">{{ t('orgs.statusLabel') }}</th>
+                <th scope="col" :class="th">{{ t('orgs.sso.redirect') }}</th>
+                <th v-if="canWrite" scope="col" :class="th"><span class="sr-only">{{ t('orgs.members.actions') }}</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="c in sso.items" :key="c.provider" class="border-b border-slate-100 last:border-0 dark:border-slate-800" :data-testid="`connection-${c.provider}`">
+                <td class="px-3 py-2">{{ t(`orgs.sso.providers.${c.provider}`) }}<div class="font-mono text-xs text-slate-600 dark:text-slate-400">{{ c.client_id }}</div></td>
+                <td class="px-3 py-2">{{ c.hosted_domain ?? c.tenant }}<div v-if="c.email_domains.length" class="text-xs text-slate-600 dark:text-slate-400">{{ c.email_domains.join(', ') }}</div></td>
+                <td class="px-3 py-2">{{ c.join_roles.join(', ') || t('common.none') }}</td>
+                <td class="px-3 py-2">
+                  {{ c.enabled ? t('orgs.sso.enabled') : t('orgs.sso.disabled') }}
+                  <div :class="c.client_secret_set ? 'text-slate-600 dark:text-slate-400' : 'text-amber-800 dark:text-amber-300'" class="text-xs">{{ c.client_secret_set ? t('orgs.sso.secretSet') : t('orgs.sso.secretMissing') }}</div>
+                </td>
+                <td class="px-3 py-2"><code class="break-all text-xs" data-testid="connection-redirect">{{ c.redirect_uri ?? c.redirect_path }}</code></td>
+                <td v-if="canWrite" class="space-x-3 px-3 py-2 text-right">
+                  <button type="button" class="underline" @click="openConnect(c)">{{ t('orgs.members.edit') }}</button>
+                  <button type="button" class="underline" @click="askRemoveConn(c)">{{ t('common.delete') }}</button>
+                </td>
+              </tr>
+              <tr v-if="!sso.items.length">
+                <td colspan="6" class="px-3 py-6 text-center text-slate-600 dark:text-slate-400">{{ t('orgs.sso.empty') }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <h3 class="mt-4 text-sm font-semibold">{{ t('orgs.sso.recent') }}</h3>
+        <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">{{ t('orgs.sso.recentHelp') }}</p>
+        <AppAlert v-if="ssoLoginsError" kind="error" class="mt-2">{{ ssoLoginsError }}</AppAlert>
+        <ul v-else class="mt-1 space-y-0.5 text-sm" data-testid="org-sso-logins">
+          <li v-for="r in ssoLogins" :key="r.id">
+            {{ formatDate(r.at) }} — <span class="font-mono text-xs">{{ loginUser(r) }}</span> · {{ loginProvider(r) }}<span v-if="loginJoined(r)"> · {{ t('orgs.sso.joined') }}</span>
+          </li>
+          <li v-if="!ssoLogins.length" class="text-slate-600 dark:text-slate-400">{{ t('orgs.sso.noLogins') }}</li>
+        </ul>
+      </section>
+
       <section class="mt-8" aria-labelledby="claims-h">
         <h2 id="claims-h" class="text-lg font-semibold">{{ t('orgs.claims.title') }}</h2>
         <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">{{ t('orgs.claims.help') }}</p>
@@ -525,6 +665,31 @@ const th = 'px-3 py-2'
       </section>
     </template>
   </template>
+
+  <FormDialog v-model:open="connecting" :title="conn.existing ? t('orgs.sso.editTitle', { provider: t(`orgs.sso.providers.${conn.provider}`) }) : t('orgs.sso.add')" :submit="t('common.save')" :busy="connBusy" :error="connError" @submit="saveConnection">
+    <div v-if="!conn.existing" class="space-y-1">
+      <label for="conn-provider" class="block text-sm font-medium">{{ t('orgs.sso.provider') }}</label>
+      <select id="conn-provider" v-model="conn.provider" class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900">
+        <option v-for="p in freeProviders" :key="p" :value="p">{{ t(`orgs.sso.providers.${p}`) }}</option>
+      </select>
+    </div>
+    <TextField v-model="conn.clientId" :label="t('orgs.sso.clientId')" autocomplete="off" required />
+    <TextField v-model="conn.clientSecret" type="password" :label="t('orgs.sso.clientSecret')" :help="conn.existing ? t('orgs.sso.secretKeepHelp') : t('orgs.sso.secretHelp')" autocomplete="new-password" :required="!conn.existing" />
+    <TextField v-if="conn.provider === 'microsoft'" v-model="conn.tenant" :label="t('orgs.sso.tenant')" :help="t('orgs.sso.tenantHelp')" autocomplete="off" required />
+    <TextField v-else v-model="conn.hostedDomain" :label="t('orgs.sso.hostedDomain')" :help="t('orgs.sso.hostedDomainHelp')" autocomplete="off" required />
+    <TextField v-model="conn.emailDomains" :label="t('orgs.sso.emailDomains')" :help="t('orgs.sso.emailDomainsHelp')" autocomplete="off" />
+    <TextField v-model="conn.joinRoles" :label="t('orgs.sso.joinRoles')" :help="t('orgs.members.rolesHelp', { roles: (declared ?? []).join(', ') })" autocomplete="off" />
+    <label class="flex items-center gap-2 text-sm"><input v-model="conn.enabled" type="checkbox" /> {{ t('orgs.sso.enabled') }}</label>
+  </FormDialog>
+
+  <ConfirmDialog
+    v-model:open="removingConn"
+    :title="t('orgs.sso.removeTitle')"
+    :description="t('orgs.sso.removeHelp')"
+    :expected="removeConn ? removeConn.provider : ''"
+    :action="t('common.delete')"
+    @confirm="act(() => admin.orgs.deleteSso(id, removeConn!.provider), t('orgs.sso.removed'))"
+  />
 
   <FormDialog v-model:open="adding" :title="t('orgs.members.add')" :submit="t('common.create')" :busy="addBusy" :error="addError" @submit="addMember">
     <TextField v-model="addEmail" type="email" :label="t('orgs.members.email')" autocomplete="off" required />

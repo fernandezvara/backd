@@ -57,6 +57,8 @@ BACKD_SECRETS_KEY=$OLD_KEY BACKD_SECRETS_NEW_KEY=$NEW_KEY backd secret rotate-ke
 
 Rotating the key protects the stored values from now on; it does not change the values. If the secrets themselves may have been read (a dump with the key), replace each one at its source (the payment provider's key, the OAuth client secrets, the storage keys) and store the new value with `backd secret set`.
 
+The client secrets of [organization sign-in connections](../organization-sign-in/) are among them, and they belong to the companies. Each organization's managers create a new client secret with their provider and set the connection again with it (`PUT /_orgs/{org}/sso/{provider}`, or the *Sign-in* section of the admin UI); you can do it for them once they give you the new value, with `backd orgs sso-set --id <org> --provider google --client-id <id> --hosted-domain <domain>`, which reads the secret from the terminal. The old secret keeps working until the new one is set, so ask the managers first. `backd orgs sso --id <org>` lists an organization's connections and whether a secret is stored, and `backd audit` shows `org.sso.set` for each change.
+
 ### 4. Backups and their key
 
 A leaked backup cannot be recalled: assume whoever has it has everything it held on that day. Make a new `age` key pair, switch the backup job to the new public key and store the new private key apart from the backups ([Backup and restore](../backup/#encrypted-backups)). If a backup leaked *without* its key, the key is not compromised and nothing needs rotating but the data in it.

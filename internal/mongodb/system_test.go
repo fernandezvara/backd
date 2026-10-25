@@ -43,7 +43,7 @@ func TestProvisionSystemDatabase(t *testing.T) {
 	// Expected indexes, including TTL and unique ones.
 	wantIdx := map[string][]string{
 		"users":          {"email:1 unique sparse"},
-		"identities":     {"provider:1,subject:1 unique", "user_id:1"},
+		"identities":     {"provider:1,org:1,subject:1 unique", "user_id:1,provider:1,org:1 unique", "user_id:1"},
 		"sessions":       {"token_hash:1 unique", "user_id:1", "expires_at:1 ttl"},
 		"api_keys":       {"name:1 unique"},
 		"invitations":    {"token_hash:1 unique", "expires_at:1 ttl"},
@@ -201,7 +201,7 @@ func TestProvisionUpgradesIdentitiesFromV080(t *testing.T) {
 	if err := client.Database(realm+"___system").RunCommand(ctx, bson.D{{Key: "collMod", Value: "identities"}, {Key: "validator", Value: old}}).Err(); err != nil {
 		t.Fatal(err)
 	}
-	if err := ids.Indexes().DropOne(ctx, "user_id_1_provider_1"); err != nil {
+	if err := ids.Indexes().DropOne(ctx, "user_id_1_provider_1_org_1"); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
@@ -235,5 +235,80 @@ func TestProvisionUpgradesIdentitiesFromV080(t *testing.T) {
 	dup := bson.D{{Key: "_id", Value: "i3"}, {Key: "user_id", Value: "u1"}, {Key: "provider", Value: "google"}, {Key: "subject", Value: "g2"}, {Key: "created_at", Value: now}, {Key: "updated_at", Value: now}}
 	if _, err := ids.InsertOne(ctx, dup); !mongo.IsDuplicateKeyError(err) {
 		t.Errorf("a second google identity for the user: %v", err)
+	}
+}
+
+// v0.9.2 keyed identities by (provider, subject) and (user, provider): provisioning replaces both
+// with keys that take the organization, and drops the old ones, which would refuse a person's
+// identity with the same provider at an organization.
+func TestProvisionRekeysIdentitiesForOrganizations(t *testing.T) {
+	client := testClient(t)
+	realm := testRealm(t, client)
+	ctx := context.Background()
+	log, _ := testLogger()
+	p := &Provisioner{Client: client, Registry: loadRegistryWith(t, realm, "", map[string]string{"app/notes": `{}`}), Log: log}
+	if err := p.Apply(ctx); err != nil {
+		t.Fatal(err)
+	}
+	ids := client.Database(realm + "___system").Collection("identities")
+	now := time.Now().UTC()
+	identity := func(id, user, org, subject string) bson.D {
+		d := bson.D{{Key: "_id", Value: id}, {Key: "user_id", Value: user}, {Key: "provider", Value: "google"}, {Key: "subject", Value: subject}, {Key: "created_at", Value: now}, {Key: "updated_at", Value: now}}
+		if org != "" {
+			d = append(d, bson.E{Key: "org", Value: org})
+		}
+		return d
+	}
+
+	// Back to how v0.9.2 left them.
+	for _, name := range []string{"provider_1_org_1_subject_1", "user_id_1_provider_1_org_1"} {
+		if err := ids.Indexes().DropOne(ctx, name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, keys := range []bson.D{{{Key: "provider", Value: 1}, {Key: "subject", Value: 1}}, {{Key: "user_id", Value: 1}, {Key: "provider", Value: 1}}} {
+		if _, err := ids.Indexes().CreateOne(ctx, mongo.IndexModel{Keys: keys, Options: options.Index().SetUnique(true)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := ids.InsertOne(ctx, identity("i1", "u1", "", "g-1")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ids.InsertOne(ctx, identity("i2", "u1", "o1", "g-2")); !mongo.IsDuplicateKeyError(err) {
+		t.Fatalf("the old key admits an organization's identity: %v", err)
+	}
+
+	// verify reports them; apply replaces them.
+	if err := p.Verify(ctx); err == nil || !strings.Contains(err.Error(), "obsolete") {
+		t.Fatalf("Verify with the old indexes = %v", err)
+	}
+	if err := p.Apply(ctx); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if err := p.Verify(ctx); err != nil {
+		t.Fatalf("Verify after the upgrade: %v", err)
+	}
+	if _, err := ids.InsertOne(ctx, identity("i2", "u1", "o1", "g-2")); err != nil {
+		t.Errorf("an organization's identity after the upgrade: %v", err)
+	}
+	// What stays unique: one identity per provider per user per organization, one subject per
+	// organization, and the realm's own as before.
+	for name, doc := range map[string]bson.D{
+		"a second google identity of the user in the organization": identity("i3", "u1", "o1", "g-3"),
+		"the subject of another user in the organization":          identity("i4", "u2", "o1", "g-2"),
+		"a second realm google identity of the user":               identity("i5", "u1", "", "g-5"),
+		"the realm subject of another user":                        identity("i6", "u2", "", "g-1"),
+	} {
+		if _, err := ids.InsertOne(ctx, doc); !mongo.IsDuplicateKeyError(err) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	// The same subject at another organization is another person's identity.
+	if _, err := ids.InsertOne(ctx, identity("i7", "u3", "o2", "g-2")); err != nil {
+		t.Errorf("the same subject at another organization: %v", err)
+	}
+	// Applying again changes nothing.
+	if err := p.Apply(ctx); err != nil {
+		t.Fatalf("Apply again: %v", err)
 	}
 }

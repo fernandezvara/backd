@@ -2,7 +2,7 @@
 
 - **Issues:** features 14.1–14.13 (milestone `14-organizations`)
 - **Status:** decided
-- **Related designs:** [account-lifecycle.md](./account-lifecycle.md) (erasure, `on_owner_delete`), [mfa-passwordless.md](./mfa-passwordless.md) (session MFA flag, reauth), [email-delivery.md](./email-delivery.md) (invitation emails, limits), [file-storage.md](./file-storage.md) (deletion queue)
+- **Related designs:** [account-lifecycle.md](./account-lifecycle.md) (erasure, `on_owner_delete`), [mfa-passwordless.md](./mfa-passwordless.md) (session MFA flag, reauth), [email-delivery.md](./email-delivery.md) (invitation emails, limits), [file-storage.md](./file-storage.md) (deletion queue), [org-sso.md](./org-sso.md) (an organization's own sign-in providers)
 
 ## 1. The idea
 
@@ -160,6 +160,7 @@ All of these are under `/v1/{realm}/_orgs` and require a session. **A non-member
 - **`manage: roles`:** can grant or remove any role, including roles with capabilities.
 - **`manage: teams`:** see §8.
 - **`manage: org`:** covers rename, slug, `require_mfa` and deletion.
+- **`manage: sso`:** added by [org-sso.md](./org-sso.md): sets, replaces and removes the organization's sign-in connections and their client secrets, with reauth. Not part of any default role set; the example gives it to `owner` and `admin`. The roles a connection gives on joining follow the granting rules above.
 
 ### 5.2 Realm admins
 
@@ -171,6 +172,8 @@ All of these are under `/v1/{realm}/_orgs` and require a session. **A non-member
 ## 6. Documents in organizations and rules (issue 14.2)
 
 ### 6.1 Creating and querying
+
+> **Changed by [scoped-sessions.md](./scoped-sessions.md) §4.2:** `?org=` and `.inOrg()` are removed. A scoped session creates in, and lists from, its own organization; `_meta.org` comes from the session. The bullets below describe what stays (membership first, `organization` policies, immutability, batches) with the organization taken from the session.
 
 - **Creating:** `POST .../{collection}?org=<id>`, or `.inOrg(id)` in the JS client, sets `_meta.org`.
   - **Membership first:** backd checks the caller is a counting member (§11) before evaluating `create`. A non-member or unknown organization answers `403 not_org_member`, the same either way.
@@ -199,6 +202,8 @@ All of these are under `/v1/{realm}/_orgs` and require a session. **A non-member
 
 ### 6.3 Loading memberships
 
+> **Changed by [scoped-sessions.md](./scoped-sessions.md) §4.2:** only the session's organization counts (`Org.Counts(mfa, scope)`), so `user.orgs` has one entry.
+
 - **Lazy:** one aggregation per request, made only when an organization helper or `user.orgs` is evaluated. It reads `org_members` by user, with the user's teams and their roles and the organizations' `status`, `require_mfa` and `claims`.
 - **No cache:** changes to roles, teams and members apply on every instance at the next request.
 - **Bounded:** at most `max_memberships_per_user` (100) memberships and `max_teams_per_member` (20) teams per member, so the query and the pushed-down lists stay small.
@@ -226,6 +231,8 @@ All of these are under `/v1/{realm}/_orgs` and require a session. **A non-member
 - **Storage:** the token is stored hash-only. Invitations expire after 7 days by default. When an email carries the link the worker needs the token to write it, so that one is also kept **sealed with the instance's secrets key** until the invitation is used up, revoked or expired (sending needs `BACKD_SECRETS_KEY`).
 
 ### 7.2 Accepting
+
+> **Changed by [scoped-sessions.md](./scoped-sessions.md) §5.1:** acceptance happens while signing in (`invitation` in the org-bound `login`, `signup` and `oauth/start`), and previews need no session. `POST /_orgs/invitations/accept` is removed. The binding rules and errors below stay.
 
 - **Preview:** `POST /_orgs/invitations/preview` with the token, with a session, returns the organization name and the roles and teams on offer, so the app can ask "Join Acme as editor?". Previews need a session, so anonymous callers can't probe tokens.
 - **Accepting:** `POST /_orgs/invitations/accept` with the token, with a session.
@@ -269,7 +276,7 @@ Invitations and managers can give **direct roles or teams**. The docs explain, w
 
 ## 9. Leaving, removal and member erasure (issues 14.1 and 14.13)
 
-- **Leaving or removal:** documents in the organization stay, and the person loses access at once (no cache).
+- **Leaving or removal:** documents in the organization stay, and the person loses access at once (no cache). While the organization has a sign-in connection, a removed member is also kept from rejoining through it ([org-sso.md §6](./org-sso.md#6-accounts-and-joining-issue-305)); accepting an invitation lifts that.
 - **Erasure of a user:**
   - the user's memberships and team memberships are deleted;
   - invitations bound to them are deleted, while invitations they created stay, with `created_by` cleared;
@@ -311,6 +318,7 @@ Invitations and managers can give **direct roles or teams**. The docs explain, w
   - `delete` removes the documents, **soft-deleted ones included**, and queues their files for deletion;
   - `keep` leaves them, readable only by realm admins (no member remains).
 - **Report first:** `GET /_admin/orgs/{org}/owned` and `backd orgs owned` give counts per database and collection, and what each policy will do.
+- **Connections:** the organization's sign-in connections and their secrets are removed in the same job ([org-sso.md §7](./org-sso.md#7-lifecycle-and-portability-issue-306)); an `orphaned` organization's connections answer unavailable.
 - **Audit:** `org.deleted` with counts, never content.
 
 ## 13. Organization claims

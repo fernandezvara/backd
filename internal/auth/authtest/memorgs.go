@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/fernandezvara/backd/internal/auth"
@@ -18,6 +19,7 @@ type memOrgs struct {
 	invites map[string]auth.OrgInvitation
 	seq     map[string]int64 // org + "\x00" + user → the last membership event number
 	tpls    map[string]auth.OrgTemplate
+	conns   map[string]auth.OrgConnection // org + "\x00" + provider
 }
 
 func (m *MemStore) org() *memOrgs {
@@ -61,6 +63,17 @@ func (m *MemStore) OrgByID(_ context.Context, id string) (auth.Org, error) {
 		return auth.Org{}, auth.ErrNotFound
 	}
 	return org, nil
+}
+
+func (m *MemStore) OrgBySlug(_ context.Context, slug string) (auth.Org, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, o := range m.org().orgs {
+		if slug != "" && o.Slug == slug && o.Status != auth.OrgDeleted {
+			return o, nil
+		}
+	}
+	return auth.Org{}, auth.ErrNotFound
 }
 
 func (m *MemStore) OrgsByIDs(_ context.Context, ids []string) (map[string]auth.Org, error) {
@@ -626,6 +639,96 @@ func (m *MemStore) DeleteOrgInvitation(_ context.Context, org, id string) error 
 	defer m.mu.Unlock()
 	if inv, ok := m.org().invites[id]; ok && inv.Org == org {
 		delete(m.org().invites, id)
+	}
+	return nil
+}
+
+func connKey(org, provider string) string { return org + "\x00" + provider }
+
+func (m *MemStore) PutOrgConnection(_ context.Context, c auth.OrgConnection) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o := m.org()
+	if o.conns == nil {
+		o.conns = map[string]auth.OrgConnection{}
+	}
+	if have, ok := o.conns[connKey(c.Org, c.Provider)]; ok {
+		// What a replace keeps, as the MongoDB store does.
+		c.Blocked, c.CreatedBy, c.CreatedAt = have.Blocked, have.CreatedBy, have.CreatedAt
+	}
+	o.conns[connKey(c.Org, c.Provider)] = c
+	return nil
+}
+
+func (m *MemStore) OrgConnection(_ context.Context, org, provider string) (auth.OrgConnection, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	c, ok := m.org().conns[connKey(org, provider)]
+	if !ok {
+		return auth.OrgConnection{}, auth.ErrNotFound
+	}
+	return c, nil
+}
+
+func (m *MemStore) OrgConnections(_ context.Context, org string) ([]auth.OrgConnection, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []auth.OrgConnection
+	for _, c := range m.org().conns {
+		if c.Org == org {
+			out = append(out, c)
+		}
+	}
+	slices.SortFunc(out, func(a, b auth.OrgConnection) int { return strings.Compare(a.Provider, b.Provider) })
+	return out, nil
+}
+
+func (m *MemStore) DeleteOrgConnection(_ context.Context, org, provider string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o := m.org()
+	if _, ok := o.conns[connKey(org, provider)]; !ok {
+		return auth.ErrNotFound
+	}
+	delete(o.conns, connKey(org, provider))
+	return nil
+}
+
+// SeedConnection stores a connection as it is, Blocked included, which PutOrgConnection never
+// changes on an existing one.
+func (m *MemStore) SeedConnection(c auth.OrgConnection) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o := m.org()
+	if o.conns == nil {
+		o.conns = map[string]auth.OrgConnection{}
+	}
+	o.conns[connKey(c.Org, c.Provider)] = c
+}
+
+func (m *MemStore) BlockOrgMember(_ context.Context, org, user string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for k, c := range m.org().conns {
+		if c.Org == org && !slices.Contains(c.Blocked, user) {
+			c.Blocked = append(slices.Clone(c.Blocked), user)
+			if len(c.Blocked) > auth.MaxConnectionBlocked {
+				c.Blocked = c.Blocked[len(c.Blocked)-auth.MaxConnectionBlocked:]
+			}
+			m.org().conns[k] = c
+		}
+	}
+	return nil
+}
+
+func (m *MemStore) UnblockOrgMember(_ context.Context, org, user string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for k, c := range m.org().conns {
+		if c.Org == org {
+			c.Blocked = slices.DeleteFunc(slices.Clone(c.Blocked), func(u string) bool { return u == user })
+			m.org().conns[k] = c
+		}
 	}
 	return nil
 }

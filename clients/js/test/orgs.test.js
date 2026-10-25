@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createClient, OrgRequiresMFAError, OrgRoleRequiresMFAError, NotTeamMemberError, TeamError, NotOrgMemberError, LastOrgManagerError, IdTakenError } from '../src/index.js'
+import { NotFoundError, createClient, OrgRequiresMFAError, OrgRoleRequiresMFAError, NotTeamMemberError, TeamError, NotOrgMemberError, LastOrgManagerError, IdTakenError } from '../src/index.js'
 import { mockFetch, errorBody } from './helpers.js'
 
 /** @param {ReturnType<typeof mockFetch>} m @param {object} [extra] */
@@ -198,4 +198,37 @@ test('an organization writes, previews and tests its own emails', async () => {
   assert.equal(m.calls[3].url.pathname, '/v1/acme/_orgs/o1/templates/reset-password/en/test')
   await t.delete('reset-password', 'en')
   assert.equal(m.calls[4].method, 'DELETE')
+})
+
+test('sso: the managers keep the organization\'s sign-in connections', async () => {
+  const conn = { provider: 'google', client_id: 'c-1', hosted_domain: 'acme.example', email_domains: [], native_client_ids: [], join_roles: ['member'], enabled: true, client_secret_set: true, redirect_path: '/v1/acme/_auth/orgs/o1/oauth/google/callback', created_at: 't', updated_at: 't' }
+  const m = mockFetch([
+    { body: { items: [conn], providers: ['google', 'microsoft'], max_connections: 2 } },
+    { body: conn },
+    { body: conn },
+    { status: 204 },
+    { status: 404, body: errorBody('not_found', 'organization sign-in is not enabled in this realm') },
+  ])
+  const c = make(m)
+  const sso = c.orgs.sso('o1')
+  const list = await sso.list()
+  assert.equal(list.items.length, 1)
+  assert.equal(list.max_connections, 2)
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_orgs/o1/sso')
+  assert.equal((await sso.get('google')).client_secret_set, true)
+  assert.equal(m.calls[1].url.pathname, '/v1/acme/_orgs/o1/sso/google')
+  const saved = await sso.set('google', { clientId: 'c-1', clientSecret: 'shh', hostedDomain: 'acme.example', joinRoles: ['member'], enabled: true })
+  assert.equal(saved.hosted_domain, 'acme.example')
+  assert.equal(m.calls[2].method, 'PUT')
+  assert.deepEqual(m.calls[2].body, { client_id: 'c-1', client_secret: 'shh', hosted_domain: 'acme.example', join_roles: ['member'], enabled: true })
+  await sso.delete('google')
+  assert.equal(m.calls[3].method, 'DELETE')
+  assert.equal(m.calls[3].url.pathname, '/v1/acme/_orgs/o1/sso/google')
+  await assert.rejects(c.orgs.sso('o2').list(), NotFoundError)
+})
+
+test('sso.set leaves out what it was not given, so the stored secret is kept', async () => {
+  const m = mockFetch([{ body: { provider: 'microsoft' } }])
+  await make(m).orgs.sso('o1').set('microsoft', { clientId: 'app', tenant: 'tenant-guid' })
+  assert.deepEqual(m.calls[0].body, { client_id: 'app', tenant: 'tenant-guid' })
 })

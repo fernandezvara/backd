@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/storage"
 )
 
@@ -226,5 +227,82 @@ func TestEraseAUserInOrganizations(t *testing.T) {
 	back, _ := f.svc.Store.OrgByID(ctx, alone)
 	if back.Status != "active" {
 		t.Errorf("after assigning: %+v", back)
+	}
+}
+
+// A deleted organization's sign-in connections and the secrets kept for them go with it.
+func TestDeleteAnOrganizationRemovesItsConnections(t *testing.T) {
+	f := newRulesFixture(t)
+	f.bobHolds(t, "staff")
+	w := newTestWorker(t, f)
+	w.reg = f.reg
+	ctx := context.Background()
+	f.svc.Realm = "acme"
+	var err error
+	if f.svc.Cipher, err = auth.NewSecretCipher([]byte("01234567890123456789012345678901")); err != nil {
+		t.Fatal(err)
+	}
+	doomed := f.orgOf(t, f.ada, "Doomed")
+	safe := f.orgOf(t, f.ada, "Safe")
+	for _, org := range []string{doomed, safe} {
+		for provider, in := range map[string]auth.ConnectionInput{
+			"google":    {ClientID: "c-1", ClientSecret: "g-secret", HostedDomain: "acme.example"},
+			"microsoft": {ClientID: "11111111-2222-3333-4444-555555555555", ClientSecret: "m-secret", Tenant: "11111111-2222-3333-4444-555555555555"},
+		} {
+			if _, err := f.svc.AdminSetOrgConnection(ctx, org, provider, in); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	// A secret left behind by an interrupted removal is found by its organization, not its connection.
+	if err := f.svc.SetOrgSecret(ctx, doomed, "SSO_STRAY", "stray", "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	if rec, out := f.doH(t, "DELETE", "/v1/acme/_admin/orgs/"+doomed, "", bearer(f.bob)); rec.Code != 204 {
+		t.Fatalf("delete: %d %v", rec.Code, out)
+	}
+	// Unavailable at once: the connections are still stored, but nobody can sign in through them.
+	if c, err := f.svc.Store.OrgConnection(ctx, doomed, "google"); err != nil || !c.Enabled {
+		t.Fatalf("the connection before the job: %+v %v", c, err)
+	}
+	if !w.RunOnce(ctx) {
+		t.Fatal("no cleanup job")
+	}
+	for _, provider := range []string{"google", "microsoft"} {
+		if _, err := f.svc.Store.OrgConnection(ctx, doomed, provider); err == nil {
+			t.Errorf("the %s connection survived the organization", provider)
+		}
+	}
+	secrets, _ := f.svc.Store.ListSecrets(ctx)
+	kept := 0
+	for _, s := range secrets {
+		switch s.Org {
+		case doomed:
+			t.Errorf("a secret of the deleted organization is left: %s", s.Name)
+		case safe:
+			kept++
+		}
+	}
+	if kept != 2 {
+		t.Errorf("the other organization has %d secrets, want 2", kept)
+	}
+	if list, _ := f.svc.Store.OrgConnections(ctx, safe); len(list) != 2 {
+		t.Errorf("the other organization's connections: %d", len(list))
+	}
+	// The cleanup says how many, and the job is repeatable.
+	entries, _, err := f.svc.AuditTrail(ctx, auth.AuditFilter{Action: auth.AuditOrgDeleted, Limit: 5})
+	if err != nil || len(entries) != 1 || entries[0].Details["connections"] != 2 {
+		t.Fatalf("audit: %+v %v", entries, err)
+	}
+	if n, err := f.svc.RemoveOrgConnections(ctx, doomed); err != nil || n != 0 {
+		t.Errorf("a second removal: %d %v", n, err)
+	}
+	// A reactivated organization has no connections: it is set up again.
+	if rec, out := f.doH(t, "POST", "/v1/acme/_admin/orgs/"+doomed+"/reactivate", `{}`, jsonHdr(f.bob)); rec.Code != 200 {
+		t.Fatalf("reactivate: %d %v", rec.Code, out)
+	}
+	if list, _ := f.svc.Store.OrgConnections(ctx, doomed); len(list) != 0 {
+		t.Errorf("a reactivated organization has connections: %+v", list)
 	}
 }

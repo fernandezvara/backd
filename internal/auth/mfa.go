@@ -98,6 +98,9 @@ type AuthChallenge struct {
 	// until the second step ends it.
 	NewUser bool
 	Profile map[string]string
+	// ViaOrg is the organization whose connection signed the person in (the session will record
+	// it); it is not Org, the company context of a magic-link request.
+	ViaOrg string
 	// Secret is a TOTP secret (SealToken form) of a ChallengeTOTPSetup.
 	Secret string
 	// SessionID is the session a re-authentication token or code is bound to; CodeHash is
@@ -150,6 +153,8 @@ type IssuedChallenge struct {
 type handover struct {
 	newUser bool
 	profile map[string]string
+	// org is the organization whose connection signed the person in; the session records it.
+	org string
 }
 
 // afterFirstFactor decides what a proved first factor leads to: a session, or a challenge
@@ -176,7 +181,7 @@ func (s *Users) issueChallenge(ctx context.Context, u User, kind, factor string,
 		return Redeemed{}, err
 	}
 	now := s.now()
-	c := AuthChallenge{ID: HashToken(token), Kind: kind, UserID: u.ID, Factor: factor, NewUser: h.newUser, Attempts: 0, CreatedAt: now, ExpiresAt: now.Add(ChallengeTTL)}
+	c := AuthChallenge{ID: HashToken(token), Kind: kind, UserID: u.ID, Factor: factor, NewUser: h.newUser, ViaOrg: h.org, Attempts: 0, CreatedAt: now, ExpiresAt: now.Add(ChallengeTTL)}
 	if h.newUser && len(h.profile) > 0 {
 		c.Profile = h.profile
 	}
@@ -256,7 +261,7 @@ func (s *Users) VerifyMFA(ctx context.Context, challenge, method, code, ip strin
 	if method == MethodRecovery {
 		second = "recovery"
 	}
-	out, err := s.finishSignIn(ctx, u, []string{c.Factor, second}, handover{newUser: c.NewUser, profile: c.Profile})
+	out, err := s.finishSignIn(ctx, u, []string{c.Factor, second}, handover{newUser: c.NewUser, profile: c.Profile, org: c.ViaOrg})
 	if err != nil {
 		return Verified{}, err
 	}

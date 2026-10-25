@@ -2,7 +2,7 @@
 
 - **Issues:** features 29.2–29.6, docs 29.7, review 29.8 (milestone `29-breach-response`)
 - **Status:** decided after full code review; security review done (§11)
-- **Related designs:** [account-lifecycle.md](./account-lifecycle.md) (reset, change, `password-changed`), [mfa-passwordless.md](./mfa-passwordless.md) (reauth, session methods), [email-delivery.md](./email-delivery.md) (kinds, limits, queue), [export-import.md](./export-import.md) (packages hold password hashes)
+- **Related designs:** [account-lifecycle.md](./account-lifecycle.md) (reset, change, `password-changed`), [mfa-passwordless.md](./mfa-passwordless.md) (reauth, session methods), [email-delivery.md](./email-delivery.md) (kinds, limits, queue), [export-import.md](./export-import.md) (packages hold password hashes), [org-sso.md](./org-sso.md) (organization client secrets)
 
 ## 1. The problem
 
@@ -56,7 +56,7 @@ The backup guide used to say reset emails could not be sent; that was wrong, and
 
 ## 6. Sessions and keys
 
-- `backd user revoke-sessions --realm r --all` deletes every session of the realm (`--email` for one user already exists through disable and set-password). API keys stay with `backd apikey revoke`/create; the runbook lists them. Secrets are rotated with `backd secret rotate-key`. Field keys ([field-encryption.md](./field-encryption.md)) are secrets too: `rotate-key` re-seals them under the new master key, but a master key leaked together with the realm's secrets exposes them as well, so the runbook rotates each field key then (`backd secret rotate`, field-encryption §5.3, §16).
+- `backd user revoke-sessions --realm r --all` deletes every session of the realm (`--email` for one user already exists through disable and set-password). API keys stay with `backd apikey revoke`/create; the runbook lists them. Secrets are rotated with `backd secret rotate-key`. Organization sign-in client secrets ([org-sso.md](./org-sso.md)) are sealed with the same instance key, so `rotate-key` re-seals them; the provider's own secret is what a leak exposes, and its owner (the organization, or the realm admin through `backd orgs sso`) rotates it at the provider and sets the new one. Field keys ([field-encryption.md](./field-encryption.md)) are secrets too: `rotate-key` re-seals them under the new master key, but a master key leaked together with the realm's secrets exposes them as well, so the runbook rotates each field key then (`backd secret rotate`, field-encryption §5.3, §16).
 - `expire-passwords` ends sessions by default; `--keep-sessions` leaves them (for a planned rotation, not a breach).
 
 ## 7. Security considerations

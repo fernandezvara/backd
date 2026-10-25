@@ -198,6 +198,13 @@ export class AggregateTooExpensiveError extends BackdError {}
 /** 400 `search_not_enabled`: a `$search` in a collection that declares no text index. */
 export class SearchNotEnabledError extends ValidationError {}
 
+/**
+ * 403 `not_allowed`: the person is not of the organization the connection they signed in
+ * through admits (another Google Workspace domain or Microsoft tenant, or an address outside its
+ * `email_domains`). Nothing was created: they have no account to try again with.
+ */
+export class NotAllowedError extends ForbiddenError {}
+
 /** 403 `not_org_member`: not a member of the organization, or there is no such organization. */
 export class NotOrgMemberError extends ForbiddenError {}
 
@@ -298,6 +305,8 @@ function typedClass(code, fallback) {
       return TeamError
     case 'not_org_member':
       return NotOrgMemberError
+    case 'not_allowed':
+      return NotAllowedError
     case 'last_org_manager':
       return LastOrgManagerError
     case 'invalid_aggregate':

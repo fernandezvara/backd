@@ -9,7 +9,7 @@ toc: true
 A realm can let its users sign in with **Google**, **Microsoft** or **Apple**. backd runs the redirect flow with the provider, checks the answer, finds or creates the user, and gives your app a one-time code to trade for a session. A user can have a password and any number of providers at once (at most one of each): they are [sign-in methods](../sessions/#sign-in-methods) of the same user, so roles, rules and owned documents don't depend on how the user signed in.
 
 {{< hint style="note" >}}
-This page covers the **redirect** sign-in and the **native** sign-in of mobile apps. Other OpenID Connect providers are **planned**. The [JavaScript client](../../clients/js/#sign-in-with-google-microsoft-or-apple) and the [Dart client](../../clients/dart/#sign-in-with-a-provider-on-desktop) do both flows for you (`signInWith`, `completeSignIn`, `signInWithIdToken`).
+To let a company's people sign in with **its own** Google Workspace or Microsoft tenant, see [Let a company sign in with its own account](../../organizations/sign-in/). This page covers the **redirect** sign-in and the **native** sign-in of mobile apps. Other OpenID Connect providers are **planned**. The [JavaScript client](../../clients/js/#sign-in-with-google-microsoft-or-apple) and the [Dart client](../../clients/dart/#sign-in-with-a-provider-on-desktop) do both flows for you (`signInWith`, `completeSignIn`, `signInWithIdToken`).
 {{< /hint >}}
 
 ## Set it up
@@ -51,6 +51,10 @@ providers:
 | `providers.apple.bundle_ids`, `revoke_on_delete` | Optional: your iOS apps, and whether Apple's tokens are kept and [revoked](#apple-and-account-deletion) when an account is deleted (default `true`) |
 
 `google`, `microsoft` and `apple` are reserved names, and so are `password` and `email` (backd's own sign-in methods); any other name is not a provider yet. A provider whose secret is not set answers `503 provider_unavailable`, and `backd` warns about it at startup. A realm with providers needs `BACKD_URL` (or `email.public_url`): startup refuses without it.
+
+## Which providers to offer
+
+`GET /_auth/providers` answers `{"items": ["google", "microsoft"]}`: the names of the providers the realm configured **and** that work right now (their secrets are set and backd's public address is known, the checks that make `start` answer `503 provider_unavailable`). An app uses it to decide which buttons to show instead of hard-coding them. It is public, the same for everybody, cacheable for a minute and limited to 60 a minute per address. Passwords and magic links are not providers in this sense, and nothing but names is returned: no client ids.
 
 ## The flow
 
@@ -143,10 +147,10 @@ Run a worker (`backd worker`, or `serve --with-worker`) for this: without one th
 
 - **Microsoft never links by address.** The address in a Microsoft token is whatever the tenant's administrator set, so it can't prove who the person is; the user is stored unverified and email verification applies.
 - **Pre-hijacking is closed:** an account made with someone's address, never verified, does not absorb that person's Google identity.
-- **Sign-up modes** apply: `open`; `invite` needs the invitation token passed to `start` (`invitation=…`, bound to an address it must match); `closed` is `backd_error=signup_closed`.
+- **Sign-up modes** apply to the realm's providers (an [organization's connection](../../organizations/api/#joining) is let in whatever the mode): `open`; `invite` needs the invitation token passed to `start` (`invitation=…`, bound to an address it must match); `closed` is `backd_error=signup_closed`.
 - New users from Google or Apple with a verified address are marked verified; an Apple private-relay address counts. A user needs an address: a provider that gives none ends with `backd_error=email_required`.
 - **Linking a provider to a signed-in user** is `POST …/start` with the session in `Authorization` and `"intent": "link"`; it ends at `redirect_to?backd_linked=<provider>`. A provider account that belongs to another user, or a second one of the same provider, is `link_conflict`.
-- Remove a method with `DELETE /_auth/identities/{provider}`; the last one can't be removed.
+- Remove a method with `DELETE /_auth/identities/{provider}`; the last one can't be removed. A method that came through an [organization's connection](../../organizations/api/#signing-in-through-a-connection) is removed with `?org=<id>`: a user holds one identity per provider **per organization**.
 
 ## Errors
 
@@ -160,6 +164,7 @@ A failed attempt goes back to your app as `redirect_to?backd_error=<code>`, with
 | `link_conflict` | The provider account belongs to another user, or the user has one of this provider already |
 | `email_not_verified` | The realm requires a verified address and the account's isn't |
 | `email_required` | The provider gave no address |
+| `not_allowed` | Only for an [organization's connection](../../organizations/api/#signing-in-through-a-connection): the person is not of the Workspace domain or the Microsoft tenant it admits |
 | `signin_refused` | The account can't sign in (disabled, or from this network); the real reason is only in the [audit](../../../operate/administration/audit/) as `identity.signin_refused` |
 | `provider_error` | The provider failed or answered something backd can't accept |
 

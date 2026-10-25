@@ -138,6 +138,18 @@ func (s *AuthStore) OrgByID(ctx context.Context, id string) (auth.Org, error) {
 	return d.org(), nil
 }
 
+func (s *AuthStore) OrgBySlug(ctx context.Context, slug string) (auth.Org, error) {
+	var d orgDoc
+	err := s.orgs().FindOne(ctx, bson.D{{Key: "slug", Value: slug}, {Key: "status", Value: bson.D{{Key: "$ne", Value: auth.OrgDeleted}}}}).Decode(&d)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return auth.Org{}, auth.ErrNotFound
+	}
+	if err != nil {
+		return auth.Org{}, err
+	}
+	return d.org(), nil
+}
+
 func (s *AuthStore) OrgsByIDs(ctx context.Context, ids []string) (map[string]auth.Org, error) {
 	out := map[string]auth.Org{}
 	if len(ids) == 0 {

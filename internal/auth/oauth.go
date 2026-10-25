@@ -57,8 +57,11 @@ func (e *RefusedError) Is(target error) bool { return target == ErrSignInRefused
 // sending the user to the provider and the provider sending them back. Its key is
 // the hash of the state value the provider echoes.
 type OAuthState struct {
-	ID            string // HashToken(state)
-	Provider      string
+	ID       string // HashToken(state)
+	Provider string
+	// Org is the organization whose connection the attempt goes through ("" for the realm's
+	// own providers): the callback must be the one of that organization.
+	Org           string
 	Intent        string
 	CodeChallenge string // the app's PKCE challenge (S256)
 	Verifier      string // backd's own PKCE verifier, for the provider
@@ -84,8 +87,10 @@ type LoginCode struct {
 	CodeChallenge string
 	// NewUser says the sign-in made the user, and Profile is what the provider said of them:
 	// the redemption hands both over once.
-	NewUser   bool
-	Profile   map[string]string
+	NewUser bool
+	Profile map[string]string
+	// Org is the organization whose connection signed the person in; the session records it.
+	Org       string
 	CreatedAt time.Time
 	ExpiresAt time.Time
 }
@@ -154,12 +159,18 @@ func (s *Users) TakeOAuthState(ctx context.Context, state string) (OAuthState, e
 // IssueLoginCode makes the one-time code that lets the app, holding the PKCE verifier
 // of challenge, get a session for the user; method is the first factor that proved them.
 func (s *Users) IssueLoginCode(ctx context.Context, userID, method, challenge string, newUser bool, profile map[string]string) (string, error) {
+	return s.IssueLoginCodeIn(ctx, userID, method, challenge, newUser, profile, "")
+}
+
+// IssueLoginCodeIn is IssueLoginCode for a person an organization's connection signed in: the
+// session the code becomes records the organization.
+func (s *Users) IssueLoginCodeIn(ctx context.Context, userID, method, challenge string, newUser bool, profile map[string]string, org string) (string, error) {
 	code, err := randomValue()
 	if err != nil {
 		return "", err
 	}
 	now := s.now()
-	lc := LoginCode{ID: HashToken(code), UserID: userID, Method: method, CodeChallenge: challenge, NewUser: newUser, CreatedAt: now, ExpiresAt: now.Add(LoginCodeTTL)}
+	lc := LoginCode{ID: HashToken(code), UserID: userID, Method: method, CodeChallenge: challenge, NewUser: newUser, Org: org, CreatedAt: now, ExpiresAt: now.Add(LoginCodeTTL)}
 	if newUser && len(profile) > 0 {
 		lc.Profile = profile
 	}
@@ -196,7 +207,7 @@ func (s *Users) RedeemLoginCode(ctx context.Context, code, verifier string) (Red
 	if method == "" {
 		method = "oauth"
 	}
-	return s.afterFirstFactor(ctx, u, method, handover{newUser: lc.NewUser, profile: lc.Profile})
+	return s.afterFirstFactor(ctx, u, method, handover{newUser: lc.NewUser, profile: lc.Profile, org: lc.Org})
 }
 
 // Redeemed is the outcome of redeeming a login code: the session, whether the sign-in made the
@@ -215,12 +226,21 @@ type Redeemed struct {
 // StartProviderSession starts a session for a user a provider login resolved (the native
 // flow, which has no login code to redeem).
 func (s *Users) StartProviderSession(ctx context.Context, u User, provider string, newUser bool, profile map[string]string) (Redeemed, error) {
-	return s.afterFirstFactor(ctx, u, provider, handover{newUser: newUser, profile: profile})
+	return s.StartProviderSessionIn(ctx, u, provider, newUser, profile, "")
+}
+
+// StartProviderSessionIn is StartProviderSession for a person an organization's connection
+// signed in: the session records the organization.
+func (s *Users) StartProviderSessionIn(ctx context.Context, u User, provider string, newUser bool, profile map[string]string, org string) (Redeemed, error) {
+	return s.afterFirstFactor(ctx, u, provider, handover{newUser: newUser, profile: profile, org: org})
 }
 
 // ProviderLogin is a person an external provider has vouched for.
 type ProviderLogin struct {
-	Provider      string
+	Provider string
+	// Org is the organization whose connection vouched for the person; their identity is
+	// (Provider, Org, Subject). Such a login never links by address: TrustsEmail is false.
+	Org           string
 	Subject       string // the provider's stable id for the person
 	Email         string
 	EmailVerified bool // as the provider asserts it
@@ -263,7 +283,7 @@ func (s *Users) ResolveProviderLogin(ctx context.Context, in ProviderLogin) (Pro
 			email = ""
 		}
 	}
-	existing, err := s.Store.Identity(ctx, in.Provider, in.Subject)
+	existing, err := s.Store.IdentityIn(ctx, in.Provider, in.Org, in.Subject)
 	switch {
 	case err == nil:
 		return s.knownIdentity(ctx, in, existing, email)
@@ -345,7 +365,7 @@ func (s *Users) linkIdentity(ctx context.Context, in ProviderLogin, email string
 func (s *Users) addIdentity(ctx context.Context, u User, in ProviderLogin, email string) error {
 	now := s.now()
 	err := s.Store.PutIdentity(ctx, Identity{
-		ID: xid.New().String(), UserID: u.ID, Provider: in.Provider, Subject: in.Subject,
+		ID: xid.New().String(), UserID: u.ID, Provider: in.Provider, Org: in.Org, Subject: in.Subject,
 		Email: email, EmailVerified: in.EmailVerified && email != "", LastUsedAt: now, CreatedAt: now, UpdatedAt: now,
 	})
 	if errors.Is(err, ErrIdentityExists) {
@@ -354,7 +374,11 @@ func (s *Users) addIdentity(ctx context.Context, u User, in ProviderLogin, email
 	if err != nil {
 		return err
 	}
-	s.Audit(ctx, AuditIdentityLinked, userTarget(u.ID), map[string]any{"provider": in.Provider})
+	details := map[string]any{"provider": in.Provider}
+	if in.Org != "" {
+		details["org"] = in.Org
+	}
+	s.Audit(ctx, AuditIdentityLinked, userTarget(u.ID), details)
 	return nil
 }
 
@@ -367,7 +391,7 @@ func (s *Users) signInNewIdentity(ctx context.Context, in ProviderLogin, email s
 	u, err := s.Store.UserByEmail(ctx, email)
 	switch {
 	case err == nil:
-		if !in.TrustsEmail || !in.EmailVerified || !u.EmailVerified {
+		if in.Org != "" || !in.TrustsEmail || !in.EmailVerified || !u.EmailVerified {
 			return ProviderResult{}, ErrAccountExists
 		}
 		if err := s.mayStartSession(u, in.IP); err != nil {
@@ -387,9 +411,12 @@ func (s *Users) signInNewIdentity(ctx context.Context, in ProviderLogin, email s
 func (s *Users) signUpWithProvider(ctx context.Context, in ProviderLogin, email string) (ProviderResult, error) {
 	verified := in.TrustsEmail && in.EmailVerified
 	restore := func() {}
-	switch s.Settings.Signup {
-	case registry.SignupOpen:
-	case registry.SignupInvite:
+	switch {
+	case in.Org != "":
+		// A person of an organization's connection is let in whatever the sign-up mode: the
+		// connection's restriction is the gate, and the realm switched the feature on.
+	case s.Settings.Signup == registry.SignupOpen:
+	case s.Settings.Signup == registry.SignupInvite:
 		if in.Invitation == "" {
 			return ProviderResult{}, ErrInvitationRequired
 		}

@@ -103,6 +103,8 @@ The first factors are:
 
 ### 4.2 Sessions remember how they were created
 
+> **Extended by [scoped-sessions.md](./scoped-sessions.md) §4.1:** in realms with organizations a session also has its `org`, the scope. MFA challenges carry the organization.
+
 - **Recorded methods:** sessions store `methods`, the first factor plus `totp` or `recovery` when MFA was used, and `mfa: true|false`. Refreshing keeps them.
 - **Rules:** they see `user.mfa` and `user.methods` next to the existing `user` fields, for example `read: user != nil && user.mfa && hasRole("finance")`. Functions see the same in `ctx.user.mfa` and `ctx.user.methods`. API keys and `X-Backd-On-Behalf-Of` calls have `user.mfa: false` and `user.methods: ["key"]`. Anonymous callers have no `user`, so rules guard with `user != nil` as they already do.
 - **Revocation:** enabling MFA revokes every **other** session of the user, so a session created before MFA can't pass rules that require it.
@@ -154,6 +156,8 @@ All of these act on the signed-in user and require `X-Backd-Reauth`, except the 
 - **No reset by email.** A self-service recovery with a waiting period is a backlog item.
 
 ### 6.2 Re-authentication
+
+> **Sessions opened through an organization's connection** cannot do the account-level actions in the list below (`403 sso_session`); see [scoped-sessions.md](./scoped-sessions.md) §7.
 
 `POST /_auth/reauth` takes the strongest proof the user has:
 

@@ -10,6 +10,8 @@ A B2B app needs "administrator of **this** customer, and only of this one". Real
 
 An organization is whatever a group of users is in your app: a company in a B2B product, a workspace, a club, a project — like GitHub's organizations, which aren't companies but any group of people with something in common. The docs and the API say **organization** everywhere the feature is meant; where an example says *company*, it means an organization that happens to be one.
 
+A company can also sign its people in with its own Google Workspace or Microsoft tenant, and have them join the organization on the way in: see [the sign-in guide](sign-in/).
+
 This page explains the pieces. The rest of the section puts them to work: [build a B2B app](build-a-b2b-app/), [rules cookbook](rules-cookbook/) and [what happens when…](what-happens-when/). For departments and delegation there is a second layer, [team roles](team-roles/), with [recipes](team-access-recipes/) and a [worked example](hr-absences/); [membership hooks](membership-hooks/), [organization context](organization-context/) and [organization email templates](email-templates/) complete it. The endpoints are in the [organizations API](api/) and the settings in [`realm.yaml`](../configuration/realm/#organizations) and [`collection.yaml`](../configuration/config-dir/#organizations).
 
 ## The model
@@ -48,7 +50,7 @@ Everything lives in the realm's system database. An organization exists in one r
 | Meaning | the same in the whole realm | only inside one organization |
 | Held by | users, given by administrators | members, given by the organization's managers |
 | Checked with | `hasRole(user, 'editor')` | `hasOrgRole(document._meta.org, 'editor')` |
-| What they open | the [admin API areas](../../operate/administration/admin/) | `manage: [org, members, roles, teams]` inside the organization |
+| What they open | the [admin API areas](../../operate/administration/admin/) | `manage: [org, members, roles, teams, sso]` inside the organization |
 
 The two never mix. An organization or a team can't carry a **realm** role, so nobody becomes a realm administrator by joining the right team, and a realm role grants nothing inside an organization. Realm administrators act through the [admin API](../api/documents/#fixing-data-as-an-administrator), not by being members.
 

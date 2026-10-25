@@ -303,7 +303,7 @@ func (s *Users) CompleteEnrollment(ctx context.Context, challenge, setupID, code
 	} else if err != nil {
 		return Verified{}, nil, err
 	}
-	out, err := s.finishSignIn(ctx, u, []string{c.Factor, MethodTOTP}, handover{newUser: c.NewUser, profile: c.Profile})
+	out, err := s.finishSignIn(ctx, u, []string{c.Factor, MethodTOTP}, handover{newUser: c.NewUser, profile: c.Profile, org: c.ViaOrg})
 	if err != nil {
 		return Verified{}, nil, err
 	}

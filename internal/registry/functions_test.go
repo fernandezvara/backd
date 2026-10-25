@@ -197,6 +197,8 @@ func TestFunctionErrors(t *testing.T) {
 		{"secret name", fn("secrets: [stripe_key]\n"), `secrets[0]: "stripe_key" must be NAME or realm.NAME`},
 		{"secret the link key", fn("secrets: [realm.BACKD_FILES_LINK_KEY]\n"), "is a secret backd keeps for itself"},
 		{"secret twice", fn("secrets: [A, A]\n"), `secrets[1]: "A" is listed twice`},
+		{"an organization's secret", fn("secrets: [org:abc.SSO_KEY]\n"), `secrets[0]: "org:abc.SSO_KEY" must be NAME or realm.NAME`},
+		{"an organization's secret as a realm one", fn("secrets: [realm.org:abc.SSO_KEY]\n"), `must be NAME or realm.NAME`},
 		{"network url", fn("network: [\"https://api.stripe.com\"]\n"), `network[0]: "https://api.stripe.com"`},
 		{"network wildcard", fn("network: [\"*.stripe.com\"]\n"), `network[0]: "*.stripe.com"`},
 		{"network port", fn("network: [\"api.stripe.com:99999\"]\n"), "invalid port"},

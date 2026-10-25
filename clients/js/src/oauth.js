@@ -1,4 +1,4 @@
-import { BackdError, errorClassFor } from './errors.js'
+import { BackdError, errorClassFor, NotAllowedError } from './errors.js'
 import { Sha256 } from './sha256.js'
 
 /**
@@ -145,13 +145,14 @@ const ERRORS = {
   email_not_verified: { status: 403, message: 'the address of this account is not verified' },
   email_required: { status: 400, message: 'the provider gave no email address' },
   signin_refused: { status: 403, message: 'this account can not sign in' },
+  not_allowed: { status: 403, message: 'this account is not allowed to sign in through this organization' },
   provider_error: { status: 502, message: 'the provider failed or answered something backd can not accept' },
 }
 
 /**
  * The error for a `?backd_error=` code of the redirect flow, as the same classes the rest of the client
  * throws: `account_exists` and `link_conflict` are a `ConflictError`, `signup_closed`,
- * `email_not_verified` and `signin_refused` a `ForbiddenError`, `cancelled` an
+ * `email_not_verified` and `signin_refused` a `ForbiddenError`, `not_allowed` a `NotAllowedError`, `cancelled` an
  * `AuthenticationError`, and so on; `code` is the error code, and `details` names the provider.
  * @param {string} code
  * @param {string} [provider]
@@ -159,7 +160,7 @@ const ERRORS = {
  */
 export function oauthError(code, provider) {
   const known = ERRORS[code] ?? ERRORS.provider_error
-  const Class = errorClassFor(known.status)
+  const Class = code === 'not_allowed' ? NotAllowedError : errorClassFor(known.status)
   return new Class({
     status: known.status,
     code: ERRORS[code] ? code : 'provider_error',

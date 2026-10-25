@@ -4,6 +4,14 @@ import { COOKIE_SESSION } from './storage.js'
 import { defaultOAuthStorage, loadPending, newPKCE, oauthError, parseReturn, savePending, withoutReturn } from './oauth.js'
 
 /**
+ * The path of the sign-in routes: the realm's, or those of one organization's connections.
+ * @param {string | undefined} org
+ */
+function authBase(org) {
+  return org ? ['_auth', 'orgs', org] : ['_auth']
+}
+
+/**
  * @typedef {import('./client.js').Client} Client
  * @typedef {import('./client.js').RequestOptions} RequestOptions
  */
@@ -106,6 +114,9 @@ import { defaultOAuthStorage, loadPending, newPKCE, oauthError, parseReturn, sav
  *   (name to version); a new account made without them is asked at its first sign-in.
  * @property {(url: string) => void | Promise<void>} [navigate]  How to go to the provider; `location.assign` by default.
  *   Apps that open a browser session (React Native, Capacitor) pass their own.
+ * @property {string} [org]  Sign in through the connection of this organization (its id or slug)
+ *   instead of the realm's own providers: the people of a company with its own Google Workspace
+ *   or Microsoft tenant. A person the connection does not admit gets a `NotAllowedError`.
  */
 
 /**
@@ -522,7 +533,7 @@ export class Auth {
     const { verifier, challenge } = newPKCE()
     const body = compact({ redirect_to: redirectTo, code_challenge: challenge, intent, invitation: options.invitation, locale: options.locale, consents: options.consents })
     const { data } = await this.client.request({
-      method: 'POST', path: ['_auth', 'oauth', provider, 'start'], body, auth: intent === 'link', ...opts,
+      method: 'POST', path: [...authBase(options.org), 'oauth', provider, 'start'], body, auth: intent === 'link', ...opts,
     })
     savePending(this.oauthStorage(), { verifier, provider, intent })
     const authorizeUrl = /** @type {string} */ (data.authorize_url)
@@ -581,13 +592,29 @@ export class Auth {
 
   /**
    * Removes one of the user's ways to sign in (`password` included). The last one can't be removed:
-   * that rejects with a `ConflictError` whose `code` is `last_sign_in_method`.
+   * that rejects with a `ConflictError` whose `code` is `last_sign_in_method`. `org` selects the
+   * one that came through an organization's connection (a user holds one per provider per organization).
    * @param {string} provider
-   * @param {RequestOptions} [opts]
+   * @param {RequestOptions & { org?: string }} [opts]
    * @returns {Promise<void>}
    */
   async unlinkProvider(provider, opts) {
-    await this.client.request({ method: 'DELETE', path: ['_auth', 'identities', provider], reauth: true, ...opts })
+    const { org, ...rest } = opts ?? {}
+    await this.client.request({ method: 'DELETE', path: ['_auth', 'identities', provider], query: org ? { org } : undefined, reauth: true, ...rest })
+  }
+
+  /**
+   * The providers the app may offer right now, for the realm or, with `org`, for one organization's
+   * connections: names such as `google` and `microsoft`, only those that are configured and usable
+   * (the check a sign-in start makes). An unknown organization, one without connections and one
+   * with sign-in off all give an empty list.
+   * @param {{ org?: string }} [params]
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<string[]>}
+   */
+  async providers(params = {}, opts) {
+    const { data } = await this.client.request({ method: 'GET', path: [...authBase(params.org), 'providers'], auth: false, ...opts })
+    return /** @type {string[]} */ (data.items)
   }
 
   /**
@@ -596,13 +623,14 @@ export class Auth {
    * `authorizationCode` its SDK gave. Rejects with `invalid_token` (a `AuthenticationError`) when the token
    * does not verify, and with `account_exists`, `signup_closed`, … as {@link Auth.completeSignIn} does.
    * @param {string} provider
-   * @param {{ idToken: string, nonce: string, authorizationCode?: string, invitation?: string, locale?: string, consents?: Record<string, string> }} input
+   * @param {{ idToken: string, nonce: string, authorizationCode?: string, invitation?: string, locale?: string, consents?: Record<string, string>, org?: string }} input
+   *   `org`: the organization whose connection the token belongs to (a `NotAllowedError` when it does not admit the person).
    * @param {RequestOptions} [opts]
    * @returns {Promise<ProviderSession | MfaChallenge | EnrollmentChallenge | ConsentChallenge>}
    */
   async signInWithIdToken(provider, input, opts) {
     const { data } = await this.client.request({
-      method: 'POST', path: ['_auth', 'oauth', provider, 'id-token'], body: this.#idTokenBody(input), auth: false, ...opts,
+      method: 'POST', path: [...authBase(input.org), 'oauth', provider, 'id-token'], body: this.#idTokenBody(input), auth: false, ...opts,
     })
     return /** @type {any} */ (await this.step(data))
   }
@@ -610,13 +638,13 @@ export class Auth {
   /**
    * Adds a provider to the signed-in user with the ID token of the platform sign-in.
    * @param {string} provider
-   * @param {{ idToken: string, nonce: string, authorizationCode?: string }} input
+   * @param {{ idToken: string, nonce: string, authorizationCode?: string, org?: string }} input
    * @param {RequestOptions} [opts]
    * @returns {Promise<{ linked: string }>}
    */
   async linkProviderWithIdToken(provider, input, opts) {
     const { data } = await this.client.request({
-      method: 'POST', path: ['_auth', 'oauth', provider, 'id-token'], body: { ...this.#idTokenBody(input), intent: 'link' }, ...opts,
+      method: 'POST', path: [...authBase(input.org), 'oauth', provider, 'id-token'], body: { ...this.#idTokenBody(input), intent: 'link' }, ...opts,
     })
     return data
   }

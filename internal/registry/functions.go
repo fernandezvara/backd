@@ -146,13 +146,18 @@ type RateLimit struct {
 }
 
 // SecretRef names a secret a function may read: its own database's
-// (`NAME`) or the realm's (`realm.NAME`).
+// (`NAME`) or the realm's (`realm.NAME`). Org names an organization's secret; only the
+// sign-in code sets it, function.yaml has no syntax for it, so a function can't read one.
 type SecretRef struct {
 	Realm bool
+	Org   string
 	Name  string
 }
 
 func (s SecretRef) String() string {
+	if s.Org != "" {
+		return "org:" + s.Org + "." + s.Name
+	}
 	if s.Realm {
 		return "realm." + s.Name
 	}

@@ -127,6 +127,64 @@
  */
 
 /**
+ * An organization's sign-in connection: its own Google Workspace or Microsoft Entra tenant as a
+ * provider for its people. The client secret is write-only: only whether it is set comes back.
+ * @typedef {object} OrgConnection
+ * @property {'google' | 'microsoft'} provider
+ * @property {string} client_id
+ * @property {string} [tenant]         Microsoft: the organization's tenant id.
+ * @property {string} [hosted_domain]  Google: the Workspace domain.
+ * @property {string[]} email_domains  When set, the verified address must also be in one of them.
+ * @property {string[]} native_client_ids  Extra client ids the id-token sign-in accepts (mobile apps).
+ * @property {string[]} join_roles     Organization roles given to people who join through it.
+ * @property {boolean} enabled
+ * @property {boolean} client_secret_set  Without a secret the connection is unavailable.
+ * @property {string} [redirect_uri]   The address to register with the provider (when backd knows its public address).
+ * @property {string} redirect_path    The same, without backd's public address.
+ * @property {string} created_at
+ * @property {string} updated_at
+ */
+
+/**
+ * What the managers of an organization set for a connection (`manage: sso`).
+ * @typedef {object} OrgConnectionInput
+ * @property {string} clientId
+ * @property {string} [clientSecret]    Required the first time; left out, the stored one is kept.
+ * @property {string} [tenant]          Microsoft: required, a tenant id (never `common`, `organizations` or `consumers`).
+ * @property {string} [hostedDomain]    Google: required, the Workspace domain.
+ * @property {string[]} [emailDomains]
+ * @property {string[]} [nativeClientIds]
+ * @property {string[]} [joinRoles]     Roles given on joining; nothing the setting manager could not give.
+ * @property {boolean} [enabled]        True for a new connection; unchanged on a replace.
+ */
+
+/**
+ * The connections of an organization with the realm's limits.
+ * @typedef {object} OrgConnections
+ * @property {OrgConnection[]} items
+ * @property {string[]} [providers]       The providers the realm lets organizations connect.
+ * @property {number} [max_connections]
+ */
+
+/**
+ * The body of a connection call, from the camelCase input.
+ * @param {OrgConnectionInput} input
+ * @returns {Record<string, unknown>}
+ */
+export function connectionBody(input) {
+  /** @type {Record<string, unknown>} */
+  const body = { client_id: input.clientId }
+  if (input.clientSecret !== undefined) body.client_secret = input.clientSecret
+  if (input.tenant !== undefined) body.tenant = input.tenant
+  if (input.hostedDomain !== undefined) body.hosted_domain = input.hostedDomain
+  if (input.emailDomains !== undefined) body.email_domains = input.emailDomains
+  if (input.nativeClientIds !== undefined) body.native_client_ids = input.nativeClientIds
+  if (input.joinRoles !== undefined) body.join_roles = input.joinRoles
+  if (input.enabled !== undefined) body.enabled = input.enabled
+  return body
+}
+
+/**
  * Organizations of the signed-in user: `client.orgs`. Members, teams and invitations hang off
  * one organization: `client.orgs.members(id)`, `client.orgs.teams(id)`, `client.orgs.invitations(id)`.
  * Documents in an organization are created and listed with `collection.inOrg(id)`.
@@ -257,6 +315,73 @@ export class Orgs {
    */
   teams(org) {
     return new OrgTeams(this.client, org)
+  }
+
+  /**
+   * The organization's own sign-in connections (`organizations.sso`): `list`, `get`, `set` and
+   * `delete`, for holders of `manage: sso`. People then sign in through them with
+   * `client.auth.signInWith(provider, { org })`.
+   * @param {string} org
+   * @returns {OrgSso}
+   */
+  sso(org) {
+    return new OrgSso(this.client, org)
+  }
+}
+
+/** The sign-in connections of one organization. */
+export class OrgSso {
+  /**
+   * @param {Client} client
+   * @param {string} org
+   */
+  constructor(client, org) {
+    /** @internal */
+    this.client = client
+    /** @internal */
+    this.org = org
+  }
+
+  /**
+   * The connections, with the providers and the number of connections the realm allows. A realm
+   * with organization sign-in off answers `NotFoundError`.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgConnections>}
+   */
+  async list(opts) {
+    return (await this.client.request({ method: 'GET', path: ['_orgs', this.org, 'sso'], ...opts })).data
+  }
+
+  /**
+   * One connection; a `NotFoundError` when the organization has none with that provider.
+   * @param {'google' | 'microsoft'} provider
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgConnection>}
+   */
+  async get(provider, opts) {
+    return (await this.client.request({ method: 'GET', path: ['_orgs', this.org, 'sso', provider], ...opts })).data
+  }
+
+  /**
+   * Creates the connection or replaces every field of it. The client secret goes in and never
+   * comes out. Needs a fresh proof of identity: wrap the call in `client.auth.withProof`.
+   * @param {'google' | 'microsoft'} provider
+   * @param {OrgConnectionInput} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgConnection>}
+   */
+  async set(provider, input, opts) {
+    return (await this.client.request({ method: 'PUT', path: ['_orgs', this.org, 'sso', provider], body: connectionBody(input), reauth: true, ...opts })).data
+  }
+
+  /**
+   * Removes the connection and its client secret. Needs a fresh proof of identity.
+   * @param {'google' | 'microsoft'} provider
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async delete(provider, opts) {
+    await this.client.request({ method: 'DELETE', path: ['_orgs', this.org, 'sso', provider], reauth: true, ...opts })
   }
 }
 

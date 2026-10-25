@@ -4,12 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
+
+	"github.com/fernandezvara/backd/internal/registry"
 )
 
 // The realm's authentication data that moves with an app (design/export-import.md §7): the
 // system collections an export package can hold, in the order an import writes them.
-var PortableCollections = []string{"users", "identities", "orgs", "org_members", "org_teams", "mfa", "devices"}
+var PortableCollections = []string{"users", "identities", "orgs", "org_members", "org_teams", "org_connections", "mfa", "devices"}
 
 // PortableSealed names, per collection, the fields sealed with the realm's secrets cipher. An
 // export opens them and seals them again under the one-time export key; an import (after the
@@ -80,7 +84,8 @@ func (s *Users) portable() (PortableStore, error) {
 
 // AuthAnonymize turns the authentication data of an export into that of a staging copy:
 // emails become user-<id>@example.invalid, password hashes are dropped (or replaced by one
-// known password's), identities of external providers stay behind, and second factors and
+// known password's), identities of external providers stay behind, organization sign-in
+// connections keep their shape with the client ids blanked, and second factors and
 // devices are not exported at all (see AnonymizedCollections).
 type AuthAnonymize struct {
 	// PasswordHash, when set, is the hash every password identity gets.
@@ -89,7 +94,7 @@ type AuthAnonymize struct {
 
 // AnonymizedCollections are the portable collections an anonymized export carries.
 func AnonymizedCollections() []string {
-	return []string{"users", "identities", "orgs", "org_members", "org_teams"}
+	return []string{"users", "identities", "orgs", "org_members", "org_teams", "org_connections"}
 }
 
 // AnonymousEmail is the address an anonymized export gives the user with that id.
@@ -107,6 +112,11 @@ func (a *AuthAnonymize) apply(collection string, d map[string]any, now time.Time
 		// Whatever was done about passwords in production says nothing about the copy's own.
 		delete(d, "password_expired_at")
 		delete(d, "password_notified_at")
+	case "org_connections":
+		// A copy for staging keeps the shape of the connections, not the applications of
+		// production: their client ids are blanked, so none of them can sign anyone in.
+		d["client_id"] = ""
+		d["native_client_ids"] = []any{}
 	case "identities":
 		if d["provider"] != ProviderPassword {
 			return false
@@ -198,7 +208,13 @@ func (s *Users) ImportAuthDocs(ctx context.Context, collection string, docs []ma
 			continue
 		}
 		bad := ""
+		if collection == "org_connections" {
+			bad = importedConnectionProblem(d)
+		}
 		for _, f := range PortableSealed[collection] {
+			if bad != "" {
+				break
+			}
 			v, has := d[f]
 			if !has {
 				continue
@@ -286,4 +302,60 @@ func ExportKey(text string) (*SecretCipher, error) {
 		return nil, errors.New("this is not an export key")
 	}
 	return NewSecretCipher([]byte("backd-export|" + text))
+}
+
+// importedConnectionProblem says what is wrong with a connection of an import package ("" when
+// it is fine): a package is as trusted as its administrator, but a connection that admits more
+// than an API call could have set, or that the stores would read inconsistently, is refused. A
+// blank client id is allowed: an anonymized export carries them blanked.
+func importedConnectionProblem(d map[string]any) string {
+	str := func(k string) string { v, _ := d[k].(string); return v }
+	list := func(k string) []string {
+		var out []string
+		if arr, ok := d[k].([]any); ok {
+			for _, e := range arr {
+				s, _ := e.(string)
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	org, provider := str("org"), str("provider")
+	switch {
+	case org == "" || str("id") != org+":"+provider:
+		return "id must be <org>:<provider>"
+	case !slices.Contains(registry.SSOProviders, provider):
+		return "provider must be one of " + strings.Join(registry.SSOProviders, ", ")
+	}
+	if id := str("client_id"); id != "" {
+		if msg := registry.ClientIDProblem(provider, id); msg != "" {
+			return "client_id " + msg
+		}
+	}
+	switch provider {
+	case registry.ProviderMicrosoft:
+		if msg := registry.TenantProblem(str("tenant"), false); msg != "" {
+			return "tenant " + msg
+		}
+		if str("hosted_domain") != "" {
+			return "hosted_domain applies to Google only"
+		}
+	case registry.ProviderGoogle:
+		if msg := registry.DomainProblem(str("hosted_domain")); msg != "" {
+			return "hosted_domain " + msg
+		}
+		if str("tenant") != "" {
+			return "tenant applies to Microsoft only"
+		}
+	}
+	domains := list("email_domains")
+	if len(domains) > MaxConnectionEmailDomains || len(list("native_client_ids")) > MaxConnectionNativeIDs || len(list("blocked")) > MaxConnectionBlocked {
+		return "a list is longer than a connection may hold"
+	}
+	for _, dom := range domains {
+		if msg := registry.DomainProblem(dom); msg != "" {
+			return "email_domains " + msg
+		}
+	}
+	return ""
 }

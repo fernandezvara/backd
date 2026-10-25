@@ -815,6 +815,13 @@ func (s *Users) removeMember(ctx context.Context, orgID string, m OrgMember, act
 		if err := s.Store.DeleteOrgMember(ctx, orgID, m.User); err != nil {
 			return err
 		}
+		// Someone a manager removed doesn't rejoin through the organization's sign-in; leaving by
+		// oneself doesn't block.
+		if reason == LeftRemoved {
+			if err := s.Store.BlockOrgMember(ctx, orgID, m.User); err != nil {
+				return err
+			}
+		}
 		return s.memberLeft(ctx, orgID, m.User, reason)
 	})
 	if err != nil {

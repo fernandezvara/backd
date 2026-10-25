@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"slices"
 	"sort"
 )
 
@@ -20,13 +21,18 @@ func (s *Users) Identities(ctx context.Context, userID string) ([]Identity, erro
 // ErrLastSignInMethod. ErrNotFound when the user has none of that provider.
 // by says who did it for the audit ("self" or "admin").
 func (s *Users) Unlink(ctx context.Context, userID, provider, by string) error {
+	return s.UnlinkIn(ctx, userID, provider, "", by)
+}
+
+// UnlinkIn is Unlink for the identity a person has through an organization's connection.
+func (s *Users) UnlinkIn(ctx context.Context, userID, provider, org, by string) error {
 	ids, err := s.Store.ListIdentities(ctx, userID)
 	if err != nil {
 		return err
 	}
 	found := false
 	for _, i := range ids {
-		found = found || i.Provider == provider
+		found = found || (i.Provider == provider && i.Org == org)
 	}
 	// The email method is the mailbox itself (magic links), which the user can't give up one by
 	// one: it is there while the realm has magic links and the address is verified.
@@ -37,7 +43,7 @@ func (s *Users) Unlink(ctx context.Context, userID, provider, by string) error {
 	if err != nil {
 		return err
 	}
-	if s.signInMethodsLeft(u, ids, provider) == 0 {
+	if s.signInMethodsLeft(u, ids, provider, org) == 0 {
 		return ErrLastSignInMethod
 	}
 	if provider == ProviderApple {
@@ -45,10 +51,14 @@ func (s *Users) Unlink(ctx context.Context, userID, provider, by string) error {
 			return err
 		}
 	}
-	if err := s.Store.DeleteIdentity(ctx, userID, provider); err != nil {
+	if err := s.Store.DeleteIdentityIn(ctx, userID, provider, org); err != nil {
 		return err
 	}
-	s.Audit(ctx, AuditIdentityUnlinked, userTarget(userID), map[string]any{"provider": provider, "by": by})
+	details := map[string]any{"provider": provider, "by": by}
+	if org != "" {
+		details["org"] = org
+	}
+	s.Audit(ctx, AuditIdentityUnlinked, userTarget(userID), details)
 	return nil
 }
 
@@ -62,10 +72,10 @@ func (s *Users) magicLinkAvailable(u User) bool {
 // without ("" for none removed): their password, each provider, and, when the realm has magic
 // links and the address is verified, the mailbox. The `email` identity is not a method of its own: it
 // only records that the mailbox was used.
-func (s *Users) signInMethodsLeft(u User, ids []Identity, without string) int {
+func (s *Users) signInMethodsLeft(u User, ids []Identity, without, withoutOrg string) int {
 	n := 0
 	for _, i := range ids {
-		if i.Provider != without && i.Provider != ProviderEmail {
+		if (i.Provider != without || i.Org != withoutOrg) && i.Provider != ProviderEmail {
 			n++
 		}
 	}
@@ -91,7 +101,9 @@ func (s *Users) SignInMethods(ctx context.Context, u User) ([]string, error) {
 			hasPassword = true
 		case ProviderEmail:
 		default:
-			providers = append(providers, i.Provider)
+			if !slices.Contains(providers, i.Provider) {
+				providers = append(providers, i.Provider)
+			}
 		}
 	}
 	if hasPassword {
@@ -123,7 +135,7 @@ func (s *Users) RemovePassword(ctx context.Context, p Principal) error {
 	if err != nil {
 		return err
 	}
-	if s.signInMethodsLeft(u, ids, ProviderPassword) == 0 {
+	if s.signInMethodsLeft(u, ids, ProviderPassword, "") == 0 {
 		return ErrLastSignInMethod
 	}
 	if err := s.Store.DeleteIdentity(ctx, u.ID, ProviderPassword); err != nil {

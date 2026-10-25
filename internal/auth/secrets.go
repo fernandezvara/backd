@@ -29,12 +29,16 @@ var ErrSecretsNotConfigured = errors.New("the secrets master key is not configur
 const secretCacheTTL = 60 * time.Second
 
 // Secret is one encrypted value, bound to a realm (implicitly, by which
-// Users it's stored through), a scope and a name. Database empty means
-// the realm scope; otherwise it's the database scope.
+// Users it's stored through), a scope and a name. Org set means the
+// organization scope; otherwise Database empty means the realm scope and
+// anything else the database scope.
 type Secret struct {
-	Database string // "": realm scope
-	Name     string
-	Type     string // "": a value functions and providers may read; SecretTypeKey: a field key
+	Database string // "": realm scope (when Org is empty too)
+	// Org is the id of the organization an organization-scope secret belongs to. Such a
+	// secret is written by the organization sign-in code and never read back by anybody.
+	Org  string
+	Name string
+	Type string // "": a value functions and providers may read; SecretTypeKey: a field key
 	// Fingerprint identifies a key's value without revealing it (KeyFingerprint); empty for values.
 	Fingerprint string
 	// Version counts a key's values: 1 when created, +1 at each rotation (0 reads as 1).
@@ -52,10 +56,24 @@ type Secret struct {
 	UpdatedBy      string
 }
 
+// Scope is the key the store and the cache use for where a secret lives: the database
+// name, "" for the realm, or OrgScope(id) for an organization. Database names cannot
+// contain ":", so the three never collide.
+func (s Secret) Scope() string {
+	if s.Org != "" {
+		return OrgScope(s.Org)
+	}
+	return s.Database
+}
+
+// OrgScope is the scope of an organization's secrets.
+func OrgScope(orgID string) string { return "org:" + orgID }
+
 // SecretMeta is a secret without its value, as listed: names, scope and
 // who last changed it, never the value.
 type SecretMeta struct {
 	Database string
+	Org      string
 	Name     string
 	Type     string
 	// Fingerprint is set for keys.
@@ -184,13 +202,24 @@ func (c *SecretCache) clear(key string) {
 // the realm) and name, encrypting it with Cipher. by is the actor for
 // UpdatedBy (see Caller.Actor).
 func (s *Users) SetSecret(ctx context.Context, database, name, value, by string) error {
+	return s.setSecret(ctx, Secret{Database: database}, name, value, by)
+}
+
+// SetOrgSecret does the same for an organization's scope. Nothing reads these values back
+// except the sign-in code of that organization: there is no way to list or fetch one.
+func (s *Users) SetOrgSecret(ctx context.Context, orgID, name, value, by string) error {
+	return s.setSecret(ctx, Secret{Org: orgID}, name, value, by)
+}
+
+func (s *Users) setSecret(ctx context.Context, at Secret, name, value, by string) error {
+	scope := at.Scope()
 	if s.Cipher == nil {
 		return ErrSecretsNotConfigured
 	}
 	if !registry.ValidSecretName(name) {
 		return fmt.Errorf("invalid secret name %q: must be upper-case letters, digits and _, starting with a letter", name)
 	}
-	if have, err := s.Store.SecretByScope(ctx, database, name); err == nil && have.Type == SecretTypeKey {
+	if have, err := s.Store.SecretByScope(ctx, scope, name); err == nil && have.Type == SecretTypeKey {
 		return ErrSecretIsKey
 	}
 	ct, nonce, err := s.Cipher.Seal(value)
@@ -199,13 +228,13 @@ func (s *Users) SetSecret(ctx context.Context, database, name, value, by string)
 	}
 	now := s.now()
 	if err := s.Store.UpsertSecret(ctx, Secret{
-		Database: database, Name: name, Ciphertext: ct, Nonce: nonce, KeyID: s.Cipher.KeyID,
+		Database: at.Database, Org: at.Org, Name: name, Ciphertext: ct, Nonce: nonce, KeyID: s.Cipher.KeyID,
 		CreatedAt: now, UpdatedAt: now, UpdatedBy: by,
 	}); err != nil {
 		return err
 	}
-	s.clearSecretCache(database, name)
-	s.Audit(ctx, AuditSecretSet, secretTarget(database, name), map[string]any{"database": database})
+	s.clearSecretCache(scope, name)
+	s.Audit(ctx, AuditSecretSet, secretTarget(scope, name), secretAuditDetails(at))
 	return nil
 }
 
@@ -218,7 +247,7 @@ func (s *Users) ListSecrets(ctx context.Context) ([]SecretMeta, error) {
 	}
 	out := make([]SecretMeta, len(secrets))
 	for i, sec := range secrets {
-		out[i] = SecretMeta{Database: sec.Database, Name: sec.Name, Type: sec.Type, Fingerprint: sec.Fingerprint, CreatedAt: sec.CreatedAt, UpdatedAt: sec.UpdatedAt, UpdatedBy: sec.UpdatedBy}
+		out[i] = SecretMeta{Database: sec.Database, Org: sec.Org, Name: sec.Name, Type: sec.Type, Fingerprint: sec.Fingerprint, CreatedAt: sec.CreatedAt, UpdatedAt: sec.UpdatedAt, UpdatedBy: sec.UpdatedBy}
 	}
 	return out, nil
 }
@@ -229,12 +258,57 @@ func (s *Users) DeleteSecret(ctx context.Context, database, name string) error {
 	if have, err := s.Store.SecretByScope(ctx, database, name); err == nil && have.Type == SecretTypeKey {
 		return s.DeleteKey(ctx, name)
 	}
-	if err := s.Store.DeleteSecret(ctx, database, name); err != nil {
+	return s.deleteSecret(ctx, Secret{Database: database}, name)
+}
+
+// DeleteOrgSecret removes an organization's secret; ErrSecretNotFound if none.
+func (s *Users) DeleteOrgSecret(ctx context.Context, orgID, name string) error {
+	return s.deleteSecret(ctx, Secret{Org: orgID}, name)
+}
+
+func (s *Users) deleteSecret(ctx context.Context, at Secret, name string) error {
+	scope := at.Scope()
+	if err := s.Store.DeleteSecret(ctx, scope, name); err != nil {
 		return err
 	}
-	s.clearSecretCache(database, name)
-	s.Audit(ctx, AuditSecretDelete, secretTarget(database, name), map[string]any{"database": database})
+	s.clearSecretCache(scope, name)
+	s.Audit(ctx, AuditSecretDelete, secretTarget(scope, name), secretAuditDetails(at))
 	return nil
+}
+
+// OrgSecret returns the decrypted value of an organization's secret, for the sign-in code of
+// that organization and nothing else (no handler hands it out, and function.yaml has no way
+// to name it). ok is false when none is stored.
+func (s *Users) OrgSecret(ctx context.Context, orgID, name string) (value string, ok bool, err error) {
+	if s.Cipher == nil {
+		return "", false, nil
+	}
+	scope, now := OrgScope(orgID), s.now()
+	if v, hit, missing := s.cachedSecret(scope, name, now); hit {
+		return v, !missing, nil
+	}
+	sec, err := s.Store.SecretByScope(ctx, scope, name)
+	if errors.Is(err, ErrSecretNotFound) {
+		s.putSecretCache(scope, name, "", true, now)
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	v, err := s.Cipher.Open(sec.Ciphertext, sec.Nonce, sec.KeyID)
+	if err != nil {
+		return "", false, fmt.Errorf("secret %s: %w", secretTarget(scope, name), err)
+	}
+	s.putSecretCache(scope, name, v, false, now)
+	return v, true, nil
+}
+
+// secretAuditDetails says where a secret lives, never what it holds.
+func secretAuditDetails(at Secret) map[string]any {
+	if at.Org != "" {
+		return map[string]any{"org": at.Org}
+	}
+	return map[string]any{"database": at.Database}
 }
 
 // ResolveSecrets decrypts the values a function declared (refs), for
@@ -257,7 +331,10 @@ func (s *Users) ResolveSecrets(ctx context.Context, refs []registry.SecretRef, d
 	now := s.now()
 	for _, ref := range refs {
 		db := database
-		if ref.Realm {
+		switch {
+		case ref.Org != "":
+			db = OrgScope(ref.Org)
+		case ref.Realm:
 			db = ""
 		}
 		if v, ok, isMissing := s.cachedSecret(db, ref.Name, now); ok {
@@ -320,7 +397,7 @@ func (s *Users) clearSecretCache(database, name string) {
 }
 
 // secretTarget names a secret for audit records and error messages:
-// "secret:<database>/<name>", or "secret:realm/<name>" for the realm scope.
+// "secret:<scope>/<name>", with scope the database, "realm", or "org:<id>".
 func secretTarget(database, name string) string {
 	scope := database
 	if scope == "" {

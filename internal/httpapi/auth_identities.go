@@ -9,7 +9,8 @@ import (
 	"github.com/fernandezvara/backd/internal/auth"
 )
 
-// identitiesJSON describes a user's sign-in methods: the provider, the address the
+// identitiesJSON describes a user's sign-in methods: the provider, the organization whose
+// connection it came through (if any), the address the
 // provider reported (a password has none of its own: the user's counts), and when
 // each was linked and last used. Never the provider's subject, a hash or a token.
 func identitiesJSON(u auth.User, ids []auth.Identity) []map[string]any {
@@ -23,10 +24,14 @@ func identitiesJSON(u auth.User, ids []auth.Identity) []map[string]any {
 		if !i.LastUsedAt.IsZero() {
 			lastUsed = formatTime(i.LastUsedAt)
 		}
-		out = append(out, map[string]any{
+		item := map[string]any{
 			"provider": i.Provider, "email": email, "email_verified": verified,
 			"created_at": formatTime(i.CreatedAt), "last_used_at": lastUsed,
-		})
+		}
+		if i.Org != "" {
+			item["org"] = i.Org
+		}
+		out = append(out, item)
 	}
 	return out
 }
@@ -37,7 +42,7 @@ func (a *authAPI) unlinkIdentity(w http.ResponseWriter, r *http.Request) {
 	if !a.reauthed(w, r) {
 		return
 	}
-	err := usersOf(r).Unlink(r.Context(), principalOf(r).User.ID, chi.URLParam(r, "provider"), "self")
+	err := usersOf(r).UnlinkIn(r.Context(), principalOf(r).User.ID, chi.URLParam(r, "provider"), r.URL.Query().Get("org"), "self")
 	switch {
 	case errors.Is(err, auth.ErrNotFound):
 		writeError(w, r, http.StatusNotFound, codeNotFound, "you have no sign-in method of that provider")

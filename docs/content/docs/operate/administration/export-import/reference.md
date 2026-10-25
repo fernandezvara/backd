@@ -20,7 +20,7 @@ clinic-2026-10-09/
   main/_files/<file id>            the object of every file the documents reference
   _system/data_keys.jsonl          wrapped keys of encrypted fields (empty without any)
   _system/auth/users.jsonl         only with --include auth
-  _system/auth/identities.jsonl    … orgs, org_members, org_teams, mfa, devices
+  _system/auth/identities.jsonl    … orgs, org_members, org_teams, org_connections, mfa, devices
 ```
 
 ### manifest.json

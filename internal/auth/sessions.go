@@ -52,6 +52,9 @@ type Session struct {
 	// they were recorded.
 	Methods []string
 	MFA     bool
+	// Org is the organization whose connection opened the session (design/org-sso.md), "" for any
+	// other sign-in. It is recorded for what comes later; nothing enforces it yet.
+	Org string
 }
 
 // Principal is the authenticated caller of a request.
@@ -256,13 +259,13 @@ func (s *Users) dummyHash(ctx context.Context) (string, error) {
 }
 
 // startSessionWith starts a session that records how it was created.
-func (s *Users) startSessionWith(ctx context.Context, u User, methods []string, mfa bool) (Principal, string, error) {
+func (s *Users) startSessionWith(ctx context.Context, u User, methods []string, mfa bool, org string) (Principal, string, error) {
 	token, err := NewSessionToken()
 	if err != nil {
 		return Principal{}, "", err
 	}
 	now := s.now()
-	sess := Session{ID: xid.New().String(), UserID: u.ID, TokenHash: HashToken(token), CreatedAt: now, LastUsedAt: now, Methods: methods, MFA: mfa}
+	sess := Session{ID: xid.New().String(), UserID: u.ID, TokenHash: HashToken(token), CreatedAt: now, LastUsedAt: now, Methods: methods, MFA: mfa, Org: org}
 	sess.ExpiresAt = s.expiry(u, now, now)
 	if err := s.Store.CreateSession(ctx, sess); err != nil {
 		return Principal{}, "", err

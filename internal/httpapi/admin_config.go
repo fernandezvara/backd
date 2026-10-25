@@ -154,10 +154,15 @@ func realmConfig(s registry.RealmSettings, seesUsers bool) map[string]any {
 		for _, h := range o.Hooks.All() {
 			hooks[h.Key] = h.Hook.Function
 		}
-		out["organizations"] = map[string]any{
+		orgs := map[string]any{
 			"roles": orgRoles, "team_roles": teamRoles, "hooks": hooks, "default_roles": orStrings(o.DefaultRoles), "creator_roles": orStrings(o.CreatorRoles),
 			"allow_require_mfa": o.AllowRequireMFA, "members_visible_to": o.MembersVisibleTo,
 		}
+		if o.SSO != nil {
+			// What organizations may connect (design/org-sso.md); absent when the feature is off.
+			orgs["sso"] = map[string]any{"providers": orStrings(o.SSO.Providers), "max_per_org": o.SSO.MaxPerOrg}
+		}
+		out["organizations"] = orgs
 	}
 	if e := s.Email; e != nil {
 		out["email"] = map[string]any{

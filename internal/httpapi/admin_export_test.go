@@ -269,6 +269,12 @@ func TestAdminExportAuthData(t *testing.T) {
 	mem.SeedPortable("mfa", map[string]any{"id": "u1", "secret": sealedSecret, "enabled_at": at, "last_step": int64(3), "recovery_codes": []any{"keyedhash1", "keyedhash2"}})
 	mem.SeedPortable("devices", map[string]any{"id": "d1", "user_id": "u1", "session_id": "s1", "platform": "ios", "token_hash": "h", "token": sealedDevice, "created_at": at, "last_seen": at})
 	mem.SeedPortable("devices", map[string]any{"id": "d2", "user_id": "u1", "session_id": "s1", "platform": "ios", "token_hash": "h2", "token": "ffffffffffffffff.bm9uY2U=.Y3Q=", "created_at": at, "last_seen": at}) // sealed under another key
+	mem.SeedPortable("orgs", map[string]any{"id": "org1", "name": "Acme Clinic"})
+	mem.SeedPortable("org_connections", map[string]any{"id": "org1:google", "org": "org1", "provider": "google", "client_id": "123-abc.apps.googleusercontent.com", "hosted_domain": "acme.example",
+		"email_domains": []any{}, "native_client_ids": []any{"org-native"}, "join_roles": []any{"member"}, "enabled": true, "blocked": []any{"u9"}, "created_by": "user:u1", "updated_by": "user:u1", "created_at": at, "updated_at": at})
+	if err := f.svc.SetOrgSecret(ctx, "org1", "SSO_GOOGLE_CLIENT_SECRET", "the-client-secret", "test"); err != nil {
+		t.Fatal(err)
+	}
 	url := admin + "/export"
 	key := bearer(adminKey)
 
@@ -311,6 +317,14 @@ func TestAdminExportAuthData(t *testing.T) {
 	}
 	if ids := read("identities"); len(ids) != 1 || ids[0]["password_hash"] != "$argon2id$v=19$hash" {
 		t.Errorf("identities: %v", ids)
+	}
+	// A connection travels as it is, and its client secret does not: it is not in the package.
+	conns := read("org_connections")
+	if len(conns) != 1 || conns[0]["client_id"] != "123-abc.apps.googleusercontent.com" || conns[0]["hosted_domain"] != "acme.example" || len(conns[0]["blocked"].([]any)) != 1 {
+		t.Errorf("org_connections: %v", conns)
+	}
+	if strings.Contains(fmt.Sprint(conns), "the-client-secret") {
+		t.Errorf("a client secret travelled: %v", conns)
 	}
 	mfa := read("mfa")
 	if len(mfa) != 1 || mfa[0]["recovery_codes"] == nil || len(mfa[0]["recovery_codes"].([]any)) != 0 {
@@ -374,6 +388,8 @@ func TestAdminExportAnonymized(t *testing.T) {
 		map[string]any{"id": "i2", "user_id": ada.ID, "provider": "google", "subject": "google-sub-1234", "email": "ada@gmail.com", "created_at": at, "updated_at": at})
 	mem.SeedPortable("mfa", map[string]any{"id": ada.ID, "secret": "sealed"})
 	mem.SeedPortable("orgs", map[string]any{"id": "org1", "name": "Acme Clinic"})
+	mem.SeedPortable("org_connections", map[string]any{"id": "org1:google", "org": "org1", "provider": "google", "client_id": "123-abc.apps.googleusercontent.com", "hosted_domain": "acme.example",
+		"email_domains": []any{}, "native_client_ids": []any{"org-native"}, "join_roles": []any{"member"}, "enabled": true, "blocked": []any{}, "created_at": at, "updated_at": at})
 	url := admin + "/export"
 	post := func(body string) (*httptest.ResponseRecorder, map[string]any) {
 		return f.doH(t, "POST", url, body, jsonHdr(adminKey))
@@ -452,6 +468,11 @@ func TestAdminExportAnonymized(t *testing.T) {
 	}
 	if got := read(lease, "_system/auth/orgs.jsonl"); len(got) != 1 || got[0]["name"] != "Acme Clinic" {
 		t.Errorf("organizations are kept: %v", got)
+	}
+	// Connections keep their shape and lose their applications.
+	conns := read(lease, "_system/auth/org_connections.jsonl")
+	if len(conns) != 1 || conns[0]["client_id"] != "" || len(conns[0]["native_client_ids"].([]any)) != 0 || conns[0]["hosted_domain"] != "acme.example" || conns[0]["provider"] != "google" {
+		t.Errorf("anonymized connections: %v", conns)
 	}
 	// Nothing sealed leaves, nor a second factor.
 	if rec, _ := f.doH(t, "GET", url+"?part=_system/auth/mfa.jsonl", "", map[string]string{"Authorization": "Bearer " + adminKey, exportHeader: lease}); rec.Code != http.StatusNotFound {

@@ -32,8 +32,10 @@ roles:
 
 # Organizations, for the admin UI's Organizations pages.
 organizations:
+  # Organizations may sign in with their own Google Workspace or Microsoft tenant (the Sign-in section).
+  sso: { providers: [google, microsoft] }
   roles:
-    owner: { description: Runs the organization, manage: [org, members, roles, teams] }
+    owner: { description: Runs the organization, manage: [org, members, roles, teams, sso] }
     editor: { description: Edits }
   default_roles: [editor]
   # Roles within a team, for the admin UI's team pages (manager needs a second factor).

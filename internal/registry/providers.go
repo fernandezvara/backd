@@ -33,6 +33,70 @@ var (
 	appleBundlePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]{0,254}$`)
 )
 
+// The checks of a Google or Microsoft application's fields live in the functions below, so the
+// providers: of realm.yaml and an organization's sign-in connections (design/org-sso.md) are
+// held to the same rules. Each returns what is wrong, or "" when the value is fine.
+
+var domainPattern = regexp.MustCompile(`^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$`)
+
+// SharedMicrosoftTenants are the tenant values that admit people of any organization.
+var SharedMicrosoftTenants = []string{"common", "organizations", "consumers"}
+
+// ClientIDProblem checks the client id of a Google or Microsoft application (Microsoft: a GUID).
+func ClientIDProblem(provider, id string) string {
+	if !clientIDPattern.MatchString(id) {
+		return "is required and must be the application's client id"
+	}
+	if provider == ProviderMicrosoft && !guidPattern.MatchString(id) {
+		return fmt.Sprintf("%q isn't an application (client) id, a GUID", id)
+	}
+	return ""
+}
+
+// ClientIDListProblems checks a list of extra audiences (native app client ids): each a valid
+// id, none twice. Messages start with field[index].
+func ClientIDListProblems(field string, list []string) []string {
+	return idListProblems(field, list, clientIDPattern)
+}
+
+func idListProblems(field string, list []string, pattern *regexp.Regexp) []string {
+	var out []string
+	seen := map[string]bool{}
+	for i, id := range list {
+		switch {
+		case !pattern.MatchString(id):
+			out = append(out, fmt.Sprintf("%s[%d]: %q isn't a valid id", field, i, id))
+		case seen[id]:
+			out = append(out, fmt.Sprintf("%s[%d]: %q is listed twice", field, i, id))
+		}
+		seen[id] = true
+	}
+	return out
+}
+
+// TenantProblem checks a Microsoft tenant: a tenant id (GUID), and with shared also common,
+// organizations and consumers. An organization's connection must name its own tenant.
+func TenantProblem(tenant string, shared bool) string {
+	switch {
+	case guidPattern.MatchString(tenant):
+		return ""
+	case shared && slices.Contains(SharedMicrosoftTenants, tenant):
+		return ""
+	case shared:
+		return fmt.Sprintf("%q must be common, organizations, consumers or a tenant id (a GUID)", tenant)
+	}
+	return fmt.Sprintf("%q must be the tenant id (a GUID) of the organization's Microsoft Entra tenant: common, organizations and consumers admit people of any organization", tenant)
+}
+
+// DomainProblem checks a lower-case domain name such as acme.example: a Google Workspace
+// domain or an email domain.
+func DomainProblem(domain string) string {
+	if len(domain) > 253 || !domainPattern.MatchString(domain) {
+		return fmt.Sprintf("%q must be a lower-case domain name such as acme.example", domain)
+	}
+	return ""
+}
+
 // providerDoc mirrors one entry of providers: in realm.yaml.
 type providerDoc struct {
 	Type            string   `yaml:"type"`
@@ -66,6 +130,10 @@ type Provider struct {
 	// account goes away.
 	TeamID, KeyID, PrivateKey string
 	RevokeOnDelete            bool
+	// Org is set on a provider built from an organization's connection (design/org-sso.md): the
+	// id of the organization. Its ClientSecret then names an organization secret, and the
+	// restrictions of the connection apply on top of the token checks.
+	Org string
 }
 
 // SecretNames are the realm secrets the provider needs.
@@ -82,7 +150,11 @@ func (p *Provider) SecretNames() []string {
 // TrustsEmail says whether an address the provider asserts as verified may link
 // an existing account on its own (Google and Apple; not Microsoft, whose address
 // claim a tenant administrator controls).
-func (p *Provider) TrustsEmail() bool { return p.Name == ProviderGoogle || p.Name == ProviderApple }
+func (p *Provider) TrustsEmail() bool {
+	// A connection an organization's managers control never vouches for an address: it can't
+	// link a sign-in to an account (design/org-sso.md §6).
+	return p.Org == "" && (p.Name == ProviderGoogle || p.Name == ProviderApple)
+}
 
 // Audiences are the client ids an ID token may be issued to: the web client and, for
 // the ID-token endpoint, the native ones.
@@ -147,35 +219,23 @@ func parseProviders(docs map[string]*providerDoc) (map[string]*Provider, []error
 			}
 		}
 		ids := func(field string, list []string, pattern *regexp.Regexp) {
-			seen := map[string]bool{}
-			for i, id := range list {
-				switch {
-				case !pattern.MatchString(id):
-					add("%s[%d]: %q isn't a valid id", field, i, id)
-				case seen[id]:
-					add("%s[%d]: %q is listed twice", field, i, id)
-				}
-				seen[id] = true
+			for _, msg := range idListProblems(field, list, pattern) {
+				add("%s", msg)
 			}
 		}
 		switch name {
 		case ProviderGoogle, ProviderMicrosoft:
-			if !clientIDPattern.MatchString(d.ClientID) {
-				add("client_id: is required and must be the application's client id")
+			if msg := ClientIDProblem(name, d.ClientID); msg != "" {
+				add("client_id: %s", msg)
 			}
 			secret("client_secret", d.ClientSecret, &p.ClientSecret)
 			ids("native_client_ids", d.NativeClientIDs, clientIDPattern)
 			if name == ProviderMicrosoft {
 				p.Tenant = d.Tenant
-				switch {
-				case p.Tenant == "":
+				if p.Tenant == "" {
 					p.Tenant = "common"
-				case slices.Contains([]string{"common", "organizations", "consumers"}, p.Tenant) || guidPattern.MatchString(p.Tenant):
-				default:
-					add("tenant: %q must be common, organizations, consumers or a tenant id (a GUID)", d.Tenant)
-				}
-				if d.ClientID != "" && !guidPattern.MatchString(d.ClientID) {
-					add("client_id: %q isn't an application (client) id, a GUID", d.ClientID)
+				} else if msg := TenantProblem(p.Tenant, true); msg != "" {
+					add("tenant: %s", msg)
 				}
 			}
 		case ProviderApple:
@@ -212,6 +272,13 @@ func (s RealmSettings) SignInRedirectAllowed(raw string) bool {
 		list = s.Email.AllowedRedirects
 	}
 	return redirectAllowed(list, raw)
+}
+
+// OrgProviderCallbackPath is where a provider sends the user back to after an organization's
+// sign-in, relative to backd's public address: the URL a manager registers in the provider's
+// console. It always names the organization by its id.
+func OrgProviderCallbackPath(realm, orgID, provider string) string {
+	return "/v1/" + url.PathEscape(realm) + "/_auth/orgs/" + url.PathEscape(orgID) + "/oauth/" + url.PathEscape(provider) + "/callback"
 }
 
 // ProviderCallbackPath is where a provider sends the user back to, relative to backd's
