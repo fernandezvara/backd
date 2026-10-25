@@ -221,13 +221,21 @@ func (a *authAPI) signup(w http.ResponseWriter, r *http.Request) {
 	}
 	r = withOrgContext(r, f, email)
 	// The language asked for in the request comes first, then the browser's.
-	res, err := usersOf(r).SignUp(r.Context(), auth.SignupRequest{
+	req := auth.SignupRequest{
 		Email: email, Password: password, Invitation: invitation, RedirectTo: redirectTo, ClientIP: clientIP(r), RequestID: requestID(r.Context()),
 		Locales:  append([]string{requested}, acceptLanguages(r.Header.Get("Accept-Language"))...),
 		Consents: consents, UserAgent: r.UserAgent(),
-	})
+	}
+	var res auth.SignupResult
+	var err error
+	if ref := chi.URLParam(r, "org"); ref != "" {
+		// To an organization: the invitation is its, and the session is scoped to it.
+		res, err = usersOf(r).SignUpToOrg(r.Context(), auth.OrgSignupRequest{SignupRequest: req, Org: ref})
+	} else {
+		res, err = usersOf(r).SignUp(r.Context(), req)
+	}
 	if err != nil {
-		authError(w, r, err, "password")
+		orgError(w, r, err, "password")
 		return
 	}
 	if res.Pending {
@@ -243,7 +251,7 @@ func (a *authAPI) login(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"email": "string", "password": "string", "org": "string?", "cookie": "bool?"})
+	f, ok := fields(w, r, obj, map[string]string{"email": "string", "password": "string", "invitation": "string?", "org": "string?", "cookie": "bool?"})
 	if !ok {
 		return
 	}
@@ -253,9 +261,18 @@ func (a *authAPI) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = withOrgContext(r, f, f["email"].(string))
-	out, err := usersOf(r).SignIn(r.Context(), f["email"].(string), f["password"].(string), clientIP(r))
+	var out auth.Redeemed
+	var err error
+	if ref := chi.URLParam(r, "org"); ref != "" {
+		// To an organization: the person must belong to it (or hold an invitation), and the
+		// session is scoped to it.
+		invitation, _ := f["invitation"].(string)
+		out, err = usersOf(r).SignInToOrg(r.Context(), auth.OrgSignIn{Org: ref, Email: f["email"].(string), Password: f["password"].(string), IP: clientIP(r), Invitation: invitation})
+	} else {
+		out, err = usersOf(r).SignIn(r.Context(), f["email"].(string), f["password"].(string), clientIP(r))
+	}
 	if err != nil {
-		authError(w, r, err)
+		orgError(w, r, err)
 		return
 	}
 	a.answerSignIn(w, r, out, http.StatusOK, useCookie, false)
@@ -635,6 +652,9 @@ func sessionJSON(p auth.Principal, token, locale string) map[string]any {
 	if token != "" {
 		out["token"] = token
 		out["token_type"] = "Bearer"
+	}
+	if p.Session.Org != "" {
+		out["org"] = p.Session.Org
 	}
 	return out
 }

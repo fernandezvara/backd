@@ -162,6 +162,7 @@ export interface Realm {
       "mfa-reset": Record<string, unknown>;
       "no-account": Record<string, unknown>;
       "org-invitation": Record<string, unknown>;
+      "organizations-found": Record<string, unknown>;
       "password-changed": Record<string, unknown>;
       "password-expired": Record<string, unknown>;
       "reauth-code": Record<string, unknown>;

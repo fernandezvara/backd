@@ -56,7 +56,7 @@ No new realm key: `organizations.enabled` implies scoped sessions, and `organiza
 
 - `invitation_link` must contain `{org}` (the link is how the app learns which organization to sign in to); today it is optional;
 - **the slug is required** to create an organization (`POST /_auth/orgs`, `POST /_orgs`, the admin API and `backd orgs create`), because it is what people type. It keeps today's format (lowercase letters and digits separated by single `-`, at most 63 characters) and may not look like an id (`[0-9a-v]{20}`), so a name can never be mistaken for another organization's id. Organizations that exist without one still sign in by id; startup lists them and `backd orgs set-slug <org> <slug>` sets one;
-- `organizations.signin_link` (for example `"https://{slug}.app.example/signin"`; `{slug}` and `{org}` are replaced, and it must be within `allowed_redirects`) is where the emails of §5.4 send people. It is required when the realm has `email:`;
+- `organizations.signin_link` (for example `"https://{slug}.app.example/signin"`; `{slug}` and `{org}` are replaced, and it must be within `allowed_redirects`) is where the emails of §5.4 send people. It is optional: without it (or without `email:`) `POST /_auth/orgs/find` answers `404`;
 - the realm's `signup` (`open`, `invite`, `closed`) governs `POST /_auth/orgs` for new addresses (§5.2); joining an existing organization always needs an invitation (or a connection that admits the person, [org-sso.md §6](./org-sso.md#6-accounts-and-joining-issue-305)).
 
 ## 4. Scoped sessions
@@ -106,7 +106,7 @@ A key acting on behalf of a user (`X-Backd-On-Behalf-Of`) is **bound to one orga
 
 ### 4.7 Rate limits
 
-Sign-in limits that were per email and per IP become per email *and organization*, plus per IP, so a spray against one tenant does not lock a person out of another.
+Sign-in limits stay per email and per client address, as they are. A limit per email *and organization* was considered and rejected: whoever guesses passwords for one account could rotate the organization they name, and every name would start from zero. The cost is that a spray at one person's address slows their sign-in to every organization, which is the case today too.
 
 ## 5. Signing in to an organization
 
@@ -144,7 +144,7 @@ Removed in realms with organizations: `/_auth/login`, `/_auth/signup`, `/_auth/m
 - **A new person:** `POST /_auth/orgs { email, password, name, slug?, locale?, consents? }` creates the account (the sign-up table of [account-lifecycle.md §4.1](./account-lifecycle.md#41-sign-up) and the realm's `signup` mode), the organization with the person as `creator_roles`, and a session scoped to it. With `require_verified_email: true` the answer is `202` and no session: the organization exists, the verification email is sent, and the person signs in to it afterwards. `organizations.create` is **not** evaluated for this first organization (a new account cannot satisfy `user.email_verified`); `max_created_per_user` still applies.
 - **The slug** is asked for with the company name; the form suggests one from the name ("Acme Corp" → `acme-corp`). A taken slug answers `409 slug_taken` with no detail about the other organization. This is the one place where a slug shows that it exists: unique names cannot be handed out without saying so, and it is limited per IP like sign-up.
 - **A registered address:** answers as sign-up does today (`409 email_taken`, or the generic `202` when verification is required). The person signs in to one of their organizations and creates another from there.
-- **From a session:** `POST /_orgs` (with `organizations.create` evaluated as today) creates the organization and answers `{ org, token, expires_at }`: **a new session scoped to the new organization**. The caller's own session stays as it is.
+- **From a session:** `POST /_orgs` (with `organizations.create` evaluated as today) creates the organization and answers it as before with `session: { token, expires_at, org }` added: **a new session scoped to the new organization**. The caller's own session stays as it is.
 
 ### 5.3 Finding the organization
 

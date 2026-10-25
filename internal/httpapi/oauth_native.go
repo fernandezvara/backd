@@ -67,7 +67,7 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 	if intent != auth.IntentSignIn && intent != auth.IntentLink {
 		details = append(details, Detail{Path: "intent", Reason: "must be signin or link"})
 	}
-	if inv := str("invitation"); inv != "" && !strings.HasPrefix(inv, auth.InvitationPrefix) {
+	if inv := str("invitation"); inv != "" && !strings.HasPrefix(inv, invitationPrefixOf(r)) {
 		details = append(details, Detail{Path: "invitation", Reason: "isn't an invitation token"})
 	}
 	if str("id_token") == "" || str("nonce") == "" {
@@ -133,16 +133,24 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 		authError(w, r, err)
 		return
 	}
+	invitation := ""
 	if inv := str("invitation"); inv != "" {
-		login.Invitation = auth.HashToken(inv)
+		invitation = auth.HashToken(inv)
 	}
+	scopeOrg := routeScope(r, sc)
+	invitationOfScope(&login, invitation, scopeOrg)
 	res, err := svc.ResolveProviderLogin(r.Context(), login)
 	if err != nil {
 		a.nativeFailure(w, r, svc, p.Name, err)
 		return
 	}
-	if p.Org != "" {
-		svc.AfterOrgSignIn(r.Context(), p.Org, p.Name, res)
+	if intent == auth.IntentLink {
+		if p.Org != "" {
+			svc.AfterOrgSignIn(r.Context(), p.Org, p.Name, res)
+		}
+	} else if !enterScope(r, svc, scopeOrg, p, res, invitation) {
+		writeError(w, r, http.StatusForbidden, codeNotAllowed, "this account is not allowed to sign in through this organization")
+		return
 	}
 	if intent == auth.IntentLink {
 		a.keepAppleToken(r, svc, p, res.User.ID, claims.Audience, refresh)
@@ -150,7 +158,7 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.keepAppleToken(r, svc, p, res.User.ID, claims.Audience, refresh)
-	out, err := svc.StartProviderSessionIn(r.Context(), res.User, p.Name, res.NewUser, res.Profile, p.Org)
+	out, err := svc.StartProviderSessionIn(r.Context(), res.User, p.Name, res.NewUser, res.Profile, scopeOrg)
 	if err != nil {
 		authError(w, r, err)
 		return

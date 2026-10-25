@@ -1,0 +1,7 @@
+Hello,
+
+Someone asked for the companies this address belongs to on {{.Realm}}. Sign in to the one you want:
+{{range .Data.orgs}}
+{{.name}}: {{.link}}{{end}}
+
+If you did not ask for this, ignore this message: nothing changes and nobody else sees it.

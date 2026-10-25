@@ -768,12 +768,16 @@ func TestContract(t *testing.T) {
 		}
 		req("GET", ostart, "", nil, 302)
 		req("GET", oo+"/oauth/google/start?redirect_to="+redirect, "", nil, 400)
-		req("GET", oo+"/oauth/apple/start?redirect_to="+redirect+"&code_challenge="+challenge, "", nil, 404)
-		req("GET", a+"/orgs/nope/oauth/google/start?redirect_to="+redirect+"&code_challenge="+challenge, "", nil, 404)
+		// A realm-level provider signs in to an organization too, and an unknown organization
+		// does the same as a known one.
+		req("GET", oo+"/oauth/apple/start?redirect_to="+redirect+"&code_challenge="+challenge, "", nil, 302)
+		req("GET", a+"/orgs/nope/oauth/google/start?redirect_to="+redirect+"&code_challenge="+challenge, "", nil, 302)
+		req("GET", oo+"/oauth/nope/start?redirect_to="+redirect+"&code_challenge="+challenge, "", nil, 404)
 		req("POST", oo+"/oauth/google/start", `{"redirect_to": "https://app.acme.example/x", "code_challenge": "`+challenge+`"}`, nil, 200)
 		req("POST", oo+"/oauth/google/start", `{"redirect_to": "https://app.acme.example/x", "code_challenge": "`+challenge+`", "intent": "link"}`, nil, 401)
 		req("POST", oo+"/oauth/google/start", `{"redirect_to": "https://evil.example/x", "code_challenge": "`+challenge+`"}`, nil, 400)
-		req("POST", oo+"/oauth/apple/start", `{"redirect_to": "https://app.acme.example/x", "code_challenge": "`+challenge+`"}`, nil, 404)
+		req("POST", oo+"/oauth/apple/start", `{"redirect_to": "https://app.acme.example/x", "code_challenge": "`+challenge+`"}`, nil, 200)
+		req("POST", oo+"/oauth/nope/start", `{"redirect_to": "https://app.acme.example/x", "code_challenge": "`+challenge+`"}`, nil, 404)
 		// Backd's public address unknown: the organization's provider can't be offered.
 		publicURL := f.svc.Settings.Email.PublicURL
 		f.svc.Settings.Email.PublicURL = ""
@@ -803,7 +807,7 @@ func TestContract(t *testing.T) {
 		req("POST", oex, orgNative(orgGoogle("g-org-n3", "ada@example.com", "acme.example", true)), nil, 409)
 		req("POST", oex, orgNative(orgGoogle("g-org-n4", "", "acme.example", true)), nil, 400)
 		req("POST", oex, `{"id_token": "bad", "nonce": "n1"}`, nil, 401)
-		req("POST", oo+"/oauth/apple/id-token", orgNative(orgGoogle("g-org-n", "orgnative@acme.example", "acme.example", true)), nil, 404)
+		req("POST", oo+"/oauth/nope/id-token", orgNative(orgGoogle("g-org-n", "orgnative@acme.example", "acme.example", true)), nil, 404)
 		// Too many starts from one address.
 		for range 40 {
 			if rec, _ := f.doH(t, "GET", start, "", nil); rec.Code == 429 {
@@ -3074,6 +3078,120 @@ func TestContract(t *testing.T) {
 		// A deleted organization takes none.
 		req("DELETE", orgs+"/"+org, "", proof(), 204)
 		req("PUT", asso+"/google", google, json(key), 409)
+	}
+
+	// Signing in to an organization.
+	{
+		// The checks above have used up the limits of this client address; the ones tested here
+		// are the per-address and per-organization ones.
+		throttle := f.svc.Settings.LoginThrottle
+		f.svc.Settings.LoginThrottle.IPThreshold = 1000
+		defer func() { f.svc.Settings.LoginThrottle = throttle }()
+		_, challenge, _ := auth.NewPKCE()
+		made, err := f.svc.AdminCreateOrg(context.Background(), "Signin Inc", "signin-inc", f.adaID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		oo := a + "/orgs/" + made.Org.ID
+		ctx := context.Background()
+		// These calls send emails; the limit per client address is not what is tested here.
+		perIP := f.svc.Settings.Email.Limits.PerIPPerHour
+		f.svc.Settings.Email.Limits.PerIPPerHour = 1000
+		ol, oauth := oo+"/login", a+"/orgs"
+		good := `{"email": "ada@example.com", "password": "dev-p4ssw0rd!"}`
+		if out := req("POST", ol, good, nil, 200); out["org"] != made.Org.ID {
+			t.Errorf("org login: %v", out)
+		}
+		req("POST", oauth+"/"+made.Org.ID+"/login", good, nil, 200)
+		req("POST", ol, `{"email": "ada@example.com"}`, nil, 400)
+		req("POST", ol, `{"email": "bob@example.com", "password": "dev-p4ssw0rd!"}`, nil, 401)
+		req("POST", oauth+"/nope/login", good, nil, 401)
+		for range 5 {
+			req("POST", ol, `{"email": "spray@example.com", "password": "dev-p4ssw0rd!0"}`, nil, 401)
+		}
+		req("POST", ol, `{"email": "spray@example.com", "password": "dev-p4ssw0rd!0"}`, nil, 429)
+
+		invite := func(in auth.InvitationInput) string {
+			t.Helper()
+			res, err := f.svc.AdminCreateOrgInvitation(ctx, made.Org.ID, in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return res.Token
+		}
+		bound := invite(auth.InvitationInput{Binding: auth.BindEmail, Email: "joiner@example.com"})
+		open := invite(auth.InvitationInput{Binding: auth.BindNone, MaxUses: 5})
+		prev := oo + "/invitations/preview"
+		req("POST", prev, `{"token": "`+bound+`"}`, nil, 200)
+		req("POST", prev, `{"token": "bdo_nope"}`, nil, 400)
+		req("POST", oauth+"/nope/invitations/preview", `{"token": "`+bound+`"}`, nil, 400)
+		su := oo + "/signup"
+		body := func(email, token string) string {
+			return `{"email": "` + email + `", "password": "dev-p4ssw0rd!", "invitation": "` + token + `"}`
+		}
+		req("POST", su, body("joiner@example.com", "bdo_nope"), nil, 400)
+		req("POST", su, body("other@example.com", bound), nil, 403)
+		if out := req("POST", su, body("joiner@example.com", bound), nil, 201); out["org"] != made.Org.ID {
+			t.Errorf("org signup: %v", out)
+		}
+		req("POST", su, body("ada@example.com", open), nil, 409)
+		verify := f.svc.Settings.Account.RequireVerifiedEmail
+		f.svc.Settings.Account.RequireVerifiedEmail = true
+		req("POST", su, body("pending@example.com", open), nil, 202)
+		f.svc.Settings.Account.RequireVerifiedEmail = verify
+
+		// Magic links, resets and the question "which companies am I in?".
+		ml := oo + "/magic-link"
+		ask := `{"email": "ada@example.com", "code_challenge": "` + challenge + `"}`
+		magic := f.svc.Settings.MagicLink.Enabled
+		f.svc.Settings.MagicLink.Enabled = true
+		req("POST", ml, ask, nil, 202)
+		req("POST", ml, `{"email": "nope", "code_challenge": "`+challenge+`"}`, nil, 400)
+		f.svc.Settings.MagicLink.Enabled = false
+		req("POST", ml, ask, nil, 403)
+		f.svc.Settings.MagicLink.Enabled = magic
+		rp := oo + "/reset-password/request"
+		req("POST", rp, `{"email": "bob@example.com"}`, nil, 202)
+		req("POST", rp, `{"email": "nope"}`, nil, 400)
+		req("POST", rp, `{"email": "a@example.com"}`, map[string]string{"Content-Type": "text/plain"}, 415)
+		req("POST", "/v1/nope/_auth/orgs/x/reset-password/request", `{"email": "a@example.com"}`, nil, 404)
+		for range 5 {
+			req("POST", rp, `{"email": "orglimited@example.com"}`, nil, 202)
+		}
+		req("POST", rp, `{"email": "orglimited@example.com"}`, nil, 429)
+
+		link := f.svc.Settings.Organizations.SigninLink
+		f.svc.Settings.Organizations.SigninLink = "https://app.acme.example/{slug}/signin"
+		req("POST", oauth+"/find", `{"email": "ada@example.com"}`, nil, 202)
+		req("POST", oauth+"/find", `{"email": "nope"}`, nil, 400)
+		for range 4 {
+			f.doH(t, "POST", oauth+"/find", `{"email": "finder@example.com"}`, map[string]string{"Content-Type": "application/json"})
+		}
+		req("POST", oauth+"/find", `{"email": "finder@example.com"}`, nil, 429)
+		f.svc.Settings.Organizations.SigninLink = ""
+		req("POST", oauth+"/find", `{"email": "ada@example.com"}`, nil, 404)
+		f.svc.Settings.Organizations.SigninLink = link
+
+		// A new person starts a company.
+		signed := `"password": "dev-p4ssw0rd!", "name": "Start Inc"`
+		req("POST", oauth, `{"email": "starter@example.com", `+signed+`}`, nil, 400)
+		if out := req("POST", oauth, `{"email": "starter@example.com", `+signed+`, "slug": "start-inc"}`, nil, 201); out["org"] == nil || out["organization"] == nil {
+			t.Errorf("new organization: %v", out)
+		}
+		req("POST", oauth, `{"email": "starter2@example.com", `+signed+`, "slug": "start-inc"}`, nil, 409)
+		f.svc.Settings.Account.RequireVerifiedEmail = true
+		req("POST", oauth, `{"email": "starter3@example.com", `+signed+`, "slug": "start-three"}`, nil, 202)
+		f.svc.Settings.Account.RequireVerifiedEmail = verify
+		signup := f.svc.Settings.Signup
+		f.svc.Settings.Signup = "closed"
+		req("POST", oauth, `{"email": "starter4@example.com", `+signed+`, "slug": "start-four"}`, nil, 403)
+		f.svc.Settings.Signup = signup
+		f.svc.Settings.Email.Limits.PerIPPerHour = perIP
+		// Previews are limited per address: apps ask when an invitation page opens.
+		for range 65 {
+			f.doH(t, "POST", prev, `{"token": "bdo_nope"}`, map[string]string{"Content-Type": "application/json"})
+		}
+		req("POST", prev, `{"token": "bdo_nope"}`, nil, 429)
 	}
 
 	// The actions of a breach come last: they end every session the checks above used.

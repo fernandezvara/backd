@@ -48,22 +48,25 @@ func TestOrganizationSettings(t *testing.T) {
 
 func TestOrganizationSettingsRefusals(t *testing.T) {
 	for name, tc := range map[string]struct{ yaml, want string }{
-		"no roles":             {"organizations: {}\n", "declare at least one role"},
-		"nobody manages":       {"organizations:\n  roles:\n    owner: { manage: [members] }\n", "at least one role needs manage: org"},
-		"unknown capability":   {"organizations:\n  roles:\n    owner: { manage: [everything] }\n", "unknown capability"},
-		"creator not declared": {"organizations:\n  roles:\n    boss: { manage: org }\n", `creator_roles: "owner" is not a declared role`},
-		"creator can't manage": {"organizations:\n  roles:\n    boss: { manage: org }\n    owner: {}\n", "creator_roles: must include a role with manage: org"},
-		"default with manage":  {"organizations:\n  roles:\n    owner: { manage: org }\n  default_roles: [owner]\n", "has manage capabilities"},
-		"bad rule":             {"organizations:\n  create: user.nothing.\n  roles:\n    owner: { manage: org }\n", "organizations.create"},
-		"too many memberships": {"organizations:\n  max_memberships_per_user: 500\n  roles:\n    owner: { manage: org }\n", "at most 100"},
-		"link without token":   {"sign_in:\n  allowed_redirects: [\"https://app.acme.example\"]\norganizations:\n  invitation_link: https://app.acme.example/join\n  roles:\n    owner: { manage: org }\n", "{token} exactly once"},
-		"link outside":         {"sign_in:\n  allowed_redirects: [\"https://app.acme.example\"]\norganizations:\n  invitation_link: https://evil.example/join?t={token}\n  roles:\n    owner: { manage: org }\n", "within sign_in.allowed_redirects"},
-		"auth disabled":        {"auth: disabled\norganizations:\n  roles:\n    owner: { manage: org }\n", "only apply when auth is enabled"},
-		"grants unknown":       {"organizations:\n  roles:\n    owner: { manage: org }\n  team_roles:\n    manager: { grants: [boss] }\n", `grants: "boss" is not a declared team role`},
-		"grants twice":         {"organizations:\n  roles:\n    owner: { manage: org }\n  team_roles:\n    manager: { grants: [delegate, delegate] }\n    delegate: {}\n", "listed twice"},
-		"bad team role name":   {"organizations:\n  roles:\n    owner: { manage: org }\n  team_roles:\n    Manager: {}\n", "invalid role name"},
-		"unknown team key":     {"organizations:\n  roles:\n    owner: { manage: org }\n  team_roles:\n    manager: { manage: org }\n", "manage"},
-		"bad visible":          {"organizations:\n  members_visible_to: everyone\n  roles:\n    owner: { manage: org }\n", "members or managers"},
+		"no roles":              {"organizations: {}\n", "declare at least one role"},
+		"nobody manages":        {"organizations:\n  roles:\n    owner: { manage: [members] }\n", "at least one role needs manage: org"},
+		"unknown capability":    {"organizations:\n  roles:\n    owner: { manage: [everything] }\n", "unknown capability"},
+		"creator not declared":  {"organizations:\n  roles:\n    boss: { manage: org }\n", `creator_roles: "owner" is not a declared role`},
+		"creator can't manage":  {"organizations:\n  roles:\n    boss: { manage: org }\n    owner: {}\n", "creator_roles: must include a role with manage: org"},
+		"default with manage":   {"organizations:\n  roles:\n    owner: { manage: org }\n  default_roles: [owner]\n", "has manage capabilities"},
+		"bad rule":              {"organizations:\n  create: user.nothing.\n  roles:\n    owner: { manage: org }\n", "organizations.create"},
+		"too many memberships":  {"organizations:\n  max_memberships_per_user: 500\n  roles:\n    owner: { manage: org }\n", "at most 100"},
+		"link without token":    {"sign_in:\n  allowed_redirects: [\"https://app.acme.example\"]\norganizations:\n  invitation_link: https://app.acme.example/join\n  roles:\n    owner: { manage: org }\n", "{token} exactly once"},
+		"link outside":          {"sign_in:\n  allowed_redirects: [\"https://app.acme.example\"]\norganizations:\n  invitation_link: https://evil.example/join?t={token}\n  roles:\n    owner: { manage: org }\n", "within sign_in.allowed_redirects"},
+		"signin link, no email": {"sign_in:\n  allowed_redirects: [\"https://app.acme.example\"]\norganizations:\n  signin_link: https://app.acme.example/{slug}/signin\n  roles:\n    owner: { manage: org }\n", "needs email:"},
+		"signin link no slug":   {exportEmail + "organizations:\n  signin_link: https://app.acme.example/signin\n  roles:\n    owner: { manage: org }\n", "must contain {slug}"},
+		"signin link outside":   {exportEmail + "organizations:\n  signin_link: https://evil.example/{slug}\n  roles:\n    owner: { manage: org }\n", "within sign_in.allowed_redirects"},
+		"auth disabled":         {"auth: disabled\norganizations:\n  roles:\n    owner: { manage: org }\n", "only apply when auth is enabled"},
+		"grants unknown":        {"organizations:\n  roles:\n    owner: { manage: org }\n  team_roles:\n    manager: { grants: [boss] }\n", `grants: "boss" is not a declared team role`},
+		"grants twice":          {"organizations:\n  roles:\n    owner: { manage: org }\n  team_roles:\n    manager: { grants: [delegate, delegate] }\n    delegate: {}\n", "listed twice"},
+		"bad team role name":    {"organizations:\n  roles:\n    owner: { manage: org }\n  team_roles:\n    Manager: {}\n", "invalid role name"},
+		"unknown team key":      {"organizations:\n  roles:\n    owner: { manage: org }\n  team_roles:\n    manager: { manage: org }\n", "manage"},
+		"bad visible":           {"organizations:\n  members_visible_to: everyone\n  roles:\n    owner: { manage: org }\n", "members or managers"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, errs := parseRealmSettings([]byte(tc.yaml))
@@ -75,6 +78,21 @@ func TestOrganizationSettingsRefusals(t *testing.T) {
 				t.Errorf("errors = %v, want one containing %q", all, tc.want)
 			}
 		})
+	}
+}
+
+// The sign-in link of the "which companies am I in?" email is optional, and is read when it is set.
+func TestOrganizationSigninLink(t *testing.T) {
+	s, errs := parseRealmSettings([]byte(exportEmail + "organizations:\n  signin_link: https://app.acme.example/{slug}/signin\n  roles:\n    owner: { manage: org }\n"))
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	if got := s.Organizations.SigninLink; got != "https://app.acme.example/{slug}/signin" {
+		t.Errorf("SigninLink = %q", got)
+	}
+	s, errs = parseRealmSettings([]byte(orgsRealm))
+	if len(errs) > 0 || s.Organizations.SigninLink != "" {
+		t.Errorf("without it: %v %q", errs, s.Organizations.SigninLink)
 	}
 }
 

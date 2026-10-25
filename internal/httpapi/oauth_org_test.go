@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -13,8 +12,6 @@ import (
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/registry"
 )
-
-var requestIDs = regexp.MustCompile(`"request_id":"[^"]*"`)
 
 const (
 	orgTenant = "11111111-2222-3333-4444-555555555555"
@@ -233,7 +230,9 @@ func TestOrganizationStateStaysWhereItBegan(t *testing.T) {
 	}
 }
 
-// Every reason a connection can't be used answers alike, and the list agrees with start.
+// Every reason an organization has no usable connection makes it look like an organization
+// with none: its address signs in with the realm's own providers, and the list agrees with start.
+// Nothing says whether the organization exists, is deleted or switched SSO off.
 func TestOrganizationProvidersAnswerAlikeWhenUnavailable(t *testing.T) {
 	o := newOrgSignIn(t)
 	ctx := context.Background()
@@ -246,89 +245,65 @@ func TestOrganizationProvidersAnswerAlikeWhenUnavailable(t *testing.T) {
 		return rec.Code, names, rec.Header().Get("Cache-Control")
 	}
 	orgAuth := "/v1/acme/_auth/orgs/"
-	if code, names, cache := listOf(orgAuth + o.org); code != 200 || strings.Join(names, ",") != "google,microsoft" || cache != "public, max-age=60" {
+	if code, names, cache := listOf(orgAuth + o.org); code != 200 || strings.Join(names, ",") != "apple,google,microsoft" || cache != "public, max-age=60" {
 		t.Fatalf("list = %d %v %q", code, names, cache)
 	}
 	// The realm's own list: the providers realm.yaml declares.
 	if code, names, _ := listOf("/v1/acme/_auth"); code != 200 || strings.Join(names, ",") != "apple,google,microsoft" {
 		t.Errorf("realm list = %d %v", code, names)
 	}
-
-	startAnswer := func() (int, string) {
-		_, code, body, _ := o.start(t, o.base, "google")
-		return code, body
-	}
 	setConn := func(in auth.ConnectionInput) {
 		if _, err := o.svc.AdminSetOrgConnection(ctx, o.org, "google", in); err != nil {
 			t.Fatal(err)
 		}
 	}
-	disabled := false
-	var reference string
-	check := func(name string, code int, body string) {
+	// plain checks that an address signs in with the realm's providers, not the connection's.
+	plain := func(name, base string) {
 		t.Helper()
-		if code != http.StatusNotFound {
-			t.Errorf("%s: start answered %d", name, code)
+		_, code, body, loc := o.start(t, base, "google")
+		if code != http.StatusFound || strings.Contains(loc, "org-g-client") || strings.Contains(loc, "%2Forgs%2F") {
+			t.Errorf("%s: start answered %d %s %s", name, code, body, loc)
 		}
-		body = requestIDs.ReplaceAllString(body, `"request_id":""`)
-		if reference == "" {
-			reference = body
-		}
-		if body != reference {
-			t.Errorf("%s: the answer differs from the others:\n%s\n%s", name, body, reference)
+		if code, names, _ := listOf(base[:len(base)-len("/oauth")]); code != 200 || strings.Join(names, ",") != "apple,google,microsoft" {
+			t.Errorf("%s: list = %d %v", name, code, names)
 		}
 	}
-	// A provider the organization never connected.
-	_, code, body, _ := o.start(t, o.base, "apple")
-	check("never connected", code, body)
-	// An organization that isn't there, and one the address doesn't match.
-	_, code, body, _ = o.start(t, orgAuth+"nope/oauth", "google")
-	check("unknown organization", code, body)
+	// An organization that isn't there.
+	plain("unknown organization", orgAuth+"nope/oauth")
 	// Disabled.
+	disabled := false
 	setConn(auth.ConnectionInput{ClientID: "org-g-client", HostedDomain: "acme.example", Enabled: &disabled})
-	code, body = startAnswer()
-	check("disabled", code, body)
-	if _, names, _ := listOf(orgAuth + o.org); strings.Join(names, ",") != "microsoft" {
-		t.Errorf("list with google disabled = %v", names)
-	}
+	plain("disabled", o.base)
 	enabled := true
 	setConn(auth.ConnectionInput{ClientID: "org-g-client", HostedDomain: "acme.example", Enabled: &enabled})
-	// Without its secret.
+	// Enabled but without its secret: a state only an operator can reach. The provider is not
+	// offered, and start says so, rather than signing in with an application that is not the
+	// organization's.
 	if err := o.svc.DeleteOrgSecret(ctx, o.org, "SSO_GOOGLE_CLIENT_SECRET"); err != nil {
 		t.Fatal(err)
 	}
-	code, body = startAnswer()
-	check("no secret", code, body)
-	if _, names, _ := listOf(orgAuth + o.org); strings.Join(names, ",") != "microsoft" {
+	if _, code, _, _ := o.start(t, o.base, "google"); code != http.StatusNotFound {
+		t.Errorf("no secret: start answered %d", code)
+	}
+	if _, names, _ := listOf(orgAuth + o.org); strings.Join(names, ",") != "apple,microsoft" {
 		t.Errorf("list without the secret = %v", names)
 	}
 	if err := o.svc.SetOrgSecret(ctx, o.org, "SSO_GOOGLE_CLIENT_SECRET", "org-g-secret", "test"); err != nil {
 		t.Fatal(err)
 	}
-	if code, _ = startAnswer(); code != http.StatusFound {
-		t.Fatalf("restored: %d", code)
+	if _, code, _, loc := o.start(t, o.base, "google"); code != http.StatusFound || !strings.Contains(loc, "org-g-client") {
+		t.Fatalf("restored: %d %s", code, loc)
 	}
 	// Organization orphaned or deleted.
 	for _, status := range []string{auth.OrgOrphaned, auth.OrgDeleted} {
 		if _, err := o.svc.Store.UpdateOrg(ctx, o.org, auth.OrgUpdate{Status: status}, time.Now()); err != nil {
 			t.Fatal(err)
 		}
-		code, body = startAnswer()
-		check(status, code, body)
-		if _, names, _ := listOf(orgAuth + o.org); len(names) != 0 {
-			t.Errorf("list of a %s organization = %v", status, names)
-		}
+		plain(status, o.base)
 	}
-	// The unknown organization, one without connections and one with the switch off all list nothing.
-	if code, names, _ := listOf(orgAuth + "nope"); code != 200 || len(names) != 0 {
-		t.Errorf("unknown organization lists %d %v", code, names)
-	}
+	// The switch off.
 	o.svc.Settings.Organizations.SSO = nil
-	code, body = startAnswer()
-	check("switch off", code, body)
-	if code, names, _ := listOf(orgAuth + o.org); code != 200 || len(names) != 0 {
-		t.Errorf("switch off lists %d %v", code, names)
-	}
+	plain("switch off", o.base)
 }
 
 func TestOrganizationNativeSignIn(t *testing.T) {
@@ -626,9 +601,10 @@ func TestConnectionIsDisabledWhenItsSetterLosesTheRoles(t *testing.T) {
 	if u, err := o.svc.Store.UserByEmail(ctx, "late@acme.example"); err == nil {
 		t.Errorf("a user was made: %+v", u)
 	}
-	// Once disabled it answers like a missing provider.
-	if _, code, _, _ := o.start(t, o.base, "google"); code != http.StatusNotFound {
-		t.Errorf("start of a disabled connection: %d", code)
+	// Once disabled it is as if it was not there: the organization's address falls back to the
+	// realm's own provider, never the organization's application.
+	if _, code, body, loc := o.start(t, o.base, "google"); code != http.StatusFound || strings.Contains(loc, "org-g-client") {
+		t.Errorf("start of a disabled connection: %d %s %s", code, body, loc)
 	}
 }
 
@@ -711,5 +687,96 @@ func TestOrganizationSignInLogsNoSecrets(t *testing.T) {
 		if strings.Contains(text, secret) {
 			t.Errorf("%q is in the audit trail", secret)
 		}
+	}
+}
+
+// The realm's own providers sign people in to an organization too: a member gets a session scoped
+// to it; anyone else, and anyone at an organization that is not there, is refused alike, after the
+// provider has vouched for them. An invitation lets a person in and joins them.
+func TestRealmProviderSignsInToAnOrganization(t *testing.T) {
+	f := newOAuthFixture(t)
+	ctx := context.Background()
+	made, err := f.svc.AdminCreateOrg(ctx, "Plain Inc", "plain-inc", f.adaID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := "/v1/acme/_auth/orgs/" + made.Org.ID + "/oauth"
+	signIn := func(base string, person map[string]any, extra url.Values) attempt {
+		t.Helper()
+		f.idp.SetUser(person)
+		verifier, challenge, _ := auth.NewPKCE()
+		q := url.Values{"redirect_to": {appRedirect}, "code_challenge": {challenge}}
+		for k, v := range extra {
+			q[k] = v
+		}
+		rec, _ := f.doH(t, "GET", base+"/google/start?"+q.Encode(), "", nil)
+		if rec.Code != http.StatusFound {
+			t.Fatalf("start: %d %s", rec.Code, rec.Body)
+		}
+		return f.finish(t, "google", rec.Header().Get("Location"), verifier, false)
+	}
+	scopeOfSession := func(a attempt) string {
+		t.Helper()
+		code, out := f.redeem(t, a)
+		if code != 200 {
+			t.Fatalf("redeem: %d %v", code, out)
+		}
+		return f.scopeOf(t, out["token"].(string))
+	}
+
+	// A member: ada's address is verified, the provider says so, so it is her account.
+	a := signIn(base, googleUser("g-ada-plain", "ada@example.com", true), nil)
+	if a.errorCode() != "" || scopeOfSession(a) != made.Org.ID {
+		t.Fatalf("a member: %v", a.result)
+	}
+	// By slug too.
+	if a := signIn("/v1/acme/_auth/orgs/plain-inc/oauth", googleUser("g-ada-plain", "ada@example.com", true), nil); a.errorCode() != "" || scopeOfSession(a) != made.Org.ID {
+		t.Errorf("by slug: %v", a.result)
+	}
+	// A stranger and an organization that is not there end the same way, with no session.
+	for name, c := range map[string]struct {
+		base   string
+		person map[string]any
+	}{
+		"a stranger":      {base, googleUser("g-bob-plain", "bob@example.com", true)},
+		"a new person":    {base, googleUser("g-new-plain", "newcomer@example.com", true)},
+		"no organization": {"/v1/acme/_auth/orgs/nowhere/oauth", googleUser("g-ada-plain", "ada@example.com", true)},
+	} {
+		a := signIn(c.base, c.person, nil)
+		if a.errorCode() != "not_allowed" || a.result.Query().Get("backd_code") != "" {
+			t.Errorf("%s: %v", name, a.result)
+		}
+	}
+	// An invitation to the organization lets the stranger in and joins them; for a person with no
+	// account it lets them make one, in a realm that is closed.
+	invite := func(body string) string {
+		t.Helper()
+		rec, out := f.doH(t, "POST", orgsPath+"/"+made.Org.ID+"/invitations", body, jsonHdr(f.ada))
+		if rec.Code != 201 {
+			t.Fatalf("invite: %d %v", rec.Code, out)
+		}
+		return out["token"].(string)
+	}
+	token := invite(`{"binding": "email", "email": "bob@example.com", "roles": ["editor"]}`)
+	a = signIn(base, googleUser("g-bob-plain", "bob@example.com", true), url.Values{"invitation": {token}})
+	if a.errorCode() != "" || scopeOfSession(a) != made.Org.ID {
+		t.Fatalf("an invited person: %v", a.result)
+	}
+	if m, err := f.svc.MembershipOf(ctx, f.bobID, made.Org.ID); err != nil || !contains(m.RoleNames(), "editor") {
+		t.Errorf("bob did not join: %v %v", m.RoleNames(), err)
+	}
+	f.svc.Settings.Signup = "closed"
+	token = invite(`{"binding": "email", "email": "eve@example.com"}`)
+	a = signIn(base, googleUser("g-eve", "eve@example.com", true), url.Values{"invitation": {token}})
+	if a.errorCode() != "" || scopeOfSession(a) != made.Org.ID {
+		t.Fatalf("an invited newcomer in a closed realm: %v", a.result)
+	}
+	if u, err := f.svc.Store.UserByEmail(ctx, "eve@example.com"); err != nil || !u.EmailVerified {
+		t.Errorf("the invited account: %+v %v", u, err)
+	}
+	// An account invitation of the realm is not an organization's.
+	rec, _ := f.doH(t, "GET", base+"/google/start?redirect_to="+url.QueryEscape(appRedirect)+"&code_challenge="+url.QueryEscape(func() string { _, c, _ := auth.NewPKCE(); return c }())+"&invitation=bdi_x", "", nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("a realm invitation at an organization: %d", rec.Code)
 	}
 }

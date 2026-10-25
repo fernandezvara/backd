@@ -1,0 +1,6 @@
+<p>Hello,</p>
+<p>Someone asked for the companies this address belongs to on {{.Realm}}. Sign in to the one you want:</p>
+<ul>{{range .Data.orgs}}
+<li><a href="{{.link}}">{{.name}}</a></li>{{end}}
+</ul>
+<p>If you did not ask for this, ignore this message: nothing changes and nobody else sees it.</p>

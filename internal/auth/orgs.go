@@ -244,6 +244,9 @@ func validSlug(slug string) error {
 	if len(slug) > maxSlugLength || !slugPattern.MatchString(slug) {
 		return &OrgInvalidError{"slug", fmt.Sprintf("must be lowercase letters and digits separated by single '-', at most %d characters", maxSlugLength)}
 	}
+	if LooksLikeOrgID(slug) {
+		return &OrgInvalidError{"slug", "must not look like an organization id (20 characters, 0-9 and a-v)"}
+	}
 	return nil
 }
 

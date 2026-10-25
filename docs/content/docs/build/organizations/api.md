@@ -12,7 +12,7 @@ Organizations group users, such as the people of a customer's company. They are 
 
 | Request | Who | Answers |
 |---|---|---|
-| `POST /_orgs` `{"name", "slug"?}` | anyone the realm's `create` rule allows, below `max_created_per_user` | `201` with the organization; the creator holds `creator_roles` |
+| `POST /_orgs` `{"name", "slug"?}` | anyone the realm's `create` rule allows, below `max_created_per_user` | `201` with the organization; the creator holds `creator_roles`. The answer also holds `session`, a new session scoped to it ([below](#signing-in-to-an-organization)) |
 | `GET /_orgs` | any user | `200` with the caller's organizations, each with their effective roles |
 | `GET /_orgs/{org}` | members | `200` with name, slug, status and claims |
 | `PATCH /_orgs/{org}` `{"name"?, "slug"?}` | `manage: org` | `200` |
@@ -38,6 +38,31 @@ Organizations group users, such as the people of a customer's company. They are 
 - **Claims** are facts about the organization that only realm administrators and functions write (`plan`, `seats`…). Members read them.
 - **A non-member and an unknown organization answer the same** `403 not_org_member`, so the answer never says whether an organization exists.
 - **`409 org_limit_reached`** means the caller created the most organizations they may.
+
+## Signing in to an organization
+
+A session can be **scoped to one organization**: the token then reaches that organization and no other. Sessions are scoped by signing in *to* an organization, at `/v1/{realm}/_auth/orgs/{org}/…`. These routes need no session and take the organization's **id or its slug** (case and surrounding spaces do not matter; a slug can never look like an id). Everything after signing in uses the id, which the answer returns as `org`.
+
+| Request | Does |
+|---|---|
+| `POST /_auth/orgs/{org}/login` `{"email", "password", "invitation"?}` | the first factor, as `POST /_auth/login`, for a member of the organization; the session, or the second step, is scoped to it |
+| `POST /_auth/orgs/{org}/signup` `{"email", "password", "invitation"}` | an account for someone the organization invited; the invitation is required, whatever the realm's `signup` says |
+| `POST /_auth/orgs/{org}/magic-link` | a link and a code, [as for the realm](../../auth/magic-links/), sent only to members |
+| `POST /_auth/orgs/{org}/reset-password/request` | a reset email from the organization's page; members get the organization's [context](../organization-context/) |
+| `POST /_auth/orgs/{org}/invitations/preview` `{"token"}` | what an invitation offers, before signing in |
+| `GET\|POST /_auth/orgs/{org}/oauth/{provider}/start` | a provider, [the organization's own connection](#sign-in-connections) or the realm's, signing in to this organization |
+| `GET /_auth/orgs/{org}/providers` | the providers to offer, and `methods`: `password` and, with magic links, `magic_link` |
+| `POST /_auth/orgs` `{"email", "password", "name", "slug"}` | a **new person** starts a company: the account, the organization (the person is its creator) and a session scoped to it, in one call. The realm's `signup` must be `open`; `organizations.create` is not asked for this first organization, `max_created_per_user` is. `409 slug_taken` makes nothing |
+| `POST /_auth/orgs/find` `{"email"}` | "which companies am I in?" (below) |
+
+- **The person must belong to the organization, or hold its invitation.** A wrong password, an address with no account, a stranger, an organization that does not exist or is deleted, and an invitation that is not theirs all answer the same `401 invalid_credentials`, after the same work, and count the same toward the [sign-in limits](../../auth/sessions/). Nothing in the answer says who belongs where. For the same reason there is no endpoint that tells whether a slug exists.
+- **Invitations are accepted as part of the sign-in.** `invitation` in `login` (an `email` or `user` binding must fit the person; an open link fits anyone), in `signup`, or in `oauth/start` (`?invitation=bdo_…`) uses it and makes the person a member before the session is opened. An invitation sent to the address of a new account makes it verified; an open link does not.
+- **A provider of the realm signs in to an organization too:** the person must be a member (or hold the invitation) when they come back from the provider, otherwise the flow ends with `backd_error=not_allowed`, the same for an organization that is not there. A connection of the organization takes the place of the realm's provider of the same name.
+- **A second session:** `POST /_orgs` leaves the caller's session as it is and answers a new one for the organization it made, `session: {token, expires_at, org}`, for the app to keep beside the other.
+
+### Which companies am I in?
+
+For someone on a new device who does not remember the slug. `POST /_auth/orgs/find` always answers `202`, whatever the address, so it says nothing to whoever asked; an address with memberships gets the `organizations-found` [email](../../functions/email/) listing its organizations by name, each with the link to its sign-in page. It needs `email:` and `organizations.signin_link` in [`realm.yaml`](../../configuration/realm/#organizations) (`https://app.acme.example/{slug}/signin`; `{slug}` is the organization's id when it has no slug); without it the route answers `404`. At most 3 requests an hour per address and 30 per client address (`429`).
 
 ## Members
 

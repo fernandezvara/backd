@@ -70,7 +70,7 @@ func (a *authAPI) orgRoutes(r chi.Router) {
 }
 
 // orgError maps organization errors, falling back to the sign-in errors.
-func orgError(w http.ResponseWriter, r *http.Request, err error) {
+func orgError(w http.ResponseWriter, r *http.Request, err error, passwordField ...string) {
 	var bad *auth.OrgInvalidError
 	var needsMFA *auth.RoleRequiresMFAError
 	switch {
@@ -129,7 +129,7 @@ func orgError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.As(err, &bad):
 		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: bad.Field, Reason: bad.Reason})
 	default:
-		authError(w, r, err)
+		authError(w, r, err, passwordField...)
 	}
 }
 
@@ -232,12 +232,22 @@ func (a *authAPI) createOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slug, _ := f["slug"].(string)
-	m, err := usersOf(r).CreateOrg(r.Context(), principalOf(r), f["name"].(string), slug)
+	svc, p := usersOf(r), principalOf(r)
+	m, err := svc.CreateOrg(r.Context(), p, f["name"].(string), slug)
 	if err != nil {
 		orgError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, membershipJSON(m, principalOf(r).Session.MFA))
+	// The caller's session stays as it is; the new organization gets a session of its own,
+	// scoped to it, for the app to keep beside the other (design/scoped-sessions.md §5.2).
+	opened, token, err := svc.OpenOrgSession(r.Context(), p, m.Org.ID)
+	if err != nil {
+		orgError(w, r, err)
+		return
+	}
+	out := membershipJSON(m, p.Session.MFA)
+	out["session"] = map[string]any{"token": token, "expires_at": formatTime(opened.Session.ExpiresAt), "org": m.Org.ID}
+	writeJSON(w, http.StatusCreated, out)
 }
 
 // listOrgs handles GET /_orgs: the caller's organizations.

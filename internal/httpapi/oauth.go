@@ -48,53 +48,62 @@ func (a *authAPI) oauthRoutes(r chi.Router, json func(http.Handler) http.Handler
 	}
 	oauthRoutes(r)
 	// The same flow for the providers an organization's managers connected (design/org-sso.md).
-	r.Route("/orgs/{org}", oauthRoutes)
+	r.Route("/orgs/{org}", func(r chi.Router) {
+		oauthRoutes(r)
+		a.orgSignInRoutes(r, json)
+	})
+	// A new person starts a company, and anyone can ask where they belong.
+	r.With(json).Post("/orgs", a.signUpWithOrg)
+	r.With(json).Post("/orgs/find", a.findOrgs)
 	r.With(json).Post("/token", a.loginCodeToken)
 }
 
 // signInScope is the place a sign-in is about: the realm, with the providers realm.yaml
-// declares, or one organization, with the providers of its enabled connections. Both are
-// resolved by one function, so the list of providers to offer and the routes that sign in can't
-// disagree.
+// declares, or one organization, with the providers of its enabled connections added to the
+// realm's. Both are resolved by one function, so the list of providers to offer and the routes
+// that sign in can't disagree.
 type signInScope struct {
-	org       string // the organization's id; "" for the realm
+	org       string // the organization's id; "" for the realm, and for an organization that can't be signed in to
 	providers map[string]*registry.Provider
 	conns     map[string]auth.OrgConnection
 }
 
-// scope resolves the place a request is about. ok is false when it can't be, for a realm
-// route never (the realm exists) and for an organization's when the realm has no organization
-// sign-in, the organization is unknown, deleted or orphaned, or has no usable connection:
-// callers answer all of those the same.
+// scope resolves the place a request is about. The organization of an organization's route is
+// named by its id or its slug; an unknown, deleted or inactive one resolves to a scope with no
+// organization and the realm's providers, which is what an organization without connections
+// looks like, so nothing says whether it exists. Sign-ins to it end in the same refusal as one
+// to an organization the person does not belong to. ok is false only when the realm has no
+// organizations.
 func (a *authAPI) scope(r *http.Request) (*signInScope, bool) {
 	svc := usersOf(r)
 	ref := chi.URLParam(r, "org")
+	sc := &signInScope{providers: maps.Clone(svc.Settings.Providers), conns: map[string]auth.OrgConnection{}}
+	if sc.providers == nil {
+		sc.providers = map[string]*registry.Provider{}
+	}
 	if ref == "" {
-		return &signInScope{providers: svc.Settings.Providers}, true
+		return sc, true
 	}
 	o := svc.Settings.Organizations
-	if o == nil || o.SSO == nil {
+	if o == nil {
 		return nil, false
 	}
-	org, err := svc.Store.OrgByID(r.Context(), ref)
-	if errors.Is(err, auth.ErrNotFound) {
-		org, err = svc.Store.OrgBySlug(r.Context(), ref)
-	}
+	org, err := svc.OrgByRef(r.Context(), ref)
 	if err != nil {
 		if !errors.Is(err, auth.ErrNotFound) {
 			logger(r.Context()).Error("read an organization for a sign-in", "error", err)
 		}
-		return nil, false
+		return sc, true
 	}
-	if org.Status != auth.OrgActive {
-		return nil, false
+	sc.org = org.ID
+	if o.SSO == nil || org.Status != auth.OrgActive {
+		return sc, true
 	}
 	list, err := svc.Store.OrgConnections(r.Context(), org.ID)
 	if err != nil {
 		logger(r.Context()).Error("read the connections of an organization", "error", err)
-		return nil, false
+		return sc, true
 	}
-	sc := &signInScope{org: org.ID, providers: map[string]*registry.Provider{}, conns: map[string]auth.OrgConnection{}}
 	for _, c := range list {
 		if !c.Enabled || !o.SSO.Allows(c.Provider) {
 			continue
@@ -136,8 +145,9 @@ func (a *authAPI) providerUsable(ctx context.Context, svc *auth.Users, realm str
 }
 
 // providerList answers GET /_auth/providers and GET /_auth/orgs/{org}/providers: the names of
-// the external providers a client may offer now, nothing else. An unknown organization, one
-// without connections and one with sign-in off all answer an empty list.
+// the external providers a client may offer now and, for an organization, the other ways of
+// signing in to it. An unknown organization, one without connections and one with sign-in off
+// all answer alike: the realm's providers and methods.
 func (a *authAPI) providerList(w http.ResponseWriter, r *http.Request) {
 	svc := usersOf(r)
 	if err := svc.RateLimit(r.Context(), "oauth-providers:"+clientIP(r), providersRateLimit, time.Minute); err != nil {
@@ -152,9 +162,17 @@ func (a *authAPI) providerList(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	body := map[string]any{"items": items}
+	if chi.URLParam(r, "org") != "" {
+		methods := []string{"password"}
+		if svc.Settings.MagicLink.Enabled && svc.Settings.Email != nil {
+			methods = append(methods, "magic_link")
+		}
+		body["methods"] = methods
+	}
 	// The same for everybody who asks, so a proxy may keep it for a minute.
 	w.Header().Set("Cache-Control", "public, max-age=60")
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	writeJSON(w, http.StatusOK, body)
 }
 
 // providersRateLimit is how many times one address may list the providers a minute: apps ask
@@ -261,7 +279,7 @@ func (a *authAPI) oauthStartPost(w http.ResponseWriter, r *http.Request) {
 // authorize URL; it answers and returns false when it can't.
 func (a *authAPI) startOAuth(w http.ResponseWriter, r *http.Request, in startInput, who auth.Principal) (string, bool) {
 	svc := usersOf(r)
-	p, _, ok := a.provider(w, r)
+	p, sc, ok := a.provider(w, r)
 	if !ok {
 		return "", false
 	}
@@ -272,7 +290,7 @@ func (a *authAPI) startOAuth(w http.ResponseWriter, r *http.Request, in startInp
 	if !auth.ValidPKCEChallenge(in.challenge) {
 		details = append(details, Detail{Path: "code_challenge", Reason: "is required: the S256 PKCE challenge of a verifier only your app holds"})
 	}
-	if in.invitation != "" && !strings.HasPrefix(in.invitation, auth.InvitationPrefix) {
+	if in.invitation != "" && !strings.HasPrefix(in.invitation, invitationPrefixOf(r)) {
 		details = append(details, Detail{Path: "invitation", Reason: "isn't an invitation token"})
 	}
 	if len(details) > 0 {
@@ -315,7 +333,7 @@ func (a *authAPI) startOAuth(w http.ResponseWriter, r *http.Request, in startInp
 		authError(w, r, err)
 		return "", false
 	}
-	st := auth.OAuthState{Provider: p.Name, Org: p.Org, Intent: in.intent, CodeChallenge: in.challenge, RedirectTo: in.redirectTo, LinkUserID: who.User.ID,
+	st := auth.OAuthState{Provider: p.Name, Org: p.Org, ScopeOrg: routeScope(r, sc), Intent: in.intent, CodeChallenge: in.challenge, RedirectTo: in.redirectTo, LinkUserID: who.User.ID,
 		Locales: append([]string{in.locale}, acceptLanguages(r.Header.Get("Accept-Language"))...), Consents: in.consents}
 	if in.invitation != "" {
 		st.InvitationID = auth.HashToken(in.invitation)
@@ -430,25 +448,32 @@ func (a *authAPI) oauthCallback(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	res, err := svc.ResolveProviderLogin(r.Context(), auth.ProviderLogin{
+	login := auth.ProviderLogin{
 		Provider: p.Name, Org: p.Org, Subject: claims.Subject, Email: claims.Email, EmailVerified: claims.EmailVerified, TrustsEmail: p.TrustsEmail(),
-		Intent: st.Intent, LinkUserID: st.LinkUserID, Invitation: st.InvitationID, Locales: st.Locales, IP: clientIP(r),
+		Intent: st.Intent, LinkUserID: st.LinkUserID, Locales: st.Locales, IP: clientIP(r),
 		Consents: st.Consents, UserAgent: r.UserAgent(),
 		Profile: profileOf(claims, firstAuthorization(p, get("user"))),
-	})
+	}
+	invitationOfScope(&login, st.InvitationID, st.ScopeOrg)
+	res, err := svc.ResolveProviderLogin(r.Context(), login)
 	if err != nil {
 		a.oauthFailure(w, r, svc, st, p, err)
 		return
 	}
 	a.keepAppleToken(r, svc, p, res.User.ID, p.ClientID, tokens.RefreshToken)
-	if p.Org != "" {
-		svc.AfterOrgSignIn(r.Context(), p.Org, p.Name, res)
+	if st.Intent == auth.IntentLink {
+		if p.Org != "" {
+			svc.AfterOrgSignIn(r.Context(), p.Org, p.Name, res)
+		}
+	} else if !enterScope(r, svc, st.ScopeOrg, p, res, st.InvitationID) {
+		back(paramError, oauthNotAllowed)
+		return
 	}
 	if st.Intent == auth.IntentLink {
 		back(paramLinked, p.Name)
 		return
 	}
-	loginCode, err := svc.IssueLoginCodeIn(r.Context(), res.User.ID, p.Name, st.CodeChallenge, res.NewUser, res.Profile, p.Org)
+	loginCode, err := svc.IssueLoginCodeIn(r.Context(), res.User.ID, p.Name, st.CodeChallenge, res.NewUser, res.Profile, st.ScopeOrg)
 	if err != nil {
 		logger(r.Context()).Error("issue a login code", "error", err)
 		back(paramError, oauthProviderError)
@@ -630,4 +655,62 @@ func appleFirstAuthorization(raw string) map[string]string {
 		out["name"] = full
 	}
 	return out
+}
+
+// invitationPrefixOf is what an invitation token starts with on this route: an organization's
+// route takes the organization's invitations, the realm's takes account invitations.
+func invitationPrefixOf(r *http.Request) string {
+	if chi.URLParam(r, "org") != "" {
+		return auth.OrgInvitationPrefix
+	}
+	return auth.InvitationPrefix
+}
+
+// unknownOrgScope is the scope of an attempt started at the address of an organization that
+// can't be signed in to (it is not there, or is deleted): the attempt goes on like any other, so
+// nothing says so, and ends in the refusal a stranger to a real organization gets.
+const unknownOrgScope = "?"
+
+// routeScope is the organization a sign-in started at this route is for: the id of the one the
+// address names, unknownOrgScope when it names one that can't be signed in to, and "" for the
+// realm's address.
+func routeScope(r *http.Request, sc *signInScope) string {
+	if chi.URLParam(r, "org") != "" && sc.org == "" {
+		return unknownOrgScope
+	}
+	return sc.org
+}
+
+// invitationOfScope puts the invitation of a sign-in attempt where it belongs: with an
+// organization it is that organization's, which lets a new person make an account and join;
+// otherwise it is an account invitation of the realm.
+func invitationOfScope(login *auth.ProviderLogin, hash, scopeOrg string) {
+	switch scopeOrg {
+	case "":
+		login.Invitation = hash
+	case unknownOrgScope:
+	default:
+		login.ScopeOrg, login.OrgInvitation = scopeOrg, hash
+	}
+}
+
+// enterScope finishes a provider sign-in to an organization: an invitation it carried is used,
+// the connection's join rules run (a connection also admits whoever it is configured to), and for
+// a realm-level provider the person must be a member now. It returns false when the person may
+// not be signed in to the organization. A sign-in to the realm has nothing to do. An organization
+// that can't be signed in to ends here, after the provider has vouched for the person, like a
+// stranger to a real one.
+func enterScope(r *http.Request, svc *auth.Users, scopeOrg string, p *registry.Provider, res auth.ProviderResult, invitationHash string) bool {
+	switch scopeOrg {
+	case "":
+		return true
+	case unknownOrgScope:
+		return false
+	}
+	member := svc.EnterOrg(r.Context(), res.User, scopeOrg, invitationHash)
+	if p.Org != "" {
+		svc.AfterOrgSignIn(r.Context(), p.Org, p.Name, res)
+		return true
+	}
+	return member
 }

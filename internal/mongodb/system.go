@@ -498,6 +498,7 @@ var systemCollections = []systemCollection{
 			"_id":            str(),
 			"provider":       str(),
 			"org":            str(),
+			"scope_org":      str(),
 			"intent":         map[string]any{"enum": bson.A{"signin", "link"}},
 			"code_challenge": str(),
 			"verifier":       str(),

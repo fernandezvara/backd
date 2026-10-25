@@ -173,12 +173,31 @@ func (s *Users) Login(ctx context.Context, email, password, ip string) (Principa
 // SignIn is Login for callers that can answer a second step: the outcome is a session,
 // or a challenge the user trades for one with VerifyMFA.
 func (s *Users) SignIn(ctx context.Context, email, password, ip string) (Redeemed, error) {
+	return s.signIn(ctx, email, password, ip, signInHooks{})
+}
+
+// signInHooks lets a sign-in add to the password's: Gate runs inside the throttled check as soon
+// as the password is right (its error counts as a failed attempt, so a right password that
+// leads nowhere looks like a wrong one), After runs when every check passed and before the
+// session or the challenge, and Handover is what the sign-in carries to its end.
+type signInHooks struct {
+	Gate     func(User) error
+	After    func(User) error
+	Handover handover
+}
+
+func (s *Users) signIn(ctx context.Context, email, password, ip string, hooks signInHooks) (Redeemed, error) {
 	var u User
 	err := s.throttled(ctx, email, ip, func() error {
 		var id Identity
 		var err error
 		if u, id, err = s.verifyLogin(ctx, email, password); err != nil {
 			return err
+		}
+		if hooks.Gate != nil {
+			if err := hooks.Gate(u); err != nil {
+				return err
+			}
 		}
 		// Outside the user's login networks, the right password fails
 		// like a wrong one, and counts as a failure.
@@ -204,8 +223,12 @@ func (s *Users) SignIn(ctx context.Context, email, password, ip string) (Redeeme
 		return Redeemed{}, err
 	}
 	s.touchIdentity(ctx, u.ID, ProviderPassword)
-	out, err := s.afterFirstFactor(ctx, u, ProviderPassword, handover{})
-	return out, err
+	if hooks.After != nil {
+		if err := hooks.After(u); err != nil {
+			return Redeemed{}, err
+		}
+	}
+	return s.afterFirstFactor(ctx, u, ProviderPassword, hooks.Handover)
 }
 
 // verifyLogin returns the user, and their password identity, if password is theirs, else

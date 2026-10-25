@@ -69,7 +69,7 @@ func (a *authAPI) requestMagicLink(w http.ResponseWriter, r *http.Request) {
 	id, err := svc.RequestMagicLink(r.Context(), auth.MagicLinkInput{
 		Email: address, RedirectTo: redirectTo, CodeChallenge: challenge,
 		Locales: append([]string{locale}, acceptLanguages(r.Header.Get("Accept-Language"))...), IP: clientIP(r), RequestID: requestID(r.Context()),
-		Consents: consents,
+		Consents: consents, Org: chi.URLParam(r, "org"),
 	})
 	if err != nil {
 		authError(w, r, err)
