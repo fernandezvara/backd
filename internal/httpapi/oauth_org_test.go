@@ -56,7 +56,9 @@ func orgGoogle(sub, email, hd string, verified bool) map[string]any {
 }
 
 func orgMicrosoft(oid, email, tenant string) map[string]any {
-	return map[string]any{"iss": "https://login.microsoftonline.com/" + tenant + "/v2.0", "aud": orgMSApp, "tid": tenant, "oid": oid, "sub": "s-" + oid, "email": email}
+	// The user principal name is on the domain of the address, as a tenant's accounts are.
+	_, domain, _ := strings.Cut(email, "@")
+	return map[string]any{"iss": "https://login.microsoftonline.com/" + tenant + "/v2.0", "aud": orgMSApp, "tid": tenant, "oid": oid, "sub": "s-" + oid, "email": email, "preferred_username": "user-" + oid + "@" + domain}
 }
 
 // start begins a sign-in at base and returns the provider's authorize URL (or the answer).
@@ -627,5 +629,87 @@ func TestConnectionIsDisabledWhenItsSetterLosesTheRoles(t *testing.T) {
 	// Once disabled it answers like a missing provider.
 	if _, code, _, _ := o.start(t, o.base, "google"); code != http.StatusNotFound {
 		t.Errorf("start of a disabled connection: %d", code)
+	}
+}
+
+// A tenant's administrator can write any address in the email claim, so it is believed only
+// when it is on a domain of the account's user principal name, which the tenant has to verify.
+func TestMicrosoftAddressMustBeOnTheDomainOfTheAccount(t *testing.T) {
+	o := newOrgSignIn(t)
+	ctx := context.Background()
+	person := func(oid, email, upn string) map[string]any {
+		c := orgMicrosoft(oid, email, orgTenant)
+		if upn == "" {
+			delete(c, "preferred_username")
+		} else {
+			c["preferred_username"] = upn
+		}
+		return c
+	}
+	// Someone else's mailbox, written by the tenant's administrator.
+	if a := o.signInOrg(t, "microsoft", person("oid-sq", "victim@bigcorp.example", "mallory@evil.example")); a.errorCode() != "not_allowed" {
+		t.Errorf("an address on a domain the account isn't on: %v", a.result)
+	}
+	if a := o.signInOrg(t, "microsoft", person("oid-no-upn", "victim@bigcorp.example", "")); a.errorCode() != "not_allowed" {
+		t.Errorf("an address with no user principal name to check it against: %v", a.result)
+	}
+	if u, err := o.svc.Store.UserByEmail(ctx, "victim@bigcorp.example"); err == nil {
+		t.Fatalf("an address of someone else's was claimed: %+v", u)
+	}
+	// Case and spacing don't matter; a subdomain is another domain.
+	if a := o.signInOrg(t, "microsoft", person("oid-ok", "Ana@Corp.Example", "ANA@corp.example")); a.errorCode() != "" {
+		t.Errorf("the same domain: %v", a.result)
+	}
+	if a := o.signInOrg(t, "microsoft", person("oid-sub", "ben@mail.corp.example", "ben@corp.example")); a.errorCode() != "not_allowed" {
+		t.Errorf("a subdomain: %v", a.result)
+	}
+}
+
+// The email_domains check reads the address as the account will be made with it.
+func TestEmailDomainsReadTheAddressLikeTheAccount(t *testing.T) {
+	c := auth.OrgConnection{Provider: "google", HostedDomain: "acme.example", EmailDomains: []string{"acme.example"}}
+	ok := auth.SignInClaims{HostedDomain: "acme.example", EmailVerified: true}
+	for email, want := range map[string]bool{
+		"ana@acme.example": true, " Ana@ACME.example ": true,
+		"ana@evil.example": false, "ana@acme.example@evil.example": false, "ana@evil.example@acme.example": false, "": false, "acme.example": false,
+	} {
+		in := ok
+		in.Email = email
+		if got := c.Admits(in); got != want {
+			t.Errorf("Admits(%q) = %v, want %v", email, got, want)
+		}
+	}
+}
+
+// Whatever happens, no client secret, ID token or login code reaches the logs.
+func TestOrganizationSignInLogsNoSecrets(t *testing.T) {
+	o := newOrgSignIn(t)
+	ctx := context.Background()
+	good := o.signInOrg(t, "google", orgGoogle("g-log", "log@acme.example", "acme.example", true))
+	o.signInOrg(t, "google", orgGoogle("g-log2", "x@other.example", "other.example", true)) // not allowed
+	o.signInOrg(t, "microsoft", orgMicrosoft("oid-log", "ms@acme.example", orgTenant))
+	o.idp.FailToken(400, "invalid_grant") // the provider refuses the code
+	o.signInOrg(t, "google", orgGoogle("g-log3", "y@acme.example", "acme.example", true))
+	rec, _ := o.doH(t, "PUT", "/v1/acme/_admin/orgs/"+o.org+"/sso/google", `{"client_id": "org-g-client", "hosted_domain": "acme.example", "client_secret": "brand-new-secret"}`, jsonHdr(o.key))
+	if rec.Code != 200 {
+		t.Fatalf("set: %d", rec.Code)
+	}
+	if err := o.svc.SetOrgSecret(ctx, o.org, "SSO_MICROSOFT_CLIENT_SECRET", "another-new-secret", "test"); err != nil {
+		t.Fatal(err)
+	}
+	logs := o.log.String()
+	code := good.result.Query().Get("backd_code")
+	for _, secret := range []string{"org-g-secret", "org-m-secret", "brand-new-secret", "another-new-secret", "eyJ", code} {
+		if secret != "" && strings.Contains(logs, secret) {
+			t.Errorf("%q is in the logs", secret)
+		}
+	}
+	// And the audit trail has the events, not the secrets.
+	_, trail := o.doH(t, "GET", "/v1/acme/_admin/audit?limit=100", "", jsonHdr(o.key))
+	text := toJSON(t, trail)
+	for _, secret := range []string{"org-g-secret", "org-m-secret", "brand-new-secret", "another-new-secret"} {
+		if strings.Contains(text, secret) {
+			t.Errorf("%q is in the audit trail", secret)
+		}
 	}
 }

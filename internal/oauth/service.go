@@ -199,6 +199,10 @@ type Claims struct {
 	// account) and Tenant Microsoft's tid, as the verified token states them.
 	HostedDomain string
 	Tenant       string
+	// Username is Microsoft's preferred_username (the account's user principal name, lower case):
+	// its domain is one the tenant has verified, unlike the address in the email claim, which the
+	// tenant's administrator sets freely.
+	Username string
 }
 
 type idClaims struct {
@@ -217,6 +221,7 @@ type idClaims struct {
 	Picture       string      `json:"picture"`
 	TenantID      string      `json:"tid"`
 	HostedDomain  string      `json:"hd"`
+	Username      string      `json:"preferred_username"`
 	ObjectID      string      `json:"oid"`
 }
 
@@ -293,6 +298,7 @@ func (s *Service) Verify(ctx context.Context, p *registry.Provider, idToken, non
 			return bad("no tenant or object id")
 		}
 		out.Subject, out.EmailVerified, out.Tenant = c.TenantID+":"+c.ObjectID, false, c.TenantID
+		out.Username = strings.ToLower(strings.TrimSpace(c.Username))
 	}
 	if out.Subject == "" {
 		return bad("no subject")

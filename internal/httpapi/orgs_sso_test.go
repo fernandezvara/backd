@@ -167,7 +167,9 @@ func TestOrganizationConnectionsAsAManager(t *testing.T) {
 	}
 }
 
-// A manager who can only manage sign-in gives no more than they hold.
+// The roles a connection gives on joining follow the granting rules, as an invitation's do: a
+// manager who can only manage sign-in gives none, one who can manage members gives the roles
+// that open nothing they lack, and one who can manage roles any.
 func TestConnectionJoinRolesFollowTheGrantingRules(t *testing.T) {
 	f := newRulesFixture(t)
 	ctx := context.Background()
@@ -183,13 +185,25 @@ func TestConnectionJoinRolesFollowTheGrantingRules(t *testing.T) {
 	with := func(roles string) string {
 		return `{"client_id": "c-1", "client_secret": "s", "hosted_domain": "acme.example", "join_roles": ` + roles + `}`
 	}
-	// Roles that open nothing, yes; the admin's capabilities the integrator lacks, no.
+	// Only manage: sso: no roles at all, not even the ones that open nothing; none is fine.
+	for _, roles := range []string{`["member"]`, `["editor"]`, `["admin"]`} {
+		if rec, out := f.doH(t, "PUT", url, with(roles), f.withProof(t, f.bob)); rec.Code != 403 {
+			t.Errorf("integrator gives %s: %d %v", roles, rec.Code, out)
+		}
+	}
+	if rec, out := f.doH(t, "PUT", url, with(`[]`), f.withProof(t, f.bob)); rec.Code != 200 {
+		t.Fatalf("no roles: %d %v", rec.Code, out)
+	}
+	// manage: sso and manage: members: the roles that open nothing, not admin's capabilities.
+	if _, err := f.svc.AdminSetMemberRoles(ctx, org, f.bobID, []string{"onboarder"}); err != nil {
+		t.Fatal(err)
+	}
 	if rec, out := f.doH(t, "PUT", url, with(`["editor", "member"]`), f.withProof(t, f.bob)); rec.Code != 200 {
 		t.Fatalf("roles that open nothing: %d %v", rec.Code, out)
 	}
 	for _, roles := range []string{`["admin"]`, `["owner"]`, `["editor", "admin"]`} {
 		if rec, out := f.doH(t, "PUT", url, with(roles), f.withProof(t, f.bob)); rec.Code != 403 {
-			t.Errorf("%s: %d %v", roles, rec.Code, out)
+			t.Errorf("onboarder gives %s: %d %v", roles, rec.Code, out)
 		}
 	}
 	// The owner holds manage: roles and may give any.

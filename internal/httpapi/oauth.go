@@ -460,7 +460,7 @@ func (a *authAPI) oauthCallback(w http.ResponseWriter, r *http.Request) {
 
 // signInClaimsOf is what a connection's restriction reads from a verified token.
 func signInClaimsOf(c oauth.Claims) auth.SignInClaims {
-	return auth.SignInClaims{Email: c.Email, EmailVerified: c.EmailVerified, HostedDomain: c.HostedDomain, Tenant: c.Tenant}
+	return auth.SignInClaims{Email: c.Email, EmailVerified: c.EmailVerified, HostedDomain: c.HostedDomain, Tenant: c.Tenant, Username: c.Username}
 }
 
 // keepAppleToken keeps Apple's refresh token for revoking it when the account goes away

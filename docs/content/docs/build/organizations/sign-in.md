@@ -34,7 +34,7 @@ The instance also needs `BACKD_SECRETS_KEY` (the client secrets are stored seale
 
 ## 2. Register the application with the provider
 
-The company's administrator creates an OAuth application in **Google Cloud** (an *OAuth client ID* of type *Web application*) or in **Microsoft Entra** (an *App registration* in the company's own tenant), and gives it the **redirect address** backd shows when the connection is made:
+The company's administrator creates an OAuth application in **Google Cloud** (an *OAuth client ID* of type *Web application*) or in **Microsoft Entra** (an *App registration* in the company's own tenant; add the optional `email` claim to its ID token, since backd needs the address), and gives it the **redirect address** backd shows when the connection is made:
 
 ```
 https://api.acme.example/v1/shop/_auth/orgs/<organization id>/oauth/google/callback
@@ -58,7 +58,7 @@ await backd.auth.withProof(() =>
 ```
 
 - **The restriction is required.** Google needs the Workspace `hostedDomain` (a personal Google account has none and is refused); Microsoft needs the company's `tenant` id, a GUID: `common`, `organizations` and `consumers` admit people of any company and are refused.
-- **`joinRoles` follow the granting rules.** A manager can't give a role that opens capabilities they don't hold themselves, so a manager who only holds `manage: sso` can give roles that open nothing (like `member`), and one with `manage: roles` any role.
+- **`joinRoles` follow the granting rules.** A manager can't give a role that opens capabilities they don't hold themselves, the same rule as an invitation's. A manager who holds `manage: sso` and `manage: members` can give roles that open nothing they lack (like `member`), one with `manage: roles` any role, and one with only `manage: sso` none (the roles of a connection go to every person of the company). Leave `joinRoles` empty and people get the realm's `default_roles` only.
 - **`emailDomains` narrows further** (the verified address must also be in one of those domains) and **`nativeClientIds`** adds the client ids of your mobile apps.
 - Realm administrators can do the same for any organization with `backd orgs sso-set` and the admin API.
 
@@ -91,7 +91,7 @@ await backd.auth.signInWith('google', { org: 'acme-corp' })
 | Signs in again later | The same user; nothing changes, not even their roles |
 | Was removed from the organization by a manager | Signed in but **not joined**, until they accept an invitation to the organization. Leaving by oneself does not block |
 
-Addresses that come through a connection are stored **unverified**, so your own email verification still applies. A person can hold an identity with the realm's Google and another with the organization's, and one per provider per organization; `DELETE /_auth/identities/{provider}?org=` removes the one of an organization (never the last way to sign in).
+Addresses that come through a connection are stored **unverified**, so your own email verification still applies. For Microsoft, backd believes the address only when it is on the same domain as the account's user principal name (`preferred_username`), because a tenant's administrator can write any address in the `email` claim but can only give accounts the domains the tenant has verified: that is what stops a tenant from claiming someone else's mailbox in your realm. Guests whose address is on another domain are refused until verified domains arrive. A person can hold an identity with the realm's Google and another with the organization's, and one per provider per organization; `DELETE /_auth/identities/{provider}?org=` removes the one of an organization (never the last way to sign in).
 
 ## When it stops working
 

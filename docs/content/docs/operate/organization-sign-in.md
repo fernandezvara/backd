@@ -34,7 +34,9 @@ organizations:
 
 ## Limits and trust
 
-- A manager can only give the roles on joining that they could give themselves, and backd checks it again at every join: a connection whose last setter lost the roles is disabled.
+- The roles a connection gives on joining follow the granting rules of an invitation: `manage: sso` alone gives none, `manage: members` the roles that open nothing the manager lacks, `manage: roles` any. backd checks it again at every join: a connection whose last setter could no longer give them is disabled.
+- A Microsoft address is accepted only on the domain of the account's user principal name (a tenant's administrator can write any address in the `email` claim, but only verified domains in a UPN), so a tenant can't claim an address of someone else's in your realm. Google's `hd` and verified address do the same job.
+- **Accepted risks** (see the review in the design): anyone who can guess an organization's slug can ask which providers it offers (the list is public by design; ids are random, slugs are not, and it is limited to 60 a minute per address); a manager with a tenant can create as many accounts as they have users, even in a `closed` realm (monitor `org.sso.login`, delete the connection to stop it); the blocked list of a connection keeps the newest 1000 removals and only blocks while a connection exists.
 - The restriction (Workspace domain or tenant id) is checked on the verified ID token. Shared Microsoft tenants (`common`, `organizations`, `consumers`) are refused when a connection is set.
 - Signing in through a connection never links to an account by address and creates users whatever the realm's `signup` mode: only enable the feature if that is what you want for every organization of the realm. The `join_roles` are what a company's own sign-in grants.
 - Sign-in routes share the rate limits of the realm's providers (30 starts a minute per address); the list of providers allows 60 a minute.

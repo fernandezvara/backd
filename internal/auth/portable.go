@@ -4,7 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
+
+	"github.com/fernandezvara/backd/internal/registry"
 )
 
 // The realm's authentication data that moves with an app (design/export-import.md §7): the
@@ -204,7 +208,13 @@ func (s *Users) ImportAuthDocs(ctx context.Context, collection string, docs []ma
 			continue
 		}
 		bad := ""
+		if collection == "org_connections" {
+			bad = importedConnectionProblem(d)
+		}
 		for _, f := range PortableSealed[collection] {
+			if bad != "" {
+				break
+			}
 			v, has := d[f]
 			if !has {
 				continue
@@ -292,4 +302,60 @@ func ExportKey(text string) (*SecretCipher, error) {
 		return nil, errors.New("this is not an export key")
 	}
 	return NewSecretCipher([]byte("backd-export|" + text))
+}
+
+// importedConnectionProblem says what is wrong with a connection of an import package ("" when
+// it is fine): a package is as trusted as its administrator, but a connection that admits more
+// than an API call could have set, or that the stores would read inconsistently, is refused. A
+// blank client id is allowed: an anonymized export carries them blanked.
+func importedConnectionProblem(d map[string]any) string {
+	str := func(k string) string { v, _ := d[k].(string); return v }
+	list := func(k string) []string {
+		var out []string
+		if arr, ok := d[k].([]any); ok {
+			for _, e := range arr {
+				s, _ := e.(string)
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	org, provider := str("org"), str("provider")
+	switch {
+	case org == "" || str("id") != org+":"+provider:
+		return "id must be <org>:<provider>"
+	case !slices.Contains(registry.SSOProviders, provider):
+		return "provider must be one of " + strings.Join(registry.SSOProviders, ", ")
+	}
+	if id := str("client_id"); id != "" {
+		if msg := registry.ClientIDProblem(provider, id); msg != "" {
+			return "client_id " + msg
+		}
+	}
+	switch provider {
+	case registry.ProviderMicrosoft:
+		if msg := registry.TenantProblem(str("tenant"), false); msg != "" {
+			return "tenant " + msg
+		}
+		if str("hosted_domain") != "" {
+			return "hosted_domain applies to Google only"
+		}
+	case registry.ProviderGoogle:
+		if msg := registry.DomainProblem(str("hosted_domain")); msg != "" {
+			return "hosted_domain " + msg
+		}
+		if str("tenant") != "" {
+			return "tenant applies to Microsoft only"
+		}
+	}
+	domains := list("email_domains")
+	if len(domains) > MaxConnectionEmailDomains || len(list("native_client_ids")) > MaxConnectionNativeIDs || len(list("blocked")) > MaxConnectionBlocked {
+		return "a list is longer than a connection may hold"
+	}
+	for _, dom := range domains {
+		if msg := registry.DomainProblem(dom); msg != "" {
+			return "email_domains " + msg
+		}
+	}
+	return ""
 }

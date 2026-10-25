@@ -358,10 +358,21 @@ func (s *Users) checkConnection(c *OrgConnection, callerCaps registry.OrgCaps) e
 			return bad("join_roles", fmt.Sprintf("%q is not a role of this realm's organizations", r))
 		}
 	}
-	if !callerCaps.Has(registry.CapRoles) && !callerCaps.Covers(s.capsOfRoles(c.JoinRoles)) {
+	if len(c.JoinRoles) > 0 && !s.mayGive(callerCaps, c.JoinRoles) {
 		return ErrOrgForbidden
 	}
 	return nil
+}
+
+// mayGive says whether someone with these capabilities could give the roles by the granting rules
+// (design/organizations.md §5.1): manage: roles gives any, manage: members the roles that open
+// nothing the giver lacks. Holding manage: sso alone gives none: the roles of a connection go to
+// every person of a company, so they are held to the rule an invitation is.
+func (s *Users) mayGive(callerCaps registry.OrgCaps, roles []string) bool {
+	if callerCaps.Has(registry.CapRoles) {
+		return true
+	}
+	return callerCaps.Has(registry.CapMembers) && callerCaps.Covers(s.capsOfRoles(roles))
 }
 
 // DeleteOrgConnection removes a connection and its client secret for a member who holds
@@ -415,6 +426,8 @@ type SignInClaims struct {
 	// HostedDomain is Google's hd, Tenant Microsoft's tid.
 	HostedDomain string
 	Tenant       string
+	// Username is Microsoft's preferred_username.
+	Username string
 }
 
 // Admits says whether the person the token describes may come in through the connection: the
@@ -422,14 +435,24 @@ type SignInClaims struct {
 // address is verified, and the address is in one of email_domains when the connection lists any.
 // A token is checked for its signature, issuer and audience before this.
 func (c OrgConnection) Admits(in SignInClaims) bool {
+	addr, err := registry.NormalizeEmail(in.Email)
+	if err != nil {
+		addr = ""
+	}
 	switch c.Provider {
 	case registry.ProviderGoogle:
 		if c.HostedDomain == "" || !strings.EqualFold(in.HostedDomain, c.HostedDomain) || !in.EmailVerified {
 			return false
 		}
 	case registry.ProviderMicrosoft:
-		// The tenant proves the company; its administrator sets the address.
+		// The tenant proves the company, but the address in the token is whatever the tenant's
+		// administrator set: it could name someone else's mailbox and pre-empt their account. The
+		// user principal name can only be on a domain the tenant verified, so the address has to be
+		// on the domain of the account's own.
 		if c.Tenant == "" || !strings.EqualFold(in.Tenant, c.Tenant) {
+			return false
+		}
+		if addr != "" && (domainOf(in.Username) == "" || domainOf(in.Username) != domainOf(addr)) {
 			return false
 		}
 	default:
@@ -438,25 +461,31 @@ func (c OrgConnection) Admits(in SignInClaims) bool {
 	if len(c.EmailDomains) == 0 {
 		return true
 	}
-	_, domain, ok := strings.Cut(strings.ToLower(strings.TrimSpace(in.Email)), "@")
-	return ok && slices.Contains(c.EmailDomains, domain)
+	return addr != "" && slices.Contains(c.EmailDomains, domainOf(addr))
+}
+
+// domainOf is the part of an address after its last @, in lower case; "" for none.
+func domainOf(address string) string {
+	i := strings.LastIndex(address, "@")
+	if i < 0 {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(address[i+1:]))
 }
 
 // CheckConnectionAuthority makes sure the roles a connection gives on joining are still within
 // reach of whoever set it: a manager who lost a role doesn't leave a powerful default behind.
-// A connection whose last setter no longer holds the roles' capabilities is disabled (audited)
-// and ErrConnectionUnusable is returned. Roles that open nothing, and connections set by a
-// realm administrator, are always fine.
+// A connection whose last setter could no longer give those roles by the granting rules is
+// disabled (audited) and ErrConnectionUnusable is returned. A connection with no join roles, and
+// connections set by a realm administrator, are always fine.
 func (s *Users) CheckConnectionAuthority(ctx context.Context, c OrgConnection) error {
-	need := s.capsOfRoles(c.JoinRoles)
 	by, isUser := strings.CutPrefix(c.UpdatedBy, "user:")
-	if !need.Any() || !isUser {
+	if len(c.JoinRoles) == 0 || !isUser {
 		return nil
 	}
 	holds := false
 	if m, err := s.MembershipOf(ctx, by, c.Org); err == nil {
-		cc := s.caps(m)
-		holds = cc.Has(registry.CapRoles) || cc.Covers(need)
+		holds = s.mayGive(s.caps(m), c.JoinRoles)
 	} else if !errors.Is(err, ErrNotOrgMember) {
 		return err
 	}
