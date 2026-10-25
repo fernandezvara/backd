@@ -15,7 +15,7 @@ An organization **connection** is a provider configured for one organization: it
 | Topic | Decision |
 |---|---|
 | Secrets | A third scope for the existing secrets store: **organization**, owned by the realm, written by the organization's managers, **never readable by anyone** (not by them, not by functions); realm admins can replace and delete them. No dependency on field encryption (that protects document fields; secrets already use the instance's secrets key) |
-| Addresses | `/v1/{realm}/_auth/orgs/{org}/oauth/{provider}/{start,callback,id-token}`: inside the reserved `_auth` namespace, so it can't clash with a database, and it needs no session. `{org}` is the id (slugs are resolved to the id by one public lookup, [scoped-sessions.md](./scoped-sessions.md) §5.3) |
+| Addresses | `/v1/{realm}/_auth/orgs/{org}/oauth/{provider}/{start,callback,id-token}`: inside the reserved `_auth` namespace, so it can't clash with a database, and it needs no session. `{org}` is the id (the slug is also accepted by the routes that run before there is a session, which resolve it inside the sign-in so that nothing answers "does this slug exist?"; [scoped-sessions.md](./scoped-sessions.md) §5.3) |
 | Who manages | Roles that hold a new `manage: sso` capability (the docs' example gives it to `owner` and `admin`), with reauth for changes |
 | Providers | `google` and `microsoft` only (milestone 30). Apple and generic OpenID Connect follow in `31-org-sso-extensions` |
 | Realm control | Off unless `organizations.sso.enabled: true` in `realm.yaml`; the realm lists the allowed providers and caps connections per organization |
