@@ -16,7 +16,8 @@ WORKDIR /src
 COPY go.mod go.sum* ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/backd ./cmd/backd
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/backd ./cmd/backd \
+    && mkdir -p /rootfs/usr/local/bin && cp /out/backd /rootfs/usr/local/bin/backd && ln -s /usr/local/bin/backd /rootfs/backd
 
 # Bundles functions/netprobe's Deno source into the config (see its
 # realm.yaml): so it ships pre-built, and byte-identical to ops/Dockerfile's
@@ -29,13 +30,13 @@ ENV CONFIG_DIR=/config
 RUN /usr/local/bin/backd functions build --check
 
 FROM gcr.io/distroless/static-debian12:nonroot
-COPY --from=build /out/backd /backd
+COPY --from=build /rootfs/ /
 # The config: realms, schemas, rules and built function bundles.
 COPY --from=functions /config /config
 ENV CONFIG_DIR=/config
 # An invalid config (or stale function bundles) fails the build, not a deploy.
 RUN ["/backd", "config", "check"]
 EXPOSE 8080 8081
-ENTRYPOINT ["/backd"]
+ENTRYPOINT ["/usr/local/bin/backd"]
 # `backd` without a command prints the help; the image serves unless told otherwise.
 CMD ["serve"]

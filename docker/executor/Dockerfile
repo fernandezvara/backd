@@ -33,6 +33,8 @@ FROM docker.io/denoland/deno:alpine-2.9.7
 USER root
 RUN apk upgrade --no-cache
 COPY --from=build /out/backd /usr/local/bin/backd
+# /backd is a link to it, for `docker compose exec backd /backd <command>`; the same in every image.
+RUN ln -s /usr/local/bin/backd /backd
 ENV EXECUTOR_DIR=/tmp/backd-executor
 USER deno
 EXPOSE 9100

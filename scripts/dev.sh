@@ -151,7 +151,7 @@ case "${1:-up}" in
   backd)
     shift
     tty=(); [ -t 0 ] || tty=(-T)   # a terminal for prompts (passwords), none when input is piped
-    exec "${compose[@]}" exec "${tty[@]}" backd /usr/local/bin/backd "$@"
+    exec "${compose[@]}" exec "${tty[@]}" backd /backd "$@"
     ;;
 
   logs)
@@ -210,7 +210,7 @@ case "${1:-up}" in
     if [ "${EXAMPLES:-}" = 1 ]; then
       echo "Seeding the example realms…"
       ORIGIN=$origin CA=$ca SEED_DIR=$seed_dir \
-        BACKD_EXEC="${compose[*]} exec -T backd /usr/local/bin/backd" \
+        BACKD_EXEC="${compose[*]} exec -T backd /backd" \
         EXEC_EXEC="${compose[*]} exec -T executor" \
         scripts/example-seed.sh
       examples="  $origin/example/     the example apps: blog, expenses, shelf, the workshop, the mailbox (operator@shelf.example and

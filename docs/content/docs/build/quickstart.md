@@ -70,10 +70,10 @@ Then bring it up — the three are required, so a missing one stops compose befo
 docker compose up
 ```
 
-`backd` listens on <http://127.0.0.1:8080>, and `BACKD_DEV=true` makes it follow `config/` live: a saved change reloads in a moment, functions re-bundle automatically. Any `backd` command also runs in the stack: `docker compose exec backd /usr/local/bin/backd <command>` inside the running API container, or `docker compose run --rm backd <command>` for a one-off container (`docker compose run --rm backd version` needs the three secrets set, like `up`). Create the realm's first administrator (it asks for a password):
+`backd` listens on <http://127.0.0.1:8080>, and `BACKD_DEV=true` makes it follow `config/` live: a saved change reloads in a moment, functions re-bundle automatically. Any `backd` command also runs in the stack: `docker compose exec backd /backd <command>` inside the running API container, or `docker compose run --rm backd <command>` for a one-off container (`docker compose run --rm backd version` needs the three secrets set, like `up`). Create the realm's first administrator (it asks for a password):
 
 ```sh
-docker compose exec backd /usr/local/bin/backd bootstrap --realm demo --email me@example.com
+docker compose exec backd /backd bootstrap --realm demo --email me@example.com
 ```
 
 Sign in with the CLI — the template's `admin` role requires a second factor, so the first login enrolls an authenticator app — and create an API key for calls:

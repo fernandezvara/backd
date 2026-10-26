@@ -29,7 +29,7 @@ export CALLBACK_KEY=$(openssl rand -base64 32)
 export EGRESS_KEY=$(openssl rand -base64 32)
 docker compose up --build -d          # MongoDB + backd + the functions executor
 
-docker compose exec backd /usr/local/bin/backd bootstrap --realm demo --email me@example.com
+docker compose exec backd /backd bootstrap --realm demo --email me@example.com
 backd login --realm demo --url http://127.0.0.1:8080 --email me@example.com
 KEY=$(backd apikey create --realm demo --name local --expires 1d)   # asks for your password again
 

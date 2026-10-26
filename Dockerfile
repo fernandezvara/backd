@@ -18,12 +18,16 @@ COPY go.mod go.sum* ./
 RUN go mod download
 COPY . .
 COPY --from=ui /src/internal/adminui/dist ./internal/adminui/dist
+# The binary lives at /usr/local/bin/backd in every backd image; /backd is a link to it, for
+# `docker compose exec backd /backd <command>`. The distroless image has no shell, so both are
+# laid out here and copied as a tree (a copied tree keeps the link).
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/backd ./cmd/backd
+    go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/backd ./cmd/backd \
+    && mkdir -p /rootfs/usr/local/bin && cp /out/backd /rootfs/usr/local/bin/backd && ln -s /usr/local/bin/backd /rootfs/backd
 
 FROM gcr.io/distroless/static-debian12:nonroot
-COPY --from=build /out/backd /backd
+COPY --from=build /rootfs/ /
 EXPOSE 8080
-ENTRYPOINT ["/backd"]
+ENTRYPOINT ["/usr/local/bin/backd"]
 # `backd` without a command prints the help; the image serves unless told otherwise.
 CMD ["serve"]
