@@ -61,7 +61,7 @@ In a realm with organizations **every session is scoped to one organization**: t
 - **A provider of the realm signs in to an organization too:** the person must be a member (or hold the invitation) when they come back from the provider, otherwise the flow ends with `backd_error=not_allowed`, the same for an organization that is not there. A connection of the organization takes the place of the realm's provider of the same name.
 - **A second session:** `POST /_orgs` leaves the caller's session as it is and answers a new one for the organization it made, `session: {token, expires_at, org}`, for the app to keep beside the other.
 - **Operators sign in to the realm.** A realm administrator (a user with an admin role) signs in at `POST /_auth/login`, which answers `401 invalid_credentials` to everybody else; their session belongs to no organization and reaches the admin API alone. Everything else in the realm, including `/_auth/signup`, the unscoped magic link and the realm's own `oauth/{provider}/start`, answers `404`: a person always signs in to an organization.
-- **Sessions from before** the realm had organizations, or from before they were scoped, answer `401 session_unscoped`: the person signs in again (the clients treat it as an expired session). See [Upgrading](../../../operate/#upgrading-from-v092-to-the-next-release).
+- **Sessions from before** the realm had organizations, or from before they were scoped, answer `401 session_unscoped`: the person signs in again (the clients treat it as an expired session). See [Upgrading](../../../operate/#upgrading-to-v093).
 
 ### Limits
 
