@@ -1,6 +1,7 @@
 ---
 title: "15. Sharing and counting downloads"
 description: "A download function that counts and returns the link, share links that open with their files, and the operator's view of the storage."
+icon: "export"
 weight: 350
 toc: true
 ---

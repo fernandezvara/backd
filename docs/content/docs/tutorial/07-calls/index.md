@@ -1,6 +1,7 @@
 ---
 title: "7. Functions calling functions"
 description: "notify is internal — no HTTP route, only callers that declare it. ctx.call, calls: and fakeCall tests."
+icon: "plugs-connected"
 weight: 270
 toc: true
 ---

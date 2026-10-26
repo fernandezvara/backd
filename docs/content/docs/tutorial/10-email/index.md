@@ -1,6 +1,7 @@
 ---
 title: "10. Email for real"
 description: "email-capture delivers in dev (the Mailbox), postmark for real — templates, hosted pages, ctx.email.send, emailed invitations."
+icon: "envelope"
 weight: 300
 toc: true
 ---

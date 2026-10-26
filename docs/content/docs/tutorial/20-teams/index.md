@@ -1,6 +1,7 @@
 ---
 title: "20. Teams as organizations"
 description: "Sessions that belong to a team: people sign in to a team by its short name, start one with the operator's invitation, invite each other with a link or an email, keep a team's pins to its members, give roles inside a team, limit a team's pins by plan with a claim, and delete a team with its report first."
+icon: "buildings"
 weight: 400
 toc: true
 ---

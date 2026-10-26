@@ -1,6 +1,7 @@
 ---
 title: "12. Running it"
 description: "API keys for machines, the audit trail in the app, and the checklist before any of this faces the internet."
+icon: "rocket-launch"
 weight: 320
 toc: true
 ---

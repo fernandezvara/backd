@@ -1,6 +1,7 @@
 ---
 title: "22. Search and a team dashboard"
 description: "Search Shelf's assets with a weighted text index, best match first and in the user's language, and show how many pins each member added per month in the team's time zone with one declared aggregation: the missing-index warning and its fix."
+icon: "magnifying-glass"
 weight: 420
 toc: true
 ---

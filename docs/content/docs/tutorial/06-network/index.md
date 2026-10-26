@@ -1,6 +1,7 @@
 ---
 title: "6. Reaching the outside"
 description: "preview calls api.microlink.io — functions have no network by default; `network:` is the whole allowlist."
+icon: "globe"
 weight: 260
 toc: true
 ---

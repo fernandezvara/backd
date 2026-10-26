@@ -1,6 +1,7 @@
 ---
 title: "8. Work that takes time"
 description: "digest as an async job — the call answers immediately, the caller polls, retry covers a transient failure."
+icon: "arrows-clockwise"
 weight: 280
 toc: true
 ---

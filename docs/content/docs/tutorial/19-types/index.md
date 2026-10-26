@@ -1,6 +1,7 @@
 ---
 title: "19. Types from the config"
 description: "Generate TypeScript types from Shelf's config for the app and the functions, watch them follow a schema change in dev mode, see the stale-types warning, and keep them current in CI."
+icon: "brackets-curly"
 weight: 390
 toc: true
 ---
