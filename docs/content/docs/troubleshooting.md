@@ -2,7 +2,7 @@
 title: "Troubleshooting"
 description: "The messages you are most likely to meet when starting out with backd, what they mean, and what to do."
 icon: "lifebuoy"
-weight: 150
+weight: 600
 toc: true
 ---
 
