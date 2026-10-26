@@ -18,7 +18,7 @@ func TestDecodeSection(t *testing.T) {
 	}{
 		"empty file":                          {"", nil, true, "", false},
 		"valid":                               {"realtime: true\n", nil, true, "", true},
-		"own mistake is reported":             {"realtime: [1]\n", []string{"realtime"}, false, "c.yaml:", false},
+		"own mistake is reported":             {"realtime: [1]\n", []string{"unmarshal"}, false, "c.yaml:", false},
 		"other mistake is not ours":           {"realtime: [1]\n", []string{"triggers"}, false, "", false},
 		"no words: always left to the others": {"realtime: [1]\n", nil, false, "", false},
 	} {
