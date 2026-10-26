@@ -1253,7 +1253,7 @@ paths:
         A page of members sorted by user id: their direct roles, their teams and their effective
         roles with where each came from (`direct`, `default` or a team). `overlap` lists the roles
         held both directly and through a team or by default. Emails appear according to the
-        realm's `members_visible_to`. `sso=false` lists only the members who have no identity on one of the
+        realm's `members_visible_to`. `sso=false` (needs `manage: org`) lists only the members who have no identity on one of the
         organization's connections: the people who can't come in once it requires its connection.
       operationId: listOrganizationMembers
       security: [{ session: [] }]
@@ -11549,6 +11549,8 @@ components:
         last_used_at: { $ref: "#/components/schemas/Timestamp" }
         expires_at: { $ref: "#/components/schemas/Timestamp" }
         current: { type: boolean }
+        org: { type: string, description: "The id of the organization the session is scoped to; absent for an operator's session." }
+        connection: { type: string, description: "The provider of the organization's connection that opened the session; absent for any other." }
 
     PushSend:
       type: object

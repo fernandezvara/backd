@@ -25,6 +25,14 @@ func (a *authAPI) orgSignInRoutes(r chi.Router, json func(http.Handler) http.Han
 	r.With(json).Post("/invitations/preview", a.previewOrgInvitationOf)
 }
 
+// orgSignInGateRate is how many password, magic link, reset and sign-up calls to organizations one
+// address may make a minute; far above any person, and a ceiling for a script that walks slugs.
+const orgSignInGateRate = 120
+
+// orgCreationRate is how many times an hour one address may start a company with POST /_auth/orgs:
+// the answer to a slug that is taken is the one place a slug shows that it exists.
+const orgCreationRate = 20
+
 // ssoGate answers 400 sso_required to a password, magic link or reset sign-in to an organization
 // that requires its connection (design/scoped-sessions.md §6). It is the one place the rule is
 // applied for those routes; the realm's own providers are refused by provider(). The answer says
@@ -32,6 +40,12 @@ func (a *authAPI) orgSignInRoutes(r chi.Router, json func(http.Handler) http.Han
 func (a *authAPI) ssoGate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if ref := chi.URLParam(r, "org"); ref != "" {
+			// The same limit for every organization, whatever it is, so asking many names costs the
+			// same everywhere (the answer for one that requires its connection is the only difference).
+			if err := usersOf(r).RateLimit(r.Context(), "org-signin-gate:"+clientIP(r), orgSignInGateRate, time.Minute); err != nil {
+				authError(w, r, err)
+				return
+			}
 			if _, required := usersOf(r).OrgSSORequired(r.Context(), ref); required {
 				authError(w, r, auth.ErrSSORequired)
 				return
@@ -79,6 +93,10 @@ func (a *authAPI) signUpWithOrg(w http.ResponseWriter, r *http.Request) {
 	svc := usersOf(r)
 	if svc.Settings.Organizations == nil {
 		writeError(w, r, http.StatusNotFound, codeNotFound, "this realm has no organizations")
+		return
+	}
+	if err := svc.RateLimit(r.Context(), "org-creation:"+clientIP(r), orgCreationRate, time.Hour); err != nil {
+		authError(w, r, err)
 		return
 	}
 	obj, ok := readObject(w, r)

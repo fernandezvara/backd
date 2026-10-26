@@ -295,6 +295,8 @@ final class SessionInfo {
     required this.lastUsedAt,
     required this.expiresAt,
     required this.current,
+    this.org,
+    this.connection,
   });
 
   factory SessionInfo.fromJson(Map<String, Object?> json) => SessionInfo(
@@ -303,12 +305,21 @@ final class SessionInfo {
         lastUsedAt: json['last_used_at'] as String? ?? '',
         expiresAt: json['expires_at'] as String? ?? '',
         current: json['current'] as bool? ?? false,
+        org: json['org'] as String?,
+        connection: json['connection'] as String?,
       );
 
   final String id;
   final String createdAt;
   final String lastUsedAt;
   final String expiresAt;
+
+  /// The id of the organization the session is scoped to (null for an
+  /// operator's).
+  final String? org;
+
+  /// The provider of the organization's connection that opened it.
+  final String? connection;
 
   /// The session making this request.
   final bool current;

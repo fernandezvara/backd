@@ -396,7 +396,19 @@ const (
 	oauthProviderError     = "provider_error"
 	// oauthNotAllowed: the person is not of the organization the connection admits.
 	oauthNotAllowed = "not_allowed"
+	// oauthSSORequired: the organization requires its connection, which this provider is not.
+	oauthSSORequired = "sso_required"
 )
+
+// ssoRequiredAt says whether a sign-in with the provider to the organization scopeOrg is closed
+// because the organization requires its connection: the realm's own providers are no way in then.
+func ssoRequiredAt(r *http.Request, svc *auth.Users, scopeOrg string, p *registry.Provider) bool {
+	if scopeOrg == "" || scopeOrg == unknownOrgScope || p.Org != "" {
+		return false
+	}
+	_, required := svc.OrgSSORequired(r.Context(), scopeOrg)
+	return required
+}
 
 // oauthCallback is where the provider sends the user back to.
 func (a *authAPI) oauthCallback(w http.ResponseWriter, r *http.Request) {
@@ -424,6 +436,11 @@ func (a *authAPI) oauthCallback(w http.ResponseWriter, r *http.Request) {
 	p, ok := sc.providers[st.Provider]
 	if !ok {
 		back(paramError, oauthProviderError)
+		return
+	}
+	// An attempt that began before the organization required its connection can't finish after.
+	if st.Intent != auth.IntentLink && ssoRequiredAt(r, svc, st.ScopeOrg, p) {
+		back(paramError, oauthSSORequired)
 		return
 	}
 	if e := get("error"); e != "" {

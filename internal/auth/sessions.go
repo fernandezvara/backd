@@ -317,8 +317,14 @@ func (s *Users) startSessionWith(ctx context.Context, u User, methods []string, 
 	now := s.now()
 	sess := Session{ID: xid.New().String(), UserID: u.ID, TokenHash: HashToken(token), CreatedAt: now, LastUsedAt: now, Methods: methods, MFA: mfa, Org: org}
 	if org != "" {
-		// The organization may shorten the lifetime; it is fixed now and never extended.
 		if o, err := s.Store.OrgByID(ctx, org); err == nil {
+			// Every session of an organization that requires its connection comes through it: this is
+			// the one place a session is made, so a code, a link or a challenge issued before the
+			// requirement can't open one after it.
+			if o.SSORequired && (len(methods) == 0 || !strings.HasPrefix(methods[0], ConnectionMethodPrefix(org))) {
+				return Principal{}, "", ErrSSORequired
+			}
+			// The organization may shorten the lifetime; it is fixed now and never extended.
 			sess.MaxLifetime = o.SessionMaxAge
 		}
 	}

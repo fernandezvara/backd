@@ -63,6 +63,10 @@ In a realm with organizations **every session is scoped to one organization**: t
 - **Operators sign in to the realm.** A realm administrator (a user with an admin role) signs in at `POST /_auth/login`, which answers `401 invalid_credentials` to everybody else; their session belongs to no organization and reaches the admin API alone. Everything else in the realm, including `/_auth/signup`, the unscoped magic link and the realm's own `oauth/{provider}/start`, answers `404`: a person always signs in to an organization.
 - **Sessions from before** the realm had organizations, or from before they were scoped, answer `401 session_unscoped`: the person signs in again (the clients treat it as an expired session). See [Upgrading](../../../operate/#upgrading-from-v092-to-the-next-release).
 
+### Limits
+
+Starting a company with `POST /_auth/orgs` is limited to 20 an hour per address, because a slug that is taken is the one place a slug shows that it exists. The password, magic link, reset and sign-up calls to organizations share a limit of 120 a minute per address, the same for every organization name, so a script cannot walk names cheaply. Over either: `429`.
+
 ### Which companies am I in?
 
 For someone on a new device who does not remember the slug. `POST /_auth/orgs/find` always answers `202`, whatever the address, so it says nothing to whoever asked; an address with memberships gets the `organizations-found` [email](../../functions/email/) listing its organizations by name, each with the link to its sign-in page. It needs `email:` and `organizations.signin_link` in [`realm.yaml`](../../configuration/realm/#organizations) (`https://app.acme.example/{slug}/signin`; `{slug}` is the organization's id when it has no slug); without it the route answers `404`. At most 3 requests an hour per address and 30 per client address (`429`).
@@ -71,7 +75,7 @@ For someone on a new device who does not remember the slug. `POST /_auth/orgs/fi
 
 | Request | Who | Answers |
 |---|---|---|
-| `GET /_orgs/{org}/members?limit=&after=` | members | `200` with a page sorted by user id; `sso=false` lists only those with no identity on a connection (see [requiring the connection](#requiring-the-connection)) |
+| `GET /_orgs/{org}/members?limit=&after=` | members | `200` with a page sorted by user id; `sso=false` (`manage: org`) lists only those with no identity on a connection (see [requiring the connection](#requiring-the-connection)) |
 | `PATCH /_orgs/{org}/members/{user}` `{"roles": [...]}` | `manage: members` or `manage: roles` | `200` with the member; replaces their direct roles |
 | `DELETE /_orgs/{org}/members/{user}` | `manage: members` | `204` |
 | `POST /_orgs/{org}/leave` | members | `204` |

@@ -242,10 +242,14 @@ func (s *Users) membersWithoutSSO(ctx context.Context, orgID string) (int, error
 
 // MembersWithoutSSO lists the members who have no identity on a connection of the organization:
 // the people who can't come in once it requires its connection. It is Members with that filter,
-// and needs the same right.
+// for the managers who can turn the requirement on (manage: org).
 func (s *Users) MembersWithoutSSO(ctx context.Context, userID, orgID, after string, limit int) ([]MemberView, bool, error) {
 	viewer, err := s.MembershipOf(ctx, userID, orgID)
 	if err != nil {
+		return nil, false, err
+	}
+	// Who has no identity on the connection is for the people who decide to require it.
+	if _, err := s.requireCaps(viewer, registry.CapOrg); err != nil {
 		return nil, false, err
 	}
 	providers, err := s.connectionProviders(ctx, orgID)

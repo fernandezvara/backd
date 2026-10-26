@@ -127,6 +127,8 @@ function authBase(org) {
  * @property {string} last_used_at
  * @property {string} expires_at
  * @property {boolean} current  The session making this request.
+ * @property {string} [org]         The id of the organization the session is scoped to (none for an operator's).
+ * @property {string} [connection]  The provider of the organization's connection that opened it.
  */
 
 /**

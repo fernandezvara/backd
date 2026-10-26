@@ -143,7 +143,7 @@ Removed in realms with organizations (`login` stays for operators, §5.5): `/_au
 ### 5.2 Creating an organization
 
 - **A new person:** `POST /_auth/orgs { email, password, name, slug, invitation?, locale?, consents? }` creates the account (the sign-up table of [account-lifecycle.md §4.1](./account-lifecycle.md#41-sign-up) and the realm's `signup` mode: anyone when it is `open`, a person holding the `invitation` of the realm when it is `invite`, nobody when it is `closed`), the organization with the person as `creator_roles`, and a session scoped to it. With `require_verified_email: true` the answer is `202` and no session: the organization exists, the verification email is sent, and the person signs in to it afterwards. `organizations.create` is **not** evaluated for this first organization (a new account cannot satisfy `user.email_verified`); `max_created_per_user` still applies.
-- **The slug** is asked for with the company name; the form suggests one from the name ("Acme Corp" → `acme-corp`). A taken slug answers `409 slug_taken` with no detail about the other organization. This is the one place where a slug shows that it exists: unique names cannot be handed out without saying so, and it is limited per IP like sign-up.
+- **The slug** is asked for with the company name; the form suggests one from the name ("Acme Corp" → `acme-corp`). A taken slug answers `409 slug_taken` with no detail about the other organization. This is the one place where a slug shows that it exists: unique names cannot be handed out without saying so, and it is limited to 20 an hour per address.
 - **A registered address:** answers as sign-up does today (`409 email_taken`, or the generic `202` when verification is required). The person signs in to one of their organizations and creates another from there.
 - **From a session:** `POST /_orgs` (with `organizations.create` evaluated as today) creates the organization and answers it as before with `session: { token, expires_at, org }` added: **a new session scoped to the new organization**. The caller's own session stays as it is.
 
@@ -162,7 +162,7 @@ A person on a new device may not remember the slug, or which of their companies 
 
 - **`POST /_auth/orgs/find { email, locale? }`** always answers `202 Accepted`, the same body and timing for an address with accounts, one without, and one that belongs to no organization.
 - **The email** (`organizations-found`, an email kind with defaults and localized templates like the others) goes only to an address that has an account with memberships. It lists each active organization by name with its sign-in link (`organizations.signin_link` with the slug and id filled in), and says "if you didn't ask for this, ignore it". Organizations that require SSO are listed too; their link leads to the SSO button.
-- **Limits:** 3 a hour per address and per IP, using the shared email counters; the realm's email limits apply.
+- **Limits:** 3 a hour per address and 30 per IP, using the shared email counters; the realm's email limits apply. (The review kept the per-IP number above the per-address one: an office behind one address must not lock its colleagues out of asking.)
 - **Needs** `email:` in the realm.
 
 ### 5.5 Operators
@@ -321,4 +321,38 @@ What the implementation decided where the design left room:
 - **It releases itself.** Removing or disabling the last working connection (a manager removing it, `org.sso.disabled`, or `connections` replaced by a disabled one) clears `sso_required`, audited with the reason: otherwise the organization's people would have no way in until an administrator noticed. Administrators clear it as break glass for an organization that cannot reach its provider.
 - **`403 sso_session`** is the answer of `accountReauthed`, used by every handler that asked for a proof to change the account (password, email, second factor and recovery codes, unlinking), by `DELETE /_auth/me`, the personal data export and the link intent of `oauth/start` and `id-token`; it comes before the re-authentication so the person is not asked for a proof that would not help. Organization management keeps `reauthed`: for someone who exists only through the connection the proof is the email code.
 - **Not done.** User API keys are not a thing in this realm model (keys are an administrators' tool), so there is nothing to gate there. Self-service export and erasure for people who exist only through a connection stay a follow-up (§11).
+
+## 14. Security review (issue 34.7)
+
+Scope: cross-organization leakage over every surface of §4.2, the uniform failures, slug resolution inside sign-in, the "which companies am I in?" email and `409 slug_taken`, the confused-deputy paths (login codes, states, challenges), requiring the connection and the account-level limits. Method: reading the code of each path, then a test that tries it (`scope_leak_test.go`, `scope_review_test.go`, `sso_required_test.go`, `internal/auth/scopereaders_test.go`).
+
+**What holds.**
+- *Leakage.* A person with memberships in two organizations holds one session in each; lists, filters, counts, aggregates, reads and writes by id, creates, `/_orgs/{other}/…`, `/me`, rules (`user.orgs`) and `ctx.user.orgs` see only the session's own, and `?org=` is refused. Every reader of a person's memberships across organizations (`MyOrgs`, `OrgMembershipsOf`, …) is named in a test that fails when a new one appears, with the reason it may exist (erasure and account export are account-level; the `find` email goes to the mailbox; `NextAccessChange` returns a time).
+- *Uniform failures.* An unknown organization, an inactive one, a non-member and a wrong password answer `401 invalid_credentials` after the same work; the slug is resolved inside the call, there is no lookup endpoint, and the preview answers one `400` for every token that does not work.
+- *Confused deputy.* The organization travels with the thing that continues a sign-in, never with a request parameter: the OAuth state (`Org`, `ScopeOrg`; a callback of another place does not finish it), the login code, the MFA and consent challenges (`ViaOrg`) and the magic-link state. A connection session copied to a second organization (`POST /_orgs`) keeps its marker, which names the first organization.
+- *Account-level limits.* Every handler that asks for a proof to change the account, deletes it, exports it, links a provider or sets up a second factor refuses a connection session before asking (`sso_session`).
+
+**Findings fixed.**
+
+| # | Finding | Fix |
+|---|---|---|
+| R1 | An attempt with the realm's own provider that began before an organization required its connection could finish after (the callback is the realm's, not the organization's) | The callback refuses it (`sso_required` to the app), and see R2 |
+| R2 | A login code, magic link or challenge issued before the requirement could still open a session after it | `startSessionWith`, the one place a session is made, refuses a session scoped to an organization that requires its connection unless the first method is that organization's connection. Every earlier gate is now only the early, uniform answer |
+| R3 | `POST /_auth/orgs` answered `409 slug_taken` with no limit, an unlimited slug oracle, and the sign-in routes that name an organization answered `sso_required` without one | 20 an hour per address at `POST /_auth/orgs`; 120 a minute per address across the password, magic link, reset and sign-up calls to organizations, the same for every name |
+| R4 | `GET /_orgs/{org}/members?sso=false` was open to every member | It needs `manage: org`, the right that turns the requirement on |
+| R5 | `GET /_auth/sessions` did not say which organization a session belongs to (§4.1) | Each item has `org` and, for a connection session, `connection` |
+
+**Deviations from the design.** The audit record of a sign-in does not carry the organization: backd has no general sign-in record (only administrators' logins and `org.sso.login`, which targets the organization), so nothing was added. The `find` email is limited to 30 an hour per address of the client, not 3 (§5.4).
+
+**Accepted risks.**
+
+| # | Risk | Why |
+|---|---|---|
+| A1 | `409 slug_taken` at creation says a slug exists | Unique names cannot be handed out without it; limited to 20 an hour per address, and slugs are public names |
+| A2 | Naming an organization at a sign-in route answers `400 sso_required` when it requires its connection | `providers` says the same to anybody, with a 60 a minute limit; the calls are limited to 120 a minute per address for every name |
+| A3 | `POST /_auth/orgs/find` takes slightly longer for an address with an account (a lookup and a queued email) | Limited to 3 an hour per address and 30 per client; enumeration at that rate is not worth it and the answer is the same |
+| A4 | The provider's administrator controls the mailboxes of their own domain, so for an account at that domain they can use password reset or a magic link wherever those are allowed | Inherent to email recovery of an address the company owns; an organization that wants no such door requires its connection, and `sso_session` stops them changing the account from the session the connection gives |
+| A5 | The `org` field of the unscoped operator sign-in bodies only sets the context of the emails it causes | It tells nothing about who belongs where and the operators' routes are the only ones left |
+| A6 | Cookie sessions hold one organization at a time | The browser sends every cookie of the origin; token mode has no such limit (§8.2) |
+| A7 | Codes issued before `sso_required` was turned on are refused at redemption, but the early answer on the organization's routes is the same `400` for everybody who names it | See A2 |
 

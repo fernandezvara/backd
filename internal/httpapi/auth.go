@@ -483,6 +483,14 @@ func (a *authAPI) sessions(w http.ResponseWriter, r *http.Request) {
 			"expires_at":   formatTime(s.ExpiresAt),
 			"current":      s.ID == p.Session.ID,
 		}
+		// The organization each session is scoped to (none for an operator's), and the provider
+		// of the connection that opened it.
+		if s.Org != "" {
+			items[i]["org"] = s.Org
+		}
+		if _, provider, via := s.Connection(); via {
+			items[i]["connection"] = provider
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }

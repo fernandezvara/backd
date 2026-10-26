@@ -253,12 +253,14 @@ An invitation [sent by email](../../../operate/administration/admin/#emailing-an
 ```json
 {
   "items": [
-    {"id": "dars2ql90v6000bbohr0", "created_at": "2026-09-26T12:58:18.988Z", "last_used_at": "2026-09-26T12:58:18.988Z", "expires_at": "2026-10-26T12:58:18.988Z", "current": true}
+    {"id": "dars2ql90v6000bbohr0", "created_at": "2026-09-26T12:58:18.988Z", "last_used_at": "2026-09-26T12:58:18.988Z", "expires_at": "2026-10-26T12:58:18.988Z", "current": true, "org": "cq3k8fh0ul3s1ev4e4pg"}
   ]
 }
 ```
 
 A session opened through an [organization's connection](../../organizations/api/#signing-in-through-a-connection) records it as its first method, `sso:{org}:{provider}`; it cannot change the account's credentials or delete or export it (`403 sso_session`).
+
+Each session says the organization it is scoped to (`org`, none for an operator's) and, when an organization's connection opened it, the provider (`connection`).
 
 `DELETE /_auth/sessions/{id}` ends one of them, for example a lost device. Ids of other users' sessions return `404 not_found`.
 
