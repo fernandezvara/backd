@@ -2,7 +2,6 @@ package mongodb
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -111,7 +110,7 @@ func (s *AuthStore) ReplaceKeySecret(ctx context.Context, sec auth.Secret, ifVer
 	if ifVersion == 1 {
 		versionIs = bson.D{{Key: "$or", Value: bson.A{bson.D{{Key: "version", Value: 1}}, bson.D{{Key: "version", Value: bson.D{{Key: "$exists", Value: false}}}}}}}
 	}
-	filter := append(bson.D{{Key: "_id", Value: secretID(sec.Scope(), sec.Name)}}, versionIs...)
+	filter := append(byID(secretID(sec.Scope(), sec.Name)), versionIs...)
 	res, err := s.secrets().UpdateOne(ctx, filter, bson.D{{Key: "$set", Value: bson.D{
 		{Key: "fingerprint", Value: sec.Fingerprint}, {Key: "version", Value: sec.Version},
 		{Key: "ciphertext", Value: sec.Ciphertext}, {Key: "nonce", Value: sec.Nonce}, {Key: "key_id", Value: sec.KeyID},
@@ -125,11 +124,7 @@ func (s *AuthStore) ReplaceKeySecret(ctx context.Context, sec auth.Secret, ifVer
 }
 
 func (s *AuthStore) SecretByScope(ctx context.Context, scope, name string) (auth.Secret, error) {
-	var d secretDoc
-	err := s.secrets().FindOne(ctx, bson.D{{Key: "_id", Value: secretID(scope, name)}}).Decode(&d)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return auth.Secret{}, auth.ErrSecretNotFound
-	}
+	d, err := getOne[secretDoc](ctx, s.secrets(), byID(secretID(scope, name)), auth.ErrSecretNotFound)
 	if err != nil {
 		return auth.Secret{}, err
 	}
@@ -138,23 +133,15 @@ func (s *AuthStore) SecretByScope(ctx context.Context, scope, name string) (auth
 
 func (s *AuthStore) ListSecrets(ctx context.Context) ([]auth.Secret, error) {
 	opts := options.Find().SetSort(bson.D{{Key: "database", Value: 1}, {Key: "org", Value: 1}, {Key: "name", Value: 1}})
-	cur, err := s.secrets().Find(ctx, bson.D{}, opts)
+	docs, err := findAll[secretDoc](ctx, s.secrets(), bson.D{}, opts)
 	if err != nil {
 		return nil, err
 	}
-	var docs []secretDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, err
-	}
-	out := make([]auth.Secret, len(docs))
-	for i, d := range docs {
-		out[i] = d.secret()
-	}
-	return out, nil
+	return mapAll(docs, secretDoc.secret), nil
 }
 
 func (s *AuthStore) DeleteSecret(ctx context.Context, scope, name string) error {
-	res, err := s.secrets().DeleteOne(ctx, bson.D{{Key: "_id", Value: secretID(scope, name)}})
+	res, err := s.secrets().DeleteOne(ctx, byID(secretID(scope, name)))
 	if err != nil {
 		return err
 	}

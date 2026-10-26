@@ -1,15 +1,9 @@
 package registry
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
-	"io"
-	"os"
 	"slices"
 	"strings"
-
-	"go.yaml.in/yaml/v3"
 
 	"github.com/fernandezvara/backd/internal/rules"
 	"github.com/fernandezvara/backd/internal/storage"
@@ -18,20 +12,15 @@ import (
 // loadRealtime reads collection.yaml's `realtime:` into c: true marks the collection as one
 // whose changes may be streamed to clients (design/triggers-and-realtime.md §17). Anything but
 // a boolean is an error, so a typo is never a silently dead opt-in.
-func loadRealtime(c *Collection, path string) error {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
+func loadRealtime(c *Collection, path string, data []byte) error {
+	if data == nil {
 		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("%s: %w", path, err)
 	}
 	var doc struct {
 		Realtime any `yaml:"realtime"`
 	}
-	if err := yaml.NewDecoder(bytes.NewReader(data)).Decode(&doc); err != nil && !errors.Is(err, io.EOF) {
-		// Another section's mistake is reported by the loader that reads it.
-		return nil
+	if ok, err := decodeSection(data, path, &doc); !ok || err != nil {
+		return err
 	}
 	switch v := doc.Realtime.(type) {
 	case nil:

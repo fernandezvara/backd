@@ -6,6 +6,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/fernandezvara/backd/internal/strutil"
 )
 
 // converter turns JSON Schema documents (decoded with json.Number) into TypeScript types.
@@ -275,12 +277,12 @@ func (c *converter) ref(ref, path string) string {
 		return "unknown"
 	}
 	last := ref[strings.LastIndex(ref, "/")+1:]
-	name := c.prefix + "_" + pascal(last)
+	name := c.prefix + "_" + strutil.Pascal(last)
 	if ref == "#" {
 		name = c.prefix + "_Self"
 	}
 	for i := 2; c.defs[name] != "" || slices.Contains(valuesOf(c.refs), name); i++ {
-		name = fmt.Sprintf("%s_%s%d", c.prefix, pascal(last), i)
+		name = fmt.Sprintf("%s_%s%d", c.prefix, strutil.Pascal(last), i)
 	}
 	c.refs[ref] = name
 	c.defs[name] = "unknown" // placeholder while a recursive reference resolves to the name
@@ -324,28 +326,6 @@ func unique(in []string) []string {
 		}
 	}
 	return out
-}
-
-// pascal turns "order_items" or "main-db" into "OrderItems" and "MainDb".
-func pascal(s string) string {
-	var b strings.Builder
-	up := true
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z':
-			if up {
-				r -= 'a' - 'A'
-			}
-			b.WriteRune(r)
-			up = false
-		case r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-			up = false
-		default:
-			up = true
-		}
-	}
-	return b.String()
 }
 
 // schemaAt finds the schema of a dot path of `properties`, or nil.

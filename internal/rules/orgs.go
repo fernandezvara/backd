@@ -360,7 +360,7 @@ func (r *Rule) buildOrgCall(name string, c *ast.CallNode, orgs OrgsEnv) (storage
 			break
 		}
 		var pairs storage.Or
-		for _, id := range slices.Sorted(mapKeys(orgs)) {
+		for _, id := range slices.Sorted(maps.Keys(orgs)) {
 			for _, role := range orgs[id].Roles {
 				pairs = append(pairs, storage.And{
 					storage.Condition{Field: "_meta.org", Op: storage.OpEq, Value: id},
@@ -374,16 +374,6 @@ func (r *Rule) buildOrgCall(name string, c *ast.CallNode, orgs OrgsEnv) (storage
 		return pairs, nil
 	}
 	return nil, fmt.Errorf("internal: not a filter: %s", c.String())
-}
-
-func mapKeys(m OrgsEnv) func(func(string) bool) {
-	return func(yield func(string) bool) {
-		for k := range m {
-			if !yield(k) {
-				return
-			}
-		}
-	}
 }
 
 // buildClaim turns `orgClaims(document._meta.org).path <op> value` into a filter: the

@@ -3,6 +3,7 @@ package registry
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 )
@@ -99,7 +100,7 @@ type ScopeEntry struct {
 // field, and the files those hold, minus what personal_data excludes.
 func (r *Realm) PersonalScope() []ScopeEntry {
 	var out []ScopeEntry
-	for _, dbName := range slices.Sorted(mapKeys(r.Databases)) {
+	for _, dbName := range slices.Sorted(maps.Keys(r.Databases)) {
 		for _, c := range r.Databases[dbName].SortedCollections() {
 			e := ScopeEntry{Database: dbName, Collection: c.Name, Export: ExportInclude, Owned: true}
 			if p := c.PersonalData; p != nil {
@@ -121,9 +122,9 @@ func (r *Realm) PersonalScope() []ScopeEntry {
 				for f := range c.Erasure.Unset {
 					named[f] = true
 				}
-				e.Pull = slices.Sorted(mapKeys(named))
+				e.Pull = slices.Sorted(maps.Keys(named))
 			}
-			e.Files = slices.Sorted(mapKeys(c.Files))
+			e.Files = slices.Sorted(maps.Keys(c.Files))
 			if e.Fields != nil {
 				slices.Sort(e.Fields)
 			}

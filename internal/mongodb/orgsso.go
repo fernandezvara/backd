@@ -2,7 +2,6 @@ package mongodb
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -76,11 +75,7 @@ func (s *AuthStore) PutOrgConnection(ctx context.Context, c auth.OrgConnection) 
 
 // OrgConnection implements auth.Store.
 func (s *AuthStore) OrgConnection(ctx context.Context, org, provider string) (auth.OrgConnection, error) {
-	var d orgConnectionDoc
-	err := s.orgConnections().FindOne(ctx, bson.D{{Key: "_id", Value: orgConnectionID(org, provider)}}).Decode(&d)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return auth.OrgConnection{}, auth.ErrNotFound
-	}
+	d, err := getOne[orgConnectionDoc](ctx, s.orgConnections(), byID(orgConnectionID(org, provider)), auth.ErrNotFound)
 	if err != nil {
 		return auth.OrgConnection{}, err
 	}
@@ -89,24 +84,16 @@ func (s *AuthStore) OrgConnection(ctx context.Context, org, provider string) (au
 
 // OrgConnections implements auth.Store.
 func (s *AuthStore) OrgConnections(ctx context.Context, org string) ([]auth.OrgConnection, error) {
-	cur, err := s.orgConnections().Find(ctx, bson.D{{Key: "org", Value: org}}, options.Find().SetSort(bson.D{{Key: "provider", Value: 1}}))
+	docs, err := findAll[orgConnectionDoc](ctx, s.orgConnections(), bson.D{{Key: "org", Value: org}}, options.Find().SetSort(bson.D{{Key: "provider", Value: 1}}))
 	if err != nil {
 		return nil, err
 	}
-	var docs []orgConnectionDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, err
-	}
-	out := make([]auth.OrgConnection, len(docs))
-	for i, d := range docs {
-		out[i] = d.connection()
-	}
-	return out, nil
+	return mapAll(docs, orgConnectionDoc.connection), nil
 }
 
 // DeleteOrgConnection implements auth.Store.
 func (s *AuthStore) DeleteOrgConnection(ctx context.Context, org, provider string) error {
-	res, err := s.orgConnections().DeleteOne(ctx, bson.D{{Key: "_id", Value: orgConnectionID(org, provider)}})
+	res, err := s.orgConnections().DeleteOne(ctx, byID(orgConnectionID(org, provider)))
 	if err != nil {
 		return err
 	}

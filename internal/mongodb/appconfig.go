@@ -71,7 +71,7 @@ func encodeValues(v map[string]any) string {
 
 func (s *AuthStore) AppConfigState(ctx context.Context) (appconfig.State, error) {
 	var d appConfigStateDoc
-	err := s.appConfig().FindOne(ctx, bson.D{{Key: "_id", Value: appConfigStateID}}).Decode(&d)
+	err := s.appConfig().FindOne(ctx, byID(appConfigStateID)).Decode(&d)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return appconfig.State{Values: map[string]any{}}, nil
 	}
@@ -138,13 +138,9 @@ func entryFromDoc(d appConfigEntryDoc) appconfig.Entry {
 }
 
 func (s *AuthStore) AppConfigHistory(ctx context.Context, limit int) ([]appconfig.Entry, error) {
-	cur, err := s.appConfigHistory().Find(ctx, bson.D{},
+	docs, err := findAll[appConfigEntryDoc](ctx, s.appConfigHistory(), bson.D{},
 		options.Find().SetSort(bson.D{{Key: "_id", Value: -1}}).SetLimit(int64(limit)))
 	if err != nil {
-		return nil, err
-	}
-	var docs []appConfigEntryDoc
-	if err := cur.All(ctx, &docs); err != nil {
 		return nil, err
 	}
 	out := make([]appconfig.Entry, len(docs))
@@ -155,11 +151,7 @@ func (s *AuthStore) AppConfigHistory(ctx context.Context, limit int) ([]appconfi
 }
 
 func (s *AuthStore) AppConfigEntry(ctx context.Context, version int64) (appconfig.Entry, error) {
-	var d appConfigEntryDoc
-	err := s.appConfigHistory().FindOne(ctx, bson.D{{Key: "_id", Value: version}}).Decode(&d)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return appconfig.Entry{}, appconfig.ErrNoVersion
-	}
+	d, err := getOne[appConfigEntryDoc](ctx, s.appConfigHistory(), byID(version), appconfig.ErrNoVersion)
 	if err != nil {
 		return appconfig.Entry{}, err
 	}

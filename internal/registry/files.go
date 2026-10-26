@@ -2,6 +2,7 @@ package registry
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -9,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"os"
 	"regexp"
 	"slices"
 	"strconv"
@@ -18,6 +18,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/fernandezvara/backd/internal/imaging"
 )
 
@@ -200,13 +201,9 @@ func (f *FileField) Allows(contentType string) bool {
 // parseFiles reads the `files:` section of collection.yaml, validated against the
 // collection's schema and the realm's storage. A collection without the file or
 // the section has no file fields.
-func parseFiles(path string, schema map[string]any, settings RealmSettings) (map[string]*FileField, error) {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
+func parseFiles(path string, data []byte, schema map[string]any, settings RealmSettings) (map[string]*FileField, error) {
+	if data == nil {
 		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	var doc struct {
 		Files map[string]*fileFieldDoc `yaml:"files"`
@@ -314,7 +311,7 @@ func parseFiles(path string, schema map[string]any, settings RealmSettings) (map
 				add(name, "cache: %v", err)
 			} else if v <= 0 {
 				add(name, "cache: must be a positive duration, such as 1h")
-			} else if eff := firstNonEmpty(f.Download, settings.Storage.Download); eff != DownloadProxy {
+			} else if eff := cmp.Or(f.Download, settings.Storage.Download); eff != DownloadProxy {
 				add(name, "cache: only applies to proxied downloads (`download: proxy`, on the field or in the realm's storage)")
 			} else {
 				f.Cache = v
@@ -435,15 +432,6 @@ func (r *Registry) CheckImageLimits(instance int64) error {
 	return errors.Join(errs...)
 }
 
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
 // fileDetailsSchema is what a file field holds, which backd writes and no client
 // may: the file's id, its sanitized name, size, detected type, SHA-256 and upload time.
 func fileDetailsSchema() map[string]any {
@@ -494,7 +482,7 @@ func versionStateSchema() map[string]any {
 // field's schema added: the details object, or an array of them (at most
 // max_files). The author's schema.json is not modified.
 func withFileSchemas(schema map[string]any, files map[string]*FileField) map[string]any {
-	out := cloneSchema(schema).(map[string]any)
+	out := docutil.DeepCopy(schema).(map[string]any)
 	props, _ := out["properties"].(map[string]any)
 	if props == nil {
 		props = map[string]any{}
@@ -508,22 +496,4 @@ func withFileSchemas(schema map[string]any, files map[string]*FileField) map[str
 		}
 	}
 	return out
-}
-
-func cloneSchema(v any) any {
-	switch t := v.(type) {
-	case map[string]any:
-		m := make(map[string]any, len(t))
-		for k, e := range t {
-			m[k] = cloneSchema(e)
-		}
-		return m
-	case []any:
-		s := make([]any, len(t))
-		for i, e := range t {
-			s[i] = cloneSchema(e)
-		}
-		return s
-	}
-	return v
 }

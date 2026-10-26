@@ -23,7 +23,7 @@ func (s *AuthStore) schedules() *mongo.Collection { return s.db.Collection(Sched
 
 // SetScheduleState stores a scheduled function's state.
 func (s *AuthStore) SetScheduleState(ctx context.Context, st auth.ScheduleState) error {
-	_, err := s.schedules().ReplaceOne(ctx, bson.D{{Key: "_id", Value: st.Database + "/" + st.Function}},
+	_, err := s.schedules().ReplaceOne(ctx, byID(st.Database+"/"+st.Function),
 		scheduleDoc{ID: st.Database + "/" + st.Function, Paused: st.Paused, ChangedAt: st.ChangedAt, ChangedBy: st.ChangedBy},
 		options.Replace().SetUpsert(true))
 	return err
@@ -31,12 +31,8 @@ func (s *AuthStore) SetScheduleState(ctx context.Context, st auth.ScheduleState)
 
 // ListScheduleStates returns every stored state.
 func (s *AuthStore) ListScheduleStates(ctx context.Context) ([]auth.ScheduleState, error) {
-	cur, err := s.schedules().Find(ctx, bson.D{})
+	docs, err := findAll[scheduleDoc](ctx, s.schedules(), bson.D{})
 	if err != nil {
-		return nil, err
-	}
-	var docs []scheduleDoc
-	if err := cur.All(ctx, &docs); err != nil {
 		return nil, err
 	}
 	out := make([]auth.ScheduleState, 0, len(docs))

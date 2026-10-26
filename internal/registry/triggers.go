@@ -1,17 +1,12 @@
 package registry
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
-
-	"go.yaml.in/yaml/v3"
 
 	"github.com/fernandezvara/backd/internal/rules"
 )
@@ -120,21 +115,15 @@ func (s RealmSettings) TriggerLimits(instance TriggerLimits) TriggerLimits {
 // loadTriggers reads collection.yaml's `triggers:` into c and checks it: names, events, the
 // condition against the collection's schema, and the fields the job carries. The function a
 // trigger names is checked once the realm's functions are loaded (loadTriggerFunctions).
-func loadTriggers(c *Collection, settings RealmSettings, path string) error {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
+func loadTriggers(c *Collection, settings RealmSettings, path string, data []byte) error {
+	if data == nil {
 		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("%s: %w", path, err)
 	}
 	var doc struct {
 		Triggers map[string]*triggerDoc `yaml:"triggers"`
 	}
-	if err := yaml.NewDecoder(bytes.NewReader(data)).Decode(&doc); err != nil && !errors.Is(err, io.EOF) {
-		// Another section's mistake is reported by the loader that reads it; the keys inside
-		// a trigger are checked, with the file named, by loadErasure.
-		return nil
+	if ok, err := decodeSection(data, path, &doc); !ok || err != nil {
+		return err
 	}
 	if len(doc.Triggers) == 0 {
 		return nil

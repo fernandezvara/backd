@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/internal/strutil"
 )
 
 // Version is the generator's version: it changes when the output format does.
@@ -298,7 +299,7 @@ func (g *gen) alias(name, what string) string {
 // collection writes a collection's types and returns the type expressions for doc, input,
 // create (input, with the id a custom_id collection requires), where and order_by.
 func (g *gen) collection(w *strings.Builder, db string, c *registry.Collection) (doc, input, create, where, order string) {
-	prefix := pascal(db) + pascal(c.Name)
+	prefix := strutil.Pascal(db) + strutil.Pascal(c.Name)
 	where0 := db + "/" + c.Name + " schema.json "
 	conv := newConverter(c.RawSchema, prefix, where0, g.warn)
 
@@ -461,7 +462,7 @@ func (g *gen) function(w *strings.Builder, db string, fn *registry.Function) str
 		if err := dec.Decode(&raw); err != nil {
 			return "unknown"
 		}
-		c := newConverter(raw, "Fn"+pascal(db)+pascal(fn.Name)+suffix, db+"/"+fn.Name+" "+file+" ", g.warn)
+		c := newConverter(raw, "Fn"+strutil.Pascal(db)+strutil.Pascal(fn.Name)+suffix, db+"/"+fn.Name+" "+file+" ", g.warn)
 		t := c.typeOf(raw, "")
 		for _, n := range slices.Sorted(keys(c.defs)) {
 			fmt.Fprintf(w, "export type %s = %s;\n", n, c.defs[n])

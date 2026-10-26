@@ -24,7 +24,7 @@ type passwordEpochDoc struct {
 // PasswordEpoch implements auth.Store.
 func (s *AuthStore) PasswordEpoch(ctx context.Context) (auth.PasswordEpoch, error) {
 	var d passwordEpochDoc
-	err := s.db.Collection(SecurityStateCollection).FindOne(ctx, bson.D{{Key: "_id", Value: passwordEpochID}}).Decode(&d)
+	err := s.db.Collection(SecurityStateCollection).FindOne(ctx, byID(passwordEpochID)).Decode(&d)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return auth.PasswordEpoch{}, nil
 	}

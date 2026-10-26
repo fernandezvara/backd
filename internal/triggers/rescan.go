@@ -118,14 +118,7 @@ func Rescan(ctx context.Context, reg *registry.Registry, req RescanRequest, src 
 		case time.Time:
 			at = v
 		}
-		var version int64
-		switch v := meta["version"].(type) {
-		case int64:
-			version = v
-		case int32:
-			version = int64(v)
-		}
-		ch := changefeed.Change{Realm: req.Realm, DB: c.MongoDatabase, Coll: c.Name, Op: changefeed.Updated, Key: key, At: at, Version: version, After: doc, Replace: true}
+		ch := changefeed.Change{Realm: req.Realm, DB: c.MongoDatabase, Coll: c.Name, Op: changefeed.Updated, Key: key, At: at, Version: changefeed.DocVersion(doc), After: doc, Replace: true}
 		for _, ev := range ct.evaluate(ctx, ch, config) {
 			if ev.outcome != outcomeMatched {
 				continue

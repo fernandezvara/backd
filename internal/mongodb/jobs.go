@@ -797,32 +797,13 @@ func (s *AuthStore) ListJobs(ctx context.Context, f auth.JobFilter) ([]auth.Job,
 			filter = append(filter, bson.E{Key: "scheduled", Value: bson.D{{Key: "$ne", Value: true}}})
 		}
 	}
-	created := bson.D{}
-	if !f.Since.IsZero() {
-		created = append(created, bson.E{Key: "$gte", Value: f.Since})
-	}
-	if !f.Until.IsZero() {
-		created = append(created, bson.E{Key: "$lt", Value: f.Until})
-	}
-	if len(created) > 0 {
-		filter = append(filter, bson.E{Key: "created_at", Value: created})
-	}
-	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}).SetSkip(int64(f.Skip))
-	if f.Limit > 0 {
-		opts.SetLimit(int64(f.Limit) + 1)
-	}
-	cur, err := s.jobs().Find(ctx, filter, opts)
+	filter = withinTime(filter, "created_at", f.Since, f.Until)
+	opts := pageOpts(bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}, f.Skip, f.Limit)
+	docs, err := findAll[jobDoc](ctx, s.jobs(), filter, opts)
 	if err != nil {
 		return nil, false, err
 	}
-	var docs []jobDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, false, err
-	}
-	more := f.Limit > 0 && len(docs) > f.Limit
-	if more {
-		docs = docs[:f.Limit]
-	}
+	docs, more := trimPage(docs, f.Limit)
 	out := make([]auth.Job, len(docs))
 	for i, d := range docs {
 		out[i] = jobFromDoc(d)
@@ -833,7 +814,7 @@ func (s *AuthStore) ListJobs(ctx context.Context, f auth.JobFilter) ([]auth.Job,
 // GetJob returns one job by id.
 func (s *AuthStore) GetJob(ctx context.Context, id string) (auth.Job, bool, error) {
 	var d jobDoc
-	err := s.jobs().FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&d)
+	err := s.jobs().FindOne(ctx, byID(id)).Decode(&d)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return auth.Job{}, false, nil
 	}

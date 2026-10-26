@@ -2,8 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"slices"
@@ -117,11 +115,7 @@ type InvitationResult struct {
 const MaxInvitationUses = 1000
 
 func newOrgInvitationToken() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return OrgInvitationPrefix + base64.RawURLEncoding.EncodeToString(b), nil
+	return newOpaqueToken(OrgInvitationPrefix)
 }
 
 // teamRoles returns the union of the roles of the teams, and the teams that exist.

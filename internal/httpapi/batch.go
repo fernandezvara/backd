@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/xid"
 
@@ -356,7 +357,7 @@ func (d *documents) applyBatchOp(ctx context.Context, r *http.Request, a access,
 	switch op.kind {
 	case "replace":
 		if len(op.collection.Files) > 0 {
-			candidate := deepCopy(op.fields)
+			candidate := docutil.DeepCopyMap(op.fields)
 			keepFileFields(op.collection, candidate, current)
 			if err := op.collection.Schema.Validate(timesToStrings(candidate)); err != nil {
 				return nil, &patchValidationErr{err: err}
@@ -378,7 +379,7 @@ func (d *documents) applyBatchOp(ctx context.Context, r *http.Request, a access,
 		return fields, nil
 
 	case "patch":
-		merged := mergePatch(timesToStrings(userFields(current)).(map[string]any), deepCopy(op.patch))
+		merged := docutil.MergePatch(timesToStrings(userFields(current)).(map[string]any), docutil.DeepCopyMap(op.patch))
 		if err := op.collection.Schema.Validate(merged); err != nil {
 			return nil, &patchValidationErr{err: err}
 		}

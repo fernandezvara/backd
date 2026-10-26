@@ -5,11 +5,12 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strings"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
+	"github.com/fernandezvara/backd/internal/changefeed"
+	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/fernandezvara/backd/internal/fieldcrypt"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage"
@@ -55,10 +56,7 @@ func versionOfRaw(d bson.D) int64 {
 		if e.Key != "_meta" {
 			continue
 		}
-		if meta, ok := fromBSONValue(e.Value).(map[string]any); ok {
-			v, _ := meta["version"].(int64)
-			return v
-		}
+		return changefeed.DocVersion(map[string]any{"_meta": fromBSONValue(e.Value)})
 	}
 	return 0
 }
@@ -130,7 +128,7 @@ func (r *Repository) migrateDocument(ctx context.Context, raw bson.D, doc storag
 	set := bson.D{}
 	changedEnc, changedBidx := false, false
 	value := func(p string) (v any, sealedWith string, present bool, err error) {
-		x, ok := docPath(doc, p)
+		x, ok := docutil.GetPath(doc, p)
 		if !ok {
 			return nil, "", false, nil
 		}
@@ -231,20 +229,6 @@ func (r *Repository) migrateDocument(ctx context.Context, raw bson.D, doc storag
 		update = append(update, bson.E{Key: "$unset", Value: unset})
 	}
 	return c, update, nil
-}
-
-func docPath(doc map[string]any, path string) (any, bool) {
-	var cur any = map[string]any(doc)
-	for p := range strings.SplitSeq(path, ".") {
-		m, ok := cur.(map[string]any)
-		if !ok {
-			return nil, false
-		}
-		if cur, ok = m[p]; !ok {
-			return nil, false
-		}
-	}
-	return cur, true
 }
 
 // ---- status ----

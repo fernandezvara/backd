@@ -1,15 +1,10 @@
 package registry
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"io"
-	"os"
 	"slices"
 	"strings"
-
-	"go.yaml.in/yaml/v3"
 
 	"github.com/fernandezvara/backd/internal/rules"
 )
@@ -93,20 +88,15 @@ type fieldDoc struct {
 
 // loadEncryption reads collection.yaml's fields: into c.Encrypted and checks each entry against
 // the schema.
-func loadEncryption(c *Collection, path string) error {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
+func loadEncryption(c *Collection, path string, data []byte) error {
+	if data == nil {
 		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("%s: %w", path, err)
 	}
 	var doc struct {
 		Fields map[string]*fieldDoc `yaml:"fields"`
 	}
-	if err := yaml.NewDecoder(bytes.NewReader(data)).Decode(&doc); err != nil && !errors.Is(err, io.EOF) {
-		// Another section's mistake is reported by the loader that reads it.
-		return nil
+	if ok, err := decodeSection(data, path, &doc); !ok || err != nil {
+		return err
 	}
 	var errs []error
 	fail := func(format string, args ...any) {
@@ -294,18 +284,14 @@ func (r *Realm) EncryptionKeyNames() []string {
 
 // loadReveal compiles the `reveal:` of each encrypted field against the collection's fields and
 // the realm's roles, after the rules, whose schema it shares.
-func loadReveal(c *Collection, settings RealmSettings, path string) error {
-	if len(c.Encrypted) == 0 {
-		return nil
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
+func loadReveal(c *Collection, settings RealmSettings, path string, data []byte) error {
+	if len(c.Encrypted) == 0 || data == nil {
 		return nil
 	}
 	var doc struct {
 		Fields map[string]*fieldDoc `yaml:"fields"`
 	}
-	if yaml.NewDecoder(bytes.NewReader(data)).Decode(&doc) != nil {
+	if ok, _ := decodeSection(data, path, &doc); !ok {
 		return nil
 	}
 	var errs []error

@@ -2,10 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
 	"time"
 )
 
@@ -109,16 +105,8 @@ const MaxOpenPendingUploads = 20
 // NewUploadToken makes the secret a pending upload's creator holds, and the hash
 // that is stored instead of it.
 func NewUploadToken() (token, hash string) {
-	b := make([]byte, 32)
-	_, _ = rand.Read(b)
-	token = "fut_" + base64.RawURLEncoding.EncodeToString(b)
-	return token, HashUploadToken(token)
-}
-
-// HashUploadToken is what is stored of an upload token.
-func HashUploadToken(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
+	token, _ = newOpaqueToken("fut_") // crypto/rand.Read does not fail
+	return token, HashToken(token)
 }
 
 // JournalPendingUpload records a pending upload that is starting; unused, it
@@ -157,7 +145,7 @@ func (s *Users) PendingUpload(ctx context.Context, id string) (FileJournalEntry,
 // matches, once: it is held as attaching to the document until it is attached or
 // released. ErrNotFound when there is none to take.
 func (s *Users) ClaimPendingUpload(ctx context.Context, id, token, documentID string) (FileJournalEntry, error) {
-	return s.Store.ClaimPendingUpload(ctx, id, HashUploadToken(token), documentID, s.now())
+	return s.Store.ClaimPendingUpload(ctx, id, HashToken(token), documentID, s.now())
 }
 
 // ReleasePendingUpload gives a claimed pending upload back, when the write that
@@ -181,7 +169,7 @@ func (s *Users) JournalDirectUpload(ctx context.Context, e FileJournalEntry, ttl
 // attaching until it is done or released. ErrNotFound when the token doesn't match, the
 // upload isn't one that waits for its bytes, or it expired.
 func (s *Users) ClaimDirectUpload(ctx context.Context, id, token string) (FileJournalEntry, error) {
-	return s.Store.ClaimDirectUpload(ctx, id, HashUploadToken(token), s.now())
+	return s.Store.ClaimDirectUpload(ctx, id, HashToken(token), s.now())
 }
 
 // ReleaseDirectUpload gives a claimed direct upload back, to wait for its bytes again.

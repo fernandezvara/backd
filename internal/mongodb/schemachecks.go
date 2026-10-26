@@ -72,7 +72,7 @@ func (s *AuthStore) SetCheckReport(ctx context.Context, r auth.CheckReport) erro
 		}
 		d.Documents = append(d.Documents, doc)
 	}
-	_, err := s.checkReports().ReplaceOne(ctx, bson.D{{Key: "_id", Value: d.ID}}, d, options.Replace().SetUpsert(true))
+	_, err := s.checkReports().ReplaceOne(ctx, byID(d.ID), d, options.Replace().SetUpsert(true))
 	return err
 }
 
@@ -82,19 +82,11 @@ func (s *AuthStore) ListCheckReports(ctx context.Context, documents bool) ([]aut
 	if !documents {
 		opts.SetProjection(bson.D{{Key: "documents", Value: 0}})
 	}
-	cur, err := s.checkReports().Find(ctx, bson.D{}, opts)
+	docs, err := findAll[checkReportDoc](ctx, s.checkReports(), bson.D{}, opts)
 	if err != nil {
 		return nil, err
 	}
-	var docs []checkReportDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, err
-	}
-	out := make([]auth.CheckReport, len(docs))
-	for i, d := range docs {
-		out[i] = d.report()
-	}
-	return out, nil
+	return mapAll(docs, checkReportDoc.report), nil
 }
 
 // GetCheckReport returns one collection's latest report.
@@ -103,7 +95,7 @@ func (s *AuthStore) GetCheckReport(ctx context.Context, database, collection str
 		return auth.CheckReport{}, false, nil
 	}
 	var d checkReportDoc
-	err := s.checkReports().FindOne(ctx, bson.D{{Key: "_id", Value: database + "/" + collection}}).Decode(&d)
+	err := s.checkReports().FindOne(ctx, byID(database+"/"+collection)).Decode(&d)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return auth.CheckReport{}, false, nil
 	}

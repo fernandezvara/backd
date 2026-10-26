@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/internal/strutil"
 )
 
 // JSDocTypes generates JSDoc typedefs from every function's input and
@@ -57,7 +58,7 @@ func writeFunctionTypes(b *strings.Builder, realm, database, name, dir string) {
 		return
 	}
 	fmt.Fprintf(b, "// %s/%s/%s\n", realm, database, name)
-	base := pascal(realm) + pascal(database) + pascal(name)
+	base := strutil.Pascal(realm) + strutil.Pascal(database) + strutil.Pascal(name)
 	for _, s := range []struct {
 		suffix string
 		schema any
@@ -189,25 +190,4 @@ func objectType(m map[string]any, depth int) string {
 		parts = append(parts, fmt.Sprintf("%s: %s%s", string(data), jsdocType(props[name], depth+1), opt))
 	}
 	return "{" + strings.Join(parts, ", ") + "}"
-}
-
-// pascal turns a lower-case, hyphen/underscore-separated config name (a
-// realm, database or function name, per registry.ValidName) into a
-// PascalCase identifier segment.
-func pascal(s string) string {
-	var b strings.Builder
-	upper := true
-	for _, r := range s {
-		switch {
-		case r == '-' || r == '_':
-			upper = true
-		case upper && r >= 'a' && r <= 'z':
-			b.WriteRune(r - 'a' + 'A')
-			upper = false
-		default:
-			b.WriteRune(r)
-			upper = false
-		}
-	}
-	return b.String()
 }

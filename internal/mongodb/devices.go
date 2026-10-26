@@ -69,20 +69,12 @@ func (s *AuthStore) PutDevice(ctx context.Context, d auth.Device) (auth.Device, 
 }
 
 func (s *AuthStore) ListDevices(ctx context.Context, userID string) ([]auth.Device, error) {
-	cur, err := s.devices().Find(ctx, bson.D{{Key: "user_id", Value: userID}},
+	docs, err := findAll[deviceDoc](ctx, s.devices(), bson.D{{Key: "user_id", Value: userID}},
 		options.Find().SetSort(bson.D{{Key: "last_seen", Value: -1}}))
 	if err != nil {
 		return nil, err
 	}
-	var docs []deviceDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, err
-	}
-	out := make([]auth.Device, len(docs))
-	for i, d := range docs {
-		out[i] = d.device()
-	}
-	return out, nil
+	return mapAll(docs, deviceDoc.device), nil
 }
 
 func (s *AuthStore) DeleteDevice(ctx context.Context, userID, id string) error {

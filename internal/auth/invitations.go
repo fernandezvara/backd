@@ -2,8 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
@@ -60,11 +58,10 @@ func (s *Users) CreateInvitation(ctx context.Context, email string, ttl time.Dur
 	case ttl < time.Minute || ttl > MaxInvitationTTL:
 		return Invitation{}, "", fmt.Errorf("invitation lifetime must be between 1m and %s", MaxInvitationTTL)
 	}
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
+	token, err := newOpaqueToken(InvitationPrefix)
+	if err != nil {
 		return Invitation{}, "", err
 	}
-	token := InvitationPrefix + base64.RawURLEncoding.EncodeToString(b)
 	now := s.now()
 	inv := Invitation{
 		ID: xid.New().String(), TokenHash: HashToken(token), Email: email,

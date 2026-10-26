@@ -42,7 +42,7 @@ func (p *Provisioner) recordFingerprint(ctx context.Context) error {
 	now := time.Now().UTC()
 	for _, realm := range p.Registry.RealmNames() {
 		doc := deploymentDoc{Realm: realm, Fingerprint: p.Fingerprint, AppliedAt: now, Version: p.Version}
-		_, err := p.deployments().ReplaceOne(ctx, bson.D{{Key: "_id", Value: realm}}, doc, options.Replace().SetUpsert(true))
+		_, err := p.deployments().ReplaceOne(ctx, byID(realm), doc, options.Replace().SetUpsert(true))
 		if err != nil {
 			return fmt.Errorf("record config fingerprint: %w", err)
 		}
@@ -64,7 +64,7 @@ func (p *Provisioner) verifyFingerprint(ctx context.Context) error {
 	var problems []string
 	for _, realm := range p.Registry.RealmNames() {
 		var doc deploymentDoc
-		err := p.deployments().FindOne(ctx, bson.D{{Key: "_id", Value: realm}}).Decode(&doc)
+		err := p.deployments().FindOne(ctx, byID(realm)).Decode(&doc)
 		switch {
 		case errors.Is(err, mongo.ErrNoDocuments):
 			problems = append(problems, fmt.Sprintf("realm %s: no config has been provisioned yet", realm))
@@ -97,7 +97,7 @@ func instances(client *mongo.Client) *mongo.Collection {
 // Heartbeat records that the instance id serves realms, and forgets the instances that have
 // been silent for a day.
 func Heartbeat(ctx context.Context, client *mongo.Client, id string, realms []string, now time.Time) error {
-	_, err := instances(client).ReplaceOne(ctx, bson.D{{Key: "_id", Value: id}},
+	_, err := instances(client).ReplaceOne(ctx, byID(id),
 		bson.D{{Key: "realms", Value: realms}, {Key: "heartbeat", Value: now}}, options.Replace().SetUpsert(true))
 	if err != nil {
 		return err
@@ -108,7 +108,7 @@ func Heartbeat(ctx context.Context, client *mongo.Client, id string, realms []st
 
 // ReleaseInstance removes an instance that is shutting down.
 func ReleaseInstance(ctx context.Context, client *mongo.Client, id string) {
-	_, _ = instances(client).DeleteOne(ctx, bson.D{{Key: "_id", Value: id}})
+	_, _ = instances(client).DeleteOne(ctx, byID(id))
 }
 
 // ActiveInstances returns the ids of the instances that serve the realm and have been heard

@@ -1,17 +1,12 @@
 package registry
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
-	"os"
 	"regexp"
 	"slices"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
 // ExpandLimits are what a reference expansion may cost on this instance (BACKD_EXPAND_MAX_*);
@@ -80,23 +75,15 @@ type referenceDoc struct {
 // loadReferences reads collection.yaml's references: into c and checks what only the
 // collection itself can tell: the source of each reference and its name. The targets are
 // checked by checkReferences once the whole realm is loaded.
-func loadReferences(c *Collection, path string) error {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
+func loadReferences(c *Collection, path string, data []byte) error {
+	if data == nil {
 		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("%s: %w", path, err)
 	}
 	var doc struct {
 		References map[string]*referenceDoc `yaml:"references"`
 	}
-	if err := yaml.NewDecoder(bytes.NewReader(data)).Decode(&doc); err != nil && !errors.Is(err, io.EOF) {
-		// Another section's mistake is reported by the loader that reads it.
-		if strings.Contains(err.Error(), "references") || strings.Contains(err.Error(), "max_expand") {
-			return fmt.Errorf("%s: %w", path, err)
-		}
-		return nil
+	if ok, err := decodeSection(data, path, &doc, "references", "max_expand"); !ok || err != nil {
+		return err
 	}
 	var errs []error
 	for _, name := range slices.Sorted(maps.Keys(doc.References)) {

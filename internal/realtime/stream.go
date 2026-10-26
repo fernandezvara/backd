@@ -379,7 +379,7 @@ func (s *Stream) processLocked(c changefeed.Change, at changefeed.Position, subs
 		case before:
 			v := c.Version
 			if c.After != nil {
-				v = versionOf(c.After)
+				v = changefeed.DocVersion(c.After)
 			}
 			event, data = "removed", map[string]any{"sub": sub.ID, "id": c.Key, "version": v}
 		default:
@@ -466,21 +466,6 @@ func (s *Stream) idsOfLocked(collKey string) []string {
 		}
 	}
 	return ids
-}
-
-func versionOf(doc map[string]any) int64 {
-	meta, _ := doc["_meta"].(map[string]any)
-	switch v := meta["version"].(type) {
-	case int64:
-		return v
-	case int32:
-		return int64(v)
-	case int:
-		return int64(v)
-	case float64:
-		return int64(v)
-	}
-	return 0
 }
 
 // --- resuming ---

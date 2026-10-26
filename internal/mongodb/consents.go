@@ -40,13 +40,9 @@ func (s *AuthStore) AppendConsentRecord(ctx context.Context, r auth.ConsentRecor
 }
 
 func (s *AuthStore) ListConsentRecords(ctx context.Context, userID string) ([]auth.ConsentRecord, error) {
-	cur, err := s.consentRecords().Find(ctx, bson.D{{Key: "user", Value: userID}},
+	docs, err := findAll[consentRecordDoc](ctx, s.consentRecords(), bson.D{{Key: "user", Value: userID}},
 		options.Find().SetSort(bson.D{{Key: "at", Value: 1}, {Key: "_id", Value: 1}}))
 	if err != nil {
-		return nil, err
-	}
-	var docs []consentRecordDoc
-	if err := cur.All(ctx, &docs); err != nil {
 		return nil, err
 	}
 	out := make([]auth.ConsentRecord, len(docs))
@@ -67,7 +63,7 @@ func (s *AuthStore) SetUserConsent(ctx context.Context, userID, consent, version
 	} else {
 		update = bson.D{{Key: "$set", Value: bson.D{{Key: field, Value: version}}}}
 	}
-	res, err := s.users().UpdateOne(ctx, bson.D{{Key: "_id", Value: userID}}, update)
+	res, err := s.users().UpdateOne(ctx, byID(userID), update)
 	if err != nil {
 		return err
 	}

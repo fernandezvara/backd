@@ -57,7 +57,7 @@ func (s *AuthStore) ActiveDataKey(ctx context.Context, database, collection, pat
 // DataKeyByID implements fieldcrypt.Store.
 func (s *AuthStore) DataKeyByID(ctx context.Context, id string) (fieldcrypt.Record, bool, error) {
 	var d dataKeyDoc
-	err := s.dataKeys().FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&d)
+	err := s.dataKeys().FindOne(ctx, byID(id)).Decode(&d)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return fieldcrypt.Record{}, false, nil
 	}
@@ -86,19 +86,11 @@ func (s *AuthStore) DataKeysToRewrap(ctx context.Context, key string, belowVersi
 	if afterID != "" {
 		filter = append(filter, bson.E{Key: "_id", Value: bson.D{{Key: "$gt", Value: afterID}}})
 	}
-	cur, err := s.dataKeys().Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "_id", Value: 1}}).SetLimit(int64(limit)))
+	docs, err := findAll[dataKeyDoc](ctx, s.dataKeys(), filter, options.Find().SetSort(bson.D{{Key: "_id", Value: 1}}).SetLimit(int64(limit)))
 	if err != nil {
 		return nil, err
 	}
-	var docs []dataKeyDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, err
-	}
-	out := make([]fieldcrypt.Record, len(docs))
-	for i, d := range docs {
-		out[i] = d.record()
-	}
-	return out, nil
+	return mapAll(docs, dataKeyDoc.record), nil
 }
 
 // RewrapDataKey implements fieldcrypt.Store: it only replaces a wrapping that still has the
@@ -120,20 +112,12 @@ func (s *AuthStore) DataKeysByKey(ctx context.Context, key string) (int64, error
 
 // DataKeysOf implements fieldcrypt.Store.
 func (s *AuthStore) DataKeysOf(ctx context.Context, database, collection, path string) ([]fieldcrypt.Record, error) {
-	cur, err := s.dataKeys().Find(ctx, bson.D{{Key: "database", Value: database}, {Key: "collection", Value: collection}, {Key: "path", Value: path}},
+	docs, err := findAll[dataKeyDoc](ctx, s.dataKeys(), bson.D{{Key: "database", Value: database}, {Key: "collection", Value: collection}, {Key: "path", Value: path}},
 		options.Find().SetSort(bson.D{{Key: "kind", Value: 1}, {Key: "generation", Value: 1}}))
 	if err != nil {
 		return nil, err
 	}
-	var docs []dataKeyDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, err
-	}
-	out := make([]fieldcrypt.Record, len(docs))
-	for i, d := range docs {
-		out[i] = d.record()
-	}
-	return out, nil
+	return mapAll(docs, dataKeyDoc.record), nil
 }
 
 // DataKeyPaths implements fieldcrypt.Store.
@@ -158,6 +142,6 @@ func (s *AuthStore) DataKeyPaths(ctx context.Context, database, collection strin
 
 // SetDataKeyStatus implements fieldcrypt.Store.
 func (s *AuthStore) SetDataKeyStatus(ctx context.Context, id, status string) error {
-	_, err := s.dataKeys().UpdateOne(ctx, bson.D{{Key: "_id", Value: id}}, bson.D{{Key: "$set", Value: bson.D{{Key: "status", Value: status}}}})
+	_, err := s.dataKeys().UpdateOne(ctx, byID(id), bson.D{{Key: "$set", Value: bson.D{{Key: "status", Value: status}}}})
 	return err
 }

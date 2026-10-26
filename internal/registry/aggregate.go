@@ -1,16 +1,11 @@
 package registry
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"io"
-	"os"
 	"slices"
 	"strings"
 	"time"
-
-	"go.yaml.in/yaml/v3"
 )
 
 // AggregateLimits are what an aggregation may cost on this instance; a collection may only
@@ -65,23 +60,15 @@ type aggregateDoc struct {
 
 // loadAggregate reads collection.yaml's aggregate: into c and checks it against the schema.
 // It runs after the indexes and the organization policy, whose fields it may name.
-func loadAggregate(c *Collection, path string) error {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
+func loadAggregate(c *Collection, path string, data []byte) error {
+	if data == nil {
 		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("%s: %w", path, err)
 	}
 	var doc struct {
 		Aggregate *aggregateDoc `yaml:"aggregate"`
 	}
-	if err := yaml.NewDecoder(bytes.NewReader(data)).Decode(&doc); err != nil && !errors.Is(err, io.EOF) {
-		// Another section's mistake is reported by the loader that reads it.
-		if strings.Contains(err.Error(), "aggregate") || strings.Contains(err.Error(), "group_by") || strings.Contains(err.Error(), "max_groups") {
-			return fmt.Errorf("%s: %w", path, err)
-		}
-		return nil
+	if ok, err := decodeSection(data, path, &doc, "aggregate", "group_by", "max_groups"); !ok || err != nil {
+		return err
 	}
 	if doc.Aggregate == nil {
 		return nil

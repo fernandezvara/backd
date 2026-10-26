@@ -91,7 +91,7 @@ func (s *AuthStore) GetSystem(ctx context.Context, collection, id string) (map[s
 		return nil, false, err
 	}
 	var d bson.D
-	switch err := coll.FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&d); {
+	switch err := coll.FindOne(ctx, byID(id)).Decode(&d); {
 	case errors.Is(err, mongo.ErrNoDocuments):
 		return nil, false, nil
 	case err != nil:
@@ -128,7 +128,7 @@ func (s *AuthStore) ImportSystem(ctx context.Context, collection string, docs []
 		res := auth.PortableResult{ID: id}
 		doc := toBSON(d)
 		var have bson.D
-		err := coll.FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&have)
+		err := coll.FindOne(ctx, byID(id)).Decode(&have)
 		switch err {
 		case nil:
 			x, _ := exportpkg.EncodeDocument(portableFromBSON(have))
@@ -141,7 +141,7 @@ func (s *AuthStore) ImportSystem(ctx context.Context, collection string, docs []
 			case mode == "replace":
 				res.Outcome = auth.PortableReplaced
 				if write {
-					if _, rerr := coll.ReplaceOne(ctx, bson.D{{Key: "_id", Value: id}}, doc); rerr != nil {
+					if _, rerr := coll.ReplaceOne(ctx, byID(id), doc); rerr != nil {
 						res.Outcome, res.Reason = writeFailure(rerr)
 					}
 				}

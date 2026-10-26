@@ -9,30 +9,11 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/rules"
+	"github.com/fernandezvara/backd/internal/strutil"
 )
-
-func pascal(s string) string {
-	var b strings.Builder
-	up := true
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z':
-			if up {
-				r -= 'a' - 'A'
-			}
-			b.WriteRune(r)
-			up = false
-		case r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-			up = false
-		default:
-			up = true
-		}
-	}
-	return b.String()
-}
 
 // addFileDetails declares what backd stores about an uploaded file.
 func (b *builder) addFileDetails() {
@@ -60,12 +41,12 @@ func (b *builder) addFileDetails() {
 // $defs) into OpenAPI component schemas under the given name: the root as name, each $def as
 // name_<def>. It returns the root's reference.
 func (b *builder) toSchemas(name string, raw map[string]any) {
-	doc := deepCopy(jsonRoundTrip(raw)).(map[string]any)
+	doc := docutil.DeepCopy(jsonRoundTrip(raw)).(map[string]any)
 	names := map[string]string{"#": name}
 	for _, k := range []string{"$defs", "definitions"} {
 		if defs, ok := doc[k].(map[string]any); ok {
 			for d := range defs {
-				names["#/"+k+"/"+d] = name + "_" + pascal(d)
+				names["#/"+k+"/"+d] = name + "_" + strutil.Pascal(d)
 			}
 		}
 	}
@@ -91,7 +72,7 @@ func (b *builder) toSchemas(name string, raw map[string]any) {
 		if defs, ok := doc[k].(map[string]any); ok {
 			for d, s := range defs {
 				fix(s)
-				b.extra[name+"_"+pascal(d)] = s
+				b.extra[name+"_"+strutil.Pascal(d)] = s
 			}
 			delete(doc, k)
 		}
@@ -123,7 +104,7 @@ func (b *builder) collection(db string, c *registry.Collection) {
 // collectionAt adds the collection's schemas and its paths: those clients use, subject to the
 // collection's rules, or (admin) the admin data routes, which are past the rules.
 func (b *builder) collectionAt(db string, c *registry.Collection, admin bool) {
-	alias := pascal(db) + pascal(c.Name)
+	alias := strutil.Pascal(db) + strutil.Pascal(c.Name)
 	tag := db + "/" + c.Name
 	contract := "/v1/{realm}/{database}/{collection}"
 	base := "/v1/" + b.realm + "/" + db + "/" + c.Name
@@ -145,7 +126,7 @@ func (b *builder) collectionAt(db string, c *registry.Collection, admin bool) {
 		return p
 	}
 	doc := b.extra[alias].(map[string]any)
-	input := deepCopy(doc).(map[string]any)
+	input := docutil.DeepCopy(doc).(map[string]any)
 	for fileField, f := range c.Files {
 		if f == nil {
 			continue
@@ -187,7 +168,7 @@ func (b *builder) collectionAt(db string, c *registry.Collection, admin bool) {
 			idSchema["pattern"] = cid.Anchored()
 			idSchema["description"] = "Chosen by the client, and never changes. Letters, digits and - . _ ~ : @ only, not starting with _ or ."
 		}
-		create := deepCopy(input).(map[string]any)
+		create := docutil.DeepCopy(input).(map[string]any)
 		props(create)["id"] = idSchema
 		creq, _ := create["required"].([]any)
 		create["required"] = append([]any{"id"}, creq...)
@@ -195,11 +176,11 @@ func (b *builder) collectionAt(db string, c *registry.Collection, admin bool) {
 		createBody = alias + "Create"
 	}
 	// Lists: the contract's page with this collection's documents.
-	list := deepCopy(b.components("schemas")["DocumentList"]).(map[string]any)
+	list := docutil.DeepCopy(b.components("schemas")["DocumentList"]).(map[string]any)
 	rewriteRefs(list, map[string]string{"#/components/schemas/Document": "#/components/schemas/" + alias})
 	b.extra[alias+"List"] = list
 	// The single-document response of the contract, typed.
-	resp := deepCopy(b.components("responses")["Document"]).(map[string]any)
+	resp := docutil.DeepCopy(b.components("responses")["Document"]).(map[string]any)
 	rewriteRefs(resp, map[string]string{"#/components/schemas/Document": "#/components/schemas/" + alias})
 	b.responses[alias+"Document"] = resp
 
@@ -221,7 +202,7 @@ func (b *builder) collectionAt(db string, c *registry.Collection, admin bool) {
 
 	prefix := contract
 	sub := func(item map[string]any, path string) {
-		cp := deepCopy(item).(map[string]any)
+		cp := docutil.DeepCopy(item).(map[string]any)
 		dropParams(cp, "realm", "database", "collection")
 		for method, op := range operations(cp) {
 			id, _ := op["operationId"].(string)
@@ -275,7 +256,7 @@ func (b *builder) collectionAt(db string, c *registry.Collection, admin bool) {
 		}
 	}
 	// File endpoints, one set per file field.
-	for _, field := range slices.Sorted(keysOf(c.Files)) {
+	for _, field := range slices.Sorted(maps.Keys(c.Files)) {
 		for _, suffix := range []string{
 			"/_files/{field}", "/_files/{field}/uploads", "/{id}/_files/{field}/uploads",
 			"/_files/{field}/uploads/{uploadID}/complete", "/{id}/_files/{field}", "/{id}/_files/{field}/{fileID}",
@@ -285,13 +266,13 @@ func (b *builder) collectionAt(db string, c *registry.Collection, admin bool) {
 			if item == nil {
 				continue
 			}
-			cp := deepCopy(item).(map[string]any)
+			cp := docutil.DeepCopy(item).(map[string]any)
 			dropParams(cp, "fileField")
 			for _, op := range operations(cp) {
 				dropParams(op, "fileField")
 			}
 			path := base + strings.ReplaceAll(suffix, "{field}", field)
-			b.addFileItem(path, tag, alias+pascal(field), cp, mapping)
+			b.addFileItem(path, tag, alias+strutil.Pascal(field), cp, mapping)
 		}
 	}
 }
@@ -309,7 +290,7 @@ func typeIDParam(item, schema map[string]any) {
 			if !ok || pm["$ref"] != "#/components/parameters/id" {
 				continue
 			}
-			params[i] = map[string]any{"name": "id", "in": "path", "required": true, "schema": deepCopy(schema)}
+			params[i] = map[string]any{"name": "id", "in": "path", "required": true, "schema": docutil.DeepCopy(schema)}
 		}
 		return params
 	}
@@ -342,9 +323,9 @@ func (b *builder) function(db string, fn *registry.Function) {
 	if item == nil {
 		return
 	}
-	cp := deepCopy(item).(map[string]any)
+	cp := docutil.DeepCopy(item).(map[string]any)
 	dropParams(cp, "realm", "database", "function")
-	alias := pascal(db) + pascal(fn.Name)
+	alias := strutil.Pascal(db) + strutil.Pascal(fn.Name)
 	tag := db + " functions"
 	for _, op := range operations(cp) {
 		dropParams(op, "realm", "database", "function")

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"maps"
 	"net/http"
 	"slices"
 	"strconv"
@@ -66,7 +67,7 @@ func (a *adminAPI) realmTriggers(realm string) []map[string]any {
 	if rl == nil {
 		return out
 	}
-	for _, dbName := range slices.Sorted(mapKeys(rl.Databases)) {
+	for _, dbName := range slices.Sorted(maps.Keys(rl.Databases)) {
 		for _, c := range rl.Databases[dbName].SortedCollections() {
 			ts := slices.Clone(c.Triggers)
 			slices.SortFunc(ts, func(x, y *registry.Trigger) int {

@@ -56,7 +56,7 @@ func (s *AuthStore) mfa() *mongo.Collection        { return s.db.Collection(MFAC
 
 // dropSecondFactors removes a user's second factors and pending steps.
 func (s *AuthStore) dropSecondFactors(ctx context.Context, userID string) error {
-	if _, err := s.mfa().DeleteOne(ctx, bson.D{{Key: "_id", Value: userID}}); err != nil {
+	if _, err := s.mfa().DeleteOne(ctx, byID(userID)); err != nil {
 		return err
 	}
 	_, err := s.challenges().DeleteMany(ctx, bson.D{{Key: "user_id", Value: userID}})
@@ -73,11 +73,7 @@ func (s *AuthStore) PutChallenge(ctx context.Context, c auth.AuthChallenge) erro
 }
 
 func (s *AuthStore) GetChallenge(ctx context.Context, id string, now time.Time) (auth.AuthChallenge, error) {
-	var d challengeDoc
-	err := s.challenges().FindOne(ctx, unexpired(id, now)).Decode(&d)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return auth.AuthChallenge{}, auth.ErrNotFound
-	}
+	d, err := getOne[challengeDoc](ctx, s.challenges(), unexpired(id, now), auth.ErrNotFound)
 	if err != nil {
 		return auth.AuthChallenge{}, err
 	}
@@ -157,7 +153,7 @@ func (s *AuthStore) SetChallengeSecrets(ctx context.Context, id, tokenHash, code
 }
 
 func (s *AuthStore) DeleteChallenge(ctx context.Context, id string) error {
-	_, err := s.challenges().DeleteOne(ctx, bson.D{{Key: "_id", Value: id}})
+	_, err := s.challenges().DeleteOne(ctx, byID(id))
 	return err
 }
 
@@ -171,11 +167,7 @@ func (s *AuthStore) DeleteChallengesOfUser(ctx context.Context, userID string, k
 }
 
 func (s *AuthStore) MFAOf(ctx context.Context, userID string) (auth.MFARecord, error) {
-	var d mfaDoc
-	err := s.mfa().FindOne(ctx, bson.D{{Key: "_id", Value: userID}}).Decode(&d)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return auth.MFARecord{}, auth.ErrNotFound
-	}
+	d, err := getOne[mfaDoc](ctx, s.mfa(), byID(userID), auth.ErrNotFound)
 	if err != nil {
 		return auth.MFARecord{}, err
 	}
@@ -187,14 +179,14 @@ func (s *AuthStore) PutMFA(ctx context.Context, r auth.MFARecord) error {
 	if codes == nil {
 		codes = []string{}
 	}
-	_, err := s.mfa().ReplaceOne(ctx, bson.D{{Key: "_id", Value: r.UserID}},
+	_, err := s.mfa().ReplaceOne(ctx, byID(r.UserID),
 		mfaDoc{ID: r.UserID, Secret: r.Secret, EnabledAt: r.EnabledAt, LastStep: r.LastStep, RecoveryCodes: codes},
 		options.Replace().SetUpsert(true))
 	return err
 }
 
 func (s *AuthStore) DeleteMFA(ctx context.Context, userID string) error {
-	_, err := s.mfa().DeleteOne(ctx, bson.D{{Key: "_id", Value: userID}})
+	_, err := s.mfa().DeleteOne(ctx, byID(userID))
 	return err
 }
 

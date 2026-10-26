@@ -4,8 +4,9 @@ import (
 	"cmp"
 	"fmt"
 	"reflect"
-	"strings"
 	"time"
+
+	"github.com/fernandezvara/backd/internal/docutil"
 )
 
 // Match evaluates a filter against a document held in memory, with the
@@ -54,21 +55,8 @@ func Match(doc Document, f Filter) (bool, error) {
 	return false, fmt.Errorf("unknown filter %T", f)
 }
 
-// lookup reads a dot path from a document; a missing field is nil.
-func lookup(doc map[string]any, path string) any {
-	var v any = map[string]any(doc)
-	for p := range strings.SplitSeq(path, ".") {
-		m, ok := v.(map[string]any)
-		if !ok {
-			return nil
-		}
-		v = m[p]
-	}
-	return v
-}
-
 func matchCondition(doc Document, c Condition) (bool, error) {
-	v := lookup(doc, c.Field)
+	v := docutil.Get(doc, c.Field)
 	switch c.Op {
 	case OpEq:
 		return equalsAny(v, c.Value), nil

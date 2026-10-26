@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -132,7 +133,7 @@ func (rv *revealer) note(doc map[string]any) {
 	}
 	seen := false
 	for _, ef := range rv.c.Encrypted {
-		if _, ok := docValueAt(doc, ef.Path); ok {
+		if _, ok := docutil.GetPath(doc, ef.Path); ok {
 			rv.revealed[ef.Path], seen = true, true
 		}
 	}

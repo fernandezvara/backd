@@ -4,13 +4,16 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/fernandezvara/backd/api"
+	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/internal/strutil"
 )
 
 // Admin generates the document of the realm's admin API: its administration routes, the data
@@ -63,7 +66,7 @@ func (b *builder) admin() (*Document, error) {
 
 	prefix := "/v1/{realm}/_admin/"
 	paths, _ := b.base["paths"].(map[string]any)
-	for _, p := range slices.Sorted(keysOf(paths)) {
+	for _, p := range slices.Sorted(maps.Keys(paths)) {
 		rest, ok := strings.CutPrefix(p, prefix)
 		if !ok {
 			continue
@@ -79,7 +82,7 @@ func (b *builder) admin() (*Document, error) {
 		b.addStatic(p, "_admin/"+rest, nil)
 	}
 
-	for _, dbName := range slices.Sorted(keysOf(b.rl.Databases)) {
+	for _, dbName := range slices.Sorted(maps.Keys(b.rl.Databases)) {
 		db := b.rl.Databases[dbName]
 		if len(db.Collections) > 0 {
 			b.addStatic(prefix+"data/{database}/_batch", "_admin/data/"+dbName+"/_batch", map[string]string{"{database}": dbName})
@@ -92,7 +95,7 @@ func (b *builder) admin() (*Document, error) {
 		if db.Functions == nil {
 			continue
 		}
-		for _, name := range slices.Sorted(keysOf(db.Functions.Functions)) {
+		for _, name := range slices.Sorted(maps.Keys(db.Functions.Functions)) {
 			fn := db.Functions.Functions[name]
 			if fn.Mode != registry.ModeWebhook {
 				b.adminInvoke(dbName, fn)
@@ -135,11 +138,11 @@ func (b *builder) adminInvoke(db string, fn *registry.Function) {
 	if item == nil {
 		return
 	}
-	cp := deepCopy(item).(map[string]any)
+	cp := docutil.DeepCopy(item).(map[string]any)
 	dropParams(cp, "realm", "database")
 	// The contract's generic `name` parameter is the path's literal here.
 	delete(cp, "parameters")
-	alias := pascal(db) + pascal(fn.Name)
+	alias := strutil.Pascal(db) + strutil.Pascal(fn.Name)
 	tag := "functions"
 	for _, op := range operations(cp) {
 		dropParams(op, "realm", "database")

@@ -124,11 +124,7 @@ func (s *AuthStore) CreateUser(ctx context.Context, u auth.User) error {
 }
 
 func (s *AuthStore) UserByEmail(ctx context.Context, email string) (auth.User, error) {
-	var d userDoc
-	err := s.users().FindOne(ctx, bson.D{{Key: "email", Value: email}}).Decode(&d)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return auth.User{}, auth.ErrNotFound
-	}
+	d, err := getOne[userDoc](ctx, s.users(), bson.D{{Key: "email", Value: email}}, auth.ErrNotFound)
 	if err != nil {
 		return auth.User{}, err
 	}
@@ -136,11 +132,7 @@ func (s *AuthStore) UserByEmail(ctx context.Context, email string) (auth.User, e
 }
 
 func (s *AuthStore) UserByID(ctx context.Context, id string) (auth.User, error) {
-	var d userDoc
-	err := s.users().FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&d)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return auth.User{}, auth.ErrNotFound
-	}
+	d, err := getOne[userDoc](ctx, s.users(), byID(id), auth.ErrNotFound)
 	if err != nil {
 		return auth.User{}, err
 	}
@@ -148,19 +140,11 @@ func (s *AuthStore) UserByID(ctx context.Context, id string) (auth.User, error) 
 }
 
 func (s *AuthStore) ListUsers(ctx context.Context) ([]auth.User, error) {
-	cur, err := s.users().Find(ctx, bson.D{}, options.Find().SetSort(bson.D{{Key: "email", Value: 1}}))
+	docs, err := findAll[userDoc](ctx, s.users(), bson.D{}, options.Find().SetSort(bson.D{{Key: "email", Value: 1}}))
 	if err != nil {
 		return nil, err
 	}
-	var docs []userDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, err
-	}
-	out := make([]auth.User, len(docs))
-	for i, d := range docs {
-		out[i] = d.user()
-	}
-	return out, nil
+	return mapAll(docs, userDoc.user), nil
 }
 
 func (s *AuthStore) ListUsersPage(ctx context.Context, contains, after string, skip, limit int) ([]auth.User, bool, error) {
@@ -178,12 +162,8 @@ func (s *AuthStore) ListUsersPage(ctx context.Context, contains, after string, s
 		filter = bson.D{{Key: "email", Value: email}}
 	}
 	opts := options.Find().SetSort(bson.D{{Key: "email", Value: 1}}).SetSkip(int64(skip)).SetLimit(int64(limit) + 1)
-	cur, err := s.users().Find(ctx, filter, opts)
+	docs, err := findAll[userDoc](ctx, s.users(), filter, opts)
 	if err != nil {
-		return nil, false, err
-	}
-	var docs []userDoc
-	if err := cur.All(ctx, &docs); err != nil {
 		return nil, false, err
 	}
 	hasMore := len(docs) > limit
@@ -308,20 +288,12 @@ func (s *AuthStore) EraseUser(ctx context.Context, id, placeholderEmail string, 
 
 // ListUnverifiedUsers returns the oldest users that never verified their address.
 func (s *AuthStore) ListUnverifiedUsers(ctx context.Context, before time.Time, limit int) ([]auth.User, error) {
-	cur, err := s.users().Find(ctx, bson.D{{Key: "email_verified", Value: false}, {Key: "created_at", Value: bson.D{{Key: "$lt", Value: before}}}},
+	docs, err := findAll[userDoc](ctx, s.users(), bson.D{{Key: "email_verified", Value: false}, {Key: "created_at", Value: bson.D{{Key: "$lt", Value: before}}}},
 		options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}}).SetLimit(int64(limit)))
 	if err != nil {
 		return nil, err
 	}
-	var docs []userDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, err
-	}
-	out := make([]auth.User, len(docs))
-	for i, d := range docs {
-		out[i] = d.user()
-	}
-	return out, nil
+	return mapAll(docs, userDoc.user), nil
 }
 
 // DeleteUser removes sessions and identities first, so an interrupted
@@ -336,7 +308,7 @@ func (s *AuthStore) DeleteUser(ctx context.Context, id string) error {
 	if err := s.dropSecondFactors(ctx, id); err != nil {
 		return err
 	}
-	res, err := s.users().DeleteOne(ctx, bson.D{{Key: "_id", Value: id}})
+	res, err := s.users().DeleteOne(ctx, byID(id))
 	if err != nil {
 		return err
 	}
@@ -382,19 +354,11 @@ func (s *AuthStore) PutIdentity(ctx context.Context, id auth.Identity) error {
 }
 
 func (s *AuthStore) ListIdentities(ctx context.Context, userID string) ([]auth.Identity, error) {
-	cur, err := s.identities().Find(ctx, bson.D{{Key: "user_id", Value: userID}}, options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}, {Key: "_id", Value: 1}}))
+	docs, err := findAll[identityDoc](ctx, s.identities(), bson.D{{Key: "user_id", Value: userID}}, options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}, {Key: "_id", Value: 1}}))
 	if err != nil {
 		return nil, err
 	}
-	var docs []identityDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, err
-	}
-	out := make([]auth.Identity, len(docs))
-	for i, d := range docs {
-		out[i] = d.identity()
-	}
-	return out, nil
+	return mapAll(docs, identityDoc.identity), nil
 }
 
 func (s *AuthStore) IdentityOf(ctx context.Context, userID, provider string) (auth.Identity, error) {
@@ -402,11 +366,7 @@ func (s *AuthStore) IdentityOf(ctx context.Context, userID, provider string) (au
 }
 
 func (s *AuthStore) IdentityOfIn(ctx context.Context, userID, provider, org string) (auth.Identity, error) {
-	var d identityDoc
-	err := s.identities().FindOne(ctx, bson.D{{Key: "user_id", Value: userID}, {Key: "provider", Value: provider}, orgFilter(org)}).Decode(&d)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return auth.Identity{}, auth.ErrNotFound
-	}
+	d, err := getOne[identityDoc](ctx, s.identities(), bson.D{{Key: "user_id", Value: userID}, {Key: "provider", Value: provider}, orgFilter(org)}, auth.ErrNotFound)
 	if err != nil {
 		return auth.Identity{}, err
 	}
@@ -460,11 +420,7 @@ func (s *AuthStore) Identity(ctx context.Context, provider, subject string) (aut
 }
 
 func (s *AuthStore) IdentityIn(ctx context.Context, provider, org, subject string) (auth.Identity, error) {
-	var d identityDoc
-	err := s.identities().FindOne(ctx, bson.D{{Key: "provider", Value: provider}, {Key: "subject", Value: subject}, orgFilter(org)}).Decode(&d)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return auth.Identity{}, auth.ErrNotFound
-	}
+	d, err := getOne[identityDoc](ctx, s.identities(), bson.D{{Key: "provider", Value: provider}, {Key: "subject", Value: subject}, orgFilter(org)}, auth.ErrNotFound)
 	if err != nil {
 		return auth.Identity{}, err
 	}
@@ -654,20 +610,12 @@ func (s *AuthStore) TouchSession(ctx context.Context, id string, lastUsed, expir
 }
 
 func (s *AuthStore) ListSessions(ctx context.Context, userID string) ([]auth.Session, error) {
-	cur, err := s.sessions().Find(ctx, bson.D{{Key: "user_id", Value: userID}},
+	docs, err := findAll[sessionDoc](ctx, s.sessions(), bson.D{{Key: "user_id", Value: userID}},
 		options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}))
 	if err != nil {
 		return nil, err
 	}
-	var docs []sessionDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, err
-	}
-	out := make([]auth.Session, len(docs))
-	for i, d := range docs {
-		out[i] = d.session()
-	}
-	return out, nil
+	return mapAll(docs, sessionDoc.session), nil
 }
 
 func (s *AuthStore) DeleteSession(ctx context.Context, userID, id string) error {
@@ -722,14 +670,7 @@ func scopes(stored []string) auth.Scopes {
 }
 
 func (d apiKeyDoc) key() auth.APIKey {
-	utc := func(t *time.Time) *time.Time {
-		if t == nil {
-			return nil
-		}
-		u := t.UTC()
-		return &u
-	}
-	return auth.APIKey{Name: d.Name, Role: auth.KeyRole(d.Role), Networks: networks(d.Networks), Scopes: scopes(d.Scopes), Prefix: d.Prefix, Hash: d.Hash, CreatedAt: d.CreatedAt.UTC(), LastUsedAt: utc(d.LastUsedAt), ExpiresAt: utc(d.ExpiresAt), Org: d.Org}
+	return auth.APIKey{Name: d.Name, Role: auth.KeyRole(d.Role), Networks: networks(d.Networks), Scopes: scopes(d.Scopes), Prefix: d.Prefix, Hash: d.Hash, CreatedAt: d.CreatedAt.UTC(), LastUsedAt: utcPtr(d.LastUsedAt), ExpiresAt: utcPtr(d.ExpiresAt), Org: d.Org}
 }
 
 func (s *AuthStore) CreateAPIKey(ctx context.Context, k auth.APIKey) error {
@@ -743,11 +684,7 @@ func (s *AuthStore) CreateAPIKey(ctx context.Context, k auth.APIKey) error {
 }
 
 func (s *AuthStore) APIKeyByHash(ctx context.Context, hash string) (auth.APIKey, error) {
-	var d apiKeyDoc
-	err := s.apiKeys().FindOne(ctx, bson.D{{Key: "_id", Value: hash}}).Decode(&d)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return auth.APIKey{}, auth.ErrKeyNotFound
-	}
+	d, err := getOne[apiKeyDoc](ctx, s.apiKeys(), byID(hash), auth.ErrKeyNotFound)
 	if err != nil {
 		return auth.APIKey{}, err
 	}
@@ -755,19 +692,11 @@ func (s *AuthStore) APIKeyByHash(ctx context.Context, hash string) (auth.APIKey,
 }
 
 func (s *AuthStore) ListAPIKeys(ctx context.Context) ([]auth.APIKey, error) {
-	cur, err := s.apiKeys().Find(ctx, bson.D{}, options.Find().SetSort(bson.D{{Key: "name", Value: 1}}))
+	docs, err := findAll[apiKeyDoc](ctx, s.apiKeys(), bson.D{}, options.Find().SetSort(bson.D{{Key: "name", Value: 1}}))
 	if err != nil {
 		return nil, err
 	}
-	var docs []apiKeyDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, err
-	}
-	out := make([]auth.APIKey, len(docs))
-	for i, d := range docs {
-		out[i] = d.key()
-	}
-	return out, nil
+	return mapAll(docs, apiKeyDoc.key), nil
 }
 
 func (s *AuthStore) DeleteAPIKey(ctx context.Context, name string) error {
@@ -791,7 +720,7 @@ func (s *AuthStore) LoginAttempts(ctx context.Context, key string) (auth.Attempt
 		Failures      int       `bson:"failures"`
 		LastFailureAt time.Time `bson:"last_failure_at"`
 	}
-	err := s.attempts().FindOne(ctx, bson.D{{Key: "_id", Value: key}}).Decode(&d)
+	err := s.attempts().FindOne(ctx, byID(key)).Decode(&d)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return auth.Attempts{}, nil
 	}
@@ -812,7 +741,7 @@ func (s *AuthStore) RecordLoginFailure(ctx context.Context, key string, at, expi
 		{Key: "last_failure_at", Value: at},
 		{Key: "expires_at", Value: expires},
 	}}}}
-	_, err := s.attempts().UpdateOne(ctx, bson.D{{Key: "_id", Value: key}}, pipeline, options.UpdateOne().SetUpsert(true))
+	_, err := s.attempts().UpdateOne(ctx, byID(key), pipeline, options.UpdateOne().SetUpsert(true))
 	return err
 }
 
@@ -840,7 +769,7 @@ func (s *AuthStore) ReleaseLoginLock(ctx context.Context, key, owner string) err
 }
 
 func (s *AuthStore) ClearLoginAttempts(ctx context.Context, key string) error {
-	_, err := s.attempts().DeleteOne(ctx, bson.D{{Key: "_id", Value: key}})
+	_, err := s.attempts().DeleteOne(ctx, byID(key))
 	return err
 }
 
@@ -861,7 +790,7 @@ func (s *AuthStore) IncrementCounter(ctx context.Context, key string, at, expire
 		Failures  int       `bson:"failures"`
 		ExpiresAt time.Time `bson:"expires_at"`
 	}
-	err := s.attempts().FindOneAndUpdate(ctx, bson.D{{Key: "_id", Value: key}}, pipeline,
+	err := s.attempts().FindOneAndUpdate(ctx, byID(key), pipeline,
 		options.FindOneAndUpdate().SetUpsert(true).SetReturnDocument(options.After)).Decode(&d)
 	if err != nil {
 		return 0, time.Time{}, err
@@ -891,24 +820,19 @@ func (s *AuthStore) CreateInvitation(ctx context.Context, inv auth.Invitation) e
 }
 
 func (s *AuthStore) ClaimInvitation(ctx context.Context, hash string, now time.Time) (auth.Invitation, error) {
-	var d invitationDoc
-	err := s.invitations().FindOneAndDelete(ctx, bson.D{
-		{Key: "token_hash", Value: hash}, {Key: "expires_at", Value: bson.D{{Key: "$gt", Value: now}}},
-	}).Decode(&d)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return auth.Invitation{}, auth.ErrNotFound
-	}
-	if err != nil {
-		return auth.Invitation{}, err
-	}
-	return d.invitation(), nil
+	return s.claimInvitation(ctx, "token_hash", hash, now)
 }
 
 // ClaimInvitationByID deletes and returns an unexpired invitation by id.
 func (s *AuthStore) ClaimInvitationByID(ctx context.Context, id string, now time.Time) (auth.Invitation, error) {
+	return s.claimInvitation(ctx, "_id", id, now)
+}
+
+// claimInvitation deletes and returns the unexpired invitation whose field is value.
+func (s *AuthStore) claimInvitation(ctx context.Context, field, value string, now time.Time) (auth.Invitation, error) {
 	var d invitationDoc
 	err := s.invitations().FindOneAndDelete(ctx, bson.D{
-		{Key: "_id", Value: id}, {Key: "expires_at", Value: bson.D{{Key: "$gt", Value: now}}},
+		{Key: field, Value: value}, {Key: "expires_at", Value: bson.D{{Key: "$gt", Value: now}}},
 	}).Decode(&d)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return auth.Invitation{}, auth.ErrNotFound
@@ -920,23 +844,15 @@ func (s *AuthStore) ClaimInvitationByID(ctx context.Context, id string, now time
 }
 
 func (s *AuthStore) ListInvitations(ctx context.Context) ([]auth.Invitation, error) {
-	cur, err := s.invitations().Find(ctx, bson.D{}, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}))
+	docs, err := findAll[invitationDoc](ctx, s.invitations(), bson.D{}, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}))
 	if err != nil {
 		return nil, err
 	}
-	var docs []invitationDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, err
-	}
-	out := make([]auth.Invitation, len(docs))
-	for i, d := range docs {
-		out[i] = d.invitation()
-	}
-	return out, nil
+	return mapAll(docs, invitationDoc.invitation), nil
 }
 
 func (s *AuthStore) DeleteInvitation(ctx context.Context, id string) error {
-	res, err := s.invitations().DeleteOne(ctx, bson.D{{Key: "_id", Value: id}})
+	res, err := s.invitations().DeleteOne(ctx, byID(id))
 	if err != nil {
 		return err
 	}
@@ -953,13 +869,5 @@ func (s *AuthStore) Transact(ctx context.Context, fn func(ctx context.Context) e
 	if mongo.SessionFromContext(ctx) != nil {
 		return fn(ctx)
 	}
-	sess, err := s.db.Client().StartSession()
-	if err != nil {
-		return err
-	}
-	defer sess.EndSession(ctx)
-	_, err = sess.WithTransaction(ctx, func(sessCtx context.Context) (any, error) {
-		return nil, fn(sessCtx)
-	})
-	return err
+	return withTransaction(ctx, s.db.Client(), fn)
 }

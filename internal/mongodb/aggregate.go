@@ -61,7 +61,7 @@ func (r *Repository) Aggregate(ctx context.Context, q storage.AggregateQuery) (s
 	if len(id) == 0 {
 		groupID = nil
 	}
-	group := bson.D{{Key: "_id", Value: groupID}}
+	group := byID(groupID)
 	var sizes bson.D
 	for i, m := range q.Metrics {
 		name := fmt.Sprintf("m%d", i)
