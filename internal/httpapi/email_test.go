@@ -97,7 +97,7 @@ func TestEmailJob(t *testing.T) {
 	// Nothing stored contains the token, the link or the address (client
 	// addresses are counted like login attempts are): only its hash.
 	tokens := store.EmailTokens()
-	if len(tokens) != 1 || tokens[0].Hash != auth.HashEmailToken(token) || tokens[0].Purpose != "verify-email" || tokens[0].UserID != f.adaID ||
+	if len(tokens) != 1 || tokens[0].Hash != auth.HashToken(token) || tokens[0].Purpose != "verify-email" || tokens[0].UserID != f.adaID ||
 		tokens[0].RedirectTo != "https://app.acme.example/welcome" || !tokens[0].ExpiresAt.Equal(f.clock.Add(48*time.Hour)) {
 		t.Fatalf("stored token: %+v", tokens)
 	}

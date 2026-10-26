@@ -2,10 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"time"
 )
@@ -37,12 +33,6 @@ type EmailToken struct {
 // used, or for another purpose); callers answer them all the same.
 var ErrInvalidToken = errors.New("invalid, expired or used token")
 
-// HashEmailToken is the hash a token is stored under.
-func HashEmailToken(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
-}
-
 // NewEmailToken creates a token of 256 random bits for userID and purpose,
 // valid for ttl, stores its hash, and returns the token itself. Whoever
 // receives it must not store it.
@@ -53,14 +43,13 @@ func (s *Users) NewEmailToken(ctx context.Context, purpose, userID, redirectTo s
 // NewEmailTokenFor is NewEmailToken for a token that also carries an address
 // or an invitation: t's Hash, CreatedAt and ExpiresAt are filled in.
 func (s *Users) NewEmailTokenFor(ctx context.Context, t EmailToken, ttl time.Duration) (token string, expiresAt time.Time, err error) {
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
+	token, err = newOpaqueToken("")
+	if err != nil {
 		return "", time.Time{}, err
 	}
-	token = base64.RawURLEncoding.EncodeToString(raw)
 	now := s.now()
 	expiresAt = now.Add(ttl)
-	t.Hash, t.CreatedAt, t.ExpiresAt = HashEmailToken(token), now, expiresAt
+	t.Hash, t.CreatedAt, t.ExpiresAt = HashToken(token), now, expiresAt
 	err = s.Store.CreateEmailToken(ctx, t)
 	return token, expiresAt, err
 }
@@ -68,7 +57,7 @@ func (s *Users) NewEmailTokenFor(ctx context.Context, t EmailToken, ttl time.Dur
 // PeekEmailToken checks a token for purpose without using it, so a page can
 // show its form before the person acts. Every failure is ErrInvalidToken.
 func (s *Users) PeekEmailToken(ctx context.Context, token, purpose string) (EmailToken, error) {
-	t, err := s.Store.GetEmailToken(ctx, HashEmailToken(token))
+	t, err := s.Store.GetEmailToken(ctx, HashToken(token))
 	if err != nil {
 		return EmailToken{}, err
 	}
@@ -85,7 +74,7 @@ func (s *Users) PeekEmailToken(ctx context.Context, token, purpose string) (Emai
 // ErrInvalidToken.
 func (s *Users) RedeemEmailToken(ctx context.Context, token, purpose string) (EmailToken, error) {
 	now := s.now()
-	t, err := s.Store.RedeemEmailToken(ctx, HashEmailToken(token), purpose, now)
+	t, err := s.Store.RedeemEmailToken(ctx, HashToken(token), purpose, now)
 	if err != nil {
 		return EmailToken{}, err
 	}

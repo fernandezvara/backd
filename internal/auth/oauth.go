@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
@@ -101,11 +100,7 @@ type LoginCode struct {
 
 // randomValue is a URL-safe random string of 256 bits.
 func randomValue() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
+	return newOpaqueToken("")
 }
 
 // NewPKCE makes a PKCE verifier and its S256 challenge.

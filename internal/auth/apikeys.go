@@ -2,8 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
@@ -108,11 +106,10 @@ func (s *Users) CreateAPIKey(ctx context.Context, name string, opts KeyOptions) 
 		}
 		bound = o.ID
 	}
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
+	key, err := newOpaqueToken(APIKeyPrefix)
+	if err != nil {
 		return APIKey{}, "", err
 	}
-	key := APIKeyPrefix + base64.RawURLEncoding.EncodeToString(b)
 	now := s.now()
 	k := APIKey{Name: name, Role: role, Networks: opts.Networks, Scopes: opts.Scopes, Prefix: key[:displayLen], Hash: HashToken(key), CreatedAt: now, Org: bound}
 	if ttl > 0 {

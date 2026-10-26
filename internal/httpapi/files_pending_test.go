@@ -118,7 +118,7 @@ func TestPendingUploadReferencesAreRefused(t *testing.T) {
 	otherID, otherTok := f.pending(t, f.ada, "library", "avatar", pngBytes(5))
 	refuse("the wrong collection", f.ada, `{"title": "t", "scan": `+ref(otherID, otherTok)+`}`)
 	// Not finished: journaled, never completed.
-	_ = f.svc.JournalPendingUpload(context.Background(), auth.FileJournalEntry{ID: "fl_unfinished", Database: "app", Collection: "forms", Field: "scan", Key: "k", TokenHash: auth.HashUploadToken("fut_x"), CallerKey: "user:x"}, time.Hour)
+	_ = f.svc.JournalPendingUpload(context.Background(), auth.FileJournalEntry{ID: "fl_unfinished", Database: "app", Collection: "forms", Field: "scan", Key: "k", TokenHash: auth.HashToken("fut_x"), CallerKey: "user:x"}, time.Hour)
 	refuse("an unfinished upload", f.ada, `{"title": "t", "scan": `+ref("fl_unfinished", "fut_x")+`}`)
 	// Malformed references.
 	refuse("no token", f.ada, `{"title": "t", "scan": {"upload": "`+id+`"}}`)

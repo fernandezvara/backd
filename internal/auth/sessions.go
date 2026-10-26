@@ -71,13 +71,19 @@ type Principal struct {
 	Session Session
 }
 
-// NewSessionToken returns a new random session token (256 bits).
-func NewSessionToken() (string, error) {
+// newOpaqueToken is prefix followed by 256 random bits, URL-safe. It is what a token the
+// caller holds is made of; only its hash is stored.
+func newOpaqueToken(prefix string) (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
-	return SessionTokenPrefix + base64.RawURLEncoding.EncodeToString(b), nil
+	return prefix + base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// NewSessionToken returns a new random session token (256 bits).
+func NewSessionToken() (string, error) {
+	return newOpaqueToken(SessionTokenPrefix)
 }
 
 // HashToken is the stored form of a token: hex SHA-256. Tokens are random

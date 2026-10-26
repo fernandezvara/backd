@@ -42,7 +42,7 @@ func TestPendingUploadsOnMongoDB(t *testing.T) {
 	until := t0.Add(time.Hour)
 	for _, id := range []string{"fl_p1", "fl_p2"} {
 		e := auth.FileJournalEntry{ID: id, Database: "app", Collection: "forms", Field: "scan", Key: "k/" + id, Status: auth.JournalWriting, CreatedAt: t0, UpdatedAt: t0, ExpiresAt: until.Add(24 * time.Hour),
-			Pending: true, TokenHash: auth.HashUploadToken("fut_" + id), CallerKey: "user:u1", PendingUntil: until}
+			Pending: true, TokenHash: auth.HashToken("fut_" + id), CallerKey: "user:u1", PendingUntil: until}
 		if err := s.JournalFile(ctx, e); err != nil {
 			t.Fatal(err)
 		}
@@ -54,7 +54,7 @@ func TestPendingUploadsOnMongoDB(t *testing.T) {
 		t.Errorf("another caller's: %d", n)
 	}
 	// Not ready until it is completed.
-	if _, err := s.ClaimPendingUpload(ctx, "fl_p1", auth.HashUploadToken("fut_fl_p1"), "doc1", t0); err == nil {
+	if _, err := s.ClaimPendingUpload(ctx, "fl_p1", auth.HashToken("fut_fl_p1"), "doc1", t0); err == nil {
 		t.Error("claimed an upload still being written")
 	}
 	if err := s.CompletePendingUpload(ctx, "fl_p1", "scan.png", "image/png", "abc", 12, t0, "", t0); err != nil {
@@ -63,17 +63,17 @@ func TestPendingUploadsOnMongoDB(t *testing.T) {
 	if e, err := s.FileJournalEntry(ctx, "fl_p1"); err != nil || e.Status != auth.JournalStored || e.Name != "scan.png" || e.Size != 12 || e.SHA256 != "abc" || !e.Pending {
 		t.Fatalf("completed: %+v %v", e, err)
 	}
-	if _, err := s.ClaimPendingUpload(ctx, "fl_p1", auth.HashUploadToken("wrong"), "doc1", t0); err == nil {
+	if _, err := s.ClaimPendingUpload(ctx, "fl_p1", auth.HashToken("wrong"), "doc1", t0); err == nil {
 		t.Error("claimed with the wrong token")
 	}
-	if _, err := s.ClaimPendingUpload(ctx, "fl_p1", auth.HashUploadToken("fut_fl_p1"), "doc1", until.Add(time.Second)); err == nil {
+	if _, err := s.ClaimPendingUpload(ctx, "fl_p1", auth.HashToken("fut_fl_p1"), "doc1", until.Add(time.Second)); err == nil {
 		t.Error("claimed an expired upload")
 	}
-	e, err := s.ClaimPendingUpload(ctx, "fl_p1", auth.HashUploadToken("fut_fl_p1"), "doc1", t0)
+	e, err := s.ClaimPendingUpload(ctx, "fl_p1", auth.HashToken("fut_fl_p1"), "doc1", t0)
 	if err != nil || e.Status != auth.JournalAttaching || e.DocumentID != "doc1" {
 		t.Fatalf("claim: %+v %v", e, err)
 	}
-	if _, err := s.ClaimPendingUpload(ctx, "fl_p1", auth.HashUploadToken("fut_fl_p1"), "doc2", t0); err == nil {
+	if _, err := s.ClaimPendingUpload(ctx, "fl_p1", auth.HashToken("fut_fl_p1"), "doc2", t0); err == nil {
 		t.Error("claimed twice")
 	}
 	if err := s.ReleaseUpload(ctx, "fl_p1", auth.JournalStored, t0); err != nil {
@@ -98,7 +98,7 @@ func TestDirectUploadsOnMongoDB(t *testing.T) {
 	t0 := time.Date(2126, 10, 7, 12, 0, 0, 0, time.UTC)
 	until := t0.Add(3 * time.Hour)
 	e := auth.FileJournalEntry{ID: "fl_d1", Database: "app", Collection: "docs", Field: "video", DocumentID: "doc1", Key: "k/fl_d1", Status: auth.JournalWriting,
-		CreatedAt: t0, UpdatedAt: t0, ExpiresAt: until.Add(24 * time.Hour), Direct: true, TokenHash: auth.HashUploadToken("fut_d1"), CallerKey: "user:u1", PendingUntil: until,
+		CreatedAt: t0, UpdatedAt: t0, ExpiresAt: until.Add(24 * time.Hour), Direct: true, TokenHash: auth.HashToken("fut_d1"), CallerKey: "user:u1", PendingUntil: until,
 		Name: "v.mp4", Type: "video/mp4", SHA256: "abc", Size: 10}
 	if err := s.JournalFile(ctx, e); err != nil {
 		t.Fatal(err)
@@ -113,14 +113,14 @@ func TestDirectUploadsOnMongoDB(t *testing.T) {
 	if stale, _ := s.StaleFileJournal(ctx, t0, until.Add(time.Minute), 10); len(stale) != 1 {
 		t.Errorf("an expired direct upload isn't stale: %+v", stale)
 	}
-	if _, err := s.ClaimDirectUpload(ctx, "fl_d1", auth.HashUploadToken("nope"), t0); err == nil {
+	if _, err := s.ClaimDirectUpload(ctx, "fl_d1", auth.HashToken("nope"), t0); err == nil {
 		t.Error("claimed with the wrong token")
 	}
-	got, err := s.ClaimDirectUpload(ctx, "fl_d1", auth.HashUploadToken("fut_d1"), t0)
+	got, err := s.ClaimDirectUpload(ctx, "fl_d1", auth.HashToken("fut_d1"), t0)
 	if err != nil || got.Status != auth.JournalAttaching || got.Name != "v.mp4" || got.SHA256 != "abc" || got.Type != "video/mp4" || !got.Direct {
 		t.Fatalf("claim: %+v %v", got, err)
 	}
-	if _, err := s.ClaimDirectUpload(ctx, "fl_d1", auth.HashUploadToken("fut_d1"), t0); err == nil {
+	if _, err := s.ClaimDirectUpload(ctx, "fl_d1", auth.HashToken("fut_d1"), t0); err == nil {
 		t.Error("claimed twice")
 	}
 	if err := s.ReleaseUpload(ctx, "fl_d1", auth.JournalWriting, t0); err != nil {

@@ -262,7 +262,7 @@ func (d *documents) resolvePending(w http.ResponseWriter, r *http.Request, c *re
 				return nil, false
 			}
 			good := err == nil && e.Database == c.Database && e.Collection == c.Name && e.Field == name && e.Status == auth.JournalStored &&
-				e.PendingUntil.After(now) && subtle.ConstantTimeCompare([]byte(e.TokenHash), []byte(auth.HashUploadToken(ref.token))) == 1 &&
+				e.PendingUntil.After(now) && subtle.ConstantTimeCompare([]byte(e.TokenHash), []byte(auth.HashToken(ref.token))) == 1 &&
 				(e.Owner == "" || (caller.User != nil && caller.User.User.ID == e.Owner))
 			if !good {
 				details = append(details, Detail{Path: name, Reason: uploadInvalid})
