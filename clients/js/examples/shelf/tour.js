@@ -637,7 +637,7 @@ heading('Teams as organizations (ch20)')
   await benT.orgs.members(team.id).update(cyId, ['owner'])
   await benT.orgs.leave(team.id)
   check('with another owner, leaving works and ends access at once', await cyT.orgs.get(team.id).then(() => true), '')
-  await refused('the one who left is no longer a member (403)', () => benT.orgs.get(team.id), ForbiddenError, 'not_org_member')
+  await refused('the one who left has no session in the team any more (401)', () => benT.orgs.get(team.id), AuthenticationError, '')
 
   // A second factor for the team: asked with a fresh proof, and a session without one is refused.
   await cyT.auth.reauth({ method: 'password', password: PASSWORD })
@@ -648,7 +648,7 @@ heading('Teams as organizations (ch20)')
   check('the report counts what deleting would remove', report.to_delete === 6 && report.collections.some((c) => c.collection === 'pins' && c.documents === 6), JSON.stringify(report))
   await cyT.auth.reauth({ method: 'password', password: PASSWORD })
   await cyT.orgs.delete(team.id)
-  await refused('a deleted team has no members left (403)', () => cyT.orgs.get(team.id), ForbiddenError, 'not_org_member')
+  await refused('a deleted team has no sessions left (401)', () => cyT.orgs.get(team.id), AuthenticationError, '')
   let pinsLeft = -1
   for (let i = 0; i < 100 && pinsLeft !== 0; i++) {
     pinsLeft = (await (await fetch(`${url}/v1/shelf/_admin/orgs/${team.id}/owned`, { headers: { Authorization: `Bearer ${operatorToken}` } })).json()).to_delete
@@ -849,17 +849,14 @@ heading('Live pins (ch24)')
   await halLive.ready
   await main(gusT).fn('pin', { org: team.id, title: 'Before the removal' })
   check('the other member sees it too', await until(() => halLive.items.length === 2))
-  /** @type {string[]} */
-  const resets = []
-  halLive.on('reset', (e) => resets.push(e.reason))
-  let lost = false
-  halLive.on('access_lost', () => (lost = true))
+  /** @type {any} */
+  let halEnded = null
+  halLive.on('error', (e) => (halEnded = e))
   await gusT.orgs.members(team.id).remove(halId)
-  check('a removed member\'s list resets at once (access_changed)', await until(() => resets.includes('access_changed')), JSON.stringify(resets))
-  check('and loses what it showed', await until(() => halLive.items.length === 0))
+  check('a removed member\'s stream ends at once (session_ended): their session in the team is gone', await until(() => halEnded !== null) && halEnded.code === 'session_ended', String(halEnded))
   await main(gusT).fn('pin', { org: team.id, title: 'After the removal' })
   await new Promise((r) => setTimeout(r, 500))
-  check('nothing more reaches them', halLive.items.length === 0)
+  check('nothing more reaches them', !halLive.items.some((p) => p.title === 'After the removal'))
   live.close()
   halLive.close()
 
