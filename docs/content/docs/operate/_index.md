@@ -157,16 +157,18 @@ blog__main.posts
 shop__orders.items
 ```
 
-### Upgrading from v0.9.2 to the next release
+### Upgrading to v0.9.3
 
-The next release scopes every session to one organization in a realm that has organizations (see [scoped sessions](../build/organizations/api/#signing-in-to-an-organization)). A realm without organizations changes nothing. Do these in order:
+v0.9.3 adds [organization sign-in](organization-sign-in/) (a company's own Google Workspace or Microsoft tenant) and scopes every session to one organization in a realm that has organizations (see [scoped sessions](../build/organizations/api/#signing-in-to-an-organization)). A realm without organizations changes nothing. Do these in order:
 
 1. **Give every organization a slug.** `backd orgs list` shows `-` for the ones without; `backd orgs set-slug --id <org> --slug acme-corp` gives one (startup also warns about them). People sign in by the slug; a slug may not look like an id.
-2. **Run `backd provision`** with an admin-privileged `MONGO_URI`: sessions gain an index on `org` and the fields `max_lifetime`, jobs gain `caller_org` and API keys `org`. With `PROVISION_MODE=verify` the instances refuse to start until it has run.
+2. **Run `backd provision`** with an admin-privileged `MONGO_URI`. Sessions gain an index on `org` and the fields `max_lifetime`, jobs gain `caller_org` and API keys `org`; the `org_connections` collection is created, and the two unique indexes of `identities` become `(provider, org, subject)` and `(user_id, provider, org)` (nothing is rewritten, the old ones are dropped). With `PROVISION_MODE=verify` the instances refuse to start until it has run; with least-privilege grants, `backd databases --collections` prints the new collection.
 3. **Move the apps to the organization sign-in.** Sign in at `/_auth/orgs/{org}/…` (`createClient({ org })` in the clients), drop `?org=`, `inOrg()`, `GET /_orgs` and the `/_orgs/invitations/*` calls, and make the sign-up page ask for the team's slug. [The sign-in experience](../build/organizations/sign-in-experience/) describes what to build. Realm administrators keep `POST /_auth/login`; the admin UI and `backd login` need nothing.
 4. **Expect everyone to sign in once more.** Sessions opened before have no organization and answer `401 session_unscoped`; the clients take that as an expired session. A session of a user who is an administrator keeps working.
 5. **Bind the keys that act on behalf of users.** `backd apikey create --org <org>` makes a key that counts one organization; the ones that exist count none until replaced.
-6. **Move the clients with the server** (`backd-js` and `package:backd` of the same release).
+6. **Organization sign-in is off until you turn it on** (`organizations.sso` in `realm.yaml`, a role with `manage: sso`, `BACKD_SECRETS_KEY` and a public address). See [Organization sign-in for operators](organization-sign-in/).
+7. **The images keep `backd` at `/usr/local/bin/backd`** (the plain `backd` image used to have it at `/backd`), with `/backd` a link to it, so an `entrypoint:` or `exec` that names either keeps working.
+8. **Move the clients with the server.** `backd-js` and `package:backd` are released on the same version: `0.9.3` (for Dart, `backd: ^0.9.3`).
 
 ### Upgrading to v0.9.2
 
