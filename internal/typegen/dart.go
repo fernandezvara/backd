@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/internal/strutil"
 )
 
 // DartTypesFile is the file `backd types --lang dart` writes.
@@ -115,7 +116,7 @@ var dartKeywords = map[string]bool{
 
 // camel renders a name as a lowerCamel Dart identifier, safe against keywords.
 func camel(s string) string {
-	p := pascal(s)
+	p := strutil.Pascal(s)
 	if p == "" {
 		return "x"
 	}
@@ -461,7 +462,7 @@ func (c *dartConverter) ref(ref, path string) string {
 		return "Object?"
 	}
 	last := ref[strings.LastIndex(ref, "/")+1:]
-	name := c.g.claim(c.prefix+pascal(last), c.where+"$ref "+ref)
+	name := c.g.claim(c.prefix+strutil.Pascal(last), c.where+"$ref "+ref)
 	if ref == "#" {
 		name = c.g.claim(c.prefix+"Self", c.where+"$ref #")
 	}
@@ -517,11 +518,11 @@ func (c *dartConverter) emitClass(name string, s map[string]any, path string, pa
 	fmt.Fprintf(&b, "  const %s({%s});\n\n", name, strings.Join(params, ", "))
 	fmt.Fprintf(&b, "  factory %s.fromJson(Map<String, Object?> json) => %s(\n", name, name)
 	for _, n := range fields {
-		fmt.Fprintf(&b, "        %s: %s,\n", camel(n), c.decode(props[n], path+"/properties/"+n, "json["+dartLit(n)+"]", required[n] && !partial, name+pascal(n)))
+		fmt.Fprintf(&b, "        %s: %s,\n", camel(n), c.decode(props[n], path+"/properties/"+n, "json["+dartLit(n)+"]", required[n] && !partial, name+strutil.Pascal(n)))
 	}
 	b.WriteString("      );\n\n")
 	for _, n := range fields {
-		t := c.typeOf(props[n], path+"/properties/"+n, name+pascal(n))
+		t := c.typeOf(props[n], path+"/properties/"+n, name+strutil.Pascal(n))
 		if !required[n] || partial {
 			if !strings.HasSuffix(t, "?") {
 				t += "?"
@@ -531,7 +532,7 @@ func (c *dartConverter) emitClass(name string, s map[string]any, path string, pa
 	}
 	b.WriteString("\n  Map<String, Object?> toJson() => {\n")
 	for _, n := range fields {
-		fmt.Fprintf(&b, "        %s: %s,\n", dartLit(n), c.encode(props[n], path+"/properties/"+n, camel(n), required[n] && !partial, name+pascal(n)))
+		fmt.Fprintf(&b, "        %s: %s,\n", dartLit(n), c.encode(props[n], path+"/properties/"+n, camel(n), required[n] && !partial, name+strutil.Pascal(n)))
 	}
 	b.WriteString("      };\n}\n")
 	c.g.emit(b.String())
@@ -620,11 +621,11 @@ func (c *dartConverter) emitVariant(name, base string, s map[string]any, path st
 	fmt.Fprintf(&b, "  const %s({%s}) : super._();\n\n", name, strings.Join(params, ", "))
 	fmt.Fprintf(&b, "  factory %s.fromJson(Map<String, Object?> json) => %s(\n", name, name)
 	for _, n := range fields {
-		fmt.Fprintf(&b, "        %s: %s,\n", camel(n), c.decode(props[n], path+"/properties/"+n, "json["+dartLit(n)+"]", required[n], name+pascal(n)))
+		fmt.Fprintf(&b, "        %s: %s,\n", camel(n), c.decode(props[n], path+"/properties/"+n, "json["+dartLit(n)+"]", required[n], name+strutil.Pascal(n)))
 	}
 	b.WriteString("      );\n\n")
 	for _, n := range fields {
-		t := c.typeOf(props[n], path+"/properties/"+n, name+pascal(n))
+		t := c.typeOf(props[n], path+"/properties/"+n, name+strutil.Pascal(n))
 		if !required[n] && !strings.HasSuffix(t, "?") {
 			t += "?"
 		}
@@ -632,7 +633,7 @@ func (c *dartConverter) emitVariant(name, base string, s map[string]any, path st
 	}
 	b.WriteString("\n  Map<String, Object?> toJson() => {\n")
 	for _, n := range fields {
-		fmt.Fprintf(&b, "        %s: %s,\n", dartLit(n), c.encode(props[n], path+"/properties/"+n, camel(n), required[n], name+pascal(n)))
+		fmt.Fprintf(&b, "        %s: %s,\n", dartLit(n), c.encode(props[n], path+"/properties/"+n, camel(n), required[n], name+strutil.Pascal(n)))
 	}
 	b.WriteString("      };\n}\n")
 	c.g.emit(b.String())
@@ -1044,13 +1045,13 @@ func (g *dartGen) realm(rl *registry.Realm, o Options) string {
 		}
 	}
 	sort.Strings(dbs)
-	prefix := pascal(rl.Name)
+	prefix := strutil.Pascal(rl.Name)
 
 	// Claim every collection's prefix up front, in the order the emission
 	// pass runs, so references between collections name it consistently.
 	for _, dbName := range dbs {
 		for _, c := range rl.Databases[dbName].SortedCollections() {
-			g.collPrefix[dbName+"/"+c.Name] = g.claim(pascal(dbName)+pascal(c.Name), "collection "+dbName+"/"+c.Name)
+			g.collPrefix[dbName+"/"+c.Name] = g.claim(strutil.Pascal(dbName)+strutil.Pascal(c.Name), "collection "+dbName+"/"+c.Name)
 		}
 	}
 
@@ -1091,7 +1092,7 @@ func (g *dartGen) realm(rl *registry.Realm, o Options) string {
 	// One wrapper per database, then the realm class and its accessor.
 	for _, dbName := range dbs {
 		db := rl.Databases[dbName]
-		name := g.claim(prefix+pascal(dbName), "database "+dbName)
+		name := g.claim(prefix+strutil.Pascal(dbName), "database "+dbName)
 		g.dbNames[dbName] = name
 		var w strings.Builder
 		fmt.Fprintf(&w, "/// The %q database of %q, typed.\nfinal class %s {\n  %s(this._db);\n\n  final Database _db;\n", dbName, rl.Name, name, name)
@@ -1232,7 +1233,7 @@ func (g *dartGen) docClass(conv *dartConverter, name, expandedName string, schem
 		fmt.Fprintf(&b, "        expanded: json['_expanded'] is Map\n            ? %s._(Map<String, Object?>.from(json['_expanded'] as Map))\n            : null,\n", expandedName)
 	}
 	for _, n := range fields {
-		fmt.Fprintf(&b, "        %s: %s,\n", camel(n), conv.decode(props[n], "/properties/"+n, "json["+dartLit(n)+"]", required[n], name+pascal(n)))
+		fmt.Fprintf(&b, "        %s: %s,\n", camel(n), conv.decode(props[n], "/properties/"+n, "json["+dartLit(n)+"]", required[n], name+strutil.Pascal(n)))
 	}
 	b.WriteString("      );\n\n  final String id;\n  final Meta meta;\n")
 	if expandedName != "" {
@@ -1240,7 +1241,7 @@ func (g *dartGen) docClass(conv *dartConverter, name, expandedName string, schem
 	}
 	b.WriteString("\n")
 	for _, n := range fields {
-		t := conv.typeOf(props[n], "/properties/"+n, name+pascal(n))
+		t := conv.typeOf(props[n], "/properties/"+n, name+strutil.Pascal(n))
 		if !required[n] && !strings.HasSuffix(t, "?") {
 			t += "?"
 		}
@@ -1248,7 +1249,7 @@ func (g *dartGen) docClass(conv *dartConverter, name, expandedName string, schem
 	}
 	b.WriteString("\n  Map<String, Object?> toJson() => {\n")
 	for _, n := range fields {
-		fmt.Fprintf(&b, "        %s: %s,\n", dartLit(n), conv.encode(props[n], "/properties/"+n, camel(n), required[n], name+pascal(n)))
+		fmt.Fprintf(&b, "        %s: %s,\n", dartLit(n), conv.encode(props[n], "/properties/"+n, camel(n), required[n], name+strutil.Pascal(n)))
 	}
 	b.WriteString("      };\n}\n")
 	g.emit(b.String())
@@ -1282,14 +1283,14 @@ func (g *dartGen) createClass(conv *dartConverter, name string, schema map[strin
 	fmt.Fprintf(&b, "  const %s({%s});\n\n", name, strings.Join(params, ", "))
 	fmt.Fprintf(&b, "  factory %s.fromJson(Map<String, Object?> json) => %s(\n        id: json['id'] as String,\n", name, name)
 	for _, n := range fields {
-		fmt.Fprintf(&b, "        %s: %s,\n", camel(n), conv.decode(props[n], "/properties/"+n, "json["+dartLit(n)+"]", required[n], name+pascal(n)))
+		fmt.Fprintf(&b, "        %s: %s,\n", camel(n), conv.decode(props[n], "/properties/"+n, "json["+dartLit(n)+"]", required[n], name+strutil.Pascal(n)))
 	}
 	b.WriteString("      );\n\n")
 	b.WriteString("  /// ")
 	b.WriteString(strings.ReplaceAll(note, "*/", "* /"))
 	b.WriteString(".\n  final String id;\n")
 	for _, n := range fields {
-		t := conv.typeOf(props[n], "/properties/"+n, name+pascal(n))
+		t := conv.typeOf(props[n], "/properties/"+n, name+strutil.Pascal(n))
 		if !required[n] && !strings.HasSuffix(t, "?") {
 			t += "?"
 		}
@@ -1297,7 +1298,7 @@ func (g *dartGen) createClass(conv *dartConverter, name string, schema map[strin
 	}
 	b.WriteString("\n  Map<String, Object?> toJson() => {\n        'id': id,\n")
 	for _, n := range fields {
-		fmt.Fprintf(&b, "        %s: %s,\n", dartLit(n), conv.encode(props[n], "/properties/"+n, camel(n), required[n], name+pascal(n)))
+		fmt.Fprintf(&b, "        %s: %s,\n", dartLit(n), conv.encode(props[n], "/properties/"+n, camel(n), required[n], name+strutil.Pascal(n)))
 	}
 	b.WriteString("      };\n}\n")
 	g.emit(b.String())
@@ -1311,7 +1312,7 @@ func (g *dartGen) partialName(db, coll string) string {
 	}
 	prefix := g.collPrefix[key]
 	if prefix == "" {
-		prefix = pascal(db) + pascal(coll)
+		prefix = strutil.Pascal(db) + strutil.Pascal(coll)
 	}
 	name := g.claim(prefix+"Partial", "partial "+key)
 	g.partials[key] = name
@@ -1465,7 +1466,7 @@ abstract final class %s {
 func (g *dartGen) function(db string, fn *registry.Function) {
 	in, _ := readFunctionSchema(fn.Dir, registry.InputSchemaFile)
 	out, _ := readFunctionSchema(fn.Dir, registry.OutputSchemaFile)
-	prefix := "Fn" + pascal(db) + pascal(fn.Name)
+	prefix := "Fn" + strutil.Pascal(db) + strutil.Pascal(fn.Name)
 	key := db + "/" + fn.Name
 	inName, outName := "", ""
 	if in != nil {
@@ -1542,7 +1543,7 @@ func (g *dartGen) config(prefix string, ac *registry.AppConfig) {
 		t := "Object?"
 		conv2 := conv
 		if s := schemaAt(ac.RawSchema, p); s != nil {
-			t = conv2.typeOf(s, "/"+p, prefix+"Config"+pascal(p))
+			t = conv2.typeOf(s, "/"+p, prefix+"Config"+strutil.Pascal(p))
 		}
 		method := camel(p)
 		for used[method] {

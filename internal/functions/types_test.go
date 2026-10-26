@@ -101,16 +101,3 @@ func TestJSDocType(t *testing.T) {
 		})
 	}
 }
-
-func TestPascal(t *testing.T) {
-	for in, want := range map[string]string{
-		"shop":      "Shop",
-		"my-app":    "MyApp",
-		"my_app":    "MyApp",
-		"checkout2": "Checkout2",
-	} {
-		if got := pascal(in); got != want {
-			t.Errorf("pascal(%q) = %q, want %q", in, got, want)
-		}
-	}
-}

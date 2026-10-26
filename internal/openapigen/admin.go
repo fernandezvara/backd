@@ -12,6 +12,7 @@ import (
 	"github.com/fernandezvara/backd/api"
 	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/internal/strutil"
 )
 
 // Admin generates the document of the realm's admin API: its administration routes, the data
@@ -140,7 +141,7 @@ func (b *builder) adminInvoke(db string, fn *registry.Function) {
 	dropParams(cp, "realm", "database")
 	// The contract's generic `name` parameter is the path's literal here.
 	delete(cp, "parameters")
-	alias := pascal(db) + pascal(fn.Name)
+	alias := strutil.Pascal(db) + strutil.Pascal(fn.Name)
 	tag := "functions"
 	for _, op := range operations(cp) {
 		dropParams(op, "realm", "database")

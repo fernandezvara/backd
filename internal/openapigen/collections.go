@@ -12,28 +12,8 @@ import (
 	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/rules"
+	"github.com/fernandezvara/backd/internal/strutil"
 )
-
-func pascal(s string) string {
-	var b strings.Builder
-	up := true
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z':
-			if up {
-				r -= 'a' - 'A'
-			}
-			b.WriteRune(r)
-			up = false
-		case r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-			up = false
-		default:
-			up = true
-		}
-	}
-	return b.String()
-}
 
 // addFileDetails declares what backd stores about an uploaded file.
 func (b *builder) addFileDetails() {
@@ -66,7 +46,7 @@ func (b *builder) toSchemas(name string, raw map[string]any) {
 	for _, k := range []string{"$defs", "definitions"} {
 		if defs, ok := doc[k].(map[string]any); ok {
 			for d := range defs {
-				names["#/"+k+"/"+d] = name + "_" + pascal(d)
+				names["#/"+k+"/"+d] = name + "_" + strutil.Pascal(d)
 			}
 		}
 	}
@@ -92,7 +72,7 @@ func (b *builder) toSchemas(name string, raw map[string]any) {
 		if defs, ok := doc[k].(map[string]any); ok {
 			for d, s := range defs {
 				fix(s)
-				b.extra[name+"_"+pascal(d)] = s
+				b.extra[name+"_"+strutil.Pascal(d)] = s
 			}
 			delete(doc, k)
 		}
@@ -124,7 +104,7 @@ func (b *builder) collection(db string, c *registry.Collection) {
 // collectionAt adds the collection's schemas and its paths: those clients use, subject to the
 // collection's rules, or (admin) the admin data routes, which are past the rules.
 func (b *builder) collectionAt(db string, c *registry.Collection, admin bool) {
-	alias := pascal(db) + pascal(c.Name)
+	alias := strutil.Pascal(db) + strutil.Pascal(c.Name)
 	tag := db + "/" + c.Name
 	contract := "/v1/{realm}/{database}/{collection}"
 	base := "/v1/" + b.realm + "/" + db + "/" + c.Name
@@ -292,7 +272,7 @@ func (b *builder) collectionAt(db string, c *registry.Collection, admin bool) {
 				dropParams(op, "fileField")
 			}
 			path := base + strings.ReplaceAll(suffix, "{field}", field)
-			b.addFileItem(path, tag, alias+pascal(field), cp, mapping)
+			b.addFileItem(path, tag, alias+strutil.Pascal(field), cp, mapping)
 		}
 	}
 }
@@ -345,7 +325,7 @@ func (b *builder) function(db string, fn *registry.Function) {
 	}
 	cp := docutil.DeepCopy(item).(map[string]any)
 	dropParams(cp, "realm", "database", "function")
-	alias := pascal(db) + pascal(fn.Name)
+	alias := strutil.Pascal(db) + strutil.Pascal(fn.Name)
 	tag := db + " functions"
 	for _, op := range operations(cp) {
 		dropParams(op, "realm", "database", "function")

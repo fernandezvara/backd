@@ -2,6 +2,7 @@ package registry
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -315,7 +316,7 @@ func parseFiles(path string, schema map[string]any, settings RealmSettings) (map
 				add(name, "cache: %v", err)
 			} else if v <= 0 {
 				add(name, "cache: must be a positive duration, such as 1h")
-			} else if eff := firstNonEmpty(f.Download, settings.Storage.Download); eff != DownloadProxy {
+			} else if eff := cmp.Or(f.Download, settings.Storage.Download); eff != DownloadProxy {
 				add(name, "cache: only applies to proxied downloads (`download: proxy`, on the field or in the realm's storage)")
 			} else {
 				f.Cache = v
@@ -434,15 +435,6 @@ func (r *Registry) CheckImageLimits(instance int64) error {
 		}
 	}
 	return errors.Join(errs...)
-}
-
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 // fileDetailsSchema is what a file field holds, which backd writes and no client

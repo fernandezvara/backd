@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -481,7 +482,7 @@ func (d *documents) linkKey(ctx context.Context, realm string) ([]byte, error) {
 
 // downloadMode is how a field's files are delivered: its own setting, else the realm's.
 func downloadMode(f *registry.FileField, st *registry.StorageSettings) string {
-	return firstNonEmpty(f.Download, st.Download)
+	return cmp.Or(f.Download, st.Download)
 }
 
 func linkTTL(f *registry.FileField, st *registry.StorageSettings) time.Duration {
@@ -489,15 +490,6 @@ func linkTTL(f *registry.FileField, st *registry.StorageSettings) time.Duration 
 		return f.PresignedTTL
 	}
 	return st.PresignedTTL
-}
-
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 // errNoPublicURL: a backd-signed link made on the internal listener (for a function)
