@@ -1,7 +1,7 @@
 # Chapter 20: the team's pinboard. Each pin belongs to one team, which is an
-# organization of the realm: backd keeps it in _meta.org, the caller says
-# which with ?org= (`pins.inOrg(id)` in the client), and the rules read
-# the caller's memberships.
+# organization of the realm: backd keeps it in _meta.org, taken from the
+# session (a person signs in to one team at a time), and the rules read
+# the caller's membership of it.
 organization: required
 
 # Chapter 24: the team's board is live. Subscriptions to this collection are

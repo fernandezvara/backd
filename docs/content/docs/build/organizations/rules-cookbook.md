@@ -6,7 +6,7 @@ weight: 522
 toc: true
 ---
 
-Rules for collections with an [`organization:`](../../configuration/config-dir/#organizations). The helpers are `inOrg(org)`, `hasOrgRole(org, role)` and `orgClaims(org).claim`, described in [access rules](../../auth/rules/#organizations); `document._meta.org` is the organization of the document and `data._meta.org` the one a create names (`?org=`).
+Rules for collections with an [`organization:`](../../configuration/config-dir/#organizations). The helpers are `inOrg(org)`, `hasOrgRole(org, role)` and `orgClaims(org).claim`, described in [access rules](../../auth/rules/#organizations); `document._meta.org` is the organization of the document and `data._meta.org` the one a create is made in: the organization of the session.
 
 ## Members read
 
