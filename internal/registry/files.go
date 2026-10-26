@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"os"
 	"regexp"
 	"slices"
 	"strconv"
@@ -202,13 +201,9 @@ func (f *FileField) Allows(contentType string) bool {
 // parseFiles reads the `files:` section of collection.yaml, validated against the
 // collection's schema and the realm's storage. A collection without the file or
 // the section has no file fields.
-func parseFiles(path string, schema map[string]any, settings RealmSettings) (map[string]*FileField, error) {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
+func parseFiles(path string, data []byte, schema map[string]any, settings RealmSettings) (map[string]*FileField, error) {
+	if data == nil {
 		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	var doc struct {
 		Files map[string]*fileFieldDoc `yaml:"files"`

@@ -1,12 +1,9 @@
 package registry
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
-	"os"
 	"slices"
 	"strings"
 	"time"
@@ -565,22 +562,14 @@ type organizationDoc struct {
 
 // loadOrganization reads collection.yaml's organization policy into c. It runs before the
 // rules, which may use the organization helpers of a collection that has one.
-func loadOrganization(c *Collection, settings RealmSettings, path string) error {
+func loadOrganization(c *Collection, settings RealmSettings, path string, data []byte) error {
 	c.Organization = OrgNone
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
+	if data == nil {
 		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("%s: %w", path, err)
 	}
 	var doc organizationDoc
-	if err := yaml.NewDecoder(bytes.NewReader(data)).Decode(&doc); err != nil && !errors.Is(err, io.EOF) {
-		// Another section's mistake is reported by the loader that reads it.
-		if strings.Contains(err.Error(), "organization") || strings.Contains(err.Error(), "on_org_delete") || strings.Contains(err.Error(), "team") {
-			return fmt.Errorf("%s: %w", path, err)
-		}
-		return nil
+	if ok, err := decodeSection(data, path, &doc, "organization", "on_org_delete", "team"); !ok || err != nil {
+		return err
 	}
 	fail := func(format string, args ...any) error {
 		return fmt.Errorf("%s: "+format, append([]any{path}, args...)...)

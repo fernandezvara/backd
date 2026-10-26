@@ -33,53 +33,36 @@ func (r *Registry) Fingerprint() (string, error) {
 			files = append(files, filepath.ToSlash(rel))
 		}
 	}
+	// addTree adds the visible files under dir, at any depth.
+	addTree := func(dir string) {
+		_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if err == nil && d.Type().IsRegular() && !strings.HasPrefix(d.Name(), ".") {
+				if rel, err := filepath.Rel(r.Root, path); err == nil {
+					files = append(files, filepath.ToSlash(rel))
+				}
+			}
+			return nil
+		})
+	}
 	for _, rl := range r.SortedRealms() {
 		add(filepath.Join(rl.Name, RealmFile))
 		if rl.Settings.Email != nil {
 			// The templates backd renders its emails from.
 			for _, folder := range []string{email.DirName, email.PagesDirName} {
-				_ = filepath.WalkDir(RealmPath(filepath.Join(r.Root, rl.Name), folder), func(path string, d fs.DirEntry, err error) error {
-					if err == nil && d.Type().IsRegular() && !strings.HasPrefix(d.Name(), ".") {
-						if rel, err := filepath.Rel(r.Root, path); err == nil {
-							files = append(files, filepath.ToSlash(rel))
-						}
-					}
-					return nil
-				})
+				addTree(RealmPath(filepath.Join(r.Root, rl.Name), folder))
 			}
 		}
 		if rl.Settings.Push != nil {
 			// The templates backd writes its pushes from.
-			_ = filepath.WalkDir(RealmPath(filepath.Join(r.Root, rl.Name), push.DirName), func(path string, d fs.DirEntry, err error) error {
-				if err == nil && d.Type().IsRegular() && !strings.HasPrefix(d.Name(), ".") {
-					if rel, err := filepath.Rel(r.Root, path); err == nil {
-						files = append(files, filepath.ToSlash(rel))
-					}
-				}
-				return nil
-			})
+			addTree(RealmPath(filepath.Join(r.Root, rl.Name), push.DirName))
 		}
 		if len(rl.Settings.Consents) > 0 {
 			// The exact texts users accept: changing one changes the config.
-			_ = filepath.WalkDir(RealmPath(filepath.Join(r.Root, rl.Name), ConsentsDir), func(path string, d fs.DirEntry, err error) error {
-				if err == nil && d.Type().IsRegular() && !strings.HasPrefix(d.Name(), ".") {
-					if rel, err := filepath.Rel(r.Root, path); err == nil {
-						files = append(files, filepath.ToSlash(rel))
-					}
-				}
-				return nil
-			})
+			addTree(RealmPath(filepath.Join(r.Root, rl.Name), ConsentsDir))
 		}
 		if rl.Settings.Compliance.Export {
 			// What the README of a user's data export says.
-			_ = filepath.WalkDir(RealmPath(filepath.Join(r.Root, rl.Name), ComplianceDir), func(path string, d fs.DirEntry, err error) error {
-				if err == nil && d.Type().IsRegular() && !strings.HasPrefix(d.Name(), ".") {
-					if rel, err := filepath.Rel(r.Root, path); err == nil {
-						files = append(files, filepath.ToSlash(rel))
-					}
-				}
-				return nil
-			})
+			addTree(RealmPath(filepath.Join(r.Root, rl.Name), ComplianceDir))
 		}
 		if rl.AppConfig != nil {
 			// What the configuration may hold and who may read it.

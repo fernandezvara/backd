@@ -1,11 +1,7 @@
 package registry
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
-	"io"
-	"os"
 	"regexp"
 	"strings"
 
@@ -158,24 +154,15 @@ func EnvelopeProblem(id string) string {
 
 // loadCustomID reads collection.yaml's custom_id into c. It runs before the rules are
 // compiled, which can then name data.id. The other sections are read elsewhere.
-func loadCustomID(c *Collection, settings RealmSettings, path string) error {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
+func loadCustomID(c *Collection, settings RealmSettings, path string, data []byte) error {
+	if data == nil {
 		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("%s: %w", path, err)
 	}
 	var doc struct {
 		CustomID *customIDDoc `yaml:"custom_id"`
 	}
-	if err := yaml.NewDecoder(bytes.NewReader(data)).Decode(&doc); err != nil && !errors.Is(err, io.EOF) {
-		// Another section's mistake is reported by the loader that reads it; this one only
-		// speaks of its own.
-		if strings.Contains(err.Error(), "custom_id") {
-			return fmt.Errorf("%s: %w", path, err)
-		}
-		return nil
+	if ok, err := decodeSection(data, path, &doc, "custom_id"); !ok || err != nil {
+		return err
 	}
 	cid, err := doc.CustomID.settings(path, settings.AuthEnabled)
 	if err != nil {

@@ -381,9 +381,18 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 		return nil, fmt.Errorf("%s: %w", path, errors.Join(errs...))
 	}
 
+	// collection.yaml is read once; each loader takes the part it owns. nil: there is none.
+	collPath := filepath.Join(dir, CollectionFile)
+	collData, err := os.ReadFile(collPath)
+	if errors.Is(err, os.ErrNotExist) {
+		collData = nil
+	} else if err != nil {
+		return nil, fmt.Errorf("%s: %w", collPath, err)
+	}
+
 	// File fields are declared in collection.yaml, and backd adds their schema: from
 	// here on the collection's schema is the author's plus theirs.
-	files, err := parseFiles(filepath.Join(dir, CollectionFile), raw, settings)
+	files, err := parseFiles(collPath, collData, raw, settings)
 	if err != nil {
 		return nil, err
 	}
@@ -420,13 +429,13 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 		configLeaf:    db.configLeaf(),
 	}
 	// The id and organization policies come first: indexes and rules may name `_meta.org`.
-	if err := loadCustomID(coll, settings, filepath.Join(dir, CollectionFile)); err != nil {
+	if err := loadCustomID(coll, settings, collPath, collData); err != nil {
 		return nil, err
 	}
-	if err := loadOrganization(coll, settings, filepath.Join(dir, CollectionFile)); err != nil {
+	if err := loadOrganization(coll, settings, collPath, collData); err != nil {
 		return nil, err
 	}
-	if err := loadEncryption(coll, filepath.Join(dir, CollectionFile)); err != nil {
+	if err := loadEncryption(coll, collPath, collData); err != nil {
 		return nil, err
 	}
 	if err := loadIndexes(coll, filepath.Join(dir, indexesFile)); err != nil {
@@ -435,31 +444,31 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 	if err := loadRules(coll, settings, dir); err != nil {
 		return nil, err
 	}
-	if err := loadErasure(coll, settings, filepath.Join(dir, CollectionFile)); err != nil {
+	if err := loadErasure(coll, settings, collPath, collData); err != nil {
 		return nil, err
 	}
-	if err := loadReferences(coll, filepath.Join(dir, CollectionFile)); err != nil {
+	if err := loadReferences(coll, collPath, collData); err != nil {
 		return nil, err
 	}
-	if err := loadAggregate(coll, filepath.Join(dir, CollectionFile)); err != nil {
+	if err := loadAggregate(coll, collPath, collData); err != nil {
 		return nil, err
 	}
-	if err := loadRealtime(coll, filepath.Join(dir, CollectionFile)); err != nil {
+	if err := loadRealtime(coll, collPath, collData); err != nil {
 		return nil, err
 	}
 	if coll.Realtime {
-		if err := checkRealtimeRead(coll, filepath.Join(dir, CollectionFile)); err != nil {
+		if err := checkRealtimeRead(coll, collPath); err != nil {
 			return nil, err
 		}
 	}
-	if err := loadTriggers(coll, settings, filepath.Join(dir, CollectionFile)); err != nil {
+	if err := loadTriggers(coll, settings, collPath, collData); err != nil {
 		return nil, err
 	}
-	if err := checkEncryption(coll, filepath.Join(dir, CollectionFile)); err != nil {
+	if err := checkEncryption(coll, collPath); err != nil {
 		return nil, err
 	}
 	coll.addBlindIndexes()
-	if err := loadReveal(coll, settings, filepath.Join(dir, CollectionFile)); err != nil {
+	if err := loadReveal(coll, settings, collPath, collData); err != nil {
 		return nil, err
 	}
 	if coll.SoftDelete == nil && coll.Rules != nil {

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"os"
 	"slices"
 	"strings"
 
@@ -127,13 +126,9 @@ type erasureDoc struct {
 
 // loadErasure reads the optional collection.yaml of c and checks it against
 // the collection's schema, so that an erase leaves every document valid.
-func loadErasure(c *Collection, settings RealmSettings, path string) error {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
+func loadErasure(c *Collection, settings RealmSettings, path string, data []byte) error {
+	if data == nil {
 		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("%s: %w", path, err)
 	}
 	var doc erasureDoc
 	dec := yaml.NewDecoder(bytes.NewReader(data))
