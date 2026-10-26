@@ -2,6 +2,7 @@ package registry
 
 import (
 	"errors"
+	"maps"
 	"strings"
 	"testing"
 	"time"
@@ -33,9 +34,7 @@ func consentTree(realm string, extra map[string]string) map[string]string {
 		"shop/_realm/consents/marketing/1/en.md":   "Marketing",
 		"shop/_realm/consents/marketing/1/es.md":   "Publicidad",
 	}
-	for k, v := range extra {
-		files[k] = v
-	}
+	maps.Copy(files, extra)
 	return files
 }
 
@@ -199,9 +198,7 @@ func TestExportReadmeTemplates(t *testing.T) {
 		"compliance:\n  export: true\n  export_page: https://app.shop.example/my-data\n"
 	tree := func(extra map[string]string) string {
 		files := esTemplates(t)
-		for k, v := range extra {
-			files[k] = v
-		}
+		maps.Copy(files, extra)
 		return emailTree(t, realm, goodDeliver, files)
 	}
 

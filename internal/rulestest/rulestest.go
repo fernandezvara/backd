@@ -307,8 +307,7 @@ func (r *runner) userFields(fields map[string]any) (map[string]any, error) {
 }
 
 func firstLine(err error) string {
-	var ve *jsonschema.ValidationError
-	if errors.As(err, &ve) {
+	if ve, ok := errors.AsType[*jsonschema.ValidationError](err); ok {
 		var msgs []string
 		var walk func(e *jsonschema.ValidationError)
 		walk = func(e *jsonschema.ValidationError) {

@@ -102,7 +102,7 @@ func TestTriggerLeaseRaceHasOneWinner(t *testing.T) {
 	ctx := context.Background()
 	const n = 8
 	results := make(chan bool, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		holder := string(rune('a' + i))
 		go func() {
 			_, ok, err := s.AcquireLease(ctx, holder, time.Minute)
@@ -110,7 +110,7 @@ func TestTriggerLeaseRaceHasOneWinner(t *testing.T) {
 		}()
 	}
 	won := 0
-	for i := 0; i < n; i++ {
+	for range n {
 		if <-results {
 			won++
 		}
@@ -221,7 +221,7 @@ func TestDocScannerReadsByUpdatedAt(t *testing.T) {
 	ctx := context.Background()
 	coll := client.Database(realm + "__app").Collection("items")
 	base := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		_, err := coll.InsertOne(ctx, bson.D{{Key: "_id", Value: fmt.Sprintf("d%d", i)},
 			{Key: "_meta", Value: bson.D{{Key: "version", Value: int64(1)}, {Key: "updated_at", Value: base.Add(time.Duration(i) * time.Hour)}}}})
 		if err != nil {

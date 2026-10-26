@@ -804,7 +804,7 @@ func (d *documents) proxyFile(w http.ResponseWriter, r *http.Request, obj *stora
 }
 
 func etagMatches(header, etag string) bool {
-	for _, p := range strings.Split(header, ",") {
+	for p := range strings.SplitSeq(header, ",") {
 		p = strings.TrimSpace(p)
 		if p == "*" || strings.TrimPrefix(p, "W/") == etag {
 			return true
@@ -901,9 +901,7 @@ func (d *documents) addFileLinks(w http.ResponseWriter, r *http.Request, c *regi
 			linked := make([]map[string]any, len(files))
 			for i, file := range files {
 				cp := make(map[string]any, len(file)+2)
-				for k, v := range file {
-					cp[k] = v
-				}
+				maps.Copy(cp, file)
 				l, exp, err := d.fileLink(r.Context(), r, obj, c, f, docID, d.sourceTarget(c, file))
 				if err != nil {
 					logger(r.Context()).Warn("file links left out", "realm", c.Realm, "error", err)

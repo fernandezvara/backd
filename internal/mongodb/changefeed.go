@@ -233,8 +233,7 @@ func classifyFeedError(err error) error {
 	if err == nil {
 		return nil
 	}
-	var ce mongo.CommandError
-	if errors.As(err, &ce) {
+	if ce, ok := errors.AsType[mongo.CommandError](err); ok {
 		switch ce.Code {
 		case 286, 280: // ChangeStreamHistoryLost, ChangeStreamFatalError
 			return fmt.Errorf("%w: %v", changefeed.ErrHistoryLost, err)

@@ -112,7 +112,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: denoland/setup-deno@v2
-        with: { deno-version: 2.9.7 }   # the Deno this backd version bundles with
+        with: { deno-version: 2.9.8 }   # the Deno this backd version bundles with
       - name: Install backd
         run: |
           curl -fsSL "https://github.com/fernandezvara/backd/releases/download/v${BACKD_VERSION}/backd_${BACKD_VERSION}_linux_amd64.tar.gz" | tar -xz backd

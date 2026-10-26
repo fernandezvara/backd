@@ -10,7 +10,6 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/fernandezvara/backd/internal/auth"
-	"github.com/fernandezvara/backd/internal/email"
 )
 
 type orgDoc struct {
@@ -832,10 +831,10 @@ func (s *AuthStore) orgTemplates() *mongo.Collection { return s.db.Collection(Or
 func orgTemplateID(org, kind, locale string) string { return org + "/" + kind + "/" + locale }
 
 func (d orgTemplateDoc) template() auth.OrgTemplate {
-	t := auth.OrgTemplate{Org: d.Org, Kind: d.Kind, Locale: d.Locale, Override: email.Override{Subject: d.Subject, Text: d.Text, HTML: d.HTML},
+	t := auth.OrgTemplate{Org: d.Org, Kind: d.Kind, Locale: d.Locale, Subject: d.Subject, Text: d.Text, HTML: d.HTML,
 		Version: d.Version, UpdatedBy: d.UpdatedBy, UpdatedAt: d.UpdatedAt.UTC()}
 	for _, v := range d.Versions {
-		t.Versions = append(t.Versions, auth.OrgTemplateVersion{Version: v.Version, Override: email.Override{Subject: v.Subject, Text: v.Text, HTML: v.HTML}, By: v.By, At: v.At.UTC()})
+		t.Versions = append(t.Versions, auth.OrgTemplateVersion{Version: v.Version, Subject: v.Subject, Text: v.Text, HTML: v.HTML, By: v.By, At: v.At.UTC()})
 	}
 	return t
 }

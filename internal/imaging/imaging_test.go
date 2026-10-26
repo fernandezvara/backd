@@ -28,8 +28,8 @@ var (
 // quadrants is a w×h image: red top-left, green top-right, blue bottom-left, white bottom-right.
 func quadrants(w, h int) *image.NRGBA {
 	img := image.NewNRGBA(image.Rect(0, 0, w, h))
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
+	for y := range h {
+		for x := range w {
 			c := red
 			switch {
 			case x >= w/2 && y < h/2:
@@ -405,7 +405,7 @@ func TestTimeout(t *testing.T) {
 func TestConcurrencyIsBounded(t *testing.T) {
 	e := New(Limits{Concurrency: 2})
 	// Fill both slots, then ask for a third with a short context: it must not get one.
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		e.slots <- struct{}{}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)

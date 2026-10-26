@@ -135,8 +135,7 @@ func (a *adminAPI) testPush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body, err := io.ReadAll(r.Body)
-	var tooBig *http.MaxBytesError
-	if errors.As(err, &tooBig) {
+	if tooBig, ok := errors.AsType[*http.MaxBytesError](err); ok {
 		tooLarge(w, r, tooBig.Limit)
 		return
 	}

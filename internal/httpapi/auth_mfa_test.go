@@ -148,7 +148,7 @@ func TestMFAVerifyWithARecoveryCode(t *testing.T) {
 
 func TestMFAVerifyLocksAfterTenWrongCodes(t *testing.T) {
 	f := newMFAHTTP(t)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		ch := f.challenge(t)
 		if rec, _ := f.do(t, "POST", authBase+"/mfa/verify", `{"challenge": "`+ch+`", "method": "totp", "code": "000000"}`); rec.Code != 400 {
 			t.Fatalf("wrong code %d: %d", i, rec.Code)

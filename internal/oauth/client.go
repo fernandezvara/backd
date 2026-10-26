@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -87,10 +88,8 @@ var BuiltinHosts = map[string][]string{
 // BuiltinHostAllowed accepts the hosts of the built-in providers.
 func BuiltinHostAllowed(host string) bool {
 	for _, hosts := range BuiltinHosts {
-		for _, h := range hosts {
-			if host == h {
-				return true
-			}
+		if slices.Contains(hosts, host) {
+			return true
 		}
 	}
 	return false

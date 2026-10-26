@@ -3,6 +3,7 @@ package settings
 import (
 	"fmt"
 	"log/slog"
+	maps0 "maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -143,12 +144,8 @@ func TestLoadDev(t *testing.T) {
 // maps merges b into a copy of a.
 func maps(a, b map[string]string) map[string]string {
 	m := make(map[string]string, len(a)+len(b))
-	for k, v := range a {
-		m[k] = v
-	}
-	for k, v := range b {
-		m[k] = v
-	}
+	maps0.Copy(m, a)
+	maps0.Copy(m, b)
 	return m
 }
 
@@ -156,9 +153,7 @@ func TestLoadMetrics(t *testing.T) {
 	base := map[string]string{"CONFIG_DIR": "/cfg", "MONGO_URI": "mongodb://m"}
 	with := func(kv ...string) func(string) string {
 		m := map[string]string{}
-		for k, v := range base {
-			m[k] = v
-		}
+		maps0.Copy(m, base)
 		for i := 0; i < len(kv); i += 2 {
 			m[kv[i]] = kv[i+1]
 		}
@@ -305,12 +300,8 @@ func TestEventsFlags(t *testing.T) {
 	base := map[string]string{"CONFIG_DIR": "/c", "MONGO_URI": "mongodb://x"}
 	load := func(extra map[string]string) (Settings, error) {
 		env := map[string]string{}
-		for k, v := range base {
-			env[k] = v
-		}
-		for k, v := range extra {
-			env[k] = v
-		}
+		maps0.Copy(env, base)
+		maps0.Copy(env, extra)
 		return Load(func(k string) string { return env[k] })
 	}
 	s, err := load(nil)
@@ -356,9 +347,7 @@ func TestLoadEnv(t *testing.T) {
 	base := map[string]string{"CONFIG_DIR": "/cfg", "MONGO_URI": "mongodb://m"}
 	with := func(v string) map[string]string {
 		m := map[string]string{"BACKD_ENV": v}
-		for k, x := range base {
-			m[k] = x
-		}
+		maps0.Copy(m, base)
 		return m
 	}
 	if s, err := Load(env(with(" Staging "))); err != nil || s.Env != "staging" {

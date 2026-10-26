@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/fernandezvara/backd/internal/imaging"
@@ -33,12 +35,7 @@ const (
 // readsImages reports whether the field can hold a picture the engine might read,
 // so that its upload keeps the start of the file to find the size.
 func readsImages(f *registry.FileField) bool {
-	for _, t := range []string{"image/jpeg", "image/png", "image/gif", "image/webp"} {
-		if f.Allows(t) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc([]string{"image/jpeg", "image/png", "image/gif", "image/webp"}, f.Allows)
 }
 
 // imageDetails is what a stored file's details gain when it is an image: its pixel
@@ -108,9 +105,7 @@ func withImage(meta map[string]any, stored string) map[string]any {
 	if dec.Decode(&extra) != nil {
 		return meta
 	}
-	for k, v := range jsonnum.Normalize(extra).(map[string]any) {
-		meta[k] = v
-	}
+	maps.Copy(meta, jsonnum.Normalize(extra).(map[string]any))
 	return meta
 }
 

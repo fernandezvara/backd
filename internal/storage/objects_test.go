@@ -44,7 +44,7 @@ func minioObjects(t *testing.T) *Objects {
 	}
 	// The storage may have only just started: try for a while.
 	var err2 error
-	for i := 0; i < 60; i++ {
+	for range 60 {
 		_, err2 = o.client.CreateBucket(context.Background(), &s3.CreateBucketInput{Bucket: aws.String(o.cfg.Bucket)})
 		if err2 == nil || strings.Contains(err2.Error(), "BucketAlready") {
 			return o

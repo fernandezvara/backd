@@ -229,8 +229,7 @@ func (f *functions) invoke(w http.ResponseWriter, r *http.Request) {
 	var hashInput []byte
 	if fn.Mode == registry.ModeWebhook {
 		body, err := io.ReadAll(r.Body)
-		var tooBig *http.MaxBytesError
-		if errors.As(err, &tooBig) {
+		if tooBig, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			tooLarge(w, r, tooBig.Limit)
 			return
 		}
@@ -263,7 +262,7 @@ func (f *functions) invoke(w http.ResponseWriter, r *http.Request) {
 // answer. Preferences are a comma-separated list, with optional parameters.
 func prefersAsync(r *http.Request) bool {
 	for _, line := range r.Header.Values("Prefer") {
-		for _, pref := range strings.Split(line, ",") {
+		for pref := range strings.SplitSeq(line, ",") {
 			token, _, _ := strings.Cut(pref, ";")
 			if strings.EqualFold(strings.TrimSpace(token), "respond-async") {
 				return true
@@ -430,8 +429,7 @@ func (f *functions) adminInvoke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data, err := io.ReadAll(r.Body)
-	var tooBig *http.MaxBytesError
-	if errors.As(err, &tooBig) {
+	if tooBig, ok := errors.AsType[*http.MaxBytesError](err); ok {
 		tooLarge(w, r, tooBig.Limit)
 		return
 	}
@@ -600,8 +598,7 @@ func (f *functions) checkRateLimit(w http.ResponseWriter, r *http.Request, fn *r
 		key += auth.IPKey(clientIP(r))
 	}
 	if err := f.docs.users(realm).RateLimit(r.Context(), key, fn.RateLimit.Limit, fn.RateLimit.Window); err != nil {
-		var te *auth.ThrottledError
-		if errors.As(err, &te) {
+		if te, ok := errors.AsType[*auth.ThrottledError](err); ok {
 			f.metrics.FunctionRefused(realm, database+"/"+name, "rate_limit")
 			f.metrics.RateLimited(realm, "function")
 			secs := int((te.RetryAfter + time.Second - 1) / time.Second)
@@ -1056,8 +1053,7 @@ func (f *functions) logResult(ctx context.Context, function string, res executor
 // readJSON reads the body as one JSON value (an empty body is null).
 func readJSON(w http.ResponseWriter, r *http.Request) (json.RawMessage, bool) {
 	data, err := io.ReadAll(r.Body)
-	var tooBig *http.MaxBytesError
-	if errors.As(err, &tooBig) {
+	if tooBig, ok := errors.AsType[*http.MaxBytesError](err); ok {
 		tooLarge(w, r, tooBig.Limit)
 		return nil, false
 	}

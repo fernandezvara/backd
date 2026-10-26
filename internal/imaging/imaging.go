@@ -56,8 +56,7 @@ func (e *Error) Error() string {
 
 // ReasonOf returns the Reason of an *Error, or ReasonDecodeError for any other error.
 func ReasonOf(err error) string {
-	var e *Error
-	if errors.As(err, &e) {
+	if e, ok := errors.AsType[*Error](err); ok {
 		return e.Reason
 	}
 	return ReasonDecodeError
@@ -172,10 +171,7 @@ type Engine struct {
 
 // New returns an Engine working within the limits.
 func New(l Limits) *Engine {
-	n := l.Concurrency
-	if n < 1 {
-		n = 1
-	}
+	n := max(l.Concurrency, 1)
 	return &Engine{limits: l, slots: make(chan struct{}, n)}
 }
 

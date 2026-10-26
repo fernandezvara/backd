@@ -229,7 +229,7 @@ func TestFunctionAndSessionMetrics(t *testing.T) {
 
 func grepBackd(s string) string {
 	var out []string
-	for _, l := range strings.Split(s, "\n") {
+	for l := range strings.SplitSeq(s, "\n") {
 		if strings.HasPrefix(l, "backd_") {
 			out = append(out, l)
 		}
@@ -243,7 +243,7 @@ var sensitiveInMetrics = regexp.MustCompile(`@|bd[a-z]_|[0-9a-v]{20}|\b\d{1,3}\.
 // looks like an email address, a token or key, an id or an IPv4 address.
 func assertNoSensitiveMetrics(t *testing.T, body string) {
 	t.Helper()
-	for _, l := range strings.Split(body, "\n") {
+	for l := range strings.SplitSeq(body, "\n") {
 		if strings.HasPrefix(l, "#") || strings.HasPrefix(l, "go_") || strings.HasPrefix(l, "process_") {
 			continue
 		}

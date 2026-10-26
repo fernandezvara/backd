@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -19,9 +20,7 @@ func (f *rulesFixture) readConfig(t *testing.T, cred, query string, hdr map[stri
 	if cred != "" {
 		h["Authorization"] = "Bearer " + cred
 	}
-	for k, v := range hdr {
-		h[k] = v
-	}
+	maps.Copy(h, hdr)
 	rec, out := f.doH(t, "GET", "/v1/acme/_config"+query, "", h)
 	return rec.Code, out, rec.Header()
 }

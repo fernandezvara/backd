@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/fernandezvara/kli"
 )
@@ -53,14 +54,14 @@ func accountMFAStatus(c *kli.CommandContext) error {
 }
 
 func joinList(items []string) string {
-	out := ""
+	var out strings.Builder
 	for i, s := range items {
 		if i > 0 {
-			out += ", "
+			out.WriteString(", ")
 		}
-		out += s
+		out.WriteString(s)
 	}
-	return out
+	return out.String()
 }
 
 // accountMFAEnable sets an authenticator app up for the signed-in user.

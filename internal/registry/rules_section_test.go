@@ -8,7 +8,7 @@ import "strings"
 func rulesSection(rules string) string {
 	var b strings.Builder
 	b.WriteString("rules:\n")
-	for _, line := range strings.Split(strings.TrimRight(rules, "\n"), "\n") {
+	for line := range strings.SplitSeq(strings.TrimRight(rules, "\n"), "\n") {
 		if strings.TrimSpace(line) == "" {
 			b.WriteString("\n")
 			continue

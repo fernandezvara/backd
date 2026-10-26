@@ -213,8 +213,7 @@ const OrgTemplateRealPreviewsPerHour = 30
 // AllowRealPreview counts a preview with real data against the organization's hourly limit.
 func (s *Users) AllowRealPreview(ctx context.Context, orgID string) error {
 	if err := s.RateLimit(ctx, "tplpreview:"+orgID, OrgTemplateRealPreviewsPerHour, time.Hour); err != nil {
-		var te *ThrottledError
-		if errors.As(err, &te) {
+		if _, ok := errors.AsType[*ThrottledError](err); ok {
 			return ErrTemplatePreviewLimit
 		}
 		return err
@@ -243,8 +242,7 @@ func (s *Users) QueueTemplateTest(ctx context.Context, userID, orgID, kind, loca
 		return err
 	}
 	if err := s.RateLimit(ctx, "tpltest:"+orgID, OrgTemplateTestsPerHour, time.Hour); err != nil {
-		var te *ThrottledError
-		if errors.As(err, &te) {
+		if _, ok := errors.AsType[*ThrottledError](err); ok {
 			return ErrTemplateTestLimit
 		}
 		return err

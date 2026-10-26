@@ -50,8 +50,7 @@ func Prepare(tpl *Templates, realm string, locales []string, targets []Target, k
 			return nil, err
 		}
 		if err := CheckSize(targets, m); err != nil {
-			var tl *TooLargeError
-			if errors.As(err, &tl) {
+			if _, ok := errors.AsType[*TooLargeError](err); ok {
 				return nil, fmt.Errorf("in %s: %w", locale, err)
 			}
 			return nil, err

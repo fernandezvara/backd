@@ -15,7 +15,7 @@ func TestUserWithSeveralSignInMethods(t *testing.T) {
 	store := authtest.NewMemStore()
 	clock := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
 	svc := newUsers(store, &clock)
-	u, err := svc.Create(ctx, "ada@example.com", ptr("dev-p4ssw0rd!"))
+	u, err := svc.Create(ctx, "ada@example.com", new("dev-p4ssw0rd!"))
 	if err != nil {
 		t.Fatal(err)
 	}

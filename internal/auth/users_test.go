@@ -25,7 +25,7 @@ func newUsers(store *authtest.MemStore, clock *time.Time) *Users {
 	return &Users{Store: store, Hasher: NewHasher(2, testParams), Settings: settings, Now: func() time.Time { return *clock }}
 }
 
-func ptr[T any](v T) *T { return &v }
+//go:fix inline
 
 // addSessions stores n sessions for the user.
 func addSessions(store *authtest.MemStore, userID string, n int) {
@@ -40,7 +40,7 @@ func TestCreateUser(t *testing.T) {
 	clock := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
 	svc := newUsers(store, &clock)
 
-	u, err := svc.Create(ctx, "  Ada@Example.com ", ptr("dev-p4ssw0rd!"))
+	u, err := svc.Create(ctx, "  Ada@Example.com ", new("dev-p4ssw0rd!"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestCreateUser(t *testing.T) {
 	if _, err := svc.Create(ctx, "ADA@example.com", nil); !errors.Is(err, ErrEmailTaken) {
 		t.Errorf("duplicate email: %v", err)
 	}
-	if _, err := svc.Create(ctx, "bob@example.com", ptr("short")); err == nil || !strings.Contains(err.Error(), "at least 12") {
+	if _, err := svc.Create(ctx, "bob@example.com", new("short")); err == nil || !strings.Contains(err.Error(), "at least 12") {
 		t.Errorf("short password: %v", err)
 	}
 	if _, err := store.UserByEmail(ctx, "bob@example.com"); !errors.Is(err, ErrNotFound) {
@@ -80,7 +80,7 @@ func TestCreateUser(t *testing.T) {
 
 	// If storing the identity fails, the user is removed again.
 	store.FailPutIdentity = errors.New("boom")
-	if _, err := svc.Create(ctx, "dan@example.com", ptr("dev-p4ssw0rd!")); err == nil {
+	if _, err := svc.Create(ctx, "dan@example.com", new("dev-p4ssw0rd!")); err == nil {
 		t.Fatal("expected error")
 	}
 	if _, err := store.UserByEmail(ctx, "dan@example.com"); !errors.Is(err, ErrNotFound) {
@@ -127,7 +127,7 @@ func TestUserFlagsAndDelete(t *testing.T) {
 	store := authtest.NewMemStore()
 	clock := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
 	svc := newUsers(store, &clock)
-	u, _ := svc.Create(ctx, "ada@example.com", ptr("dev-p4ssw0rd!"))
+	u, _ := svc.Create(ctx, "ada@example.com", new("dev-p4ssw0rd!"))
 	addSessions(store, u.ID, 2)
 
 	if err := svc.SetEmailVerified(ctx, "ada@example.com", true); err != nil {

@@ -222,8 +222,8 @@ func (s *TriggerState) Gaps(ctx context.Context, realm string, all bool, limit i
 	out := make([]triggers.GapRecord, len(docs))
 	for i, d := range docs {
 		out[i] = triggers.GapRecord{
-			Gap: triggers.Gap{Realm: d.Realm, Collection: d.Collection, Trigger: d.Trigger, Reason: d.Reason,
-				From: d.From.UTC(), To: d.To.UTC(), Count: d.Count, Keys: d.Keys},
+			Realm: d.Realm, Collection: d.Collection, Trigger: d.Trigger, Reason: d.Reason,
+			From: d.From.UTC(), To: d.To.UTC(), Count: d.Count, Keys: d.Keys,
 			ID: d.ID, RecordedAt: d.RecordedAt.UTC(), ResolvedAt: d.ResolvedAt.UTC(),
 		}
 		if d.ResolvedAt.IsZero() {

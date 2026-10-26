@@ -92,12 +92,10 @@ func (a *app) startTriggers(ctx context.Context) func() {
 	d.SetRegistry(a.reg)
 	a.triggers = d
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		if err := d.Run(ctx); err != nil && ctx.Err() == nil {
 			a.log.Error("trigger dispatcher stopped", "error", err)
 		}
-	}()
+	})
 	return wg.Wait
 }

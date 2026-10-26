@@ -612,8 +612,8 @@ func TestOrderedJobsAcrossConcurrentWorkers(t *testing.T) {
 	t0 := time.Date(2126, 9, 29, 12, 0, 0, 0, time.UTC)
 	var jobs []auth.Job
 	const keys, per = 4, 12
-	for k := 0; k < keys; k++ {
-		for i := 0; i < per; i++ {
+	for k := range keys {
+		for i := range per {
 			jobs = append(jobs, auth.Job{
 				ID: fmt.Sprintf("k%d-%02d", k, i), Database: "app", Function: "f", Input: json.RawMessage(`{}`), CallerActor: "system", TimeoutMS: 1000,
 				SerialKey: fmt.Sprintf("doc-%d", k), SerialOrder: int64(i + 1), Status: auth.JobQueued, CreatedAt: t0, ExpiresAt: t0.Add(time.Hour),
@@ -629,10 +629,8 @@ func TestOrderedJobsAcrossConcurrentWorkers(t *testing.T) {
 	done := 0
 	var wg sync.WaitGroup
 	errs := make(chan error, 16)
-	for w := 0; w < 6; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for w := range 6 {
+		wg.Go(func() {
 			deadline := time.Now().Add(30 * time.Second)
 			for time.Now().Before(deadline) {
 				mu.Lock()
@@ -669,14 +667,14 @@ func TestOrderedJobsAcrossConcurrentWorkers(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)
 	for err := range errs {
 		t.Fatal(err)
 	}
-	for k := 0; k < keys; k++ {
+	for k := range keys {
 		ids := finished[fmt.Sprintf("doc-%d", k)]
 		if len(ids) != per {
 			t.Fatalf("doc-%d finished %d jobs, want %d", k, len(ids), per)

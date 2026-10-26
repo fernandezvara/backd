@@ -2,6 +2,7 @@ package mongodb
 
 import (
 	"bytes"
+	"maps"
 	"reflect"
 	"testing"
 
@@ -35,12 +36,8 @@ var systemProps = map[string]any{
 
 func withSystem(props map[string]any) map[string]any {
 	out := map[string]any{}
-	for k, v := range props {
-		out[k] = v
-	}
-	for k, v := range systemProps {
-		out[k] = v
-	}
+	maps.Copy(out, props)
+	maps.Copy(out, systemProps)
 	return out
 }
 

@@ -41,7 +41,7 @@ func (f *fakeSource) add(c changefeed.Change) {
 	c.At = time.Unix(int64(n), 0).UTC()
 	f.history = append(f.history, c)
 	f.mu.Unlock()
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		select {
 		case f.wake <- struct{}{}:
 		default:
@@ -285,7 +285,7 @@ func TestSlowConsumerIsReset(t *testing.T) {
 	h := newHub(t, src, Limits{BufferEvents: 3})
 	s := open(t, h, "user:a", sub("s", "a"))
 	src.settle()
-	for i := 0; i < 10; i++ { // nobody is reading
+	for i := range 10 { // nobody is reading
 		src.add(changefeed.Change{DB: "db", Coll: "items", Op: changefeed.Created, Key: "x", After: doc("x", "a", i+1), Version: int64(i + 1)})
 	}
 	deadline := time.Now().Add(2 * time.Second)
@@ -450,7 +450,7 @@ func TestChangesFindTheirSubscriptionsByKey(t *testing.T) {
 	h.Observer = obs
 	var mine collector
 	mine.run(t, open(t, h, "user:me", keyed("s", "me")))
-	for i := 0; i < 50; i++ { // fifty other subscribers, each with a key of their own
+	for i := range 50 { // fifty other subscribers, each with a key of their own
 		who := "other" + string(rune('a'+i%26)) + string(rune('a'+i/26))
 		open(t, h, "user:"+who, keyed("s", who))
 	}
@@ -746,7 +746,7 @@ func TestReloadsAreBounded(t *testing.T) {
 	h.ReloadConcurrency = 3
 	var running, peak, done atomic.Int64
 	const n = 30
-	for i := 0; i < n; i++ {
+	for i := range n {
 		acc := &Access{SessionID: fmt.Sprint("s", i), UserID: fmt.Sprint("u", i), Orgs: []string{"o"}, Reload: func(context.Context) (Reloaded, error) {
 			cur := running.Add(1)
 			for {
@@ -943,7 +943,7 @@ func TestTeamEqualityIsAGroupingKey(t *testing.T) {
 	var sales, support collector
 	sales.run(t, open(t, h, "user:a", inTeam("s", "sales")))
 	support.run(t, open(t, h, "user:b", inTeam("s", "support")))
-	for i := 0; i < 20; i++ { // other teams' subscribers
+	for i := range 20 { // other teams' subscribers
 		open(t, h, fmt.Sprintf("user:t%d", i), inTeam("s", fmt.Sprintf("team%d", i)))
 	}
 	src.settle()

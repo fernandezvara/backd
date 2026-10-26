@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"maps"
 	"os"
 	"runtime"
 	"strconv"
@@ -213,9 +214,7 @@ func unkeyedSub(id, org string) *Subscription {
 
 func changeFor(org string, i int, extra map[string]any) changefeed.Change {
 	d := map[string]any{"id": fmt.Sprint("d", i), "org": org, "_meta": map[string]any{"version": int64(1)}}
-	for k, v := range extra {
-		d[k] = v
-	}
+	maps.Copy(d, extra)
 	return changefeed.Change{Realm: "r", DB: "db", Coll: "items", Op: changefeed.Created, Key: fmt.Sprint("d", i), After: d, Version: 1}
 }
 
@@ -249,7 +248,7 @@ func TestLoadFanOutKeyedAndUnkeyed(t *testing.T) {
 		obs := &counter{}
 		hub := loadHub(t, h, Limits{}, obs)
 		var got atomic.Int64
-		for i := 0; i < streams; i++ {
+		for i := range streams {
 			org := fmt.Sprint("o", i%orgs)
 			mk := unkeyedSub
 			if keyed {
@@ -265,7 +264,7 @@ func TestLoadFanOutKeyedAndUnkeyed(t *testing.T) {
 		feedOpen(t, h, 1)
 		start := time.Now()
 		var cs []changefeed.Change
-		for i := 0; i < changes; i++ {
+		for i := range changes {
 			cs = append(cs, changeFor(fmt.Sprint("o", i%orgs), i, nil))
 		}
 		h.add(cs...)
@@ -298,7 +297,7 @@ func TestLoadLargeDocuments(t *testing.T) {
 	// not turn a slow reader into a reset (the budget has its own scenario).
 	hub := loadHub(t, h, Limits{BufferBytes: 64 << 20, BufferEvents: 100000, Memory: 16 << 30}, obs)
 	var got atomic.Int64
-	for i := 0; i < streams; i++ {
+	for i := range streams {
 		s, err := hub.Open(Request{Realm: "r", Principal: fmt.Sprint("u", i), Key: key, Subscriptions: []*Subscription{orgSub("s", "o")}})
 		if err != nil {
 			t.Fatal(err)
@@ -310,7 +309,7 @@ func TestLoadLargeDocuments(t *testing.T) {
 	big := strings.Repeat("x", 32<<10)
 	n := 20
 	start := time.Now()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		h.add(changeFor("o", i, map[string]any{"body": big}))
 	}
 	waitUntil(t, "every event", func() bool { return got.Load() >= int64(n*streams) })
@@ -327,7 +326,7 @@ func TestLoadSlowClientsAndMemoryBudget(t *testing.T) {
 	h := newHistory()
 	obs := &counter{}
 	hub := loadHub(t, h, Limits{BufferBytes: 1 << 20, BufferEvents: 100000, Memory: budget}, obs)
-	for i := 0; i < stalled; i++ { // nobody reads these
+	for i := range stalled { // nobody reads these
 		s, err := hub.Open(Request{Realm: "r", Principal: fmt.Sprint("slow", i), Key: key, Subscriptions: []*Subscription{orgSub("s", "o")}})
 		if err != nil {
 			t.Fatal(err)
@@ -374,7 +373,7 @@ func TestLoadSlowClientsAndMemoryBudget(t *testing.T) {
 	}()
 	defer close(stopSampling)
 	start := time.Now()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		h.add(changeFor("o", i, map[string]any{"body": big}))
 	}
 	waitUntil(t, "the healthy client to receive most of it", func() bool { return got.Load() >= int64(n/2) })
@@ -401,7 +400,7 @@ func TestLoadAccessChangeStorm(t *testing.T) {
 	obs := &counter{}
 	hub := loadHub(t, h, Limits{}, obs)
 	var reloads atomic.Int64
-	for i := 0; i < members; i++ {
+	for i := range members {
 		differs := i%2 == 0
 		acc := &Access{SessionID: fmt.Sprint("s", i), UserID: fmt.Sprint("u", i), Orgs: []string{"o1"},
 			Reload: func(context.Context) (Reloaded, error) {
@@ -446,7 +445,7 @@ func TestLoadRealmsInstancesAndIdleReplicas(t *testing.T) {
 	hubs := []*Hub{loadHub(t, h, Limits{}, nil), loadHub(t, h, Limits{}, nil)}
 	var got [2]atomic.Int64
 	for i, hub := range hubs {
-		for r := 0; r < 5; r++ {
+		for r := range 5 {
 			sub := orgSub("s", fmt.Sprint("o", r))
 			s, err := hub.Open(Request{Realm: "r", Principal: fmt.Sprint("u", i, r), Key: key, Subscriptions: []*Subscription{sub}})
 			if err != nil {
@@ -457,7 +456,7 @@ func TestLoadRealmsInstancesAndIdleReplicas(t *testing.T) {
 		}
 	}
 	feedOpen(t, h, 2)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		h.add(changeFor(fmt.Sprint("o", i%5), i, nil))
 	}
 	waitUntil(t, "both instances", func() bool { return got[0].Load() >= 100 && got[1].Load() >= 100 })
@@ -481,7 +480,7 @@ func TestLoadSoak(t *testing.T) {
 	sent := 0
 	for round := 0; time.Now().Before(end); round++ {
 		var open []*Stream
-		for i := 0; i < 50; i++ {
+		for i := range 50 {
 			s, err := hub.Open(Request{Realm: "r", Principal: fmt.Sprint("u", round, i), Key: key, Subscriptions: []*Subscription{orgSub("s", fmt.Sprint("o", i%5))}})
 			if err != nil {
 				t.Fatal(err)
@@ -489,7 +488,7 @@ func TestLoadSoak(t *testing.T) {
 			drainer(s, &got)
 			open = append(open, s)
 		}
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			h.add(changeFor(fmt.Sprint("o", i%5), sent, nil))
 			sent++
 		}

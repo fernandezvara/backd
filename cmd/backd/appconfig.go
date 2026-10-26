@@ -190,7 +190,7 @@ func appConfigReset(c *kli.CommandContext) error {
 		return err
 	}
 	var keys []string
-	for _, k := range strings.Split(str(c, "keys"), ",") {
+	for k := range strings.SplitSeq(str(c, "keys"), ",") {
 		if k = strings.TrimSpace(k); k != "" {
 			keys = append(keys, k)
 		}

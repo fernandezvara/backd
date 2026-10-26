@@ -137,7 +137,7 @@ func TestPagesDataHookNeedsACompanyContext(t *testing.T) {
 	f.reg.Realms["acme"].Settings.PagesDataHook = "app/echo"
 	hook := &hookCalls{answer: `{"name": "Acme"}`}
 	hook.install(f, "app/echo")
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if rec := f.page(t, "GET", "/v1/acme/_auth/reset-password?token=not-a-token", "", "", ""); rec.Code != 400 {
 			t.Fatalf("wrong token: %d", rec.Code)
 		}

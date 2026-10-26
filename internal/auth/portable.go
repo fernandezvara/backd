@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -157,9 +158,7 @@ func (s *Users) ExportAuthDocs(ctx context.Context, collection, afterID string, 
 			}
 			continue
 		}
-		for f, v := range PortableReset(collection) {
-			d[f] = v
-		}
+		maps.Copy(d, PortableReset(collection))
 		carry := true
 		for _, f := range PortableSealed[collection] {
 			sealed, _ := d[f].(string)

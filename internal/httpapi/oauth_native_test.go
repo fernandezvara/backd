@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"maps"
 	"testing"
 	"time"
 
@@ -15,9 +16,7 @@ import (
 func (f *oauthFixture) idToken(t *testing.T, provider string, claims map[string]any, body map[string]any, hdr map[string]string) (int, map[string]any) {
 	t.Helper()
 	b := map[string]any{"id_token": f.idp.IDToken(t, claims), "nonce": "raw-nonce"}
-	for k, v := range body {
-		b[k] = v
-	}
+	maps.Copy(b, body)
 	data, _ := json.Marshal(b)
 	if hdr == nil {
 		hdr = map[string]string{}

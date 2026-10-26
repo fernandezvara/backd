@@ -78,7 +78,7 @@ func (s *Users) queueOnSignup(ctx context.Context, u User, provider string, prof
 			ID: KeyedJobID(OnSignupOrigin, u.ID), Database: db, Function: fn, Input: input, CallerActor: "system", Origin: OnSignupOrigin,
 			ActsAsFunction: true, TimeoutMS: timeout.Milliseconds(),
 		}
-		for attempt := 0; attempt < onSignupAttempts; attempt++ {
+		for attempt := range onSignupAttempts {
 			if _, err = s.EnqueueKeyedJob(ctx, job); err == nil {
 				break
 			}

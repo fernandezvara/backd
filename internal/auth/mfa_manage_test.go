@@ -28,7 +28,7 @@ func enrollFixture(t *testing.T) (*Users, *authtest.MemStore, *time.Time, User) 
 	svc.Realm = "acme"
 	svc.Cipher, _ = NewSecretCipher([]byte("01234567890123456789012345678901"))
 	svc.Settings.Email = enrollEmail()
-	u, err := svc.Create(context.Background(), "ada@example.com", ptr(mfaPassword))
+	u, err := svc.Create(context.Background(), "ada@example.com", new(mfaPassword))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestEnrollingTOTP(t *testing.T) {
 		t.Fatal("MFA is on after a wrong code")
 	}
 	// Someone else's setup id is no use.
-	otherUser, _ := svc.Create(ctx, "bob@example.com", ptr(mfaPassword))
+	otherUser, _ := svc.Create(ctx, "bob@example.com", new(mfaPassword))
 	if _, err := svc.ConfirmTOTP(ctx, otherUser, "", setup.SetupID, totpAt(t, setup.Secret, *clock)); !errors.Is(err, ErrInvalidChallenge) {
 		t.Errorf("another user's setup: %v", err)
 	}

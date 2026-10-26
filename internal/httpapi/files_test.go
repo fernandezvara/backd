@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -58,9 +59,7 @@ func (f *filesFixture) upload(t *testing.T, cred, collection, id, field, name, c
 	if cred != "" {
 		hdr["Authorization"] = "Bearer " + cred
 	}
-	for k, v := range extra {
-		hdr[k] = v
-	}
+	maps.Copy(hdr, extra)
 	return f.doRaw(t, "POST", path, body, hdr)
 }
 
@@ -490,7 +489,7 @@ func TestBackdSignedLinks(t *testing.T) {
 	}
 	rel := u.RequestURI()
 	// The link is its own credential, and can be used again (Range requests, seeking, retries).
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		if rec := f.get(t, rel, nil); rec.Code != 200 || !bytes.Equal(rec.Body.Bytes(), data) {
 			t.Fatalf("use %d: %d", i, rec.Code)
 		}

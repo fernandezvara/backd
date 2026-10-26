@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/fernandezvara/backd/internal/auth"
@@ -18,9 +19,9 @@ func hookEvents(t *testing.T, f *rulesFixture, origin string) []map[string]any {
 		t.Fatal(err)
 	}
 	var out []map[string]any
-	for i := len(jobs) - 1; i >= 0; i-- {
+	for _, job := range slices.Backward(jobs) {
 		var in map[string]any
-		if err := json.Unmarshal(jobs[i].Input, &in); err != nil {
+		if err := json.Unmarshal(job.Input, &in); err != nil {
 			t.Fatal(err)
 		}
 		out = append(out, in)

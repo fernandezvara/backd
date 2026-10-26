@@ -235,7 +235,7 @@ func (r *Repository) migrateDocument(ctx context.Context, raw bson.D, doc storag
 
 func docPath(doc map[string]any, path string) (any, bool) {
 	var cur any = map[string]any(doc)
-	for _, p := range strings.Split(path, ".") {
+	for p := range strings.SplitSeq(path, ".") {
 		m, ok := cur.(map[string]any)
 		if !ok {
 			return nil, false

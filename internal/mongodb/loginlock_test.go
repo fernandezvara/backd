@@ -17,9 +17,7 @@ func TestLoginLockOnMongoDB(t *testing.T) {
 	var won atomic.Int32
 	var wg sync.WaitGroup
 	for i := range 12 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			ok, err := s.AcquireLoginLock(ctx, "account:a@example.com", string(rune('a'+i)), now, now.Add(30*time.Second))
 			if err != nil {
 				t.Error(err)
@@ -27,7 +25,7 @@ func TestLoginLockOnMongoDB(t *testing.T) {
 			if ok {
 				won.Add(1)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if won.Load() != 1 {

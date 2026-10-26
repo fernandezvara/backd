@@ -145,11 +145,11 @@ func TestEmailTokenRedeemedOnce(t *testing.T) {
 	other, _, _ := f.svc.NewEmailToken(ctx, "verify-email", f.adaID, "", time.Hour)
 
 	results := make(chan error, 8)
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		go func() { _, err := f.svc.RedeemEmailToken(ctx, tok1, "reset-password"); results <- err }()
 	}
 	wins := 0
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		if err := <-results; err == nil {
 			wins++
 		}
@@ -254,7 +254,7 @@ func TestEmailLimits(t *testing.T) {
 	}
 	var limited *auth.EmailLimitedError
 	// 3 emails of one kind per hour to one recipient; the 4th is limited, others aren't.
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if err := queue("reset-password", "ada@example.com", ""); err != nil {
 			t.Fatal(err)
 		}
@@ -270,7 +270,7 @@ func TestEmailLimits(t *testing.T) {
 	}
 	// The hour passes: the kind is free again, but the day's total counts.
 	*f.clock = f.clock.Add(61 * time.Minute)
-	for i := 0; i < 6; i++ { // 4 + these 6: 10 in all today
+	for i := range 6 { // 4 + these 6: 10 in all today
 		if err := queue([]string{"welcome", "password-changed", "email-changed", "change-email", "invitation", "account-exists"}[i], "ada@example.com", ""); err != nil {
 			t.Fatalf("email %d of the day: %v", i, err)
 		}
@@ -279,7 +279,7 @@ func TestEmailLimits(t *testing.T) {
 		t.Errorf("11th email of the day: %v", err)
 	}
 	// 20 requests per hour from one address.
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		if err := queue("welcome", "user"+string(rune('a'+i))+"@example.com", "198.51.100.7"); err != nil {
 			t.Fatalf("request %d from one address: %v", i, err)
 		}

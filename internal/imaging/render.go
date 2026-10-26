@@ -149,8 +149,8 @@ func orient(img *image.NRGBA, o int) *image.NRGBA {
 		nw, nh = h, w
 	}
 	out := image.NewNRGBA(image.Rect(0, 0, nw, nh))
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
+	for y := range h {
+		for x := range w {
 			var dx, dy int
 			switch o {
 			case 2: // mirrored horizontally

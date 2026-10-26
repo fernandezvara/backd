@@ -3,6 +3,7 @@ package email
 import (
 	"fmt"
 	"html"
+	"slices"
 	"strings"
 )
 
@@ -90,7 +91,7 @@ func validName(name string) bool {
 	if name == "" || strings.HasPrefix(name, ".") || strings.HasSuffix(name, ".") {
 		return false
 	}
-	for _, part := range strings.Split(name, ".") {
+	for part := range strings.SplitSeq(name, ".") {
 		if part == "" {
 			return false
 		}
@@ -248,8 +249,8 @@ func lookup(stack []any, name string) (any, bool) {
 		return stack[len(stack)-1], true
 	}
 	parts := strings.Split(name, ".")
-	for i := len(stack) - 1; i >= 0; i-- {
-		cur, ok := stack[i].(map[string]any)
+	for _, s := range slices.Backward(stack) {
+		cur, ok := s.(map[string]any)
 		if !ok {
 			continue
 		}

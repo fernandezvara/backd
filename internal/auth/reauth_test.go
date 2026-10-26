@@ -18,7 +18,7 @@ func TestReauthMethodsAreTheStrongestTheUserHas(t *testing.T) {
 	if err != nil || strings.Join(methods, ",") != "totp,recovery_code" {
 		t.Errorf("MFA user: %v %v", methods, err)
 	}
-	plain, _ := f.svc.Create(ctx, "plain@example.com", ptr(mfaPassword))
+	plain, _ := f.svc.Create(ctx, "plain@example.com", new(mfaPassword))
 	if methods, _ = f.svc.ReauthMethodsOf(ctx, plain); strings.Join(methods, ",") != "password" {
 		t.Errorf("password user: %v", methods)
 	}

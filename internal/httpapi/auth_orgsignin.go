@@ -130,11 +130,9 @@ func (a *authAPI) signUpWithOrg(w http.ResponseWriter, r *http.Request) {
 	requested, _ := f["locale"].(string)
 	invitation, _ := f["invitation"].(string)
 	res, m, err := svc.SignUpWithOrg(r.Context(), auth.NewOrgSignupRequest{
-		SignupRequest: auth.SignupRequest{
-			Email: email, Password: f["password"].(string), Invitation: invitation, RedirectTo: redirectTo, ClientIP: clientIP(r), RequestID: requestID(r.Context()),
-			Locales:  append([]string{requested}, acceptLanguages(r.Header.Get("Accept-Language"))...),
-			Consents: consents, UserAgent: r.UserAgent(),
-		},
+		Email: email, Password: f["password"].(string), Invitation: invitation, RedirectTo: redirectTo, ClientIP: clientIP(r), RequestID: requestID(r.Context()),
+		Locales:  append([]string{requested}, acceptLanguages(r.Header.Get("Accept-Language"))...),
+		Consents: consents, UserAgent: r.UserAgent(),
 		Name: f["name"].(string), Slug: f["slug"].(string),
 	})
 	if err != nil {

@@ -155,7 +155,7 @@ func TestRunUserLifecycle(t *testing.T) {
 	c.expect(0, "", "", "provision")
 	c.expect(0, "logged in", "dev-p4ssw0rd!\n", "login", "--realm", realm, "--url", srv.URL, "--email", "ada@example.com")
 	out = c.expect(0, "EMAIL", "", "user", "list", "--realm", realm)
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		if strings.HasPrefix(line, "ada@example.com") && !strings.Contains(line, "editor") {
 			t.Errorf("seed not reapplied: %q", line)
 		}

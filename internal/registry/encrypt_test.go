@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"maps"
 	"strings"
 	"testing"
 )
@@ -55,9 +56,7 @@ func encryptTreeFiles(t *testing.T, schema, yaml string, extra map[string]string
 		"clinic/main/patients/schema.json":     schema,
 		"clinic/main/patients/collection.yaml": yaml,
 	}
-	for k, v := range extra {
-		files[k] = v
-	}
+	maps.Copy(files, extra)
 	_, err := Load(writeTree(t, files))
 	return err
 }

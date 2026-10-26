@@ -58,7 +58,7 @@ roles:
 	})
 	ctx := context.Background()
 	const adaPassword = "ada's long password"
-	if _, err := svc.Create(ctx, "ada@example.com", ptr(adaPassword)); err != nil {
+	if _, err := svc.Create(ctx, "ada@example.com", new(adaPassword)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -202,4 +202,4 @@ roles:
 	call(in, "DELETE", base+"_admin/audit", "", ada, 405)
 }
 
-func ptr[T any](v T) *T { return &v }
+//go:fix inline

@@ -22,7 +22,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/backd ./cmd/backd 
 # Bundles functions/netprobe's Deno source into the config (see its
 # realm.yaml): so it ships pre-built, and byte-identical to ops/Dockerfile's
 # copy, since PROVISION_MODE=verify compares their config fingerprints.
-FROM docker.io/denoland/deno:alpine-2.9.7 AS functions
+FROM docker.io/denoland/deno:alpine-2.9.8 AS functions
 COPY --from=build /out/backd /usr/local/bin/backd
 COPY examples/config/blog /config/blog
 COPY deploy/production/functions/netprobe /config/netprobe

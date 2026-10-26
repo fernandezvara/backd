@@ -126,7 +126,7 @@ func (f *pushSendFixture) send(t *testing.T, body string) (int, map[string]any) 
 // drain runs the worker until no job is left to claim.
 func (f *pushSendFixture) drain(t *testing.T) {
 	t.Helper()
-	for i := 0; i < 10000; i++ {
+	for range 10000 {
 		if !f.worker.RunOnce(context.Background()) {
 			return
 		}
@@ -284,7 +284,7 @@ func TestPushLimitsPruningAndRetries(t *testing.T) {
 	}
 	f.register(t, f.carl, "carl-token")
 	var limited float64
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		out := sendTo(carl.ID)
 		if v, _ := out["limited"].(float64); v > 0 {
 			limited++
@@ -329,7 +329,7 @@ func TestPushAudienceIsPagedIntoBatches(t *testing.T) {
 	f.svc.Settings.Push.Limits.PerMinute = 100
 	now := time.Now().UTC()
 	// 2,500 members with a device each, and the three users of the fixture who have none.
-	for i := 0; i < 2500; i++ {
+	for i := range 2500 {
 		id := fmt.Sprintf("m%05d", i)
 		u := auth.User{ID: id, Email: id + "@example.com", Roles: []string{"member"}, Locale: "en", EmailVerified: true, CreatedAt: now, UpdatedAt: now}
 		if err := f.svc.Store.CreateUser(ctx, u); err != nil {
@@ -394,7 +394,7 @@ func TestPushBatchThatRunsAgain(t *testing.T) {
 		t.Errorf("units made: %d", units)
 	}
 	// Charged once: the user's minute counter shows one push.
-	for i := 0; i < 2; i++ { // two more are allowed (limit 3), the fourth is not
+	for range 2 { // two more are allowed (limit 3), the fourth is not
 		if err := f.svc.RateLimit(ctx, "push:user:"+f.adaID+":m", 3, time.Minute); err != nil {
 			t.Fatalf("the counter was charged twice: %v", err)
 		}
@@ -448,7 +448,7 @@ func TestPushTestSendAndRecords(t *testing.T) {
 		t.Errorf("audit: %v", got)
 	}
 	// It counted: three a minute in this fixture, so two more and the next is limited.
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		_, out = f.doH(t, "POST", admin+"/push/test", `{"user": "`+f.adaID+`", "title": "T", "body": "B"}`, jsonHdr(f.key))
 		if out["queued"] != float64(1) {
 			t.Fatalf("send %d: %v", i, out)

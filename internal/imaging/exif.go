@@ -76,7 +76,7 @@ func tiffOrientation(t []byte) int {
 		return 1
 	}
 	count := int(bo.Uint16(t[off : off+2]))
-	for i := 0; i < count; i++ {
+	for i := range count {
 		e := off + 2 + i*12
 		if e+12 > len(t) {
 			return 1

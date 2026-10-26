@@ -231,14 +231,14 @@ func (a *adminAPI) exportPlan(w http.ResponseWriter, r *http.Request, realm stri
 	}
 	noFiles := q.Get("files") == "false" || csvOut || (body.Anonymize && body.AnonymizeFiles != "keep")
 	var fields []string
-	for _, f := range strings.Split(q.Get("fields"), ",") {
+	for f := range strings.SplitSeq(q.Get("fields"), ",") {
 		if f = strings.TrimSpace(f); f != "" && f != "id" {
 			fields = append(fields, f)
 		}
 	}
 	where := q.Get("where")
 	includeAuth := false
-	for _, inc := range strings.Split(q.Get("include"), ",") {
+	for inc := range strings.SplitSeq(q.Get("include"), ",") {
 		switch strings.TrimSpace(inc) {
 		case "":
 		case "auth":
@@ -293,7 +293,7 @@ func (a *adminAPI) exportPlan(w http.ResponseWriter, r *http.Request, realm stri
 		rules, err := registry.AnonymizeRules(rl, overrides)
 		if err != nil {
 			var details []Detail
-			for _, e := range strings.Split(err.Error(), "\n") {
+			for e := range strings.SplitSeq(err.Error(), "\n") {
 				details = append(details, Detail{Path: "anonymize_config", Reason: e})
 			}
 			writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", details...)

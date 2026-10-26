@@ -215,8 +215,7 @@ func TestWorkerFollowsTheConfig(t *testing.T) {
 	a, dir := followFixture(t)
 	schema := filepath.Join(dir, "app/main/notes/schema.json")
 	got := make(chan *app, 1)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go func() { got <- followConfig(ctx, a, 10*time.Millisecond) }()
 
 	// A stray file: the same config, no reload.
@@ -253,8 +252,7 @@ func TestWorkerFollowsTheConfig(t *testing.T) {
 func TestWorkerRetriesAConfigThatDoesNotLoadYet(t *testing.T) {
 	a, dir := followFixture(t)
 	got := make(chan *app, 1)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go func() { got <- followConfig(ctx, a, 10*time.Millisecond) }()
 	// A reference to a collection that does not exist yet.
 	edit(t, filepath.Join(dir, "app/main/notes/collection.yaml"), "references:\n  later: {field: title, collection: later}\n")

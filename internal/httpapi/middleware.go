@@ -261,7 +261,7 @@ func dataCaching(next http.Handler) http.Handler {
 func addVary(h http.Header, names ...string) {
 	var all []string
 	for _, v := range h.Values("Vary") {
-		for _, n := range strings.Split(v, ",") {
+		for n := range strings.SplitSeq(v, ",") {
 			if n = strings.TrimSpace(n); n != "" {
 				all = append(all, n)
 			}

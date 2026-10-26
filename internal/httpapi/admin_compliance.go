@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"errors"
+	"maps"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -113,9 +114,7 @@ func (a *adminAPI) userConsents(w http.ResponseWriter, r *http.Request) {
 		items = append(items, item)
 	}
 	held := map[string]string{}
-	for k, v := range u.Consents {
-		held[k] = v
-	}
+	maps.Copy(held, u.Consents)
 	writeJSON(w, http.StatusOK, map[string]any{"consents": held, "history": items})
 }
 

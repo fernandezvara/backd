@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -394,9 +395,7 @@ func TestAdminImportAuthData(t *testing.T) {
 		"email_domains": []any{}, "native_client_ids": []any{}, "join_roles": []any{}, "enabled": true, "blocked": []any{}, "created_at": at, "updated_at": at}
 	with := func(k string, v any) string {
 		d := map[string]any{}
-		for key, val := range good {
-			d[key] = val
-		}
+		maps.Copy(d, good)
 		d[k] = v
 		return line(d)
 	}
@@ -493,9 +492,7 @@ func TestAdminImportHoldsMetaToWhatTheServerWrites(t *testing.T) {
 		"a score":                {map[string]any{"score": 3.5}, false},
 	} {
 		doc := importLines(t, 1, func(i int, d map[string]any) {
-			for k, v := range tc.meta {
-				d["_meta"].(map[string]any)[k] = v
-			}
+			maps.Copy(d["_meta"].(map[string]any), tc.meta)
 		})
 		rec, out := f.doH(t, "POST", admin+"/import?phase=validate&part=app/notes.jsonl", doc, lh)
 		counts, _ := out["counts"].(map[string]any)

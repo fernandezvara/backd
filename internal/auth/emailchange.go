@@ -104,7 +104,7 @@ func (s *Users) RevertEmailChange(ctx context.Context, token string) (EmailToken
 	restored.Email = u.PreviousEmail
 	empty := ""
 	now := s.now()
-	err = s.Store.UpdateUser(ctx, u.ID, UserUpdate{Email: &t.Address, PendingEmail: &empty, PreviousEmail: &empty, EmailVerified: ptr(true)}, now)
+	err = s.Store.UpdateUser(ctx, u.ID, UserUpdate{Email: &t.Address, PendingEmail: &empty, PreviousEmail: &empty, EmailVerified: new(true)}, now)
 	if errors.Is(err, ErrEmailTaken) {
 		return EmailToken{}, ErrInvalidToken
 	}
@@ -183,7 +183,7 @@ func (s *Users) activeUser(ctx context.Context, id string) (User, error) {
 func (s *Users) applyEmailChange(ctx context.Context, u User, next string) error {
 	empty := ""
 	now := s.now()
-	err := s.Store.UpdateUser(ctx, u.ID, UserUpdate{Email: &next, PendingEmail: &empty, PreviousEmail: &u.Email, EmailVerified: ptr(true)}, now)
+	err := s.Store.UpdateUser(ctx, u.ID, UserUpdate{Email: &next, PendingEmail: &empty, PreviousEmail: &u.Email, EmailVerified: new(true)}, now)
 	if err != nil {
 		return err
 	}
@@ -221,4 +221,4 @@ func (s *Users) queueQuietly(ctx context.Context, r EmailRequest) {
 	}
 }
 
-func ptr[T any](v T) *T { return &v }
+//go:fix inline

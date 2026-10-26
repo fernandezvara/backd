@@ -92,7 +92,7 @@ func Parse(expr string) (*Schedule, error) {
 
 func parseField(s string, f field) (uint64, error) {
 	var bits uint64
-	for _, item := range strings.Split(s, ",") {
+	for item := range strings.SplitSeq(s, ",") {
 		rng, step := item, 1
 		if r, st, ok := strings.Cut(item, "/"); ok {
 			n, err := strconv.Atoi(st)
@@ -202,7 +202,7 @@ func (s *Schedule) fires(t time.Time) bool {
 func (s *Schedule) Prev(t time.Time) (time.Time, bool) {
 	loc := s.location()
 	t = t.UTC().Truncate(time.Minute)
-	for i := 0; i < 8*366*24*60; i++ {
+	for range 8 * 366 * 24 * 60 {
 		if s.fires(t) {
 			return t.UTC(), true
 		}

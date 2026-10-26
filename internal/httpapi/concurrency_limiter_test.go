@@ -58,9 +58,7 @@ func TestConcurrencyLimiterConcurrent(t *testing.T) {
 	var mu sync.Mutex
 	inFlight, peak := 0, 0
 	for range 100 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for !l.tryAcquire("k", max) {
 			}
 			mu.Lock()
@@ -73,7 +71,7 @@ func TestConcurrencyLimiterConcurrent(t *testing.T) {
 			inFlight--
 			mu.Unlock()
 			l.release("k", max)
-		}()
+		})
 	}
 	wg.Wait()
 	if peak > max {

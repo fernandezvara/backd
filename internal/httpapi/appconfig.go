@@ -36,7 +36,7 @@ func (d *documents) readAppConfig(w http.ResponseWriter, r *http.Request) {
 	// Which paths: all, or the branches asked for.
 	var roots []string
 	if q := r.URL.Query().Get("paths"); q != "" {
-		for _, p := range strings.Split(q, ",") {
+		for p := range strings.SplitSeq(q, ",") {
 			p = strings.TrimSpace(p)
 			if !cfg.HasPath(p) {
 				writeError(w, r, http.StatusBadRequest, codeInvalidPath, "paths must name declared configuration keys or groups",
@@ -90,7 +90,7 @@ func (d *documents) readAppConfig(w http.ResponseWriter, r *http.Request) {
 // valueAt returns the value at a dot path of a nested document.
 func valueAt(m map[string]any, path string) any {
 	var cur any = m
-	for _, k := range strings.Split(path, ".") {
+	for k := range strings.SplitSeq(path, ".") {
 		next, ok := cur.(map[string]any)
 		if !ok {
 			return nil

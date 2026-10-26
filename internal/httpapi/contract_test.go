@@ -357,9 +357,7 @@ func TestContract(t *testing.T) {
 	req := func(method, path, body string, hdr map[string]string, want int) map[string]any {
 		t.Helper()
 		h := map[string]string{}
-		for k, v := range hdr {
-			h[k] = v
-		}
+		maps.Copy(h, hdr)
 		if body != "" && h["Content-Type"] == "" {
 			h["Content-Type"] = "application/json"
 			if method == "PATCH" {
@@ -375,9 +373,7 @@ func TestContract(t *testing.T) {
 	key, ada, carl := bearer(f.key), bearer(f.ada), bearer(f.carl)
 	with := func(h map[string]string, k, v string) map[string]string {
 		out := map[string]string{k: v}
-		for a, b := range h {
-			out[a] = b
-		}
+		maps.Copy(out, h)
 		return out
 	}
 
@@ -487,7 +483,7 @@ func TestContract(t *testing.T) {
 		req("POST", "/v1/acme/app/posts", `{"id":"mine","title":"a"}`, ada, 400)
 		req("POST", inv, `{"id":"INV-0001","title":"a"}`, ada, 201)
 		req("POST", inv, `{"id":"INV-9999","title":"a"}`, ada, 403)
-		for i := 0; i < 3; i++ {
+		for range 3 {
 			req("POST", inv, `{"id":"INV-0001","title":"a"}`, ada, 409)
 		}
 		req("POST", inv, `{"id":"INV-0002","title":"a"}`, ada, 429)
@@ -1153,7 +1149,7 @@ func TestContract(t *testing.T) {
 	req("GET", ad+"/users?q=ada", "", key, 200)
 	req("GET", ad+"/users?q=", "", key, 400)
 	// A user made for the purpose, so ending its session disturbs nobody else.
-	temp, err := f.svc.Create(context.Background(), "sessions-contract@example.com", ptrString("dev-p4ssw0rd!"))
+	temp, err := f.svc.Create(context.Background(), "sessions-contract@example.com", new("dev-p4ssw0rd!"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1196,7 +1192,7 @@ func TestContract(t *testing.T) {
 	req("POST", ad+"/users/"+temp.ID+"/mfa/reset", "", ada, 403)
 	req("POST", ad+"/users/nope/mfa/reset", "", key, 404)
 	req("POST", ad+"/users/"+temp.ID+"/mfa/reset", "", key, 204)
-	selfAdmin, err := f.svc.Create(context.Background(), "self-admin@example.com", ptr("dev-p4ssw0rd!"))
+	selfAdmin, err := f.svc.Create(context.Background(), "self-admin@example.com", new("dev-p4ssw0rd!"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1745,9 +1741,7 @@ func TestContract(t *testing.T) {
 		req("POST", "/v1/acme/_auth/consents", `{"consents": {"marketing": "1"}}`, ada, 200)
 		saved := f.svc.Settings.Consents
 		withTerms := map[string]*registry.Consent{}
-		for k, v := range saved {
-			withTerms[k] = v
-		}
+		maps.Copy(withTerms, saved)
 		withTerms["terms"] = &registry.Consent{
 			Name: "terms", Required: true, Current: "1",
 			Versions: map[string]*registry.ConsentVersion{"1": {}},
@@ -2394,7 +2388,7 @@ func TestContract(t *testing.T) {
 		req("POST", magic, "token="+lostTok, mform, 200)
 		f.svc.Settings.SignInAppURL = "https://app.acme.example/signed-in"
 		// An account that can't sign in is refused when the link is used.
-		blocked, err := f.svc.Create(ctx, "magic-blocked@example.com", ptr("dev-p4ssw0rd!"))
+		blocked, err := f.svc.Create(ctx, "magic-blocked@example.com", new("dev-p4ssw0rd!"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -2873,7 +2867,7 @@ func TestContract(t *testing.T) {
 		req("POST", ap+"/roles", role, withJSON(key), 200)
 		req("PATCH", ap+"/roles", `{"user": "`+f.adaID+`", "role": "delegate", "until": "2099-01-01T00:00:00Z"}`, withJSON(key), 200)
 		held.TeamRoles = nil
-		for i := 0; i < registry.MaxTeamRolesPerMember; i++ {
+		for i := range registry.MaxTeamRolesPerMember {
 			held.TeamRoles = append(held.TeamRoles, teamGrant(fmt.Sprintf("filler%d", i), "delegate"))
 		}
 		if err := f.svc.Store.PutOrgMember(context.Background(), held); err != nil {
@@ -3296,7 +3290,7 @@ func TestContractDetectsViolations(t *testing.T) {
 	}
 }
 
-func ptrString(s string) *string { return &s }
+//go:fix inline
 
 // dirtyJPEGForContract is a JPEG cut short, which cannot be copied without its metadata.
 func dirtyJPEGForContract(t *testing.T) []byte {
@@ -3319,8 +3313,8 @@ func (f *fakeTriggerAdmin) Gaps(_ context.Context, realm string, all bool, _ int
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	g := triggers.GapRecord{
-		Gap: triggers.Gap{Realm: realm, Collection: "notes", Trigger: "on_paid", Reason: triggers.GapPreImage, From: time.Now().Add(-time.Hour), To: time.Now(), Count: 2, Keys: []string{"n1", "n2"}},
-		ID:  "gap1", RecordedAt: time.Now(),
+		Realm: realm, Collection: "notes", Trigger: "on_paid", Reason: triggers.GapPreImage, From: time.Now().Add(-time.Hour), To: time.Now(), Count: 2, Keys: []string{"n1", "n2"},
+		ID: "gap1", RecordedAt: time.Now(),
 	}
 	if f.resolved {
 		if !all {

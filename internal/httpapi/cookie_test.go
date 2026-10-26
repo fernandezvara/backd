@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -24,9 +25,7 @@ func TestSessionCookies(t *testing.T) {
 	post := func(path, body string, hdr map[string]string) (*httptest.ResponseRecorder, map[string]any) {
 		t.Helper()
 		h := map[string]string{"Content-Type": "application/json"}
-		for k, v := range hdr {
-			h[k] = v
-		}
+		maps.Copy(h, hdr)
 		return f.doH(t, "POST", path, body, h)
 	}
 	const login = "/v1/acme/_auth/login"
@@ -55,12 +54,8 @@ func TestSessionCookies(t *testing.T) {
 	cookie := map[string]string{"Cookie": cookieName + "=" + c.Value}
 	with := func(extra map[string]string) map[string]string {
 		h := map[string]string{"Content-Type": "application/json"}
-		for k, v := range cookie {
-			h[k] = v
-		}
-		for k, v := range extra {
-			h[k] = v
-		}
+		maps.Copy(h, cookie)
+		maps.Copy(h, extra)
 		return h
 	}
 

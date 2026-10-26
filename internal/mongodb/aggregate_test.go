@@ -41,7 +41,7 @@ func TestAggregateMatchesTheReference(t *testing.T) {
 		time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC),
 	}
 	var docs []storage.Document
-	for i := 0; i < 120; i++ {
+	for range 120 {
 		fields := map[string]any{"category": cats[rng.IntN(len(cats))], "paid": rng.IntN(2) == 0, "qty": int64(rng.IntN(5))}
 		switch rng.IntN(4) {
 		case 0:

@@ -291,9 +291,7 @@ func (a *authAPI) answerSignInWith(w http.ResponseWriter, r *http.Request, out a
 	if c := out.Challenge; c != nil {
 		// What the step carries along (recovery codes shown once) must not be lost with it.
 		body := challengeJSON(c)
-		for k, v := range extra {
-			body[k] = v
-		}
+		maps.Copy(body, extra)
 		writeJSON(w, http.StatusOK, body)
 		return
 	}
@@ -372,9 +370,7 @@ func (a *authAPI) me(w http.ResponseWriter, r *http.Request) {
 		out["org"] = a.sessionOrgJSON(r, u.ID, org)
 	}
 	if len(usersOf(r).Settings.Consents) > 0 {
-		for k, v := range consentStateJSON(usersOf(r), u) {
-			out[k] = v
-		}
+		maps.Copy(out, consentStateJSON(usersOf(r), u))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -395,8 +391,7 @@ func (a *authAPI) updateMe(w http.ResponseWriter, r *http.Request) {
 	if locale, ok := f["locale"].(string); ok {
 		var err error
 		u, err = svc.SetLocale(r.Context(), u.ID, locale)
-		var il *auth.InvalidLocaleError
-		if errors.As(err, &il) {
+		if il, ok := errors.AsType[*auth.InvalidLocaleError](err); ok {
 			writeError(w, r, http.StatusBadRequest, codeInvalidLocale, "this realm doesn't offer that language", Detail{Path: "locale", Reason: il.Error()})
 			return
 		}
@@ -416,7 +411,7 @@ func acceptLanguages(header string) []string {
 		q    float64
 	}
 	var tags []tag
-	for _, part := range strings.Split(header, ",") {
+	for part := range strings.SplitSeq(header, ",") {
 		name, params, _ := strings.Cut(strings.TrimSpace(part), ";")
 		name = strings.TrimSpace(name)
 		if name == "" || name == "*" {

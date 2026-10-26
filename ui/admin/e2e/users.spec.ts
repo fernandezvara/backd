@@ -41,7 +41,7 @@ test('a full administrator creates, finds and manages a user', async ({ page, si
   await page.getByRole('button', { name: 'Add role' }).click()
   await expect(page.getByTestId('user-roles')).toContainText('editor')
   await expect(page.getByTestId('user-roles')).toContainText('only in the database')
-  await page.getByRole('button', { name: 'Remove editor' }).click()
+  await page.getByRole('button', { name: 'Delete editor' }).click()
   await expect(page.getByTestId('user-roles')).not.toContainText('editor')
 
   // Password and email.

@@ -207,7 +207,7 @@ func passwordNoticeFromDoc(d *passwordNoticeDoc) *auth.PasswordNoticeJob {
 	if d == nil {
 		return nil
 	}
-	return &auth.PasswordNoticeJob{Epoch: d.Epoch.UTC(), Reason: d.Reason, After: d.After, PasswordNoticeCounts: auth.PasswordNoticeCounts{Queued: d.Queued, Skipped: d.Skipped, Deferred: d.Deferred}}
+	return &auth.PasswordNoticeJob{Epoch: d.Epoch.UTC(), Reason: d.Reason, After: d.After, Queued: d.Queued, Skipped: d.Skipped, Deferred: d.Deferred}
 }
 
 // SetPasswordNoticeProgress implements auth.Store.
@@ -247,7 +247,7 @@ func encryptFromDoc(d *encryptJobDoc) *auth.EncryptJob {
 		return nil
 	}
 	return &auth.EncryptJob{Database: d.Database, Collection: d.Collection, Fields: d.Fields, DryRun: d.DryRun, After: d.After,
-		EncryptCounts: auth.EncryptCounts{Scanned: d.Scanned, Encrypted: d.Encrypted, Reencrypted: d.Reencrypted, Decrypted: d.Decrypted, Indexed: d.Indexed, Marked: d.Marked, Conflicts: d.Conflicts}}
+		Scanned: d.Scanned, Encrypted: d.Encrypted, Reencrypted: d.Reencrypted, Decrypted: d.Decrypted, Indexed: d.Indexed, Marked: d.Marked, Conflicts: d.Conflicts}
 }
 
 // SetEncryptProgress implements auth.Store.
@@ -563,7 +563,7 @@ func (s *AuthStore) ClaimJob(ctx context.Context, workerID string, at time.Time,
 	// the rest. The two are tried in turn, so a steady stream of plain jobs doesn't starve them
 	// nor the other way round.
 	first := s.claimTurn.Add(1)%2 == 0
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		var j auth.Job
 		var ok bool
 		var err error

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 
 	"github.com/fernandezvara/backd/internal/registry"
@@ -101,7 +102,7 @@ func (s *Users) AcceptConsents(ctx context.Context, challenge string, given map[
 	if err != nil {
 		return Verified{}, err
 	}
-	return Verified{Redeemed: Redeemed{Principal: p, Token: token, NewUser: c.NewUser, Profile: c.Profile}, Factor: c.Factor}, nil
+	return Verified{Principal: p, Token: token, NewUser: c.NewUser, Profile: c.Profile, Factor: c.Factor}, nil
 }
 
 // AcceptConsentsOf records consents a signed-in user gives (method api): an app showing
@@ -113,8 +114,7 @@ func (s *Users) AcceptConsentsOf(ctx context.Context, u User, given map[string]s
 	if err := s.checkConsentsGiven(u.Consents, given); err != nil {
 		// A signed-in user may accept some now and the rest later: only unknown consents
 		// and versions are errors here.
-		var req *ConsentRequiredError
-		if !errors.As(err, &req) {
+		if _, ok := errors.AsType[*ConsentRequiredError](err); !ok {
 			return u, err
 		}
 	}
@@ -169,12 +169,8 @@ func (e *InvalidConsentsError) Error() string { return "invalid consents" }
 
 func mergeConsents(held, given map[string]string) map[string]string {
 	out := make(map[string]string, len(held)+len(given))
-	for k, v := range held {
-		out[k] = v
-	}
-	for k, v := range given {
-		out[k] = v
-	}
+	maps.Copy(out, held)
+	maps.Copy(out, given)
 	return out
 }
 

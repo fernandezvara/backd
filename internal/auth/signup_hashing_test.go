@@ -27,7 +27,7 @@ func TestSignupHashesTheSameWhetherOrNotTheAddressIsRegistered(t *testing.T) {
 		},
 	}
 	ctx := context.Background()
-	if _, err := svc.Create(ctx, "taken@example.com", ptr("dev-p4ssw0rd!")); err != nil {
+	if _, err := svc.Create(ctx, "taken@example.com", new("dev-p4ssw0rd!")); err != nil {
 		t.Fatal(err)
 	}
 

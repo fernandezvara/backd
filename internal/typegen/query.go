@@ -202,7 +202,7 @@ func enumOf(s any) (string, fieldKind) {
 // items and local $ref.
 func schemaFor(root map[string]any, path string) any {
 	var cur any = root
-	for _, part := range strings.Split(path, ".") {
+	for part := range strings.SplitSeq(path, ".") {
 		cur = deref(root, cur)
 		m, ok := cur.(map[string]any)
 		if !ok {

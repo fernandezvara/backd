@@ -13,7 +13,7 @@ import (
 )
 
 func teamGrant(team, role string) auth.TeamRoleGrant {
-	return auth.TeamRoleGrant{Team: team, RoleGrant: auth.RoleGrant{Role: role}}
+	return auth.TeamRoleGrant{Team: team, Role: role}
 }
 
 func TestTeamRoles(t *testing.T) {
@@ -126,7 +126,7 @@ func TestTeamRolesAdminAndCap(t *testing.T) {
 	}
 	// The cap of grants per member.
 	m, _ := f.svc.Store.OrgMember(ctx, org, f.bobID)
-	for i := 0; i < 49; i++ {
+	for i := range 49 {
 		m.TeamRoles = append(m.TeamRoles, teamGrant(fmt.Sprintf("t%d", i), "delegate"))
 	}
 	if err := f.svc.Store.PutOrgMember(ctx, m); err != nil {

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"errors"
+	"maps"
 	"net/http"
 	"sort"
 
@@ -105,9 +106,7 @@ func (a *authAPI) acceptConsents(w http.ResponseWriter, r *http.Request) {
 // consentStateJSON is what a person has accepted and what is still to accept.
 func consentStateJSON(svc *auth.Users, u auth.User) map[string]any {
 	held := map[string]string{}
-	for k, v := range u.Consents {
-		held[k] = v
-	}
+	maps.Copy(held, u.Consents)
 	required := []map[string]string{}
 	for _, ref := range svc.Settings.ConsentsToAccept(u.Consents) {
 		required = append(required, map[string]string{"name": ref.Name, "version": ref.Version})

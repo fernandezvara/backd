@@ -51,7 +51,7 @@ func serveEgress(getenv func(string) string, stderr io.Writer) error {
 	}
 	addr := orDefault(getenv("EGRESS_ADDR"), ":3128")
 	var allowPrivate []string
-	for _, v := range strings.Split(getenv("EGRESS_ALLOW_PRIVATE"), ",") {
+	for v := range strings.SplitSeq(getenv("EGRESS_ALLOW_PRIVATE"), ",") {
 		if v = strings.TrimSpace(v); v != "" {
 			allowPrivate = append(allowPrivate, v)
 		}

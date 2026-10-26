@@ -154,7 +154,7 @@ func validDraftPath(p string) bool {
 	if p == "" || len(p) > 200 || path.IsAbs(p) || strings.Contains(p, `\`) || strings.ContainsRune(p, 0) || path.Clean(p) != p {
 		return false
 	}
-	for _, seg := range strings.Split(p, "/") {
+	for seg := range strings.SplitSeq(p, "/") {
 		if seg == "" || seg == "." || seg == ".." || strings.HasPrefix(seg, ".") {
 			return false
 		}

@@ -86,7 +86,7 @@ func TestRealmTemplateStorageExampleLoads(t *testing.T) {
 	}
 	lines := strings.Split(string(data), "\n")
 	var block []string
-	for i := 0; i < len(lines); i++ {
+	for i := range lines {
 		if lines[i] != "# storage:" {
 			continue
 		}

@@ -312,7 +312,7 @@ func join(prefix, name string) string {
 // schemaAt returns the sub-schema of a dotted field path, or nil.
 func schemaAt(schema map[string]any, path string) map[string]any {
 	cur := schema
-	for _, part := range strings.Split(path, ".") {
+	for part := range strings.SplitSeq(path, ".") {
 		props, _ := cur["properties"].(map[string]any)
 		next, ok := props[part].(map[string]any)
 		if !ok {

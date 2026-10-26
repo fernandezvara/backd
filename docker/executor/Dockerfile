@@ -27,7 +27,7 @@ COPY --from=ui /src/internal/adminui/dist ./internal/adminui/dist
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/backd ./cmd/backd
 
-FROM docker.io/denoland/deno:alpine-2.9.7
+FROM docker.io/denoland/deno:alpine-2.9.8
 # The base image lags behind Alpine's security fixes (the release scan failed
 # on OpenSSL once), so pick them up at build time.
 USER root

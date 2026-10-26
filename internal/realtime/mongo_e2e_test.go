@@ -154,7 +154,7 @@ func TestStreamAgainstMongoDB(t *testing.T) {
 	s2 := runStream(token)
 	defer s2.Close()
 	got := []string{}
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		select {
 		case f := <-frames:
 			got = append(got, f.Event+":"+idOf(f))

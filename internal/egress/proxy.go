@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/netip"
@@ -178,9 +179,7 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, conn net.Conn) {
 		return
 	}
 	defer res.Body.Close()
-	for k, v := range res.Header {
-		w.Header()[k] = v
-	}
+	maps.Copy(w.Header(), res.Header)
 	w.WriteHeader(res.StatusCode)
 	_, _ = io.Copy(w, res.Body)
 }

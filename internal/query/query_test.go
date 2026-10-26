@@ -284,13 +284,13 @@ func TestParseWhereSearch(t *testing.T) {
 		t.Errorf("trim: %q %v", text, err)
 	}
 	for name, where := range map[string]string{
-		"in $or":      `{"$or": [{"$search": "go"}, {"status": "a"}]}`,
-		"in $and":     `{"$and": [{"$search": "go"}]}`,
+		"in $or":       `{"$or": [{"$search": "go"}, {"status": "a"}]}`,
+		"in $and":      `{"$and": [{"$search": "go"}]}`,
 		"not a string": `{"$search": 5}`,
-		"empty":       `{"$search": "   "}`,
-		"too long":    `{"$search": "` + strings.Repeat("a", MaxSearchBytes+1) + `"}`,
-		"too many":    `{"$search": "` + strings.Repeat("w ", MaxSearchTerms+1) + `"}`,
-		"a quote":     `{"$search": "say \"hello"}`,
+		"empty":        `{"$search": "   "}`,
+		"too long":     `{"$search": "` + strings.Repeat("a", MaxSearchBytes+1) + `"}`,
+		"too many":     `{"$search": "` + strings.Repeat("w ", MaxSearchTerms+1) + `"}`,
+		"a quote":      `{"$search": "say \"hello"}`,
 	} {
 		if _, _, err := ParseWhereSearch(where, fields); err == nil {
 			t.Errorf("%s: accepted", name)

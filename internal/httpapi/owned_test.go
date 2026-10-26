@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"maps"
 	"slices"
 	"testing"
 	"time"
@@ -15,9 +16,7 @@ func seedOrder(t *testing.T, f *rulesFixture, id, owner string, fields map[strin
 	}
 	now := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	doc := map[string]any{"id": id, "_meta": map[string]any{"created_at": now, "updated_at": now, "version": int64(1), "owner": owner}}
-	for k, v := range fields {
-		doc[k] = v
-	}
+	maps.Copy(doc, fields)
 	if err := f.store.Repository(c).Create(context.Background(), doc); err != nil {
 		t.Fatal(err)
 	}

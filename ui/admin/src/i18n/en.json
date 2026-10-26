@@ -315,7 +315,7 @@
       "none": "No roles.",
       "add": "Add role",
       "pick": "Role",
-      "remove": "Remove {role}",
+      "remove": "Delete {role}",
       "dbOnly": "only in the database",
       "dbOnlyHelp": "This assignment is not listed in realm.yaml: it lives only in the database, and a rebuilt realm would not have it.",
       "added": "{role} added.",

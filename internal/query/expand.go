@@ -54,7 +54,7 @@ func ParseExpand(s string) ([]ExpandPath, error) {
 			}
 			list := strings.TrimSuffix(fields, ")")
 			bad := false
-			for _, f := range strings.Split(list, ",") {
+			for f := range strings.SplitSeq(list, ",") {
 				f = strings.TrimSpace(f)
 				if !expandField.MatchString(f) {
 					fail(e, "\""+f+"\" is not a field name")
@@ -67,7 +67,7 @@ func ParseExpand(s string) ([]ExpandPath, error) {
 				continue
 			}
 		}
-		for _, n := range strings.Split(strings.TrimSpace(head), ".") {
+		for n := range strings.SplitSeq(strings.TrimSpace(head), ".") {
 			if !expandName.MatchString(n) {
 				fail(e, "\""+n+"\" is not a reference name")
 				p.Names = nil

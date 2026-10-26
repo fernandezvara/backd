@@ -2,6 +2,7 @@ package mongodb
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -162,12 +163,7 @@ func describeIndexes(t *testing.T, coll *mongo.Collection) []string {
 }
 
 func contains(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(list, s)
 }
 
 // A realm provisioned by v0.8.0 has identities that only allow the password provider and no

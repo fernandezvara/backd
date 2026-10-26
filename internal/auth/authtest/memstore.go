@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -1238,9 +1239,7 @@ func (m *MemStore) AddEraseCount(_ context.Context, jobID, key string, n int64) 
 	}
 	e := *j.Erase
 	e.Counts = map[string]int64{}
-	for k, v := range j.Erase.Counts {
-		e.Counts[k] = v
-	}
+	maps.Copy(e.Counts, j.Erase.Counts)
 	e.Counts[key] += n
 	j.Erase = &e
 	m.jobs[jobID] = j
@@ -1372,9 +1371,7 @@ func (m *MemStore) ImageDeclarations(_ context.Context) (map[string]string, erro
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	out := make(map[string]string, len(m.declared))
-	for k, v := range m.declared {
-		out[k] = v
-	}
+	maps.Copy(out, m.declared)
 	return out, nil
 }
 

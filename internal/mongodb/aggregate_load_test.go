@@ -138,12 +138,10 @@ func TestAggregateAndSearchLoad(t *testing.T) {
 	// Eight at once, as eight callers would (the endpoint limits each to one at a time).
 	var wg sync.WaitGroup
 	start = time.Now()
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 8 {
+		wg.Go(func() {
 			_, _ = repo.Aggregate(ctx, storage.AggregateQuery{GroupBy: []storage.GroupField{{Field: "status"}}, Metrics: all, MaxTime: 60 * time.Second})
-		}()
+		})
 	}
 	wg.Wait()
 	t.Logf("%-52s %8s", "8 concurrent whole-collection aggregations", time.Since(start).Round(time.Millisecond))

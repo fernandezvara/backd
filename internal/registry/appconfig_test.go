@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"maps"
 	"strings"
 	"testing"
 )
@@ -210,9 +211,7 @@ func TestAppConfigInRulesAndFunctions(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := map[string]string{}
-			for k, v := range files {
-				f[k] = v
-			}
+			maps.Copy(f, files)
 			tc.change(f)
 			_, err := Load(writeTree(t, f))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {

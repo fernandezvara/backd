@@ -515,10 +515,8 @@ func hasDollarKey(v any) bool {
 			}
 		}
 	case []any:
-		for _, e := range t {
-			if hasDollarKey(e) {
-				return true
-			}
+		if slices.ContainsFunc(t, hasDollarKey) {
+			return true
 		}
 	}
 	return false

@@ -29,7 +29,7 @@ func pushUsers(t *testing.T) (*Users, *authtest.MemStore, *time.Time) {
 
 func signedIn(t *testing.T, svc *Users, email string) Principal {
 	t.Helper()
-	if _, err := svc.Create(context.Background(), email, ptr("dev-p4ssw0rd!")); err != nil {
+	if _, err := svc.Create(context.Background(), email, new("dev-p4ssw0rd!")); err != nil {
 		t.Fatal(err)
 	}
 	p, _, err := svc.Login(context.Background(), email, "dev-p4ssw0rd!", "")

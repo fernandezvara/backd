@@ -390,7 +390,7 @@ func TestRealtimeWhereAndDocument(t *testing.T) {
 	f.feed.add(changefeed.Change{Realm: "acme", DB: f.mdb, Coll: "items", Op: changefeed.Created, Key: "i1", After: mk("i1", 5), Version: 1})
 	f.feed.add(changefeed.Change{Realm: "acme", DB: f.mdb, Coll: "items", Op: changefeed.Created, Key: "i2", After: mk("i2", 30), Version: 1})
 	got := map[string]bool{}
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		ev := next(t, evs)
 		var m struct{ Sub string }
 		_ = json.Unmarshal([]byte(ev.Data), &m)

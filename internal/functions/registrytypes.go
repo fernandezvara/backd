@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -111,9 +112,7 @@ func importMapArgs(dir string) ([]string, error) {
 		return nil, nil
 	}
 	merged := map[string]any{}
-	for k, v := range imports {
-		merged[k] = v
-	}
+	maps.Copy(merged, imports)
 	merged[ModuleName] = "./" + registry.RuntimeDir + "/" + runtimeFile
 	doc := map[string]any{"imports": merged}
 	if scopes, ok := rest["scopes"]; ok {

@@ -95,7 +95,7 @@ func (f *functions) configWrite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var res appconfig.Result
-	for attempt := 0; attempt < 3; attempt++ {
+	for attempt := range 3 {
 		cur, err := svc.Current(r.Context())
 		if err != nil {
 			writeError(w, r, http.StatusInternalServerError, codeInternal, "internal error")

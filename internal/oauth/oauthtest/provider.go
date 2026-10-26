@@ -8,6 +8,7 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -161,9 +162,7 @@ func (p *Provider) IDToken(t testing.TB, claims map[string]any) string {
 
 func (p *Provider) sign(t testing.TB, claims map[string]any) string {
 	c := map[string]any{}
-	for k, v := range claims {
-		c[k] = v
-	}
+	maps.Copy(c, claims)
 	if _, ok := c["iat"]; !ok {
 		c["iat"] = time.Now().Unix()
 	}
@@ -271,9 +270,7 @@ func (p *Provider) token(w http.ResponseWriter, r *http.Request) {
 	}
 	delete(p.codes, r.PostForm.Get("code")) // a code works once
 	claims := map[string]any{}
-	for k, v := range g.claims {
-		claims[k] = v
-	}
+	maps.Copy(claims, g.claims)
 	if g.nonce != "" {
 		claims["nonce"] = g.nonce
 	}

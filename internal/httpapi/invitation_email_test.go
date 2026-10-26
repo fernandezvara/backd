@@ -125,7 +125,7 @@ func TestInvitationByEmailJSONRevokeAndRules(t *testing.T) {
 func TestInvitationByEmailLimit(t *testing.T) {
 	f, _ := newVerifyFixture(t)
 	body := `{"email": "many@example.com", "send": true}`
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if code, _ := f.as(t, f.key, "POST", "/v1/acme/_admin/invitations", body); code != 201 {
 			t.Fatalf("invitation %d: %d", i, code)
 		}

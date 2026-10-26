@@ -112,7 +112,7 @@ func TestRescanOfOneTriggerAndUnknownOnes(t *testing.T) {
 func TestRescanAsksForConfirmationOverTheThreshold(t *testing.T) {
 	reg := testRegistry(t, "triggers:\n  on_paid:\n    events: [updated]\n    when: \"document.status == 'paid'\"\n    function: main/on-paid\n")
 	var docs []map[string]any
-	for i := 0; i < RescanConfirmOver+1; i++ {
+	for i := range RescanConfirmOver + 1 {
 		docs = append(docs, rescanDoc("o"+strconv.Itoa(i), "paid", 1))
 	}
 	src := &docSource{docs: docs}

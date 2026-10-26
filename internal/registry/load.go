@@ -582,12 +582,7 @@ func checkSchema(raw map[string]any) error {
 }
 
 func isReserved(name string) bool {
-	for _, f := range reservedFields {
-		if name == f {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(reservedFields, name)
 }
 
 // StoreKeyword is the schema.json keyword, on a property, that picks how its

@@ -241,7 +241,7 @@ func TestExportFailsWhenTheStorageNeverAnswers(t *testing.T) {
 	}
 	id := out["id"].(string)
 	f.svc.Cipher = nil // the storage keys can no longer be read
-	for i := 0; i < exportAttempts; i++ {
+	for i := range exportAttempts {
 		if !f.w.RunOnce(ctx) {
 			t.Fatalf("attempt %d: no job to run", i+1)
 		}

@@ -16,11 +16,11 @@ CONFIG_DIR=./config backd functions build
 ```
 
 - **On Windows and macOS**, `backd` itself runs, but its executor doesn't (see [what runs where](../../../operate/functions-runtime/#what-runs-where)): develop with the local stack's containers, which include one.
-- The build runs `deno bundle` and needs **Deno 2.9.7** on the `PATH` (or the binary named by `DENO`); it refuses any other version, because bundles must match the Deno that runs them. Without Deno installed, run it in the official Deno image with a Linux `backd` binary (from the release archives):
+- The build runs `deno bundle` and needs **Deno 2.9.8** on the `PATH` (or the binary named by `DENO`); it refuses any other version, because bundles must match the Deno that runs them. Without Deno installed, run it in the official Deno image with a Linux `backd` binary (from the release archives):
 
   ```sh
   docker run --rm -v "$PWD/config:/config" -v "$PWD/backd:/usr/local/bin/backd:ro" \
-    -e CONFIG_DIR=/config docker.io/denoland/deno:alpine-2.9.7 backd functions build
+    -e CONFIG_DIR=/config docker.io/denoland/deno:alpine-2.9.8 backd functions build
   ```
 - Bundles go to `_functions/.build/`, one file per function named by its content hash, listed in `.build/manifest.json` with the Deno version and a hash of the project's sources. The same sources always give the same bundles.
 - TypeScript is compiled, not type-checked; `backd functions build --check` type-checks too.

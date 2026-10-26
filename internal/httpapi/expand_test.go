@@ -192,7 +192,7 @@ func TestExpandGetShape(t *testing.T) {
 func TestExpandListBatchesPerPath(t *testing.T) {
 	x := newExpandFixture(t, nil)
 	x.seed(t)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		x.post(t, x.ada, map[string]any{"title": fmt.Sprint("p", i), "category": x.ids["go"], "tags": []string{x.ids["t1"], x.ids["t2"]}})
 	}
 	x.post(t, x.ada, map[string]any{"title": "none"}) // no references at all
@@ -362,7 +362,7 @@ func TestExpandLimits(t *testing.T) {
 	}
 
 	// Six posts with one category each: six documents, five allowed. Nothing partial.
-	for i := 0; i < 6; i++ {
+	for range 6 {
 		x.post(t, x.ada, map[string]any{"title": "c", "category": x.ids["go"]})
 	}
 	rec, out := x.doH(t, "GET", app+"posts?expand=category&limit=100", "", bearer(x.ada))

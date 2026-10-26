@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -40,9 +41,7 @@ func seedDoc(t *testing.T, f *rulesFixture, collection, id, owner string, fields
 		meta["owner"] = owner
 	}
 	doc := map[string]any{"id": id, "_meta": meta}
-	for k, v := range fields {
-		doc[k] = v
-	}
+	maps.Copy(doc, fields)
 	if err := f.store.Repository(c).Create(context.Background(), doc); err != nil {
 		t.Fatal(err)
 	}

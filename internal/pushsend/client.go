@@ -182,8 +182,7 @@ func transient(status int) bool { return status == http.StatusTooManyRequests ||
 // scrub makes a transport error safe to log: the URL of a request holds a device's token (APNs)
 // or the secret path of a push subscription (Web Push), so only the host and the cause stay.
 func scrub(err error) error {
-	var ue *url.Error
-	if errors.As(err, &ue) {
+	if ue, ok := errors.AsType[*url.Error](err); ok {
 		host := ue.URL
 		if u, perr := url.Parse(ue.URL); perr == nil {
 			host = u.Host

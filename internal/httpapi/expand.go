@@ -46,9 +46,8 @@ type expandPlan struct {
 func (d *documents) planExpand(c *registry.Collection, raw string) (*expandPlan, []Detail) {
 	entries, err := query.ParseExpand(raw)
 	if err != nil {
-		var qe query.Errors
 		var details []Detail
-		if errors.As(err, &qe) {
+		if qe, ok := errors.AsType[query.Errors](err); ok {
 			for _, e := range qe {
 				details = append(details, Detail{Path: e.Path, Reason: e.Reason})
 			}
@@ -336,7 +335,7 @@ func fieldString(doc storage.Document, path string) (string, bool) {
 // valueAt reads a dotted path of a document.
 func docValueAt(doc map[string]any, path string) (any, bool) {
 	var cur any = map[string]any(doc)
-	for _, part := range strings.Split(path, ".") {
+	for part := range strings.SplitSeq(path, ".") {
 		m, ok := cur.(map[string]any)
 		if !ok {
 			return nil, false
@@ -399,8 +398,7 @@ func setPath(m map[string]any, path string, v any) {
 // expandError answers a failed expansion: too large a response is the caller's to fix, the
 // rest is storage's.
 func expandError(w http.ResponseWriter, r *http.Request, err error) {
-	var tooLarge *expandTooLarge
-	if errors.As(err, &tooLarge) {
+	if tooLarge, ok := errors.AsType[*expandTooLarge](err); ok {
 		writeError(w, r, http.StatusBadRequest, codeExpandTooLarge, tooLarge.Error()+": ask for fewer entries in expand or a smaller page (limit)", Detail{Path: "expand", Reason: "too many documents"})
 		return
 	}

@@ -235,7 +235,7 @@ func TestAKilledRegenerationResumes(t *testing.T) {
 	f.svc.Now = func() time.Time { return *f.clock }
 	w := newTestWorker(t, f.rulesFixture)
 	var ids []string
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		d, _ := f.madePicture(t, w, "picture")
 		ids = append(ids, d)
 	}

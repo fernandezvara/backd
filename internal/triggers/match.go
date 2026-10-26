@@ -3,6 +3,7 @@ package triggers
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"strings"
 	"time"
 
@@ -264,9 +265,7 @@ func withoutPaths(doc any, paths []string) any {
 		return doc
 	}
 	out := make(map[string]any, len(m))
-	for k, v := range m {
-		out[k] = v
-	}
+	maps.Copy(out, m)
 	for _, p := range paths {
 		dropPath(out, strings.Split(p, "."))
 	}
@@ -283,9 +282,7 @@ func dropPath(m map[string]any, path []string) {
 		return
 	}
 	cp := make(map[string]any, len(next))
-	for k, v := range next {
-		cp[k] = v
-	}
+	maps.Copy(cp, next)
 	m[path[0]] = cp
 	dropPath(cp, path[1:])
 }
