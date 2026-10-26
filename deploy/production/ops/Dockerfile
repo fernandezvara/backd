@@ -14,7 +14,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/backd ./cmd/backd
 # Bundles functions/netprobe's Deno source, byte-identical to app/Dockerfile's
 # copy (see its comment): the provision job's fingerprint must match what
 # backd itself loads.
-FROM docker.io/denoland/deno:alpine-2.9.7 AS functions
+FROM docker.io/denoland/deno:alpine-2.9.8 AS functions
 COPY --from=build /out/backd /usr/local/bin/backd
 COPY examples/config/blog /config/blog
 COPY deploy/production/functions/netprobe /config/netprobe

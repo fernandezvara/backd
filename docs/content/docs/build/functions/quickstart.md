@@ -37,11 +37,11 @@ export EXECUTOR_TOKEN=$(openssl rand -base64 32)
 export CALLBACK_KEY=$(openssl rand -base64 32)
 export EGRESS_KEY=$(openssl rand -base64 32)
 
-# With Deno 2.9.7 and backd installed:
+# With Deno 2.9.8 and backd installed:
 CONFIG_DIR=./config backd functions build
 # Or in Deno's image, without installing Deno:
 docker run --rm -v "$PWD/config:/config" -v "$(command -v backd):/usr/local/bin/backd:ro" \
-  -e CONFIG_DIR=/config docker.io/denoland/deno:alpine-2.9.7 backd functions build
+  -e CONFIG_DIR=/config docker.io/denoland/deno:alpine-2.9.8 backd functions build
 
 docker compose up --build
 ```

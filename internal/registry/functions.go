@@ -46,7 +46,7 @@ const (
 // DenoVersion is the Deno version functions are bundled and run with.
 // `backd functions build` requires exactly this version, and the executor
 // image is built from it.
-const DenoVersion = "2.9.7"
+const DenoVersion = "2.9.8"
 
 // Function modes.
 const (
