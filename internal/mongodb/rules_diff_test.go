@@ -135,7 +135,7 @@ func provisionOneWith(t *testing.T, schema, config string) (*registry.Collection
 	realm := testRealm(t, client)
 	realmYAML := "roles:\n  admin: {}\n  a: {}\n  editor: {}\n  staff: {}\n  curator: {}\n  ops: {}\n"
 	if strings.Contains(config, "organization:") {
-		realmYAML += "organizations:\n  roles:\n    owner: {manage: [org, members, roles, teams]}\n    admin: {}\n    editor: {}\n    viewer: {}\n    member: {}\n    hr: {}\n  team_roles:\n    manager: {}\n    delegate: {}\n"
+		realmYAML += "organizations:\n  roles:\n    owner: {manage: [org, members, roles, teams]}\n    admin: {}\n    editor: {}\n    viewer: {}\n    member: {}\n    hr: {}\n  team_roles:\n    manager: {}\n    delegate: {}\n    editor: {}\n    contributor: {}\n"
 	}
 	files := map[string]string{"app/items": schema}
 	if strings.Contains(config, "files:") {
@@ -191,7 +191,7 @@ func compileRules(t *testing.T, c *registry.Collection, content string) *rules.S
 		Roles:           diffRoles,
 		OrgRoles:        []string{"owner", "admin", "editor", "viewer", "member", "hr"},
 		InOrgs:          c.InOrganizations(),
-		TeamRoles:       []string{"manager", "delegate"},
+		TeamRoles:       []string{"manager", "delegate", "editor", "contributor"},
 		InTeams:         c.InTeams(),
 	})
 	if len(errs) > 0 {
