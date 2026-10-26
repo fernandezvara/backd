@@ -87,7 +87,10 @@ func (g *dartGen) claim(name, what string) string {
 	return name
 }
 
-func (g *dartGen) emit(src string) { g.decls.WriteString(src + "\n") }
+func (g *dartGen) emit(src string) {
+	g.decls.WriteString(src)
+	g.decls.WriteString("\n")
+}
 
 // dartKeywords can't be identifiers, or confuse enough that they shouldn't.
 var dartKeywords = map[string]bool{
@@ -1282,7 +1285,9 @@ func (g *dartGen) createClass(conv *dartConverter, name string, schema map[strin
 		fmt.Fprintf(&b, "        %s: %s,\n", camel(n), conv.decode(props[n], "/properties/"+n, "json["+dartLit(n)+"]", required[n], name+pascal(n)))
 	}
 	b.WriteString("      );\n\n")
-	b.WriteString("  /// " + strings.ReplaceAll(note, "*/", "* /") + ".\n  final String id;\n")
+	b.WriteString("  /// ")
+	b.WriteString(strings.ReplaceAll(note, "*/", "* /"))
+	b.WriteString(".\n  final String id;\n")
 	for _, n := range fields {
 		t := conv.typeOf(props[n], "/properties/"+n, name+pascal(n))
 		if !required[n] && !strings.HasSuffix(t, "?") {

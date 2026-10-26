@@ -13,7 +13,9 @@ func rulesSection(rules string) string {
 			b.WriteString("\n")
 			continue
 		}
-		b.WriteString("  " + line + "\n")
+		b.WriteString("  ")
+		b.WriteString(line)
+		b.WriteString("\n")
 	}
 	return b.String()
 }

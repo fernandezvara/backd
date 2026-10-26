@@ -146,7 +146,9 @@ func TestTriggersPerCollectionCap(t *testing.T) {
 	var b strings.Builder
 	b.WriteString("triggers:\n")
 	for _, n := range []string{"a", "b", "c"} {
-		b.WriteString("  t_" + n + ":\n    events: [created]\n    function: main/on-paid\n")
+		b.WriteString("  t_")
+		b.WriteString(n)
+		b.WriteString(":\n    events: [created]\n    function: main/on-paid\n")
 	}
 	reg, err := triggerTree(t, b.String(), "", "auth: enabled\nsignup: open\ntriggers:\n  max_per_collection: 2\n")
 	if err != nil {

@@ -82,7 +82,8 @@ func jsonString(v map[string]any) string {
 		switch t := x.(type) {
 		case map[string]any:
 			for k, v := range t {
-				b.WriteString(k + "=")
+				b.WriteString(k)
+				b.WriteByte('=')
 				walk(v)
 			}
 		case []any:
@@ -90,7 +91,8 @@ func jsonString(v map[string]any) string {
 				walk(v)
 			}
 		case string:
-			b.WriteString(t + ";")
+			b.WriteString(t)
+			b.WriteByte(';')
 		}
 	}
 	walk(v)
