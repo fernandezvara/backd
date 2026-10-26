@@ -476,6 +476,8 @@ func (d *orgsDoc) apply(s *RealmSettings) []error {
 		switch {
 		case strings.Count(o.InvitationLink, "{token}") != 1:
 			add("invitation_link: %q must contain {token} exactly once", o.InvitationLink)
+		case !strings.Contains(o.InvitationLink, "{org}"):
+			add("invitation_link: %q must contain {org}: the link is how the app learns which organization to sign in to", o.InvitationLink)
 		case !s.SignInRedirectAllowed(probe):
 			add("invitation_link: %q must be an absolute URL within sign_in.allowed_redirects (or email.allowed_redirects when it has none)", o.InvitationLink)
 		}

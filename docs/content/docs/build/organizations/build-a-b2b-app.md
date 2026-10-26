@@ -25,12 +25,12 @@ organizations:
     member: { description: Reads }
   default_roles: [member]
   creator_roles: [owner]
-  invitation_link: "https://app.acme.example/join?token={token}"
+  invitation_link: "https://app.acme.example/join?token={token}&org={org}"
 ```
 
 - The `manage` capabilities decide who administers the organization; `owner` needs `org`, since an organization always keeps someone who can manage it.
 - `default_roles` are held by every member, so `member` is never granted one by one.
-- The `invitation_link` must be inside the realm's [`sign_in.allowed_redirects`](../../configuration/realm/).
+- The `invitation_link` must hold `{token}` and `{org}` (the app learns which organization to sign in to from it) and be inside the realm's [`sign_in.allowed_redirects`](../../configuration/realm/).
 - Creating organizations is allowed to anyone with a verified email by default (`create: user.email_verified`).
 
 ## 2. Mark the collections

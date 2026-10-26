@@ -586,6 +586,28 @@ heading('Teams as organizations (ch20)')
   await refused('a stranger can\'t sign in to the team (401 invalid_credentials): nothing says it exists', () => dee.org(team.slug).auth.login({ email: dee.tourEmail, password: PASSWORD }), AuthenticationError, 'invalid_credentials')
   const cyT = await joinedTeam(cy, team.slug, invite.token)
   check('signing in with it makes them a member with the invited role', (await cyT.orgs.get(team.id)).roles.includes('editor'))
+
+  // The sign-in page (chapter 20): what a team offers, the switcher, and "which teams am I in?".
+  const offered = await anonymous.auth.options({ org: team.slug })
+  const unknown = await anonymous.auth.options({ org: `nobody-${STAMP}` })
+  check('a team\'s sign-in page offers the password, and an unknown team offers the same (nothing says it is wrong)', offered.methods.includes('password') && JSON.stringify(offered.methods) === JSON.stringify(unknown.methods), JSON.stringify([offered, unknown]))
+  const held = (await cy.orgs.signedIn()).map((x) => x.ref)
+  check('the switcher lists the teams this browser holds a session for', held.includes(team.slug) && held.includes(teamOf(cy.tourEmail)) && !held.includes(`elsewhere-${STAMP}`), JSON.stringify(held))
+  const mailFor = async (/** @type {string} */ to) => {
+    for (let i = 0; i < 100; i++) {
+      const page = await operator.db('mail').collection('outbox').list({ where: { kind: 'organizations-found', to }, orderBy: '-_meta.created_at', limit: 1 })
+      if (page.items[0]) return /** @type {string} */ (page.items[0].text)
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    return ''
+  }
+  const stranger = `nobody-${STAMP}@shelf.example`
+  await anonymous.auth.findOrgs({ email: cy.tourEmail })
+  await anonymous.auth.findOrgs({ email: stranger }) // the same answer for an address that is nowhere
+  const found = await mailFor(cy.tourEmail)
+  check('"which teams am I in?" emails the teams of the address with a sign-in link each', found.includes(`team=${team.slug}`) && found.includes(`team=${teamOf(cy.tourEmail)}`), found.slice(0, 200))
+  await new Promise((r) => setTimeout(r, 1500))
+  check('and emails nothing to an address with no teams', (await operator.db('mail').collection('outbox').list({ where: { kind: 'organizations-found', to: stranger }, limit: 1 })).items.length === 0)
   await refused('an open link can never give a role that manages the team (400)', () => benT.orgs.invitations(team.id).create({ binding: 'none', roles: ['owner'] }), ValidationError, 'validation_error')
 
   // Reading: the read rule is a database filter on the caller's teams.
