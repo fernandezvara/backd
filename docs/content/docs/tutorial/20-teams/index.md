@@ -117,6 +117,6 @@ A member who holds `editor` both ways keeps it after being taken out of the team
 - The only owner can't leave (`last_org_manager`); with another owner, leaving ends access at once.
 - Deleting the team removes its pins, and `backd orgs owned` counted them first.
 
-Read [Organizations](../../build/organizations/api/) for the API, [Organizations in functions](../../build/organizations/functions/) for `ctx.user.orgs` and `ctx.admin.orgs`, and [the rules](../../build/auth/rules/#organizations) for `inOrg` and `hasOrgRole`.
+Read [Organizations API](../../build/organizations/api/) for the API, [Organizations in functions](../../build/organizations/functions/) for `ctx.user.orgs` and `ctx.admin.orgs`, and [the rules](../../build/auth/rules/#organizations) for `inOrg` and `hasOrgRole`.
 
 Next: [chapter 21](../21-authors/) — authors with references.

@@ -1,5 +1,5 @@
 ---
-title: "Organizations"
+title: "Organizations API"
 description: "Create organizations, list their members and change their roles with the organizations API, as a signed-in user."
 icon: "buildings"
 weight: 350

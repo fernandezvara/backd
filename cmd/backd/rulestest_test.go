@@ -90,7 +90,7 @@ func TestExampleRulesFixtures(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d\n%s%s", code, out, errOut)
 	}
-	for _, want := range []string{"blog/main/posts:", "expenses/main/groups:", "hr/main/absences:"} {
+	for _, want := range []string{"blog/main/posts:", "expenses/main/groups:", "kb/main/pages:"} {
 		if !strings.Contains(out, want) || strings.Contains(out, want+" fixture") {
 			t.Errorf("no result for %s in:\n%s", want, out)
 		}
