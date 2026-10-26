@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -184,7 +185,7 @@ func loadErasure(c *Collection, settings RealmSettings, path string) error {
 	required := requiredPaths(c.RawSchema)
 	known := func(field, key string) bool { return c.knownPolicyField(field, key, add) }
 	c.checkRemoveReplace(p.Remove, p.Replace, add)
-	for _, f := range slices.Sorted(mapKeys(p.Pull)) {
+	for _, f := range slices.Sorted(maps.Keys(p.Pull)) {
 		if !known(f, "pull") {
 			continue
 		}
@@ -199,7 +200,7 @@ func loadErasure(c *Collection, settings RealmSettings, path string) error {
 			add("pull: %s has minItems in schema.json, so removing the user could make the array invalid", f)
 		}
 	}
-	for _, f := range slices.Sorted(mapKeys(p.Unset)) {
+	for _, f := range slices.Sorted(maps.Keys(p.Unset)) {
 		if !known(f, "unset") {
 			continue
 		}
@@ -267,16 +268,6 @@ func normalizeYAML(v any) any {
 		return out
 	}
 	return v
-}
-
-func mapKeys[V any](m map[string]V) func(yield func(string) bool) {
-	return func(yield func(string) bool) {
-		for k := range m {
-			if !yield(k) {
-				return
-			}
-		}
-	}
 }
 
 // requiredPaths lists the dotted paths schema.json requires (through objects,
@@ -393,7 +384,7 @@ func (c *Collection) checkRemoveReplace(remove []string, replace map[string]any,
 			add("remove: %s is required by schema.json, so removing it would make the document invalid (replace it instead)", f)
 		}
 	}
-	for _, f := range slices.Sorted(mapKeys(replace)) {
+	for _, f := range slices.Sorted(maps.Keys(replace)) {
 		if !c.knownPolicyField(f, "replace", add) {
 			continue
 		}

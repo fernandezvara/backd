@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -139,7 +140,7 @@ func parseConsents(n yaml.Node) (map[string]*Consent, []error) {
 	}
 	var errs []error
 	out := map[string]*Consent{}
-	for _, name := range slices.Sorted(mapKeys(doc)) {
+	for _, name := range slices.Sorted(maps.Keys(doc)) {
 		d := doc[name]
 		if d == nil {
 			errs = append(errs, fmt.Errorf("consents.%s: needs at least `current`", name))
@@ -155,7 +156,7 @@ func parseConsents(n yaml.Node) (map[string]*Consent, []error) {
 			continue
 		}
 		c.Versions[c.Current] = &ConsentVersion{}
-		for _, v := range slices.Sorted(mapKeys(d.Versions)) {
+		for _, v := range slices.Sorted(maps.Keys(d.Versions)) {
 			if !consentVersionPattern.MatchString(v) {
 				errs = append(errs, fmt.Errorf("consents.%s.versions: %q is not a valid version (letters, digits, dots, dashes and underscores; at most 32 characters)", name, v))
 				continue
@@ -254,7 +255,7 @@ func loadConsents(rl *Realm, realmPath string) []error {
 	file := filepath.Join(realmPath, RealmFile)
 	_, locales := rl.Settings.Languages()
 	var errs []error
-	for _, name := range slices.Sorted(mapKeys(rl.Settings.Consents)) {
+	for _, name := range slices.Sorted(maps.Keys(rl.Settings.Consents)) {
 		c := rl.Settings.Consents[name]
 		dir := RealmPath(realmPath, ConsentsDir, name)
 		versions, _ := os.ReadDir(dir)
@@ -290,7 +291,7 @@ func loadConsents(rl *Realm, realmPath string) []error {
 
 // ConsentNames returns the declared consents' names, sorted.
 func (s RealmSettings) ConsentNames() []string {
-	return slices.Sorted(mapKeys(s.Consents))
+	return slices.Sorted(maps.Keys(s.Consents))
 }
 
 // ConsentRef names a consent and a version of it.

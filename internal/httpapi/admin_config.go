@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -40,7 +41,7 @@ func (a *adminAPI) config(w http.ResponseWriter, r *http.Request) {
 	}
 
 	databases := map[string]any{}
-	for _, dbName := range slices.Sorted(mapKeys(rl.Databases)) {
+	for _, dbName := range slices.Sorted(maps.Keys(rl.Databases)) {
 		db := rl.Databases[dbName]
 		var cols []any
 		for _, c := range db.SortedCollections() {
@@ -48,7 +49,7 @@ func (a *adminAPI) config(w http.ResponseWriter, r *http.Request) {
 		}
 		var fns []any
 		if db.Functions != nil {
-			for _, fnName := range slices.Sorted(mapKeys(db.Functions.Functions)) {
+			for _, fnName := range slices.Sorted(maps.Keys(db.Functions.Functions)) {
 				fns = append(fns, functionConfig(db.Functions.Functions[fnName], rel))
 			}
 		}
@@ -84,16 +85,6 @@ func orEmpty(in []any) []any {
 	return in
 }
 
-func mapKeys[V any](m map[string]V) func(yield func(string) bool) {
-	return func(yield func(string) bool) {
-		for k := range m {
-			if !yield(k) {
-				return
-			}
-		}
-	}
-}
-
 func dur(d time.Duration) string {
 	if d == 0 {
 		return ""
@@ -106,7 +97,7 @@ func dur(d time.Duration) string {
 func realmConfig(s registry.RealmSettings, seesUsers bool) map[string]any {
 	defaultLocale, locales := s.Languages()
 	roles := map[string]any{}
-	for _, name := range slices.Sorted(mapKeys(s.Roles)) {
+	for _, name := range slices.Sorted(maps.Keys(s.Roles)) {
 		role := s.Roles[name]
 		access := registry.AdminAccess{Write: role.Admin, ReadAll: role.AdminRead}
 		entry := map[string]any{"description": role.Description, "admin": access.String(), "seeded_users": len(role.Users)}

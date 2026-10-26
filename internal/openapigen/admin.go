@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -65,7 +66,7 @@ func (b *builder) admin() (*Document, error) {
 
 	prefix := "/v1/{realm}/_admin/"
 	paths, _ := b.base["paths"].(map[string]any)
-	for _, p := range slices.Sorted(keysOf(paths)) {
+	for _, p := range slices.Sorted(maps.Keys(paths)) {
 		rest, ok := strings.CutPrefix(p, prefix)
 		if !ok {
 			continue
@@ -81,7 +82,7 @@ func (b *builder) admin() (*Document, error) {
 		b.addStatic(p, "_admin/"+rest, nil)
 	}
 
-	for _, dbName := range slices.Sorted(keysOf(b.rl.Databases)) {
+	for _, dbName := range slices.Sorted(maps.Keys(b.rl.Databases)) {
 		db := b.rl.Databases[dbName]
 		if len(db.Collections) > 0 {
 			b.addStatic(prefix+"data/{database}/_batch", "_admin/data/"+dbName+"/_batch", map[string]string{"{database}": dbName})
@@ -94,7 +95,7 @@ func (b *builder) admin() (*Document, error) {
 		if db.Functions == nil {
 			continue
 		}
-		for _, name := range slices.Sorted(keysOf(db.Functions.Functions)) {
+		for _, name := range slices.Sorted(maps.Keys(db.Functions.Functions)) {
 			fn := db.Functions.Functions[name]
 			if fn.Mode != registry.ModeWebhook {
 				b.adminInvoke(dbName, fn)

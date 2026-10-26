@@ -80,7 +80,7 @@ func (b *builder) public() (*Document, error) {
 	prefix := "/v1/{realm}"
 	auth := b.rl.Settings.AuthEnabled
 	paths, _ := b.base["paths"].(map[string]any)
-	for _, p := range slices.Sorted(keysOf(paths)) {
+	for _, p := range slices.Sorted(maps.Keys(paths)) {
 		rest, ok := strings.CutPrefix(p, prefix+"/")
 		if !ok {
 			continue
@@ -104,7 +104,7 @@ func (b *builder) public() (*Document, error) {
 		b.configSchema()
 	}
 
-	for _, dbName := range slices.Sorted(keysOf(b.rl.Databases)) {
+	for _, dbName := range slices.Sorted(maps.Keys(b.rl.Databases)) {
 		db := b.rl.Databases[dbName]
 		reachable := false
 		for _, c := range db.SortedCollections() {
@@ -118,7 +118,7 @@ func (b *builder) public() (*Document, error) {
 		}
 		async := false
 		if db.Functions != nil {
-			for _, name := range slices.Sorted(keysOf(db.Functions.Functions)) {
+			for _, name := range slices.Sorted(maps.Keys(db.Functions.Functions)) {
 				fn := db.Functions.Functions[name]
 				if fn.Internal {
 					continue
@@ -166,16 +166,6 @@ func marshal(v any) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
-}
-
-func keysOf[V any](m map[string]V) func(func(string) bool) {
-	return func(yield func(string) bool) {
-		for k := range m {
-			if !yield(k) {
-				return
-			}
-		}
-	}
 }
 
 // authEnabled reports whether the _auth route (the path after `_auth/`) exists in this realm.
@@ -357,7 +347,7 @@ func (b *builder) usedTags() []any {
 		}
 	}
 	var out []any
-	for _, t := range slices.Sorted(keysOf(b.tags)) {
+	for _, t := range slices.Sorted(maps.Keys(b.tags)) {
 		if d, ok := declared[t]; ok {
 			out = append(out, d)
 		} else if coll, ok := strings.CutPrefix(t, "data "); ok {

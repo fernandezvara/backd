@@ -256,7 +256,7 @@ func (b *builder) collectionAt(db string, c *registry.Collection, admin bool) {
 		}
 	}
 	// File endpoints, one set per file field.
-	for _, field := range slices.Sorted(keysOf(c.Files)) {
+	for _, field := range slices.Sorted(maps.Keys(c.Files)) {
 		for _, suffix := range []string{
 			"/_files/{field}", "/_files/{field}/uploads", "/{id}/_files/{field}/uploads",
 			"/_files/{field}/uploads/{uploadID}/complete", "/{id}/_files/{field}", "/{id}/_files/{field}/{fileID}",

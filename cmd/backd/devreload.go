@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/fs"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -213,7 +214,7 @@ func (r *reloader) reload(ctx context.Context, changed []string) (*reloadEvent, 
 			realms[f[:i]] = true
 		}
 	}
-	return &reloadEvent{Fingerprint: fp, Realms: slices.Sorted(mapKeysBool(realms)), Files: changed}, nil
+	return &reloadEvent{Fingerprint: fp, Realms: slices.Sorted(maps.Keys(realms)), Files: changed}, nil
 }
 
 // writeTypes regenerates every functions project's backd.d.ts for the config now running.
@@ -228,16 +229,6 @@ func (r *reloader) writeTypes(a *app) {
 	}
 	for _, p := range changed {
 		a.log.Info("dev mode: function types updated", "file", p)
-	}
-}
-
-func mapKeysBool(m map[string]bool) func(func(string) bool) {
-	return func(yield func(string) bool) {
-		for k := range m {
-			if !yield(k) {
-				return
-			}
-		}
 	}
 }
 
