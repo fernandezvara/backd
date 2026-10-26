@@ -51,10 +51,16 @@ test('signup, magic links and password resets go to the organization too', async
 test('options say what an organization offers', async () => {
   const m = mockFetch([{ body: { items: ['google'], methods: ['password', 'magic_link'] } }, { body: { items: ['google'] } }])
   const c = createClient({ url: 'http://api.test', realm: 'acme', fetch: m.fetch, org: 'acme-corp' })
-  assert.deepEqual(await c.auth.options(), { providers: ['google'], methods: ['password', 'magic_link'] })
+  assert.deepEqual(await c.auth.options(), { providers: ['google'], methods: ['password', 'magic_link'], ssoRequired: false })
   assert.equal(m.calls[0].url.pathname, '/v1/acme/_auth/orgs/acme-corp/providers')
   assert.deepEqual(await c.auth.providers({ org: 'other' }), ['google'])
   assert.equal(m.calls[1].url.pathname, '/v1/acme/_auth/orgs/other/providers')
+})
+
+test('an organization that requires its connection says so', async () => {
+  const m = mockFetch([{ body: { items: ['google'], methods: [], sso_required: true } }])
+  const c = createClient({ url: 'http://api.test', realm: 'acme', fetch: m.fetch, org: 'acme-corp' })
+  assert.deepEqual(await c.auth.options(), { providers: ['google'], methods: [], ssoRequired: true })
 })
 
 test('client.org gives one client per organization, each with a token of its own', async () => {

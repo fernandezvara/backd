@@ -14,7 +14,7 @@ Organizations group users, such as the people of a customer's company. They are 
 |---|---|---|
 | `POST /_orgs` `{"name", "slug"}` | anyone the realm's `create` rule allows, below `max_created_per_user` | `201` with the organization; the creator holds `creator_roles`. The answer also holds `session`, a new session scoped to it ([below](#signing-in-to-an-organization)) |
 | `GET /_orgs/{org}` | members | `200` with name, slug, status and claims |
-| `PATCH /_orgs/{org}` `{"name"?, "slug"?, "require_mfa"?, "session_max_age"?}` | `manage: org` | `200` |
+| `PATCH /_orgs/{org}` `{"name"?, "slug"?, "require_mfa"?, "sso_required"?, "session_max_age"?}` | `manage: org` | `200` |
 
 There is no list of the caller's organizations: **a session belongs to one organization**, the one it was opened for, and `GET /_auth/me` names it. The app keeps one session per organization the person signs in to (the [clients](../../clients/js/#working-in-an-organization) do), and the [sign-in page](../sign-in-experience/) is where a person chooses.
 
@@ -52,7 +52,7 @@ In a realm with organizations **every session is scoped to one organization**: t
 | `POST /_auth/orgs/{org}/reset-password/request` | a reset email from the organization's page; members get the organization's [context](../organization-context/) |
 | `POST /_auth/orgs/{org}/invitations/preview` `{"token"}` | what an invitation offers, before signing in |
 | `GET\|POST /_auth/orgs/{org}/oauth/{provider}/start` | a provider, [the organization's own connection](#sign-in-connections) or the realm's, signing in to this organization |
-| `GET /_auth/orgs/{org}/providers` | the providers to offer, and `methods`: `password` and, with magic links, `magic_link` |
+| `GET /_auth/orgs/{org}/providers` | the providers to offer, and `methods`: `password` and, with magic links, `magic_link`; `sso_required` says the organization [requires its connection](#requiring-the-connection) (then only its providers, no `methods`) |
 | `POST /_auth/orgs` `{"email", "password", "name", "slug", "invitation"?}` | a **new person** starts a company: the account, the organization (the person is its creator) and a session scoped to it, in one call. The realm's `signup` decides who may: anyone when `open`, whoever holds an `invitation` of the realm (`bdi_…`) when `invite`, nobody when `closed`. `organizations.create` is not asked for this first organization, `max_created_per_user` is. `409 slug_taken` makes nothing |
 | `POST /_auth/orgs/find` `{"email"}` | "which companies am I in?" (below) |
 
@@ -71,7 +71,7 @@ For someone on a new device who does not remember the slug. `POST /_auth/orgs/fi
 
 | Request | Who | Answers |
 |---|---|---|
-| `GET /_orgs/{org}/members?limit=&after=` | members | `200` with a page sorted by user id |
+| `GET /_orgs/{org}/members?limit=&after=` | members | `200` with a page sorted by user id; `sso=false` lists only those with no identity on a connection (see [requiring the connection](#requiring-the-connection)) |
 | `PATCH /_orgs/{org}/members/{user}` `{"roles": [...]}` | `manage: members` or `manage: roles` | `200` with the member; replaces their direct roles |
 | `DELETE /_orgs/{org}/members/{user}` | `manage: members` | `204` |
 | `POST /_orgs/{org}/leave` | members | `204` |
@@ -226,8 +226,23 @@ The people of the company sign in at the organization's own address, which is th
 - Joining happens only when the sign-in makes the identity (a new person, or the explicit link). Someone who is already a member keeps their roles, and a blocked person is never rejoined by signing in or by linking.
 - **Removal blocks.** While the organization has a connection, a member a manager (or an administrator) removes is kept in the connection's blocked list (the newest 1000), and accepting an invitation to the organization lifts it.
 - **The roles are checked again at every join.** If the manager who last set the connection no longer holds the capabilities of its `join_roles`, backd disables the connection (`org.sso.disabled`) and the sign-in ends with `provider_error`, so a manager who lost a role doesn't leave a powerful default behind. A realm administrator's connection is not affected, and neither is one whose roles open nothing.
-- **Sessions remember where they came from.** The session a sign-in opens records the organization of the connection (also across a second step or a consent), for what comes later; nothing enforces it yet.
+- **Sessions remember how they were opened.** A session opened through a connection records it as its first method, `sso:{org}:{provider}` (also across a second step or a consent), not the provider's name alone, which the realm's own providers use too. That is how [requiring the connection](#requiring-the-connection) and the limits on [account-level actions](#what-a-connection-session-cannot-do) tell it apart.
 - Audit: every sign-in is `org.sso.login` with `joined`, and a join is `org.member_add` with `by: sso`.
+
+### Requiring the connection
+
+An organization can make its connection the only way in: `PATCH /_orgs/{org}` with `{"sso_required": true}`, by `manage: org`, with a fresh proof of identity.
+
+- **It can't lock its manager out.** It needs a working connection (enabled, with its secret set) and that the session of the caller was opened through one: otherwise `409 sso_not_ready`.
+- **What it does.** `login`, `signup`, `magic-link`, `reset-password/request` and the realm's own providers, under `/_auth/orgs/{org}/…`, answer `400 sso_required`; the connection's own routes keep working, and so does leaving. `GET /_auth/orgs/{org}/providers` says `sso_required: true`, lists only the connection's providers and no `methods`, so the app shows just those buttons. Codes already issued by a link or an earlier sign-in still work until they expire (minutes).
+- **Who is left outside.** Members who joined another way (an invited contractor, say) can't come in until they sign in through the connection. `GET /_orgs/{org}/members?sso=false` lists the members with no identity on the connection before you turn it on, and the answer of the `PATCH` counts them (`members_without_sso`). The sessions of the organization that were not opened through a connection end when it is turned on (`sessions_revoked`).
+- **Turning it off** (`false`) needs no connection. Removing or disabling the last working connection turns it off by itself, so the people are not left with no way in.
+- **Break glass.** A realm administrator clears it with `PATCH /_admin/orgs/{org}` `{"sso_required": false}` or `backd orgs sso-required-off`, for an organization that can't reach its provider. Administrators can't turn it on. All of it is audited as `org.sso_required`.
+- **`require_mfa` still applies.** The provider's own second factor is not trusted for it.
+
+### What a connection session cannot do
+
+A session opened through a connection proves "the provider of this organization says this is the person", not that the account is theirs: the provider's administrator controls it. So that session cannot change what protects the account, which would reach the person's other organizations too. Changing or removing the password, the email address, the second factor and its recovery codes, unlinking a provider, linking one, deleting the account and requesting the personal data export answer `403 sso_session`, before any proof is asked for. Organization management works, with a re-authentication by email code for someone who exists only through the connection. A person who wants credentials of their own signs in with a password or a magic link from an organization that allows them. Administrators export and erase accounts for people who exist only through a connection.
 
 Connections move with the realm: `--include auth` exports and imports them as `org_connections`, without their client secrets (see [Moving users](../../../operate/administration/export-import/moving-an-app/#moving-users)), so an imported connection stays unavailable until its secret is set again.
 

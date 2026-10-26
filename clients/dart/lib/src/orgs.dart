@@ -88,12 +88,17 @@ final class Orgs {
   /// Renames an organization, changes its slug, sets `require_mfa` or
   /// shortens the lifetime of its sessions with [sessionMaxAge] (at least an
   /// hour; `Duration.zero` goes back to the realm's). The last two ask for a
-  /// fresh proof of identity: see `client.auth.reauth`.
+  /// fresh proof of identity: see `client.auth.reauth`. [ssoRequired] `true`
+  /// makes the organization's connection the only way in: it needs a working
+  /// connection and a session opened through one (`409 sso_not_ready`), and
+  /// the answer counts the members who can't come in (`members_without_sso`,
+  /// listed by `members(id).list(sso: false)`).
   Future<Map<String, Object?>> update(
     String id, {
     String? name,
     String? slug,
     bool? requireMfa,
+    bool? ssoRequired,
     Duration? sessionMaxAge,
     RequestOptions? options,
   }) async {
@@ -104,9 +109,10 @@ final class Orgs {
         if (name != null) 'name': name,
         if (slug != null) 'slug': slug,
         if (requireMfa != null) 'require_mfa': requireMfa,
+        if (ssoRequired != null) 'sso_required': ssoRequired,
         if (sessionMaxAge != null) 'session_max_age': sessionMaxAge.inSeconds,
       },
-      reauth: requireMfa != null || sessionMaxAge != null,
+      reauth: requireMfa != null || ssoRequired != null || sessionMaxAge != null,
       headers: options?.headers,
       retry: options?.retry,
       cache: options?.cache ?? true,
@@ -166,12 +172,13 @@ final class OrgMembers {
   Future<Map<String, Object?>> list({
     int? limit,
     String? after,
+    bool? sso,
     RequestOptions? options,
   }) async {
     final res = await client.request(RequestInit(
       method: 'GET',
       path: ['_orgs', org, 'members'],
-      query: {'limit': limit, 'after': after},
+      query: {'limit': limit, 'after': after, if (sso == false) 'sso': 'false'},
       headers: options?.headers,
       retry: options?.retry,
       cache: options?.cache ?? true,

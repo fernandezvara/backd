@@ -441,7 +441,7 @@ func acceptLanguages(header string) []string {
 }
 
 func (a *authAPI) deleteMe(w http.ResponseWriter, r *http.Request) {
-	if !a.reauthed(w, r) {
+	if !a.accountReauthed(w, r) {
 		return
 	}
 	if err := usersOf(r).DeactivateAccount(r.Context(), principalOf(r)); err != nil {
@@ -457,7 +457,7 @@ func (a *authAPI) changePassword(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !a.reauthed(w, r) {
+	if !a.accountReauthed(w, r) {
 		return
 	}
 	if err := usersOf(r).ChangePassword(r.Context(), principalOf(r), f["new_password"]); err != nil {
@@ -629,6 +629,13 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 		writeError(w, r, http.StatusForbidden, codeEmailNotVerified, err.Error())
 	case errors.Is(err, auth.ErrUnauthenticated):
 		unauthenticated(w, r, true, err.Error())
+	case errors.Is(err, auth.ErrSSORequired):
+		// The organization's people sign in through its connection: the app shows only its buttons.
+		writeError(w, r, http.StatusBadRequest, codeSSORequired, err.Error())
+	case errors.Is(err, auth.ErrSSOSession):
+		writeError(w, r, http.StatusForbidden, codeSSOSession, err.Error())
+	case errors.Is(err, auth.ErrSSONotReady):
+		writeError(w, r, http.StatusConflict, codeSSONotReady, err.Error())
 	case errors.Is(err, auth.ErrSessionUnscoped):
 		// The session is good but has no organization (it is from before sessions were scoped): the
 		// person signs in again, to one.

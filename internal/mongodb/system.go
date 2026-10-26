@@ -590,6 +590,7 @@ var systemCollections = []systemCollection{
 			"created_by":      str(),
 			"status":          map[string]any{"enum": bson.A{"active", "orphaned", "deleted"}},
 			"require_mfa":     typ("bool"),
+			"sso_required":    typ("bool"),
 			"session_max_age": typ("long"),
 			"created_at":      typ("date"),
 			"updated_at":      typ("date"),

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { NotFoundError, createClient, OrgRequiresMFAError, OrgRoleRequiresMFAError, NotTeamMemberError, TeamError, NotOrgMemberError, LastOrgManagerError, IdTakenError } from '../src/index.js'
+import { NotFoundError, createClient, OrgRequiresMFAError, OrgRoleRequiresMFAError, NotTeamMemberError, TeamError, NotOrgMemberError, LastOrgManagerError, IdTakenError, SsoRequiredError, SsoSessionError } from '../src/index.js'
 import { mockFetch, errorBody } from './helpers.js'
 
 /** @param {ReturnType<typeof mockFetch>} m @param {object} [extra] */
@@ -204,4 +204,23 @@ test('sso.set leaves out what it was not given, so the stored secret is kept', a
   const m = mockFetch([{ body: { provider: 'microsoft' } }])
   await make(m).orgs.sso('o1').set('microsoft', { clientId: 'app', tenant: 'tenant-guid' })
   assert.deepEqual(m.calls[0].body, { client_id: 'app', tenant: 'tenant-guid' })
+})
+
+test('requiring the connection: the field, the members who cannot come in, and its two errors', async () => {
+  const m = mockFetch([
+    { body: { ...org, sso_required: true, members_without_sso: 3, sessions_revoked: 2 } },
+    { body: { items: [{ user: 'u9', roles: ['member'] }], has_more: false } },
+    { status: 400, body: errorBody('sso_required', 'use the connection') },
+    { status: 403, body: errorBody('sso_session', 'use your own credentials') },
+    { status: 409, body: errorBody('sso_not_ready', 'sign in through the connection first') },
+  ])
+  const c = make(m)
+  const on = await c.orgs.update('o1', { sso_required: true })
+  assert.deepEqual(m.calls[0].body, { sso_required: true })
+  assert.equal(on.members_without_sso, 3)
+  assert.equal((await c.orgs.members('o1').list({ sso: false })).items[0].user, 'u9')
+  assert.equal(m.calls[1].url.searchParams.get('sso'), 'false')
+  await assert.rejects(c.orgs.get('o1'), (e) => e instanceof SsoRequiredError && e.status === 400)
+  await assert.rejects(c.orgs.get('o1'), (e) => e instanceof SsoSessionError && e.status === 403)
+  await assert.rejects(c.orgs.update('o1', { sso_required: true }), (e) => /** @type {any} */ (e).code === 'sso_not_ready')
 })

@@ -61,6 +61,7 @@ Each realm with `auth: enabled` keeps an **audit trail**: one record per securit
 | `org.require_mfa` | An organization turns its second-factor requirement on or off | `value` |
 | `org.delete`, `org.deleted`, `org.reactivate` | An organization is deleted (access ends), its cleanup ends, or it is brought back | `by`, `job_id` / `counts` (documents removed per collection; never content) / `slug` |
 | `org.sso.set`, `org.sso.deleted`, `org.sso.disabled` | An organization's sign-in connection is set, removed, or switched off by backd because the manager who set it no longer holds the roles it gives on joining | `provider`, `enabled`, `secret_changed` / `provider`, `by` / `provider`, `reason` (never the secret) |
+| `org.sso_required` | An organization turns on or off the requirement to sign in through its connection, or backd turns it off because the last working connection went | `value`; turning it on `without_sso`, `revoked`; backd turning it off `reason` |
 | `org.sso.login` | A person signed in through an organization's connection | `user`, `provider`, `joined` (this sign-in made them a member) |
 | `org.claims`, `org.owner_assign` | Claims are replaced; a manager is assigned | `keys` / `user` |
 | `secret.key.create`, `secret.key.rotate`, `secret.key.delete` | A [field key](../../../build/configuration/field-keys/) is created, imported, rotated or deleted | `fingerprint` (the new one), `generated` or `previous` and `rewrapped`; never the key |

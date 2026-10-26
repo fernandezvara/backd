@@ -755,6 +755,8 @@ Every answer that isn't 2xx throws a `BackdException`, or one of its subclasses:
 | `ConflictError` | 409 | `email_taken`, `conflict`, `write_conflict` |
 | `IdTakenError` (a `ConflictError`) | 409 | `id_taken`: a document with that [custom id](#custom-ids) exists, and nothing was overwritten |
 | `NotOrgMemberError`, `OrgRequiresMFAError`, `OrgRoleRequiresMFAError` (`ForbiddenError`s) | 403 | `not_org_member` (also for an unknown organization), `org_requires_mfa`, `org_role_requires_mfa` (`details` names the role) |
+| `SsoSessionError` (a `ForbiddenError`) | 403 | `sso_session`: a session opened through an organization's connection can't change the account's credentials or delete or export it |
+| `SsoRequiredError` (a `ValidationError`) | 400 | `sso_required`: the organization requires its connection; `auth.options()` says so (`ssoRequired`) |
 | `NotTeamMemberError` (a `ForbiddenError`) | 403 | `not_team_member`: not a member of the team and no team role there (the same for an unknown team) |
 | `TeamError` (a `ValidationError`) | 400 | `team_required`, `team_not_allowed` |
 | `FieldEncryptedError` (a `ValidationError`) | 400 | `field_encrypted`: a `where` or `orderBy` names an [encrypted field](../../encryption/), or asks more of it than equality; `details` name the field |

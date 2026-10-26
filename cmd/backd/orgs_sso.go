@@ -111,6 +111,18 @@ func orgsSSOSet(c *kli.CommandContext) error {
 	return nil
 }
 
+func orgsSSORequiredOff(c *kli.CommandContext) error {
+	t, err := targetOf(c, false)
+	if err != nil {
+		return err
+	}
+	if err := t.call("PATCH", "_admin/orgs/"+url.PathEscape(str(c, "id")), nil, map[string]any{"sso_required": false}, nil); err != nil {
+		return err
+	}
+	fmt.Fprintf(ioOf(c).stdout, "%s no longer requires its sign-in connection\n", str(c, "id"))
+	return nil
+}
+
 func orgsSSODelete(c *kli.CommandContext) error {
 	t, err := targetOf(c, false)
 	if err != nil {

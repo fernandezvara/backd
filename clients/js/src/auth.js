@@ -713,11 +713,11 @@ export class Auth {
    * client's own; without either the realm's providers are listed and `methods` is empty.
    * @param {{ org?: string }} [params]
    * @param {RequestOptions} [opts]
-   * @returns {Promise<{ providers: string[], methods: Array<'password' | 'magic_link'> }>}
+   * @returns {Promise<{ providers: string[], methods: Array<'password' | 'magic_link'>, ssoRequired: boolean }>}  `ssoRequired`: the organization's people sign in through its connection only; then `providers` holds just its buttons and `methods` is empty.
    */
   async options(params = {}, opts) {
     const { data } = await this.client.request({ method: 'GET', path: [...this.base(params.org), 'providers'], auth: false, ...opts })
-    return { providers: /** @type {string[]} */ (data.items), methods: data.methods ?? [] }
+    return { providers: /** @type {string[]} */ (data.items), methods: data.methods ?? [], ssoRequired: data.sso_required === true }
   }
 
   /**

@@ -82,6 +82,16 @@ await backd.auth.signInWith('google', { org: 'acme-corp' })
 2. Sign in with an account from another domain or a personal one: the page gets `backd_error=not_allowed` and the client throws a **`NotAllowedError`**; no user was created.
 3. In a realm with `signup: closed` the company's people still come in: the connection's restriction is the gate.
 
+## 6. Require it
+
+When everybody should come in through the company's provider, a manager turns on `sso_required` (`orgs.update(id, { sso_required: true })`, with a fresh proof). Passwords, magic links, resets and the realm's own providers then answer `400 sso_required` for that organization, and `auth.options()` returns `ssoRequired: true` with only the connection's providers, so the sign-in page shows only those buttons.
+
+- It needs a working connection and a session opened through it: sign in through the connection first (`409 sso_not_ready` otherwise).
+- Before turning it on, `orgs.members(id).list({ sso: false })` shows who has no identity on the connection and would be left outside; the answer of the update counts them.
+- It ends the organization's sessions that were not opened through a connection.
+- A session opened through a connection cannot change the person's credentials, link a provider, or delete or export the account (`403 sso_session`); see [what a connection session cannot do](../api/#what-a-connection-session-cannot-do).
+- If the company loses access to its provider, a realm administrator clears it (`backd orgs sso-required-off`); removing the last connection does it too.
+
 ## What happens to existing accounts
 
 | The person | Result |
@@ -107,6 +117,7 @@ Addresses that come through a connection are stored **unverified**, so your own 
 | Routes for managers: `GET\|PUT\|DELETE /_orgs/{org}/sso[/{provider}]` | [Sign-in connections](../api/#sign-in-connections) |
 | Routes for people: `/_auth/orgs/{org}/oauth/{provider}/start\|callback\|id-token`, `/_auth/orgs/{org}/providers` | [Signing in through a connection](../api/#signing-in-through-a-connection) |
 | Joining, blocking and what a session remembers | [Joining](../api/#joining) |
+| Requiring the connection, and `403 sso_session` | [Requiring the connection](../api/#requiring-the-connection) |
 | Realm admin: `/_admin/orgs/{org}/sso`, `backd orgs sso\|sso-set\|sso-delete` | [Admin API](../../../operate/administration/admin/), [CLI](../../../operate/administration/cli/) |
 | Client: `auth.providers`, `signInWith({ org })`, `orgs.sso(id)`, `NotAllowedError` | [JavaScript client](../../clients/js/#through-an-organizations-own-google-or-microsoft) |
 | Audit: `org.sso.set`, `org.sso.deleted`, `org.sso.disabled`, `org.sso.login`, `secret.set` with an `org` | [Audit trail](../../../operate/administration/audit/) |

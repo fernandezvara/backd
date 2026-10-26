@@ -18,11 +18,27 @@ import (
 // link request and the password reset request are the realm's handlers: they read the
 // organization from the path.
 func (a *authAPI) orgSignInRoutes(r chi.Router, json func(http.Handler) http.Handler) {
-	r.With(json).Post("/login", a.login)
-	r.With(json).Post("/signup", a.signup)
-	r.With(json).Post("/magic-link", a.requestMagicLink)
-	r.With(json).Post("/reset-password/request", a.requestPasswordReset)
+	r.With(json, a.ssoGate).Post("/login", a.login)
+	r.With(json, a.ssoGate).Post("/signup", a.signup)
+	r.With(json, a.ssoGate).Post("/magic-link", a.requestMagicLink)
+	r.With(json, a.ssoGate).Post("/reset-password/request", a.requestPasswordReset)
 	r.With(json).Post("/invitations/preview", a.previewOrgInvitationOf)
+}
+
+// ssoGate answers 400 sso_required to a password, magic link or reset sign-in to an organization
+// that requires its connection (design/scoped-sessions.md §6). It is the one place the rule is
+// applied for those routes; the realm's own providers are refused by provider(). The answer says
+// the organization requires it, which `providers` says to anybody already.
+func (a *authAPI) ssoGate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if ref := chi.URLParam(r, "org"); ref != "" {
+			if _, required := usersOf(r).OrgSSORequired(r.Context(), ref); required {
+				authError(w, r, auth.ErrSSORequired)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // previewOrgInvitationOf handles POST /_auth/orgs/{org}/invitations/preview: what an invitation

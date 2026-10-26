@@ -63,6 +63,13 @@ var (
 	ErrOrgRequiresMFA = errors.New("this organization requires a second factor: sign in again with one")
 	// ErrRequireMFANotAllowed: realm.yaml's organizations.allow_require_mfa is false.
 	ErrRequireMFANotAllowed = errors.New("this realm doesn't let organizations require a second factor (organizations.allow_require_mfa)")
+	// ErrSSORequired: the organization's people sign in through its connection only.
+	ErrSSORequired = errors.New("this organization requires its sign-in connection: use the provider's button")
+	// ErrSSONotReady: sso_required can't be turned on yet.
+	ErrSSONotReady = errors.New("connect a provider and sign in through it before requiring it")
+	// ErrSSOSession: the session was opened through an organization's connection, which can't change
+	// what protects the person's account.
+	ErrSSOSession = errors.New("this action needs a sign-in with your own credentials, not through an organization's connection")
 	// ErrTeamNameTaken: the organization has a team of that name.
 	ErrTeamNameTaken = errors.New("the organization has a team with that name")
 	// ErrTeamLimit and ErrMemberTeamsLimit: max_teams_per_org and max_teams_per_member.
@@ -86,6 +93,9 @@ type Org struct {
 	CreatedBy  string // user id; "" when created by a function
 	Status     string
 	RequireMFA bool
+	// SSORequired makes the organization's connection the only way in: the other ways to sign in
+	// to it answer ErrSSORequired (design/scoped-sessions.md §6).
+	SSORequired bool
 	// SessionMaxAge shortens the lifetime of the sessions opened in the organization (0: the
 	// realm's).
 	SessionMaxAge time.Duration
@@ -101,6 +111,8 @@ type OrgUpdate struct {
 	Slug *string // "" removes it
 	// RequireMFA turns the organization's second-factor requirement on or off.
 	RequireMFA *bool
+	// SSORequired turns the requirement to sign in through the organization's connection on or off.
+	SSORequired *bool
 	// SessionMaxAge sets the organization's session lifetime (0 removes it).
 	SessionMaxAge *time.Duration
 	Claims        map[string]any

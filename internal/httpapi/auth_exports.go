@@ -44,7 +44,7 @@ func (a *authAPI) requestExport(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.exportsEnabled(w, r); !ok {
 		return
 	}
-	if !a.reauthed(w, r) {
+	if !a.accountReauthed(w, r) {
 		return
 	}
 	svc, p := usersOf(r), principalOf(r)

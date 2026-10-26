@@ -598,6 +598,22 @@ func (m *MemStore) DeleteOrgSessions(_ context.Context, org, user, provider stri
 	return n, nil
 }
 
+func (m *MemStore) DeleteOrgSessionsNotOpenedBy(_ context.Context, org string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var n int64
+	prefix := auth.ConnectionMethodPrefix(org)
+	for k, s := range m.sessions {
+		if s.Org != org || (len(s.Methods) > 0 && strings.HasPrefix(s.Methods[0], prefix)) {
+			continue
+		}
+		delete(m.sessions, k)
+		m.dropDevicesOfSession(k)
+		n++
+	}
+	return n, nil
+}
+
 func (m *MemStore) DeleteOtherSessions(_ context.Context, userID, keepID string) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -305,6 +305,9 @@ func (s *Users) setConnection(ctx context.Context, org Org, callerCaps registry.
 		return ConnectionView{}, err
 	}
 	s.Audit(ctx, AuditOrgSSOSet, orgTarget(org.ID), map[string]any{"provider": provider, "enabled": c.Enabled, "secret_changed": in.ClientSecret != ""})
+	if !c.Enabled {
+		s.releaseSSORequired(ctx, org.ID, "the connection was disabled")
+	}
 	return ConnectionView{OrgConnection: c, SecretSet: secretSet}, nil
 }
 
@@ -413,10 +416,11 @@ func (s *Users) deleteConnection(ctx context.Context, orgID, provider, by string
 		return err
 	}
 	// The sessions the connection opened end with it.
-	if _, err := s.Store.DeleteOrgSessions(context.WithoutCancel(ctx), orgID, "", provider); err != nil && s.Log != nil {
+	if _, err := s.Store.DeleteOrgSessions(context.WithoutCancel(ctx), orgID, "", ConnectionMethod(orgID, provider)); err != nil && s.Log != nil {
 		s.Log.Warn("end the sessions a removed connection opened", "org", orgID, "provider", provider, "error", err)
 	}
 	s.Audit(ctx, AuditOrgSSODeleted, orgTarget(orgID), map[string]any{"provider": provider, "by": by})
+	s.releaseSSORequired(ctx, orgID, "the connection was removed")
 	return nil
 }
 
@@ -501,6 +505,7 @@ func (s *Users) CheckConnectionAuthority(ctx context.Context, c OrgConnection) e
 		return err
 	}
 	s.Audit(ctx, AuditOrgSSODisabled, orgTarget(c.Org), map[string]any{"provider": c.Provider, "reason": "the manager who set it no longer holds the roles it gives"})
+	s.releaseSSORequired(ctx, c.Org, "the connection was disabled")
 	return ErrConnectionUnusable
 }
 

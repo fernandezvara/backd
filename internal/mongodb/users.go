@@ -515,6 +515,35 @@ func (s *AuthStore) DeleteOrgSessions(ctx context.Context, org, user, provider s
 	return res.DeletedCount, nil
 }
 
+// DeleteOrgSessionsNotOpenedBy implements auth.Store.
+func (s *AuthStore) DeleteOrgSessionsNotOpenedBy(ctx context.Context, org string) (int64, error) {
+	res, err := s.sessions().Find(ctx, bson.D{
+		{Key: "org", Value: org},
+		{Key: "methods.0", Value: bson.D{{Key: "$not", Value: bson.D{{Key: "$regex", Value: "^" + regexp.QuoteMeta(auth.ConnectionMethodPrefix(org))}}}}},
+	}, options.Find().SetProjection(bson.D{{Key: "_id", Value: 1}}))
+	if err != nil {
+		return 0, err
+	}
+	var ids []string
+	for res.Next(ctx) {
+		ids = append(ids, res.Current.Lookup("_id").StringValue())
+	}
+	if err := res.Close(ctx); err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	if _, err := s.devices().DeleteMany(ctx, bson.D{{Key: "session_id", Value: bson.D{{Key: "$in", Value: ids}}}}); err != nil {
+		return 0, err
+	}
+	del, err := s.sessions().DeleteMany(ctx, bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: ids}}}})
+	if err != nil {
+		return 0, err
+	}
+	return del.DeletedCount, nil
+}
+
 // DeleteAllSessions implements auth.Store.
 func (s *AuthStore) DeleteAllSessions(ctx context.Context) (int64, error) {
 	if _, err := s.devices().DeleteMany(ctx, bson.D{}); err != nil {

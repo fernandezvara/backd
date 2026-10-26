@@ -815,6 +815,8 @@ Every answer that isn't 2xx throws a `BackdError`, or one of its subclasses:
 | `PasswordExpiredError` (an `AuthenticationError`) | 401 | `password_expired`: the password is right but an administrator [expired it](../../auth/users/#expiring-every-password); `resetEmailQueued` says whether backd queued the email with the link to choose a new one. Only the right password gets this answer, from `auth.login()`, `auth.signIn()` and `auth.reauth()` |
 | `ForbiddenError` | 403 | `forbidden` |
 | `NotAllowedError` (a `ForbiddenError`) | 403 | `not_allowed`: the person is not of the organization the connection they signed in through admits; nothing was created |
+| `SsoSessionError` (a `ForbiddenError`) | 403 | `sso_session`: a session opened through an organization's connection can't change the account's credentials or delete or export it |
+| `SsoRequiredError` (a `ValidationError`) | 400 | `sso_required`: the organization requires its connection; `auth.options()` says so (`ssoRequired`) |
 | `NotFoundError` | 404 | `not_found` |
 | `ConflictError` | 409 | `email_taken`, `conflict`, `write_conflict` |
 | `IdTakenError` (a `ConflictError`) | 409 | `id_taken`: a document with that [custom id](#custom-ids) exists, and nothing was overwritten |

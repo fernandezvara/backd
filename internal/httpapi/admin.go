@@ -120,6 +120,7 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		r.Route("/orgs/{org}", func(r chi.Router) {
 			r.Use(users)
 			r.Get("/", a.getOrg)
+			r.With(json).Patch("/", a.updateOrg)
 			r.Delete("/", a.deleteOrg)
 			r.Get("/owned", a.orgOwned)
 			r.With(json).Post("/reactivate", a.reactivateOrg)

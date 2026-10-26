@@ -135,7 +135,7 @@ func orgJSON(o auth.Org) map[string]any {
 		claims = map[string]any{}
 	}
 	out := map[string]any{
-		"id": o.ID, "name": o.Name, "status": o.Status, "require_mfa": o.RequireMFA,
+		"id": o.ID, "name": o.Name, "status": o.Status, "require_mfa": o.RequireMFA, "sso_required": o.SSORequired,
 		"created_at": formatTime(o.CreatedAt), "claims": claims,
 	}
 	if o.Slug != "" {
@@ -266,7 +266,7 @@ func (a *authAPI) updateOrg(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"name": "string?", "slug": "string?", "require_mfa": "bool?", "session_max_age": "int?"})
+	f, ok := fields(w, r, obj, map[string]string{"name": "string?", "slug": "string?", "require_mfa": "bool?", "sso_required": "bool?", "session_max_age": "int?"})
 	if !ok {
 		return
 	}
@@ -280,9 +280,10 @@ func (a *authAPI) updateOrg(w http.ResponseWriter, r *http.Request) {
 	svc, p, org := usersOf(r), principalOf(r), chi.URLParam(r, "org")
 	on, setMFA := f["require_mfa"].(bool)
 	age, setAge := f["session_max_age"].(int)
+	sso, setSSO := f["sso_required"].(bool)
 	// Changing what every member must hold, or how long their sessions last, is a sensitive act: a
 	// fresh proof first.
-	if (setMFA || setAge) && !a.reauthed(w, r) {
+	if (setMFA || setAge || setSSO) && !a.reauthed(w, r) {
 		return
 	}
 	m, err := svc.UpdateOrg(r.Context(), p.User.ID, org, name, slug)
@@ -302,7 +303,21 @@ func (a *authAPI) updateOrg(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	writeJSON(w, http.StatusOK, membershipJSON(m, principalOf(r).Session.MFA))
+	out := membershipJSON(m, principalOf(r).Session.MFA)
+	if setSSO {
+		res, err := svc.SetOrgSSORequired(r.Context(), p, org, sso)
+		if err != nil {
+			orgError(w, r, err)
+			return
+		}
+		out = membershipJSON(res.Membership, principalOf(r).Session.MFA)
+		if sso {
+			// Who can't come in until they sign in through the connection, and what ending the other
+			// sessions did.
+			out["members_without_sso"], out["sessions_revoked"] = res.WithoutSSO, res.Revoked
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // pageParams reads limit and after from the query.
@@ -407,7 +422,20 @@ func teamRoleHandler(op auth.TeamRoleOp, admin bool) http.HandlerFunc {
 // orgMembers handles GET /_orgs/{org}/members.
 func (a *authAPI) orgMembers(w http.ResponseWriter, r *http.Request) {
 	limit, after := pageParams(r)
-	list, more, err := usersOf(r).Members(r.Context(), principalOf(r).User.ID, chi.URLParam(r, "org"), after, limit)
+	var list []auth.MemberView
+	var more bool
+	var err error
+	// ?sso=false: the members with no identity on the organization's connection, who can't come in
+	// once it requires it.
+	switch r.URL.Query().Get("sso") {
+	case "":
+		list, more, err = usersOf(r).Members(r.Context(), principalOf(r).User.ID, chi.URLParam(r, "org"), after, limit)
+	case "false":
+		list, more, err = usersOf(r).MembersWithoutSSO(r.Context(), principalOf(r).User.ID, chi.URLParam(r, "org"), after, limit)
+	default:
+		writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid query parameters", Detail{Path: "sso", Reason: "must be false"})
+		return
+	}
 	if err != nil {
 		orgError(w, r, err)
 		return
@@ -511,6 +539,26 @@ func (a *adminAPI) getOrg(w http.ResponseWriter, r *http.Request) {
 }
 
 // adminOrgMembers handles GET /orgs/{org}/members.
+// updateOrg handles PATCH /orgs/{org}: administrators clear `sso_required`, the break glass for an
+// organization whose people can't reach their provider. Only a manager who signed in through the
+// connection turns it on.
+func (a *adminAPI) updateOrg(w http.ResponseWriter, r *http.Request) {
+	obj, ok := readObject(w, r)
+	if !ok {
+		return
+	}
+	f, ok := fields(w, r, obj, map[string]string{"sso_required": "bool"})
+	if !ok {
+		return
+	}
+	res, err := usersOf(r).AdminSetOrgSSORequired(r.Context(), chi.URLParam(r, "org"), f["sso_required"].(bool))
+	if err != nil {
+		adminOrgError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, orgJSON(res.Membership.Org))
+}
+
 func (a *adminAPI) orgMembers(w http.ResponseWriter, r *http.Request) {
 	limit, after := pageParams(r)
 	list, more, err := usersOf(r).AdminMembers(r.Context(), chi.URLParam(r, "org"), after, limit)

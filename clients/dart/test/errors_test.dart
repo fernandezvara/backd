@@ -102,6 +102,8 @@ void main() {
       expect(of('team_required'), isA<TeamError>());
       expect(of('team_not_allowed'), isA<TeamError>());
       expect(of('not_org_member', 403), isA<NotOrgMemberError>());
+      expect(of('sso_required', 400), isA<SsoRequiredError>());
+      expect(of('sso_session', 403), isA<SsoSessionError>());
       expect(of('last_org_manager', 409), isA<LastOrgManagerError>());
     });
 

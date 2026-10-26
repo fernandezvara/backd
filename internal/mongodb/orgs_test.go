@@ -556,3 +556,47 @@ func TestAuthStoreOrgTemplates(t *testing.T) {
 		t.Errorf("another organization's: %+v", list)
 	}
 }
+
+// sso_required is stored and cleared, and the sessions that did not come through the
+// organization's connection are the ones DeleteOrgSessionsNotOpenedBy ends.
+func TestAuthStoreSSORequiredAndItsSessions(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	if err := s.CreateOrg(ctx, auth.Org{ID: "o1", Name: "One", Status: auth.OrgActive, CreatedAt: now, UpdatedAt: now},
+		auth.OrgMember{Org: "o1", User: "u1", JoinedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	on, off := true, false
+	if o, err := s.UpdateOrg(ctx, "o1", auth.OrgUpdate{SSORequired: &on}, now); err != nil || !o.SSORequired {
+		t.Fatalf("on: %+v %v", o, err)
+	}
+	if o, _ := s.OrgByID(ctx, "o1"); !o.SSORequired {
+		t.Errorf("not stored: %+v", o)
+	}
+	if o, err := s.UpdateOrg(ctx, "o1", auth.OrgUpdate{SSORequired: &off}, now); err != nil || o.SSORequired {
+		t.Fatalf("off: %+v %v", o, err)
+	}
+
+	mk := func(id, org string, methods ...string) {
+		t.Helper()
+		if err := s.CreateSession(ctx, auth.Session{ID: id, UserID: "u-" + id, TokenHash: "t-" + id, CreatedAt: now, LastUsedAt: now, ExpiresAt: now.Add(time.Hour), Org: org, Methods: methods}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("pw", "o1", "password")
+	mk("realm-google", "o1", "google")
+	mk("conn", "o1", auth.ConnectionMethod("o1", "google"), "totp")
+	mk("other-conn", "o1", auth.ConnectionMethod("o2", "google"))
+	mk("elsewhere", "o2", "password")
+	n, err := s.DeleteOrgSessionsNotOpenedBy(ctx, "o1")
+	if err != nil || n != 3 {
+		t.Fatalf("deleted %d, %v", n, err)
+	}
+	left, _ := s.ListSessions(ctx, "u-conn")
+	other, _ := s.ListSessions(ctx, "u-elsewhere")
+	gone, _ := s.ListSessions(ctx, "u-pw")
+	if len(left) != 1 || len(other) != 1 || len(gone) != 0 {
+		t.Errorf("left %d, elsewhere %d, pw %d", len(left), len(other), len(gone))
+	}
+}

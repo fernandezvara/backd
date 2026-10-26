@@ -22,6 +22,7 @@ import { connectionBody } from './orgs.js'
  * @property {string | null} slug
  * @property {'active' | 'orphaned' | 'deleted'} status
  * @property {boolean} require_mfa
+ * @property {boolean} sso_required  The organization requires its sign-in connection.
  * @property {number | null} session_max_age   Seconds its sessions last at most; null: the realm's limit.
  * @property {Record<string, unknown>} claims
  * @property {string} created_at

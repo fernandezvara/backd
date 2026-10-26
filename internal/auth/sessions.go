@@ -59,8 +59,9 @@ type Session struct {
 	// they were recorded.
 	Methods []string
 	MFA     bool
-	// Org is the organization whose connection opened the session (design/org-sso.md), "" for any
-	// other sign-in. It is recorded for what comes later; nothing enforces it yet.
+	// Org is the organization the session is scoped to: it reaches that one and no other
+	// (design/scoped-sessions.md). "" for an operator's session, and for one from before sessions
+	// were scoped.
 	Org string
 }
 

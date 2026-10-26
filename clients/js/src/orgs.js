@@ -11,6 +11,9 @@
  * @property {string | null} slug
  * @property {'active' | 'orphaned' | 'deleted'} status
  * @property {boolean} require_mfa  The organization requires a second factor of its members.
+ * @property {boolean} sso_required  The organization's people can only sign in through its connection.
+ * @property {number} [members_without_sso]  Only in the answer that turned `sso_required` on: members with no identity on a connection, who can't come in until they sign in through it.
+ * @property {number} [sessions_revoked]     Only in that answer: the sessions that did not come through a connection, which ended.
  * @property {boolean} mfa_met      False when it does and this session used none: ask for one (a
  *   session without it gets `OrgRequiresMFAError` from the organization's routes).
  * @property {Record<string, unknown>} claims  Written by administrators and functions; read-only here.
@@ -257,14 +260,17 @@ export class Orgs {
   /**
    * Renames an organization, changes its slug, sets `require_mfa` or shortens the lifetime of its
    * sessions with `session_max_age` (seconds, at least 3600; `0` goes back to the realm's). The last
-   * two ask for a fresh proof of identity: see `client.auth.withProof`.
+   * two ask for a fresh proof of identity: see `client.auth.withProof`. `sso_required: true` makes the
+   * organization's connection the only way in: it needs a working connection and a session opened
+   * through one (`409 sso_not_ready`), and the answer counts the members who can't come in
+   * (`members_without_sso`, listed by `members(id).list({ sso: false })`).
    * @param {string} id
-   * @param {{ name?: string, slug?: string, require_mfa?: boolean, session_max_age?: number }} patch
+   * @param {{ name?: string, slug?: string, require_mfa?: boolean, sso_required?: boolean, session_max_age?: number }} patch
    * @param {RequestOptions} [opts]
    * @returns {Promise<Org>}
    */
   async update(id, patch, opts) {
-    return (await this.client.request({ method: 'PATCH', path: ['_orgs', id], body: patch, reauth: patch.require_mfa !== undefined || patch.session_max_age !== undefined, ...opts })).data
+    return (await this.client.request({ method: 'PATCH', path: ['_orgs', id], body: patch, reauth: patch.require_mfa !== undefined || patch.sso_required !== undefined || patch.session_max_age !== undefined, ...opts })).data
   }
 
   /**
@@ -400,12 +406,13 @@ export class OrgMembers {
 
   /**
    * A page of members sorted by user id: `{ items, has_more, next }`; pass `next` as `after`.
-   * @param {{ limit?: number, after?: string }} [params]
+   * `sso: false` lists only the members with no identity on one of the organization's connections.
+   * @param {{ limit?: number, after?: string, sso?: false }} [params]
    * @param {RequestOptions} [opts]
    * @returns {Promise<{ items: OrgMember[], has_more: boolean, next?: string }>}
    */
   async list(params = {}, opts) {
-    return (await this.client.request({ method: 'GET', path: ['_orgs', this.org, 'members'], query: { limit: params.limit, after: params.after }, ...opts })).data
+    return (await this.client.request({ method: 'GET', path: ['_orgs', this.org, 'members'], query: { limit: params.limit, after: params.after, sso: params.sso === false ? 'false' : undefined }, ...opts })).data
   }
 
   /**

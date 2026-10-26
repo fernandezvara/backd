@@ -87,9 +87,23 @@ void main() {
     final o = await client.auth.options();
     expect(o.providers, ['google']);
     expect(o.methods, ['password', 'magic_link']);
+    expect(o.ssoRequired, false);
     expect(t.requests[0].url.path, '/v1/shelf/_auth/orgs/acme-corp/providers');
     expect(await client.auth.providers(org: 'other'), ['google']);
     expect(t.requests[1].url.path, '/v1/shelf/_auth/orgs/other/providers');
+  });
+
+  test('an organization that requires its connection says so', () async {
+    final t = FakeTransport()
+      ..answer(respond(200, {
+        'items': ['google'],
+        'methods': <String>[],
+        'sso_required': true,
+      }));
+    final o = await testClient(t, org: 'acme-corp').auth.options();
+    expect(o.ssoRequired, true);
+    expect(o.methods, isEmpty);
+    expect(o.providers, ['google']);
   });
 
   test('client.org gives one client per organization, each with its own token',

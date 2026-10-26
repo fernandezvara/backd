@@ -60,14 +60,26 @@ func (a *authAPI) oauthRoutes(r chi.Router, json func(http.Handler) http.Handler
 	r.With(json).Post("/token", a.loginCodeToken)
 }
 
+// signInMethod is how a session records the first factor of a provider sign-in: the provider's
+// name, or, through an organization's connection, the connection itself, so that session is never
+// taken for one opened by the realm's own provider.
+func signInMethod(p *registry.Provider) string {
+	if p.Org != "" {
+		return auth.ConnectionMethod(p.Org, p.Name)
+	}
+	return p.Name
+}
+
 // signInScope is the place a sign-in is about: the realm, with the providers realm.yaml
 // declares, or one organization, with the providers of its enabled connections added to the
 // realm's. Both are resolved by one function, so the list of providers to offer and the routes
 // that sign in can't disagree.
 type signInScope struct {
-	org       string // the organization's id; "" for the realm, and for an organization that can't be signed in to
-	providers map[string]*registry.Provider
-	conns     map[string]auth.OrgConnection
+	org string // the organization's id; "" for the realm, and for an organization that can't be signed in to
+	// ssoRequired: the organization's people sign in through its connection only.
+	ssoRequired bool
+	providers   map[string]*registry.Provider
+	conns       map[string]auth.OrgConnection
 }
 
 // scope resolves the place a request is about. The organization of an organization's route is
@@ -98,6 +110,7 @@ func (a *authAPI) scope(r *http.Request) (*signInScope, bool) {
 		return sc, true
 	}
 	sc.org = org.ID
+	sc.ssoRequired = org.SSORequired && o.SSO != nil
 	if o.SSO == nil || org.Status != auth.OrgActive {
 		return sc, true
 	}
@@ -125,6 +138,11 @@ func (a *authAPI) provider(w http.ResponseWriter, r *http.Request) (*registry.Pr
 	sc, ok := a.scope(r)
 	if ok {
 		if p := sc.providers[chi.URLParam(r, "provider")]; p != nil {
+			// The realm's own providers are no way into an organization that requires its connection.
+			if sc.ssoRequired && p.Org == "" {
+				authError(w, r, auth.ErrSSORequired)
+				return nil, nil, false
+			}
 			return p, sc, true
 		}
 	}
@@ -159,6 +177,9 @@ func (a *authAPI) providerList(w http.ResponseWriter, r *http.Request) {
 	items := []string{}
 	if sc, ok := a.scope(r); ok {
 		for _, name := range slices.Sorted(maps.Keys(sc.providers)) {
+			if sc.ssoRequired && sc.providers[name].Org == "" {
+				continue // only the connection's buttons
+			}
 			if a.providerUsable(r.Context(), svc, chi.URLParam(r, "realm"), sc.providers[name]) {
 				items = append(items, name)
 			}
@@ -170,7 +191,12 @@ func (a *authAPI) providerList(w http.ResponseWriter, r *http.Request) {
 		if svc.Settings.MagicLink.Enabled && svc.Settings.Email != nil {
 			methods = append(methods, "magic_link")
 		}
+		required := false
+		if sc, ok := a.scope(r); ok && sc.ssoRequired {
+			methods, required = []string{}, true // nothing but the connection
+		}
 		body["methods"] = methods
+		body["sso_required"] = required
 	}
 	// The same for everybody who asks, so a proxy may keep it for a minute.
 	w.Header().Set("Cache-Control", "public, max-age=60")
@@ -269,6 +295,10 @@ func (a *authAPI) oauthStartPost(w http.ResponseWriter, r *http.Request) {
 	var who auth.Principal
 	if in.intent == auth.IntentLink {
 		if who, ok = a.authenticateRequest(w, r); !ok {
+			return
+		}
+		// Adding a sign-in method changes what protects the account.
+		if !a.notViaConnection(w, r, who) {
 			return
 		}
 	}
@@ -475,7 +505,7 @@ func (a *authAPI) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		back(paramLinked, p.Name)
 		return
 	}
-	loginCode, err := svc.IssueLoginCodeIn(r.Context(), res.User.ID, p.Name, st.CodeChallenge, res.NewUser, res.Profile, st.ScopeOrg)
+	loginCode, err := svc.IssueLoginCodeIn(r.Context(), res.User.ID, signInMethod(p), st.CodeChallenge, res.NewUser, res.Profile, st.ScopeOrg)
 	if err != nil {
 		logger(r.Context()).Error("issue a login code", "error", err)
 		back(paramError, oauthProviderError)

@@ -466,6 +466,13 @@ func registerRemote(cfg *kli.Config) {
 		cc.Define("provider").String().Flag("provider").Required().OneOf("google", "microsoft").Description("google or microsoft")
 	})
 
+	og.SubCommand("sso-required-off").ShortHelp("let an organization's people sign in the other ways again (break glass, audited)").
+		LongHelp("For an organization that requires its connection (sso_required) and whose people can't reach their provider.").
+		Func(act("orgs sso-required-off", orgsSSORequiredOff)).Config(func(cc *kli.CommandConfig) {
+		remote(cc)
+		required(cc, "id", "the organization's id")
+	})
+
 	k := cfg.Command("apikey").ShortHelp("manage a realm's API keys").
 		LongHelp(adminAPINote + "\n\nAPI keys give server-side services full access to their realm's data.\nStore them as secrets.")
 	k.SubCommand("create").ShortHelp("create an API key and print it once").

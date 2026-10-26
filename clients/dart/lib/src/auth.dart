@@ -474,8 +474,11 @@ final class Auth {
   /// What an organization's sign-in page can offer: the providers (see
   /// [providers]) and the other ways in, `password` and, when the realm has
   /// them, `magic_link`. [org] defaults to the client's own; without either
-  /// the realm's providers are listed and `methods` is empty.
-  Future<({List<String> providers, List<String> methods})> options({
+  /// the realm's providers are listed and `methods` is empty. [ssoRequired]
+  /// says the organization's people sign in through its connection only: then
+  /// `providers` holds just its buttons and `methods` is empty.
+  Future<({List<String> providers, List<String> methods, bool ssoRequired})>
+      options({
     String? org,
     RequestOptions? options,
   }) async {
@@ -491,6 +494,7 @@ final class Auth {
     return (
       providers: [for (final p in data['items'] as List? ?? const []) '$p'],
       methods: [for (final m in data['methods'] as List? ?? const []) '$m'],
+      ssoRequired: data['sso_required'] == true,
     );
   }
 

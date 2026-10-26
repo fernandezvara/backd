@@ -417,7 +417,7 @@ func (a *authAPI) changeEmail(w http.ResponseWriter, r *http.Request) {
 	if !a.checkRedirect(w, r, redirectTo) {
 		return
 	}
-	if !a.reauthed(w, r) {
+	if !a.accountReauthed(w, r) {
 		return
 	}
 	if err := usersOf(r).RequestEmailChange(r.Context(), principalOf(r), next, redirectTo, clientIP(r), requestID(r.Context())); err != nil {

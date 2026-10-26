@@ -258,6 +258,8 @@ An invitation [sent by email](../../../operate/administration/admin/#emailing-an
 }
 ```
 
+A session opened through an [organization's connection](../../organizations/api/#signing-in-through-a-connection) records it as its first method, `sso:{org}:{provider}`; it cannot change the account's credentials or delete or export it (`403 sso_session`).
+
 `DELETE /_auth/sessions/{id}` ends one of them, for example a lost device. Ids of other users' sessions return `404 not_found`.
 
 ## Errors

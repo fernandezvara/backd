@@ -17,6 +17,13 @@ info:
     by `backd types`). When it isn't the fingerprint of the types the running
     config generates, the answer carries `X-Backd-Types-Stale: true` (and
     nothing else changes); production builds send no header.
+
+    A session an organization's connection opened (its first `methods` entry is
+    `sso:{org}:{provider}`) proves who the person is in that organization, not that the
+    account is theirs: operations that change what protects the account (the password,
+    the email, the second factor, a linked provider, deleting or exporting the account)
+    answer it `403 sso_session`, before asking for any proof. Organization management
+    and everything inside the organization work as for any session.
   license:
     name: MIT
     identifier: MIT
@@ -1166,9 +1173,18 @@ paths:
         default: { $ref: "#/components/responses/Error" }
     patch:
       tags: [organizations]
-      summary: Rename an organization, change its slug or its second-factor requirement
+      summary: Rename an organization, change its slug, its second-factor requirement or its connection requirement
       description: |
-        Needs a role with `manage: org`. `require_mfa: true` makes members' sessions count only when
+        Needs a role with `manage: org`. `sso_required: true` makes the organization's connection the
+        only way in (`login`, `signup`, `magic-link`, `reset-password/request` and the realm's own
+        providers of that organization answer `400 sso_required`) and ends the organization's
+        sessions that were not opened through a connection. It needs a fresh proof of identity, a
+        working connection and that the session of the caller was opened through one
+        (`409 sso_not_ready`), so nobody locks themselves out; the answer says how many members had no
+        identity on the connection (`members_without_sso`, listed before by
+        `GET .../members?sso=false`) and how many sessions ended (`sessions_revoked`). `false` needs no
+        connection. Removing or disabling the last working connection turns it off. Audited as
+        `org.sso_required`. `require_mfa: true` makes members' sessions count only when
         they used a second factor: it needs a fresh proof of identity (`401 reauth_required`),
         `organizations.allow_require_mfa` (`409 require_mfa_not_allowed`) and a session of the
         caller that has a second factor itself (`403 org_requires_mfa`). Audited as `org.require_mfa`.
@@ -1185,6 +1201,7 @@ paths:
                 name: { type: string, minLength: 1, maxLength: 100 }
                 slug: { type: string, minLength: 1, maxLength: 63 }
                 require_mfa: { type: boolean }
+                sso_required: { type: boolean }
                 session_max_age:
                   type: integer
                   minimum: 0
@@ -1236,10 +1253,12 @@ paths:
         A page of members sorted by user id: their direct roles, their teams and their effective
         roles with where each came from (`direct`, `default` or a team). `overlap` lists the roles
         held both directly and through a team or by default. Emails appear according to the
-        realm's `members_visible_to`.
+        realm's `members_visible_to`. `sso=false` lists only the members who have no identity on one of the
+        organization's connections: the people who can't come in once it requires its connection.
       operationId: listOrganizationMembers
       security: [{ session: [] }]
       parameters:
+        - { name: sso, in: query, description: "`false`: only the members with no identity on a connection.", schema: { type: string, enum: ["false"] } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
         - { name: after, in: query, description: "The `next` of the previous page.", schema: { type: string } }
       responses:
@@ -2483,7 +2502,8 @@ paths:
         realm's own providers and the connections the organization made (`organizations.sso`; a
         connection replaces the realm's provider of the same name) that are enabled, with their secret
         set, while the organization is active. `methods` says `password` and, when the realm has them,
-        `magic_link`.
+        `magic_link`. An organization that requires its connection (`sso_required`) lists only the
+        providers of its connections, no `methods`, and `sso_required: true`.
 
         An unknown organization, a deleted one, one without connections and one with the feature off
         all answer as a plain organization: the realm's providers and methods. The list says nothing
@@ -4269,6 +4289,40 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+    patch:
+      tags: [admin]
+      summary: Clear an organization's connection requirement
+      description: |
+        `sso_required: false` lets the organization's people sign in the other ways again: the break
+        glass for an organization that can't reach its provider. Audited as `org.sso_required`. Turning
+        it on is the managers' to do (`409 sso_not_ready`): it needs someone who signed in through the
+        connection. Needs the `users` area with write access.
+      operationId: adminUpdateOrganization
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [sso_required]
+              properties:
+                sso_required: { type: boolean }
+      responses:
+        "200":
+          description: The organization.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationRecord" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
     delete:
@@ -10132,7 +10186,7 @@ components:
     OrganizationRecord:
       type: object
       additionalProperties: false
-      required: [id, name, slug, status, require_mfa, session_max_age, claims, created_at]
+      required: [id, name, slug, status, require_mfa, sso_required, session_max_age, claims, created_at]
       properties:
         members: { type: integer, description: How many members it has; only in the administrators' list. }
         id: { type: string }
@@ -10140,6 +10194,7 @@ components:
         slug: { type: [string, "null"] }
         status: { type: string, enum: [active, orphaned, deleted] }
         require_mfa: { type: boolean }
+        sso_required: { type: boolean, description: "True when the organization's people can only sign in through its connection." }
         session_max_age: { type: [integer, "null"], description: "Seconds the sessions opened in the organization last at most; null: the realm's limit." }
         claims: { type: object, description: "Set by realm administrators and functions; at most 1 KiB." }
         created_at: { type: string, format: date-time }
@@ -10148,13 +10203,16 @@ components:
       type: object
       description: An organization as a member sees it.
       additionalProperties: false
-      required: [id, name, slug, status, require_mfa, session_max_age, mfa_met, claims, created_at, roles, effective_roles, teams, team_roles]
+      required: [id, name, slug, status, require_mfa, sso_required, session_max_age, mfa_met, claims, created_at, roles, effective_roles, teams, team_roles]
       properties:
         id: { type: string }
         name: { type: string }
         slug: { type: [string, "null"] }
         status: { type: string, enum: [active, orphaned, deleted] }
         require_mfa: { type: boolean }
+        sso_required: { type: boolean, description: "True when the organization's people can only sign in through its connection." }
+        members_without_sso: { type: integer, description: "Only in the answer that turned `sso_required` on: how many members have no identity on a connection and can't come in until they sign in through it." }
+        sessions_revoked: { type: integer, description: "Only in the answer that turned `sso_required` on: how many sessions that were not opened through a connection ended." }
         session_max_age: { type: [integer, "null"], description: "Seconds the sessions opened in the organization last at most; null: the realm's limit." }
         mfa_met: { type: boolean, description: "False when the organization requires a second factor and this session used none: the app asks for one. Such a session answers `403 org_requires_mfa` on the organization's routes, except leaving." }
         session:
@@ -10761,6 +10819,7 @@ components:
       required: [items]
       properties:
         items: { type: array, items: { type: string }, description: "Provider names, sorted." }
+        sso_required: { type: boolean, description: "Only in the answer for an organization: true when it requires its connection. Then `items` holds only the connection's providers and `methods` is empty." }
         methods: { type: array, items: { type: string, enum: [password, magic_link] }, description: "The other ways of signing in to the organization (only in the answer for an organization): `password` always, `magic_link` when the realm has them." }
 
     OrganizationConnection:

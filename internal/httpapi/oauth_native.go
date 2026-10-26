@@ -84,7 +84,7 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 	}
 	var who auth.Principal
 	if intent == auth.IntentLink {
-		if who, ok = a.authenticateRequest(w, r); !ok {
+		if who, ok = a.authenticateRequest(w, r); !ok || !a.notViaConnection(w, r, who) {
 			return
 		}
 	}
@@ -158,7 +158,7 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.keepAppleToken(r, svc, p, res.User.ID, claims.Audience, refresh)
-	out, err := svc.StartProviderSessionIn(r.Context(), res.User, p.Name, res.NewUser, res.Profile, scopeOrg)
+	out, err := svc.StartProviderSessionIn(r.Context(), res.User, signInMethod(p), res.NewUser, res.Profile, scopeOrg)
 	if err != nil {
 		authError(w, r, err)
 		return

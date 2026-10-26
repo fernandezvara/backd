@@ -83,7 +83,7 @@ class _SignInScreenState extends State<SignInScreen> {
     final ref = teamRef;
     try {
       final offer = ref == null
-          ? (providers: <String>[], methods: const ['password', 'magic_link'])
+          ? (providers: <String>[], methods: const ['password', 'magic_link'], ssoRequired: false)
           : await widget.state.root.auth.options(org: ref);
       if (mounted) {
         setState(
