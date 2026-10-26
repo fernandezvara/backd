@@ -395,12 +395,12 @@ const mailboxCode = async (/** @type {string} */ kind, /** @type {string} */ to)
   }
   throw new Error(`no ${kind} email with a code for ${to} in the mailbox`)
 }
-const linkClient = createClient({ url, realm: 'shelf' })
+const linkClient = createClient({ url, realm: 'shelf', org: teamOf(MEMBER) })
 await linkClient.auth.magicLink.request(MEMBER)
 const viaLink = /** @type {any} */ (await linkClient.auth.magicLink.verifyCode(await mailboxCode('magic-link', MEMBER)))
 check('the code of the magic-link email signs a member in, no password', viaLink.user?.email === MEMBER, JSON.stringify(viaLink))
 await refused('a stranger asking for a link is told nothing (and nothing is created)', async () => {
-  const c = createClient({ url, realm: 'shelf' })
+  const c = createClient({ url, realm: 'shelf', org: teamOf(MEMBER) })
   await c.auth.magicLink.request(`stranger-${MEMBER}`)
   await c.auth.magicLink.verifyCode('000000')
 }, Error, '')

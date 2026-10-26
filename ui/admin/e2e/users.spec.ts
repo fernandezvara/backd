@@ -76,6 +76,10 @@ test('sessions are listed and revoked', async ({ page, signIn, request }) => {
   await signIn('admin')
   await page.getByRole('link', { name: 'Users' }).click()
   await createUser(page, email)
+  // Only an administrator signs in at the realm's own login (people sign in to an organization), so this user gets an administrator role.
+  await page.getByLabel('Role', { exact: true }).selectOption('viewer')
+  await page.getByRole('button', { name: 'Add role' }).click()
+  await expect(page.getByTestId('user-roles')).toContainText('viewer')
   const login = await request.post(`/v1/${REALM}/_auth/login`, { data: { email, password: PASSWORD } })
   expect(login.ok()).toBe(true)
   const { token } = await login.json()
