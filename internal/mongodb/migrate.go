@@ -9,6 +9,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
+	"github.com/fernandezvara/backd/internal/changefeed"
 	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/fernandezvara/backd/internal/fieldcrypt"
 	"github.com/fernandezvara/backd/internal/registry"
@@ -55,10 +56,7 @@ func versionOfRaw(d bson.D) int64 {
 		if e.Key != "_meta" {
 			continue
 		}
-		if meta, ok := fromBSONValue(e.Value).(map[string]any); ok {
-			v, _ := meta["version"].(int64)
-			return v
-		}
+		return changefeed.DocVersion(map[string]any{"_meta": fromBSONValue(e.Value)})
 	}
 	return 0
 }

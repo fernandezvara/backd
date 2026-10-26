@@ -381,7 +381,7 @@ func (s *changeStream) decode(raw bson.Raw) (c changefeed.Change, ok bool, err e
 	if doc == nil {
 		doc = c.Before
 	}
-	c.Version = versionOf(doc)
+	c.Version = changefeed.DocVersion(doc)
 	return c, true, nil
 }
 
@@ -390,20 +390,4 @@ func idString(v any) string {
 		return s
 	}
 	return fmt.Sprint(v)
-}
-
-// versionOf reads `_meta.version` of a document in API shape, 0 when there is none.
-func versionOf(doc map[string]any) int64 {
-	meta, _ := doc["_meta"].(map[string]any)
-	switch v := meta["version"].(type) {
-	case int64:
-		return v
-	case int32:
-		return int64(v)
-	case int:
-		return int64(v)
-	case float64:
-		return int64(v)
-	}
-	return 0
 }

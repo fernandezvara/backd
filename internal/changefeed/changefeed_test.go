@@ -371,3 +371,22 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(5 * time.Millisecond)
 	}
 }
+
+func TestDocVersion(t *testing.T) {
+	for name, tt := range map[string]struct {
+		doc  map[string]any
+		want int64
+	}{
+		"int64":   {map[string]any{"_meta": map[string]any{"version": int64(7)}}, 7},
+		"int32":   {map[string]any{"_meta": map[string]any{"version": int32(7)}}, 7},
+		"int":     {map[string]any{"_meta": map[string]any{"version": 7}}, 7},
+		"float64": {map[string]any{"_meta": map[string]any{"version": float64(7)}}, 7},
+		"string":  {map[string]any{"_meta": map[string]any{"version": "7"}}, 0},
+		"no meta": {map[string]any{}, 0},
+		"nil":     {nil, 0},
+	} {
+		if got := DocVersion(tt.doc); got != tt.want {
+			t.Errorf("%s: got %d, want %d", name, got, tt.want)
+		}
+	}
+}

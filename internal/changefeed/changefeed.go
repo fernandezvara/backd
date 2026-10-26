@@ -172,3 +172,19 @@ func (w WatchSet) describe() string {
 	slices.Sort(names)
 	return strings.Join(names, ",")
 }
+
+// DocVersion reads `_meta.version` of a document in API shape, 0 when there is none.
+func DocVersion(doc map[string]any) int64 {
+	meta, _ := doc["_meta"].(map[string]any)
+	switch v := meta["version"].(type) {
+	case int64:
+		return v
+	case int32:
+		return int64(v)
+	case int:
+		return int64(v)
+	case float64:
+		return int64(v)
+	}
+	return 0
+}
