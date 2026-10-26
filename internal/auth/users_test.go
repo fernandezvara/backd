@@ -26,7 +26,6 @@ func newUsers(store *authtest.MemStore, clock *time.Time) *Users {
 }
 
 //go:fix inline
-func ptr[T any](v T) *T { return new(v) }
 
 // addSessions stores n sessions for the user.
 func addSessions(store *authtest.MemStore, userID string, n int) {

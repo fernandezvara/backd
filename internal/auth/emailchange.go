@@ -222,4 +222,3 @@ func (s *Users) queueQuietly(ctx context.Context, r EmailRequest) {
 }
 
 //go:fix inline
-func ptr[T any](v T) *T { return new(v) }

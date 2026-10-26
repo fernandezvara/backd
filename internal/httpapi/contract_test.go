@@ -3291,7 +3291,6 @@ func TestContractDetectsViolations(t *testing.T) {
 }
 
 //go:fix inline
-func ptrString(s string) *string { return new(s) }
 
 // dirtyJPEGForContract is a JPEG cut short, which cannot be copied without its metadata.
 func dirtyJPEGForContract(t *testing.T) []byte {
