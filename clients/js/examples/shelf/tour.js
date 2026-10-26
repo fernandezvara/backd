@@ -592,7 +592,8 @@ heading('Teams as organizations (ch20)')
   const unknown = await anonymous.auth.options({ org: `nobody-${STAMP}` })
   check('a team\'s sign-in page offers the password, and an unknown team offers the same (nothing says it is wrong)', offered.methods.includes('password') && JSON.stringify(offered.methods) === JSON.stringify(unknown.methods), JSON.stringify([offered, unknown]))
   const held = (await cy.orgs.signedIn()).map((x) => x.ref)
-  check('the switcher lists the teams this browser holds a session for', held.includes(team.slug) && held.includes(teamOf(cy.tourEmail)) && !held.includes(`elsewhere-${STAMP}`), JSON.stringify(held))
+  // (the client is bound to the team it started in, which holds its token itself: the switcher lists the others)
+  check('the switcher lists the teams this browser signed in to besides its own', held.includes(team.slug) && !held.includes(`elsewhere-${STAMP}`), JSON.stringify(held))
   const mailFor = async (/** @type {string} */ to) => {
     for (let i = 0; i < 100; i++) {
       const page = await operator.db('mail').collection('outbox').list({ where: { kind: 'organizations-found', to }, orderBy: '-_meta.created_at', limit: 1 })
