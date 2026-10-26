@@ -204,6 +204,7 @@ func TestPasswordNoticeWaitsForTheEmailLimitsAndGoesOn(t *testing.T) {
 
 func TestARefusedSignInSaysTheResetEmailWasQueued(t *testing.T) {
 	f := newRulesFixture(t)
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	f.svc.Realm = "acme"
 	fiveAccounts(t, f)
 	at := time.Now().Add(time.Hour)

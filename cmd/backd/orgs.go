@@ -107,10 +107,7 @@ func orgsCreate(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	body := map[string]any{"name": str(c, "name"), "owner": owner}
-	if s := str(c, "slug"); s != "" {
-		body["slug"] = s
-	}
+	body := map[string]any{"name": str(c, "name"), "slug": str(c, "slug"), "owner": owner}
 	var o orgRow
 	if err := t.call("POST", "_admin/orgs", nil, body, &o); err != nil {
 		return err
@@ -418,6 +415,19 @@ func orgsDelete(c *kli.CommandContext) error {
 		return err
 	}
 	fmt.Fprintf(ioOf(c).stdout, "organization %s deleted; its documents are being cleaned up in the background\n", str(c, "id"))
+	return nil
+}
+
+func orgsSetSlug(c *kli.CommandContext) error {
+	t, err := targetOf(c, false)
+	if err != nil {
+		return err
+	}
+	var o orgRow
+	if err := t.call("PUT", "_admin/orgs/"+url.PathEscape(str(c, "id"))+"/slug", nil, map[string]any{"slug": str(c, "slug")}, &o); err != nil {
+		return err
+	}
+	fmt.Fprintf(ioOf(c).stdout, "organization %s is now %s\n", o.ID, o.slug())
 	return nil
 }
 

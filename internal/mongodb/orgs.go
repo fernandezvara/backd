@@ -14,22 +14,24 @@ import (
 )
 
 type orgDoc struct {
-	ID         string         `bson:"_id"`
-	Name       string         `bson:"name"`
-	Slug       string         `bson:"slug,omitempty"`
-	FormerSlug string         `bson:"former_slug,omitempty"`
-	CreatedBy  string         `bson:"created_by,omitempty"`
-	Status     string         `bson:"status"`
-	RequireMFA bool           `bson:"require_mfa"`
-	Claims     map[string]any `bson:"claims,omitempty"`
-	CreatedAt  time.Time      `bson:"created_at"`
-	UpdatedAt  time.Time      `bson:"updated_at"`
-	DeletedAt  *time.Time     `bson:"deleted_at,omitempty"`
+	ID            string         `bson:"_id"`
+	Name          string         `bson:"name"`
+	Slug          string         `bson:"slug,omitempty"`
+	FormerSlug    string         `bson:"former_slug,omitempty"`
+	CreatedBy     string         `bson:"created_by,omitempty"`
+	Status        string         `bson:"status"`
+	RequireMFA    bool           `bson:"require_mfa"`
+	SSORequired   bool           `bson:"sso_required,omitempty"`
+	SessionMaxAge int64          `bson:"session_max_age,omitempty"` // seconds
+	Claims        map[string]any `bson:"claims,omitempty"`
+	CreatedAt     time.Time      `bson:"created_at"`
+	UpdatedAt     time.Time      `bson:"updated_at"`
+	DeletedAt     *time.Time     `bson:"deleted_at,omitempty"`
 }
 
 func (d orgDoc) org() auth.Org {
 	o := auth.Org{ID: d.ID, Name: d.Name, Slug: d.Slug, FormerSlug: d.FormerSlug, CreatedBy: d.CreatedBy, Status: d.Status,
-		RequireMFA: d.RequireMFA, Claims: d.Claims, CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC()}
+		RequireMFA: d.RequireMFA, SSORequired: d.SSORequired, SessionMaxAge: time.Duration(d.SessionMaxAge) * time.Second, Claims: d.Claims, CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC()}
 	if d.DeletedAt != nil {
 		o.DeletedAt = d.DeletedAt.UTC()
 	}
@@ -184,6 +186,20 @@ func (s *AuthStore) UpdateOrg(ctx context.Context, id string, upd auth.OrgUpdate
 	}
 	if upd.RequireMFA != nil {
 		set = append(set, bson.E{Key: "require_mfa", Value: *upd.RequireMFA})
+	}
+	if upd.SSORequired != nil {
+		if *upd.SSORequired {
+			set = append(set, bson.E{Key: "sso_required", Value: true})
+		} else {
+			unset = append(unset, bson.E{Key: "sso_required", Value: ""})
+		}
+	}
+	if upd.SessionMaxAge != nil {
+		if *upd.SessionMaxAge == 0 {
+			unset = append(unset, bson.E{Key: "session_max_age", Value: ""})
+		} else {
+			set = append(set, bson.E{Key: "session_max_age", Value: int64(*upd.SessionMaxAge / time.Second)})
+		}
 	}
 	if upd.ClaimsSet {
 		if len(upd.Claims) == 0 {

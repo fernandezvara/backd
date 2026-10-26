@@ -210,6 +210,35 @@ final linked = await backd.auth.linkProviderWithIdToken('google', idToken: token
 
 `nonce` is the raw value the sign-in was started with. An invalid token throws an `AuthenticationError` (`invalid_token`). Apple's `authorizationCode` is required unless the provider sets `revoke_on_delete: false`.
 
+### Working in an organization
+
+An organization's people sign in to *it*, and the session they get is **scoped to it**: its token reaches that organization and no other. Bind the client to one, by its id or by the slug people know:
+
+```dart
+final backd = BackdClient(url: url, realm: 'shelf', org: 'acme-corp');
+final offer = await backd.auth.options();           // (providers:, methods:) Acme's sign-in page can offer
+await backd.auth.login(email, password);            // POST /_auth/orgs/acme-corp/login
+backd.auth.current?.org;                            // the organization's id
+await backd.auth.org();                             // {id, name, slug, roles, teams}
+```
+
+`login`, `signup`, `magicLink.request`, `requestPasswordReset`, `signInWith` and the other sign-in calls go to the organization, and every one takes `org` to name another. A wrong password, an address that is not a member and an organization that is not there all fail alike, with `invalid_credentials`. An invitation is used as part of the sign-in (`login(…, invitation: …)`, `signup(…, invitation: …)`, `signInWith(…, invitation: …)`); `auth.previewInvitation(token)` says what it offers before the person signs in.
+
+An app that works in several organizations keeps one client per organization, each with a token of its own:
+
+```dart
+final acme = backd.org('acme-corp');   // the same client for the same organization
+final beta = backd.org('beta');
+await acme.auth.login(email, password);
+await beta.auth.login(email, password);
+await acme.auth.logout();               // beta stays signed in
+await backd.orgs.signedIn();            // [(ref:, id:, expiresAt:, name:)]: what a switcher lists
+```
+
+`client.org` needs a storage that can keep a token per organization: `MemoryTokenStorage` and `FileTokenStorage` can (a custom `TokenStorage` implements `slot(name)` and `slots()`, or returns null from `slot` to say it cannot). The API never lists the organizations a person is in; the app remembers the ones it signed in to.
+
+A new person starts a company with `auth.signUpWithOrg(email, password, name:, slug:)`, `orgs.create(...)` opens a session for the organization it made, and `auth.findOrgs(email)` emails an address the companies it belongs to. See [Signing in to an organization](../../organizations/api/#signing-in-to-an-organization).
+
 ### Auth events
 
 ```dart
@@ -669,8 +698,8 @@ final class SecureStorage implements TokenStorage {
 `backd.orgs` is the [organizations API](../../organizations/api/): the groups of users a person belongs to, with their members, teams and invitations.
 
 ```dart
-final org = await backd.orgs.create({'name': 'Acme Corp', 'slug': 'acme'});
-final mine = await backd.orgs.list();              // each with roles, require_mfa and mfa_met
+final org = await backd.orgs.create({'name': 'Acme Corp', 'slug': 'acme'});   // also opens a session scoped to it, kept by the client
+final mine = await backd.orgs.signedIn();          // [(ref:, id:, expiresAt:, name:)]: the organizations this client holds a session in
 
 await backd.orgs.members(org['id']).list();
 await backd.orgs.members(org['id']).update(userId, ['editor']);   // direct roles
@@ -686,27 +715,25 @@ final inv = await backd.orgs.invitations(org['id']).create(
     binding: 'email', email: 'ana@example.com', roles: ['editor'], send: true);
 inv['link'];   // https://app.acme.example/join?token=…
 
-// The person who got the link:
-final offer = await backd.orgs.previewInvitation(token);   // {org, roles, teams}
-await backd.orgs.acceptInvitation(token);
+// The person who got the link previews it, then signs in to the organization with it:
+final offer = await backd.auth.previewInvitation(token, org: 'acme');   // {org, roles, teams}
+await backd.org('acme').auth.login('ana@example.com', password, invitation: token);
 ```
 
-The rest of the surface, by object: `orgs` has `create`, `list`, `get`, `update`, `leave` (allowed without a second factor; the last manager cannot) and `delete`; `members(id)` has `list`, `update` and `remove`; `teams(id)` has `list`, `create`, `update`, `delete`, `members`, `addMember`, `removeMember`, `grantRole`, `setRoleWindow` and `revokeRole`; `invitations(id)` has `create`, `list`, `revoke`, `send` and `newLink`; `templates(id)` has `list`, `get`, `put`, `delete`, `preview` and `test`. Each maps to a route of the [organizations API](../../organizations/api/).
+The rest of the surface, by object: `orgs` has `create`, `signedIn`, `get`, `update` (`name`, `slug`, `requireMfa` and `sessionMaxAge`), `leave` (allowed without a second factor; the last manager cannot) and `delete`; `members(id)` has `list`, `update` and `remove`; `teams(id)` has `list`, `create`, `update`, `delete`, `members`, `addMember`, `removeMember`, `grantRole`, `setRoleWindow` and `revokeRole`; `invitations(id)` has `create`, `list`, `revoke`, `send` and `newLink`; `templates(id)` has `list`, `get`, `put`, `delete`, `preview` and `test`. Each maps to a route of the [organizations API](../../organizations/api/).
 
-**Documents belong to an organization** when their collection says so: `inOrg(id)` scopes a collection, so creates go there and lists show only that organization's documents (the read rule still decides what is seen).
+**Documents belong to an organization** when their collection says so: the one the session was opened for. There is nothing to name: creates go there and lists show only that organization's documents (the read rule still decides what is seen). To work in another organization use its client, `backd.org('beta')`.
 
 ```dart
-final projects = backd.db('main').collection('projects').inOrg(orgId);
+final projects = backd.org('acme').db('main').collection('projects');
 await projects.create({'title': 'Plan'});
 final page = await projects.list(where: {'status': 'open'});
 ```
 
-`org` in `create` and `batch` options does the same for one call.
-
-In a collection with [teams](../../organizations/team-roles/#documents-that-belong-to-a-team), `inTeam(id)` narrows a collection of an organization further: creates go to that team (the caller must belong to it or hold a team role in it, or the create throws `NotTeamMemberError`) and lists show only its documents.
+In a collection with [teams](../../organizations/team-roles/#documents-that-belong-to-a-team), `inTeam(id)` narrows a collection of the organization further: creates go to that team (the caller must belong to it or hold a team role in it, or the create throws `NotTeamMemberError`) and lists show only its documents.
 
 ```dart
-final requests = backd.db('main').collection('requests').inOrg(orgId).inTeam(salesId);
+final requests = backd.db('main').collection('requests').inTeam(salesId);
 await requests.create({'title': 'Leave'});
 ```
 
@@ -728,6 +755,8 @@ Every answer that isn't 2xx throws a `BackdException`, or one of its subclasses:
 | `ConflictError` | 409 | `email_taken`, `conflict`, `write_conflict` |
 | `IdTakenError` (a `ConflictError`) | 409 | `id_taken`: a document with that [custom id](#custom-ids) exists, and nothing was overwritten |
 | `NotOrgMemberError`, `OrgRequiresMFAError`, `OrgRoleRequiresMFAError` (`ForbiddenError`s) | 403 | `not_org_member` (also for an unknown organization), `org_requires_mfa`, `org_role_requires_mfa` (`details` names the role) |
+| `SsoSessionError` (a `ForbiddenError`) | 403 | `sso_session`: a session opened through an organization's connection can't change the account's credentials or delete or export it |
+| `SsoRequiredError` (a `ValidationError`) | 400 | `sso_required`: the organization requires its connection; `auth.options()` says so (`ssoRequired`) |
 | `NotTeamMemberError` (a `ForbiddenError`) | 403 | `not_team_member`: not a member of the team and no team role there (the same for an unknown team) |
 | `TeamError` (a `ValidationError`) | 400 | `team_required`, `team_not_allowed` |
 | `FieldEncryptedError` (a `ValidationError`) | 400 | `field_encrypted`: a `where` or `orderBy` names an [encrypted field](../../encryption/), or asks more of it than equality; `details` name the field |

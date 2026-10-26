@@ -135,7 +135,6 @@
  *   replace(id: string, doc: C['input'], opts?: import('./data.js').WriteOptions): Promise<C['doc']>,
  *   patch(id: string, patch: Partial<C['input']>, opts?: import('./data.js').WriteOptions): Promise<C['doc']>,
  *   delete(id: string, opts?: import('./data.js').DeleteOptions): Promise<void>,
- *   inOrg(org: string): TypedCollection<R, C>,
  *   inTeam(team: string): TypedCollection<R, C>,
  * }} TypedCollection
  */
@@ -171,9 +170,10 @@
 /**
  * A client typed from a realm's generated types.
  * @template {RealmShape} R
- * @typedef {Omit<Client, 'db' | 'config'> & {
+ * @typedef {Omit<Client, 'db' | 'config' | 'org'> & {
  *   db<D extends keyof R['db'] & string>(name: D): TypedDatabase<R, D>,
  *   config: TypedConfig<R>,
+ *   org(ref: string): TypedClient<R>,
  * }} TypedClient
  */
 

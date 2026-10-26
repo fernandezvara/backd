@@ -226,6 +226,35 @@ await backd.auth.linkProviderWithIdToken('google', { idToken, nonce })   // for 
 
 `nonce` is the raw value the sign-in was started with. An invalid token rejects with an `AuthenticationError` (`invalid_token`). Apple's `authorizationCode` is required unless the provider sets `revoke_on_delete: false`.
 
+### Working in an organization
+
+An organization's people sign in to *it*, and the session they get is **scoped to it**: its token reaches that organization and no other. Bind the client to one, by its id or by the slug people know:
+
+```js
+const backd = createClient({ url, realm: 'shelf', org: 'acme-corp' })   // 'acme-corp' from the URL, or a "company" field
+const { providers, methods } = await backd.auth.options()          // what Acme's sign-in page can offer
+await backd.auth.login({ email, password })                        // POST /_auth/orgs/acme-corp/login
+const session = backd.auth.current                                 // session.org: the organization's id
+await backd.auth.org()                                             // { id, name, slug, roles, teams }
+```
+
+`login`, `signup`, `magicLink.request`, `requestPasswordReset`, `signInWith` and the other sign-in calls go to the organization, and every one takes `org` to name another. A wrong password, an address that is not a member and an organization that is not there all reject alike, with `invalid_credentials`. An invitation is used as part of the sign-in: `login({ email, password, invitation })`, `signup({ …, invitation })` (the invitation is required there) and `signInWith(provider, { invitation })`; `auth.previewInvitation(token)` says what it offers before the person signs in.
+
+An app that works in several organizations keeps one client per organization, each with a token of its own:
+
+```js
+const acme = backd.org('acme-corp')       // the same client for the same organization
+const beta = backd.org('beta')
+await acme.auth.login({ email, password })
+await beta.auth.login({ email, password })
+await acme.auth.logout()                  // beta stays signed in
+await backd.orgs.signedIn()               // [{ ref: 'beta', id, expiresAt, name }]: what a switcher lists
+```
+
+`client.org` needs a storage that can keep a token per organization: `memoryStorage()` and `localStorageStorage()` can (a custom one adds `slot(name)` and `slots()`). With `cookies: true` the browser holds one session at a time, so an app that works in several organizations uses tokens. The API never lists the organizations a person is in; the browser remembers the ones it signed in to.
+
+A new person starts a company with `auth.signUpWithOrg({ email, password, name, slug })` (the account, the organization and a session in one call), `orgs.create(...)` opens a session for the organization it made, and `auth.findOrgs({ email })` emails an address the companies it belongs to for someone who does not remember the slug. See [Signing in to an organization](../../organizations/api/#signing-in-to-an-organization).
+
 ### Auth events
 
 ```js
@@ -542,8 +571,8 @@ live.on('status', (s) => showBanner(s))             // 'connecting' | 'live' | '
 await live.ready                                    // the first load
 live.close()
 
-// The same, from a collection (an organization or team scope becomes a `where` on `_meta.org`/`_meta.team`):
-const mine = client.db('main').collection('items').inOrg(orgId).subscribe({ load: { sort: '-_meta.created_at' } })
+// The same, from a collection (a team scope becomes a `where` on `_meta.team`):
+const mine = client.db('main').collection('items').inTeam(teamId).subscribe({ load: { sort: '-_meta.created_at' } })
 ```
 
 What the client does for you:
@@ -730,8 +759,8 @@ await backd.auth.logout()                     // also clears the cookie
 `backd.orgs` is the [organizations API](../../organizations/api/): the groups of users a person belongs to, with their members, teams and invitations.
 
 ```js
-const org = await backd.orgs.create({ name: 'Acme Corp', slug: 'acme' })
-const mine = await backd.orgs.list()                // each with roles, require_mfa and mfa_met
+const org = await backd.orgs.create({ name: 'Acme Corp', slug: 'acme' })   // also opens a session scoped to it, kept by the client
+const mine = await backd.orgs.signedIn()              // [{ ref, id, name, expiresAt }]: the organizations this client holds a session in
 
 await backd.orgs.members(org.id).list()
 await backd.orgs.members(org.id).update(userId, ['editor'])   // direct roles
@@ -747,27 +776,25 @@ const inv = await backd.orgs.invitations(org.id).create({ binding: 'email', emai
 inv.link   // https://app.acme.example/join?token=…
 const again = await backd.orgs.invitations(org.id).newLink(inv.id)   // a new token and link for a pending one; the old link stops working
 
-// The person who got the link:
-const offer = await backd.orgs.invitations.preview(token)   // { org, roles, teams }
-await backd.orgs.invitations.accept(token)
+// The person who got the link previews it, then signs in to the organization with it:
+const offer = await backd.auth.previewInvitation(token, { org: 'acme' })   // { org, roles, teams }
+await backd.org('acme').auth.login({ email, password, invitation: token })
 ```
 
-The rest of the surface, by object: `orgs` has `create`, `list`, `get`, `update`, `leave` (allowed without a second factor; the last manager cannot) and `delete`; `members(id)` has `list`, `update` and `remove`; `teams(id)` has `list`, `create`, `update`, `delete`, `members`, `addMember`, `removeMember`, `grantRole`, `setRoleWindow` and `revokeRole`; `invitations(id)` has `create`, `list`, `revoke`, `send` and `newLink`; `templates(id)` has `list`, `get`, `put`, `delete`, `preview` and `test`; `sso(id)` has `list`, `get`, `set` and `delete` (the organization's [sign-in connections](#through-an-organizations-own-google-or-microsoft)). Each maps to a route of the [organizations API](../../organizations/api/).
+The rest of the surface, by object: `orgs` has `create`, `signedIn`, `get`, `update` (`name`, `slug`, `require_mfa` and `session_max_age`), `leave` (allowed without a second factor; the last manager cannot) and `delete`; `members(id)` has `list`, `update` and `remove`; `teams(id)` has `list`, `create`, `update`, `delete`, `members`, `addMember`, `removeMember`, `grantRole`, `setRoleWindow` and `revokeRole`; `invitations(id)` has `create`, `list`, `revoke`, `send` and `newLink`; `templates(id)` has `list`, `get`, `put`, `delete`, `preview` and `test`; `sso(id)` has `list`, `get`, `set` and `delete` (the organization's [sign-in connections](#through-an-organizations-own-google-or-microsoft)). Each maps to a route of the [organizations API](../../organizations/api/).
 
-**Documents belong to an organization** when their collection says so: `inOrg(id)` scopes a collection, so creates go there and lists show only that organization's documents (the read rule still decides what is seen).
+**Documents belong to an organization** when their collection says so: the one the session was opened for. There is nothing to name: creates go there and lists show only that organization's documents (the read rule still decides what is seen). To work in another organization use its client, `backd.org('beta')`.
 
 ```js
-const projects = backd.db('main').collection('projects').inOrg(org.id)
+const projects = backd.org('acme').db('main').collection('projects')
 await projects.create({ title: 'Plan' })
 const { items } = await projects.list({ where: { status: 'open' } })
 ```
 
-`org` in the options of `create` and `batch` does the same for one call.
-
-In a collection with [teams](../../organizations/team-roles/#documents-that-belong-to-a-team), `inTeam(id)` narrows a collection of an organization further: creates go to that team (the caller must belong to it or hold a team role in it, or the create throws `NotTeamMemberError`) and lists show only its documents.
+In a collection with [teams](../../organizations/team-roles/#documents-that-belong-to-a-team), `inTeam(id)` narrows a collection of the organization further: creates go to that team (the caller must belong to it or hold a team role in it, or the create throws `NotTeamMemberError`) and lists show only its documents.
 
 ```js
-const requests = backd.db('main').collection('requests').inOrg(org.id).inTeam(sales.id)
+const requests = backd.db('main').collection('requests').inTeam(sales.id)
 await requests.create({ title: 'Leave' })
 ```
 
@@ -788,6 +815,8 @@ Every answer that isn't 2xx throws a `BackdError`, or one of its subclasses:
 | `PasswordExpiredError` (an `AuthenticationError`) | 401 | `password_expired`: the password is right but an administrator [expired it](../../auth/users/#expiring-every-password); `resetEmailQueued` says whether backd queued the email with the link to choose a new one. Only the right password gets this answer, from `auth.login()`, `auth.signIn()` and `auth.reauth()` |
 | `ForbiddenError` | 403 | `forbidden` |
 | `NotAllowedError` (a `ForbiddenError`) | 403 | `not_allowed`: the person is not of the organization the connection they signed in through admits; nothing was created |
+| `SsoSessionError` (a `ForbiddenError`) | 403 | `sso_session`: a session opened through an organization's connection can't change the account's credentials or delete or export it |
+| `SsoRequiredError` (a `ValidationError`) | 400 | `sso_required`: the organization requires its connection; `auth.options()` says so (`ssoRequired`) |
 | `NotFoundError` | 404 | `not_found` |
 | `ConflictError` | 409 | `email_taken`, `conflict`, `write_conflict` |
 | `IdTakenError` (a `ConflictError`) | 409 | `id_taken`: a document with that [custom id](#custom-ids) exists, and nothing was overwritten |

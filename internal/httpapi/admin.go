@@ -120,6 +120,7 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		r.Route("/orgs/{org}", func(r chi.Router) {
 			r.Use(users)
 			r.Get("/", a.getOrg)
+			r.With(json).Patch("/", a.updateOrg)
 			r.Delete("/", a.deleteOrg)
 			r.Get("/owned", a.orgOwned)
 			r.With(json).Post("/reactivate", a.reactivateOrg)
@@ -146,6 +147,7 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 			r.Delete("/invitations/{id}", a.revokeOrgInvitation)
 			r.Post("/invitations/{id}/link", a.newOrgInvitationLink)
 			r.With(json).Put("/claims", a.setOrgClaims)
+			r.With(json).Put("/slug", a.setOrgSlug)
 			r.With(json).Post("/owner", a.assignOrgOwner)
 		})
 		r.With(invites).Get("/invitations", a.listInvitations)
@@ -897,6 +899,7 @@ func apiKeyJSON(k auth.APIKey) map[string]any {
 		"created_at":   formatTime(k.CreatedAt),
 		"last_used_at": lastUsed,
 		"expires_at":   expires,
+		"org":          nilIfEmpty(k.Org),
 	}
 }
 
@@ -929,11 +932,12 @@ func (a *adminAPI) createAPIKey(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"name": "string", "role": "string?", "expires_in": "string?", "networks": "strings?", "scopes": "strings?"})
+	f, ok := fields(w, r, obj, map[string]string{"name": "string", "role": "string?", "expires_in": "string?", "networks": "strings?", "scopes": "strings?", "org": "string?"})
 	if !ok {
 		return
 	}
 	var opts auth.KeyOptions
+	opts.Org, _ = f["org"].(string)
 	if s, ok := f["role"].(string); ok {
 		role, err := auth.ParseKeyRole(s)
 		if err != nil || s == "" {
@@ -971,6 +975,9 @@ func (a *adminAPI) createAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	case errors.Is(err, auth.ErrKeyNameTaken):
 		writeError(w, r, http.StatusConflict, codeConflict, err.Error(), Detail{Path: "name", Reason: "must be unique"})
+		return
+	case orgInvalid(err):
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "org", Reason: err.Error()})
 		return
 	case err != nil && strings.HasPrefix(err.Error(), "invalid API key name"):
 		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "name", Reason: err.Error()})
@@ -1785,4 +1792,10 @@ func (a *adminAPI) pauseSchedule(paused bool) http.HandlerFunc {
 		}
 		writeJSON(w, http.StatusOK, scheduleJSON(database, name, fn, st, true))
 	}
+}
+
+// orgInvalid says whether err is a refusal of an organization field.
+func orgInvalid(err error) bool {
+	var invalid *auth.OrgInvalidError
+	return errors.As(err, &invalid)
 }

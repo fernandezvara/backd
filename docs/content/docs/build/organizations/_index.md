@@ -12,7 +12,7 @@ An organization is whatever a group of users is in your app: a company in a B2B 
 
 A company can also sign its people in with its own Google Workspace or Microsoft tenant, and have them join the organization on the way in: see [the sign-in guide](sign-in/).
 
-This page explains the pieces. The rest of the section puts them to work: [build a B2B app](build-a-b2b-app/), [rules cookbook](rules-cookbook/) and [what happens when…](what-happens-when/). For departments and delegation there is a second layer, [team roles](team-roles/), with [recipes](team-access-recipes/) and a [worked example](hr-absences/); [membership hooks](membership-hooks/), [organization context](organization-context/) and [organization email templates](email-templates/) complete it. The endpoints are in the [organizations API](api/) and the settings in [`realm.yaml`](../configuration/realm/#organizations) and [`collection.yaml`](../configuration/config-dir/#organizations).
+This page explains the pieces. The rest of the section puts them to work: [where documents live](where-documents-live/), [the sign-in experience](sign-in-experience/), [build a B2B app](build-a-b2b-app/), [rules cookbook](rules-cookbook/) and [what happens when…](what-happens-when/). For departments and delegation there is a second layer, [team roles](team-roles/), with [recipes](team-access-recipes/) and a [worked example](example-knowledge-base/); [membership hooks](membership-hooks/), [organization context](organization-context/) and [organization email templates](email-templates/) complete it. The endpoints are in the [organizations API](api/) and the settings in [`realm.yaml`](../configuration/realm/#organizations) and [`collection.yaml`](../configuration/config-dir/#organizations).
 
 ## The model
 
@@ -56,15 +56,15 @@ The two never mix. An organization or a team can't carry a **realm** role, so no
 
 ## Who sets `_meta.org`
 
-Only backd, and only when a document is created: the caller names the organization (`?org=` on the request, `inOrg(id)` in the client), backd checks they are a member, and the create rule runs after that. A client can't write `_meta`, and `PUT` or `PATCH` with a different `_meta.org` answers `400 immutable_field`. Moving a document to another organization is [a realm administrator's job](../api/documents/#fixing-data-as-an-administrator).
+Only backd, and only when a document is created: the document takes the organization of the session that creates it, and the create rule runs after that. A client can't write `_meta`, and `PUT` or `PATCH` with a different `_meta.org` answers `400 immutable_field`. Moving a document to another organization is [a realm administrator's job](../api/documents/#fixing-data-as-an-administrator).
 
 Which collections belong to organizations is a decision of each collection:
 
 | `organization:` | Creating a document | Documents |
 |---|---|---|
-| `required` | needs `?org=` | all belong to one |
-| `optional` | may name one | some do |
-| `none` (default) | `?org=` is refused | none do |
+| `required` | takes the session's organization | all belong to one |
+| `optional` | may take it | some do |
+| `none` (default) | belongs to none | none do |
 
 ## Effective roles
 
@@ -106,13 +106,13 @@ sequenceDiagram
     M->>B: POST /_orgs/{org}/invitations { binding, roles, send }
     B-->>M: { id, token, link } (shown once the token is stored hashed)
     B->>P: the org-invitation email, when send is true
-    P->>B: sign in, then POST /_orgs/invitations/preview { token }
+    P->>B: POST /_auth/orgs/{org}/invitations/preview { token }
     B-->>P: { org, roles, teams }
-    P->>B: POST /_orgs/invitations/accept { token }
-    B-->>P: the membership
+    P->>B: POST /_auth/orgs/{org}/login { email, password, invitation }
+    B-->>P: a session scoped to the organization
 ```
 
-The link is shown only when the invitation is made. There is no hosted accept page: accepting needs a session, so your app reads the token from the link, asks the person to sign in and calls preview and accept.
+The link is shown only when the invitation is made. There is no hosted accept page: your app reads the token from the link, previews it, and the person signs in to the organization with it (or signs up, with a new account), which makes them a member.
 
 ## Who can see a document
 

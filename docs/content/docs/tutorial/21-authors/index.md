@@ -1,6 +1,7 @@
 ---
 title: "21. Authors with references"
 description: "Show who wrote each asset with one reference declared in collection.yaml, a profiles collection keyed by user id, and expand=author(name,avatar) on the list: the cost headers before and after selecting fields, a profile nobody can read, and writes that keep the asset's own ETag."
+icon: "article"
 weight: 410
 toc: true
 ---

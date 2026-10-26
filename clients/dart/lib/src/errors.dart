@@ -255,7 +255,7 @@ final class InvalidIdError extends ValidationError {
 }
 
 /// 403 `org_requires_mfa`: the organization requires a second factor and this
-/// session used none. Ask for one (see `mfa_met` of `client.orgs.list()`);
+/// session used none. Ask for one (see `mfa_met` of the organization in `client.auth.me()`);
 /// leaving the organization still works.
 final class OrgRequiresMFAError extends ForbiddenError {
   const OrgRequiresMFAError({
@@ -399,6 +399,35 @@ final class AggregateTooExpensiveError extends BackdException {
 /// text index.
 final class SearchNotEnabledError extends ValidationError {
   const SearchNotEnabledError({
+    required super.status,
+    required super.code,
+    required super.message,
+    super.details,
+    super.requestId,
+    super.cause,
+  });
+}
+
+/// 400 `sso_required`: the organization's people sign in through its
+/// connection only; password, magic link, reset and the realm's own providers
+/// are closed to it. `auth.options()` says so ([ssoRequired]) and lists just
+/// the connection's buttons.
+final class SsoRequiredError extends ValidationError {
+  const SsoRequiredError({
+    required super.status,
+    required super.code,
+    required super.message,
+    super.details,
+    super.requestId,
+    super.cause,
+  });
+}
+
+/// 403 `sso_session`: the session was opened through an organization's
+/// connection, which can't change what protects the account or delete or
+/// export it. The person signs in with their own credentials to do it.
+final class SsoSessionError extends ForbiddenError {
+  const SsoSessionError({
     required super.status,
     required super.code,
     required super.message,
@@ -678,6 +707,22 @@ BackdException errorForStatus(
     case 'team_required':
     case 'team_not_allowed':
       return TeamError(
+        status: status,
+        code: code,
+        message: message,
+        details: details,
+        requestId: requestId,
+      );
+    case 'sso_required':
+      return SsoRequiredError(
+        status: status,
+        code: code,
+        message: message,
+        details: details,
+        requestId: requestId,
+      );
+    case 'sso_session':
+      return SsoSessionError(
         status: status,
         code: code,
         message: message,

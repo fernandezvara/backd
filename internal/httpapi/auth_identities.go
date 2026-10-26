@@ -39,7 +39,7 @@ func identitiesJSON(u auth.User, ids []auth.Identity) []map[string]any {
 // unlinkIdentity handles DELETE /_auth/identities/{provider}: the user removes one of
 // their sign-in methods, never the last.
 func (a *authAPI) unlinkIdentity(w http.ResponseWriter, r *http.Request) {
-	if !a.reauthed(w, r) {
+	if !a.accountReauthed(w, r) {
 		return
 	}
 	err := usersOf(r).UnlinkIn(r.Context(), principalOf(r).User.ID, chi.URLParam(r, "provider"), r.URL.Query().Get("org"), "self")
@@ -58,7 +58,7 @@ func (a *authAPI) unlinkIdentity(w http.ResponseWriter, r *http.Request) {
 // removePassword handles DELETE /_auth/password: the user stops having a password and signs in
 // with a link or a provider, never when that would leave them no way in.
 func (a *authAPI) removePassword(w http.ResponseWriter, r *http.Request) {
-	if !a.reauthed(w, r) {
+	if !a.accountReauthed(w, r) {
 		return
 	}
 	err := usersOf(r).RemovePassword(r.Context(), principalOf(r))

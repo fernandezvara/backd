@@ -108,6 +108,12 @@ func (m *MemStore) UpdateOrg(_ context.Context, id string, upd auth.OrgUpdate, n
 	if upd.RequireMFA != nil {
 		org.RequireMFA = *upd.RequireMFA
 	}
+	if upd.SSORequired != nil {
+		org.SSORequired = *upd.SSORequired
+	}
+	if upd.SessionMaxAge != nil {
+		org.SessionMaxAge = *upd.SessionMaxAge
+	}
 	if upd.ClaimsSet {
 		org.Claims = upd.Claims
 	}

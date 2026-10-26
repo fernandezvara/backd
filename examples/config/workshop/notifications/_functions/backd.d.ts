@@ -256,6 +256,7 @@ export interface Realm {
       "mfa-reset": Record<string, unknown>;
       "no-account": Record<string, unknown>;
       "org-invitation": Record<string, unknown>;
+      "organizations-found": Record<string, unknown>;
       "password-changed": Record<string, unknown>;
       "password-expired": Record<string, unknown>;
       "reauth-code": Record<string, unknown>;
@@ -276,7 +277,9 @@ export interface CallUser {
   id: string;
   email: string;
   roles: string[];
-  /** The organizations the user belongs to, by id (only in realms with organizations). */
+  /** The organization the session belongs to (only in realms with organizations). */
+  org?: string;
+  /** The user's membership of that organization, by id (only in realms with organizations): the session reaches it and no other. */
   orgs?: Record<string, CallOrg>;
 }
 
@@ -294,7 +297,7 @@ export interface CallOrg {
   require_mfa: boolean;
 }
 
-export interface OrgRecord { id: string; name: string; slug: string | null; status: "active" | "orphaned" | "deleted"; require_mfa: boolean; claims: Record<string, unknown>; created_at: string }
+export interface OrgRecord { id: string; name: string; slug: string | null; status: "active" | "orphaned" | "deleted"; require_mfa: boolean; sso_required: boolean; claims: Record<string, unknown>; created_at: string }
 export interface OrgTeamRoleGrant { team: string; role: string; from?: string; until?: string; granted_by?: string; granted_at: string; active: boolean }
 export interface OrgMember { user: string; email?: string; mfa?: boolean; mfa_roles?: string[]; roles: string[]; teams: string[]; team_roles: OrgTeamRoleGrant[]; effective_roles: { role: string; origin: string[] }[]; overlap: string[]; joined_at: string }
 /** A member or role holder of one team: roles_in_team are the team roles held there now. */

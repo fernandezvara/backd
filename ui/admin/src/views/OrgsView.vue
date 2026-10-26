@@ -70,7 +70,7 @@ async function create() {
       createError.value = t('orgs.noSuchUser', { email: owner.value.trim() })
       return
     }
-    const org = await admin.orgs.create({ name: name.value.trim(), slug: slug.value.trim() || undefined, owner: user.id })
+    const org = await admin.orgs.create({ name: name.value.trim(), slug: slug.value.trim(), owner: user.id })
     creating.value = false
     toasts.push(t('orgs.create.done', { name: org.name }))
     await router.push({ name: 'org', params: { realm: props.realm, id: org.id } })
@@ -141,7 +141,7 @@ async function create() {
 
   <FormDialog v-model:open="creating" :title="t('orgs.create.title')" :submit="t('common.create')" :busy="createBusy" :error="createError" @submit="create">
     <TextField v-model="name" :label="t('orgs.name')" autocomplete="off" required />
-    <TextField v-model="slug" :label="t('orgs.slug')" :help="t('orgs.create.slugHelp')" autocomplete="off" />
+    <TextField v-model="slug" :label="t('orgs.slug')" :help="t('orgs.create.slugHelp')" autocomplete="off" required />
     <TextField v-model="owner" type="email" :label="t('orgs.create.owner')" :help="t('orgs.create.ownerHelp')" autocomplete="off" required />
   </FormDialog>
 </template>

@@ -152,10 +152,10 @@ void main() {
         'has_more': false,
       }));
 
-      await coll.inOrg('o1').inTeam('t1').list();
+      await coll.inTeam('t1').list();
 
       final q = transport.requests.single.url.queryParameters;
-      expect(q['org'], 'o1');
+      expect(q['org'], isNull);
       expect(q['team'], 't1');
     });
 

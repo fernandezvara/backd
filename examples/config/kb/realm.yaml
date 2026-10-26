@@ -1,0 +1,18 @@
+# The documentation store of docs/organizations/example-knowledge-base: each organization keeps
+# its pages, its teams keep their own, and every page says who may read it.
+auth: enabled
+signup: open
+
+organizations:
+  roles:
+    owner: { description: Runs the organization and its company pages, manage: [org, members, roles, teams] }
+    member: { description: Everyone in the organization }
+  default_roles: [member]
+  # Roles held within one team.
+  team_roles:
+    editor:
+      description: Writes, publishes and decides who can read the team's pages
+      grants: [contributor]     # may hand writing to someone else, in this team only
+      require_mfa: true
+    contributor:
+      description: Writes drafts and edits the team's pages, usually for a period

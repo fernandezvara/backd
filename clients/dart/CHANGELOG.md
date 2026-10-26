@@ -1,3 +1,8 @@
+## Unreleased
+
+- **Breaking, with a backd server that scopes sessions (34.2):** `Collection.inOrg()` and the `org` option of `create`, and `TypedCollection.inOrg`, are gone: a session works in the one organization it was opened for, so there is none to name (`inTeam` needs no `inOrg` before it). `orgs.list()`, `orgs.previewInvitation` and `orgs.acceptInvitation` are gone too: use `orgs.signedIn()`, `auth.previewInvitation(token, org:)` and a login with the `invitation:`. A `session_unscoped` answer expires the session like `unauthenticated`. `orgs.update` takes `sessionMaxAge`.
+- **Signing in to an organization:** `BackdClient(org: 'acme-corp')` binds the client to an organization (an id, or the slug people know) and `login`, `signup`, `magicLink.request`, `requestPasswordReset` and `signInWith` go to `/_auth/orgs/{org}/…`, so the session is scoped to it (`Session.org`, `auth.current`, `Me.org`, `auth.org()`); a wrong password, a stranger and an unknown organization fail alike. An invitation is used as part of the sign-in (`invitation:`), `auth.previewInvitation` reads it before, `auth.options()` lists what the sign-in page can offer, `auth.signUpWithOrg` starts a company and `auth.findOrgs` emails an address its companies. `client.org(id)` gives one client per organization with a token of its own, and `client.orgs.signedIn()` lists them. **`TokenStorage` gains `slot(name)` and `slots()`** (breaking for custom storages: return null from `slot` to keep one token). `orgs.create` keeps the session of the organization it makes. Needs a backd server with the organization sign-in routes.
+
 ## 0.9.2
 
 - **Your own data:** `client.account` asks for the export of the user's

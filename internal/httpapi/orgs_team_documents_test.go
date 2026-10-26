@@ -40,9 +40,6 @@ func TestTeamScopedDocuments(t *testing.T) {
 	if rec, out := f.doH(t, "POST", requests+"?org="+org, `{"title": "x"}`, jsonHdr(f.bob)); rec.Code != 400 || errCode(out) != "team_required" {
 		t.Errorf("no team: %d %v", rec.Code, out)
 	}
-	if rec, out := f.doH(t, "POST", requests+"?team="+sales, `{"title": "x"}`, jsonHdr(f.bob)); rec.Code != 400 {
-		t.Errorf("?team= without ?org=: %d %v", rec.Code, out)
-	}
 	for name, team := range map[string]string{"a team bob isn't in": support, "an unknown team": "nosuch", "a team of another organization": foreign} {
 		if rec, out := f.doH(t, "POST", requests+"?org="+org+"&team="+team, `{"title": "x"}`, jsonHdr(f.bob)); rec.Code != 403 || errCode(out) != "not_team_member" {
 			t.Errorf("%s: %d %v", name, rec.Code, out)
@@ -105,8 +102,8 @@ func TestTeamScopedDocuments(t *testing.T) {
 		t.Errorf("a collection without teams: %d %v", rec.Code, out)
 	}
 	// Somebody outside the organization sees nothing.
-	if rec, _ := f.doH(t, "GET", requests+"?org="+org, "", bearer(f.carl)); rec.Code != 403 {
-		t.Errorf("a stranger: %d", rec.Code)
+	if got := ids(f.carl); len(got) != 0 {
+		t.Errorf("a stranger: %v", got)
 	}
 
 	// A team role is checked inside the query, within its window: bob manages Support from an
@@ -128,18 +125,18 @@ func TestTeamScopedDocuments(t *testing.T) {
 	if got := ids(f.bob); len(got) != 1 {
 		t.Errorf("before the window: %v", got)
 	}
-	if rec, _ := f.doH(t, "PATCH", requests+"/"+supportReq, `{"title": "edited"}`, patchHdr(f.bob)); rec.Code != 404 && rec.Code != 403 {
+	if rec, _ := f.doH(t, "PATCH", requests+"/"+supportReq, `{"title": "edited"}`, patchHdr(f.sessionIn(t, f.bob, org))); rec.Code != 404 && rec.Code != 403 {
 		t.Errorf("update before the window: %d", rec.Code)
 	}
 	*f.clock = f.clock.Add(time.Hour)
 	if got := ids(f.bob); len(got) != 2 {
 		t.Errorf("inside the window: %v", got)
 	}
-	if rec, out := f.doH(t, "PATCH", requests+"/"+supportReq, `{"title": "edited"}`, patchHdr(f.bob)); rec.Code != 200 {
+	if rec, out := f.doH(t, "PATCH", requests+"/"+supportReq, `{"title": "edited"}`, patchHdr(f.sessionIn(t, f.bob, org))); rec.Code != 200 {
 		t.Errorf("update as its manager: %d %v", rec.Code, out)
 	}
 	// ...and not in Sales, where he is a plain member.
-	if rec, _ := f.doH(t, "PATCH", requests+"/"+req, `{"title": "edited"}`, patchHdr(f.bob)); rec.Code != 403 {
+	if rec, _ := f.doH(t, "PATCH", requests+"/"+req, `{"title": "edited"}`, patchHdr(f.sessionIn(t, f.bob, org))); rec.Code != 403 {
 		t.Errorf("update as a plain member: %d", rec.Code)
 	}
 }

@@ -37,6 +37,8 @@ export {
   TeamError,
   NotOrgMemberError,
   NotAllowedError,
+  SsoRequiredError,
+  SsoSessionError,
   LastOrgManagerError,
   VersionMismatchError,
   RetryableError,

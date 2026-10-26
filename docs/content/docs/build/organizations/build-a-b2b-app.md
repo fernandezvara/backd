@@ -25,12 +25,12 @@ organizations:
     member: { description: Reads }
   default_roles: [member]
   creator_roles: [owner]
-  invitation_link: "https://app.acme.example/join?token={token}"
+  invitation_link: "https://app.acme.example/join?token={token}&org={org}"
 ```
 
 - The `manage` capabilities decide who administers the organization; `owner` needs `org`, since an organization always keeps someone who can manage it.
 - `default_roles` are held by every member, so `member` is never granted one by one.
-- The `invitation_link` must be inside the realm's [`sign_in.allowed_redirects`](../../configuration/realm/).
+- The `invitation_link` must hold `{token}` and `{org}` (the app learns which organization to sign in to from it) and be inside the realm's [`sign_in.allowed_redirects`](../../configuration/realm/).
 - Creating organizations is allowed to anyone with a verified email by default (`create: user.email_verified`).
 
 ## 2. Mark the collections
@@ -60,26 +60,24 @@ The read rule becomes "`_meta.org` is one of the caller's organizations" inside 
 
 ## 4. Create the organization at sign-up
 
-After the user signs up (and verifies their email), the app creates their organization. They become its `owner`:
+A new person starts a company in one call: the account, the organization (they become its `owner`) and a session scoped to it:
 
 ```js
-await backd.auth.signup({ email, password })
-// ...verify the address, sign in...
-const org = await backd.orgs.create({ name: 'Acme Corp' })
-localStorage.setItem('org', org.id)
+const backd = createClient({ url, realm })
+await backd.auth.signUpWithOrg({ email, password, name: 'Acme Corp', slug: 'acme-corp' })
 ```
 
-Creating needs a verified address because the realm's `create` rule says so, and is limited by `max_created_per_user` (5 by default). If you'd rather create organizations from a function, for a plan or a payment, set `create: "false"`: [functions](../functions/) and realm administrators can always create.
+The `slug` is how people name the company when they sign in, so it is required and unique. Someone who already has an account creates another company from a session of theirs, with `backd.orgs.create({ name, slug })`; it answers a second session, scoped to the new one, which the client keeps. A company is limited by `max_created_per_user` (5 by default). If you'd rather create organizations from a function, for a plan or a payment, set `create: "false"`: [functions](../functions/) and realm administrators can always create.
 
 ## 5. Create and read documents in an organization
 
 ```js
-const projects = backd.db('main').collection('projects').inOrg(org.id)
+const projects = backd.db('main').collection('projects')
 await projects.create({ title: 'Redesign the site' })
 const { items } = await projects.list()
 ```
 
-`inOrg(id)` sends `?org=` on the calls. Without it a create answers `400 org_required`. Someone who isn't a member gets `403 not_org_member`, the same for an organization that doesn't exist.
+A session works in the organization it was opened for, so there is nothing to say: creates go there, and lists show only its documents (the rules still decide which). To work in another organization the person signs in to that one.
 
 ## 6. Invite people
 
@@ -91,26 +89,26 @@ const inv = await backd.orgs.invitations(org.id).create({
 
 `send: true` emails the link (the `org-invitation` email, which you can [customize](../../functions/email/)); the answer also carries the `link`, shown once, for a chat or a QR code. For a shared link, use `binding: 'none'`.
 
-The invitee follows the link into your app, which reads the token and, once signed in:
+The invitee follows the link into your app (`invitation_link` in `realm.yaml` carries the token and the organization), which asks what it offers and signs them in with it:
 
 ```js
-const offer = await backd.orgs.invitations.preview(token)   // { org, roles, teams }: "Join Acme as editor?"
-await backd.orgs.invitations.accept(token)
+const offer = await backd.auth.previewInvitation(token, { org })   // { org, roles, teams }: "Join Acme as editor?"
+await backd.org(org).auth.login({ email, password, invitation: token })   // or signUp, for a new account
 ```
 
-An unknown, expired or used token answers `400 invalid_invitation`, always the same; an email invitation for another address answers `403 invitation_not_for_you`.
+Taking the invitation is part of signing in to the organization. An unknown, expired or used token previews as `400 invalid_invitation`, always the same; signing in with one that is not the person's is the uniform `401 invalid_credentials`.
 
 ## 7. Switch between organizations
 
-A person may belong to several. The app lists them and keeps the one selected:
+A person may belong to several, and holds one session for each they signed in to. The client keeps them:
 
 ```js
-const mine = await backd.orgs.list()          // each with the caller's effective roles
-const current = mine.find((o) => o.id === localStorage.getItem('org')) ?? mine[0]
-const projects = backd.db('main').collection('projects').inOrg(current.id)
+const mine = await backd.orgs.signedIn()       // [{ ref, id, name, expiresAt }]: what a switcher lists
+const acme = backd.org('acme-corp')            // a client whose calls use that organization's session
+await acme.db('main').collection('projects').list()
 ```
 
-The selection is only the app's choice of `?org=`; what a person can see is decided by the rules at each request. A list without `?org=` shows the documents of all their organizations.
+Switching is choosing which client to use; what a person can see is decided by the rules at each request, in the organization the session belongs to. For an organization they have no session in, the app sends them to its sign-in page: see [the sign-in experience](../sign-in-experience/).
 
 ## 8. Manage people
 

@@ -157,6 +157,17 @@ blog__main.posts
 shop__orders.items
 ```
 
+### Upgrading from v0.9.2 to the next release
+
+The next release scopes every session to one organization in a realm that has organizations (see [scoped sessions](../build/organizations/api/#signing-in-to-an-organization)). A realm without organizations changes nothing. Do these in order:
+
+1. **Give every organization a slug.** `backd orgs list` shows `-` for the ones without; `backd orgs set-slug --id <org> --slug acme-corp` gives one (startup also warns about them). People sign in by the slug; a slug may not look like an id.
+2. **Run `backd provision`** with an admin-privileged `MONGO_URI`: sessions gain an index on `org` and the fields `max_lifetime`, jobs gain `caller_org` and API keys `org`. With `PROVISION_MODE=verify` the instances refuse to start until it has run.
+3. **Move the apps to the organization sign-in.** Sign in at `/_auth/orgs/{org}/…` (`createClient({ org })` in the clients), drop `?org=`, `inOrg()`, `GET /_orgs` and the `/_orgs/invitations/*` calls, and make the sign-up page ask for the team's slug. [The sign-in experience](../build/organizations/sign-in-experience/) describes what to build. Realm administrators keep `POST /_auth/login`; the admin UI and `backd login` need nothing.
+4. **Expect everyone to sign in once more.** Sessions opened before have no organization and answer `401 session_unscoped`; the clients take that as an expired session. A session of a user who is an administrator keeps working.
+5. **Bind the keys that act on behalf of users.** `backd apikey create --org <org>` makes a key that counts one organization; the ones that exist count none until replaced.
+6. **Move the clients with the server** (`backd-js` and `package:backd` of the same release).
+
 ### Upgrading to v0.9.2
 
 v0.9.2 changes where a realm keeps its content (breaking, step 1) and adds the personal data export and live app configuration. Run `backd config check` against your tree with the new binary first: it lists every folder to move.

@@ -61,13 +61,17 @@ type OAuthState struct {
 	Provider string
 	// Org is the organization whose connection the attempt goes through ("" for the realm's
 	// own providers): the callback must be the one of that organization.
-	Org           string
+	Org string
+	// ScopeOrg is the organization the person is signing in to: the session records it. It is
+	// the connection's organization for a connection, and the organization of the route for a
+	// realm provider used to sign in to one.
+	ScopeOrg      string
 	Intent        string
 	CodeChallenge string // the app's PKCE challenge (S256)
 	Verifier      string // backd's own PKCE verifier, for the provider
 	Nonce         string
 	RedirectTo    string
-	InvitationID  string // HashToken of the invitation token, if one was passed
+	InvitationID  string // HashToken of the invitation token, if one was passed (an organization's for a ScopeOrg)
 	LinkUserID    string // IntentLink: whose identity is being added
 	Locales       []string
 	// Consents are the consents the app accepted for a sign-up through this attempt.
@@ -251,8 +255,12 @@ type ProviderLogin struct {
 	LinkUserID  string // IntentLink: the signed-in user
 	// Invitation is the hash of the invitation token the attempt carried.
 	Invitation string
-	Locales    []string
-	IP         string
+	// ScopeOrg and OrgInvitation: the sign-in is to an organization (not through a connection of
+	// its own) and the attempt carried one of its invitations (a hash), which lets a person with
+	// no account make one whatever the realm's sign-up mode.
+	ScopeOrg, OrgInvitation string
+	Locales                 []string
+	IP                      string
 	// Consents and UserAgent: what a sign-up through the login accepted, and the proof's context.
 	Consents  map[string]string
 	UserAgent string
@@ -415,6 +423,8 @@ func (s *Users) signUpWithProvider(ctx context.Context, in ProviderLogin, email 
 	case in.Org != "":
 		// A person of an organization's connection is let in whatever the sign-up mode: the
 		// connection's restriction is the gate, and the realm switched the feature on.
+	case in.OrgInvitation != "" && s.admitsByInvitation(ctx, in, email, &verified):
+		// An organization invited them: that is the way in, whatever the sign-up mode.
 	case s.Settings.Signup == registry.SignupOpen:
 	case s.Settings.Signup == registry.SignupInvite:
 		if in.Invitation == "" {
@@ -469,4 +479,15 @@ func (s *Users) signUpWithProvider(ctx context.Context, in ProviderLogin, email 
 		return ProviderResult{User: u, NewUser: true, Profile: in.Profile}, err
 	}
 	return ProviderResult{User: u, NewUser: true, Profile: in.Profile}, nil
+}
+
+// admitsByInvitation says whether the organization invitation of a provider login lets this
+// address make an account. An invitation bound to the address was sent to it, so its owner
+// vouches for it: verified is set.
+func (s *Users) admitsByInvitation(ctx context.Context, in ProviderLogin, email string, verified *bool) bool {
+	ok, viaAddress := s.invitationAdmits(ctx, in.OrgInvitation, in.ScopeOrg, email)
+	if ok && viaAddress {
+		*verified = true
+	}
+	return ok
 }

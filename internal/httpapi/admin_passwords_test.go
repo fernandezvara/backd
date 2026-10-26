@@ -13,6 +13,7 @@ import (
 
 func TestAdminExpireEveryPassword(t *testing.T) {
 	f := newRulesFixture(t)
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	f.svc.Realm = "acme"
 	_, adminKey, err := f.svc.CreateAPIKey(context.Background(), "breach", auth.KeyOptions{Role: auth.KeyRoleAdmin})
 	if err != nil {
@@ -84,6 +85,7 @@ func TestAdminExpireEveryPassword(t *testing.T) {
 
 func TestAdminExpirePasswordsAndTellTheUsers(t *testing.T) {
 	f := newRulesFixture(t)
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	f.svc.Realm = "acme"
 	_, adminKey, err := f.svc.CreateAPIKey(context.Background(), "breach", auth.KeyOptions{Role: auth.KeyRoleAdmin})
 	if err != nil {
@@ -128,6 +130,7 @@ func TestAdminExpirePasswordsAndTellTheUsers(t *testing.T) {
 
 func TestAdminResetLink(t *testing.T) {
 	f := newRulesFixture(t)
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	f.svc.Realm = "acme"
 	ctx := context.Background()
 	_, adminKey, err := f.svc.CreateAPIKey(ctx, "support", auth.KeyOptions{Role: auth.KeyRoleAdmin})

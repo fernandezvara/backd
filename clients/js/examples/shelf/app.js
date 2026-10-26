@@ -40,15 +40,33 @@ import { readZip } from './lib/zip.js'
 // `alpine:init` below and nothing is registered. The client's `types` is read per
 // request, so it can be attached when the fetch lands.
 /** @type {import('backd-js').TypedClient<Realm>} */
-const backd = /** @type {any} */ (createClient({
+const root = /** @type {any} */ (createClient({
   url: window.location.origin,
   realm: 'shelf',
   // Sessions survive reloads. In a real app, guard against XSS before
   // trusting localStorage (or use cookie sessions).
   storage: localStorageStorage('shelf'),
 }))
+// Chapter 20: a session belongs to one team, and the team's slug is the name people type to sign in
+// to it. This page works in one team at a time: `backd` is that team's client (the one without a
+// team only signs in, and signs in the realm's operators), and a change of team reloads the page.
+const TEAM_KEY = 'shelf.team'
+const params0 = new URLSearchParams(window.location.search)
+/** The team this page works in: the address (?team=), else the last one used. */
+const teamRef = (params0.get('team') ?? window.localStorage.getItem(TEAM_KEY) ?? '').trim().toLowerCase()
+/** @type {import('backd-js').TypedClient<Realm>} */
+const backd = teamRef ? root.org(teamRef) : root
+const clientFor = (/** @type {string} */ ref) => (ref.trim() ? root.org(ref) : root)
+/** The client a sign-in in progress started with: its second step and its session belong there. */
+let signing = backd
+/** Remembers the team to open and loads the page again in it. */
+function openTeamPage(/** @type {string} */ ref, hash = '#mine') {
+  window.localStorage.setItem(TEAM_KEY, ref.trim().toLowerCase())
+  window.history.replaceState({}, '', window.location.pathname + hash)
+  window.location.reload()
+}
 if (['localhost', '127.0.0.1'].includes(window.location.hostname)) {
-  fetch('./backd/realm.json').then((r) => r.json()).then((i) => { backd.types = i.fingerprint }).catch(() => undefined)
+  fetch('./backd/realm.json').then((r) => r.json()).then((i) => { root.types = i.fingerprint; backd.types = i.fingerprint }).catch(() => undefined)
 }
 const main = backd.db('main')
 const assets = main.collection('assets')
@@ -92,6 +110,12 @@ document.addEventListener('alpine:init', () => {
     mode: 'login', // login | signup
     email: '',
     password: '',
+    // Chapter 20: the team people sign in to (its slug; empty for an operator), what a new
+    // team is called when a person starts one, and what the sign-in page can offer for it.
+    company: teamRef,
+    teamName: '',
+    methods: ['password', 'magic_link'],
+    companyMsg: null,
     invitation: '', // signup: invite — the token the operator hands over
     // Chapter 16: the step after the password (a code of the second factor, or
     // setting one up), and the code of a magic-link email.
@@ -145,20 +169,23 @@ document.addEventListener('alpine:init', () => {
     // flip read_at — the rules say so).
     notifs: [],
 
-    // Teams (chapter 20): the organizations I belong to, the one open, its
-    // pins and members, and what an invitation made (a link to copy).
-    teams: [],
+    // Teams (chapter 20): the team this page works in (its id, name and my roles there), the
+    // teams this browser holds a session for, its pins and members, and what an invitation
+    // made (a link to copy).
+    teams: [], // [{ ref, id, name }]: the sessions of this browser
     team: null, // the open team's id
+    org: null, // { id, name, slug, roles, teams } of the team this page works in
     pinList: [],
     liveStatus: 'connecting', // the pins' stream: connecting, live, resyncing, closed
     dashboard: [],
     dashboardZone: 'UTC',
     teamMembers: [],
-    teamName: '',
+    teamSlug: '',
     pinDraft: { title: '', url: '', note: '', private_notes: '' },
     invite: { email: '', roles: 'editor', link: null, sent: false },
-    joinOffer: null, // { token, org, roles }: what ?join=<token> offers
+    joinOffer: null, // { token, org, roles }: what ?join=<token>&org=<id> offers
     joinToken: null,
+    joinOrg: null,
 
     // Admin "run by hand": digest runs as an async job — the call answers
     // with a job, and its status is polled.
@@ -210,8 +237,12 @@ document.addEventListener('alpine:init', () => {
         this.mode = 'signup'
         window.location.hash = '#auth'
       }
-      // An invitation to a team (?join=<token>): offered once the member is signed in.
+      // An invitation to a team (?join=<token>&org=<id>): the person signs in to the team with it
+      // (or makes an account), and joins as part of that.
       this.joinToken = params.get('join')
+      this.joinOrg = params.get('org')
+      if (this.joinToken && this.joinOrg) await this.previewJoin()
+      else this.joinToken = null
       await this.loadConsentTexts()
       await this.loadConfig()
       // Back on the tab: the copy is fresh for its cache_ttl, then revalidated with a 304.
@@ -223,23 +254,39 @@ document.addEventListener('alpine:init', () => {
       // The email that says an export is ready links the account page with ?export=<id>.
       this.exportFocus = params.get('export')
       if (this.exportFocus) window.location.hash = '#account'
+      // The recovery codes shown once, kept across the page load that opened the team.
+      try {
+        this.recoveryCodes = JSON.parse(window.sessionStorage.getItem('shelf.recovery') ?? 'null')
+        window.sessionStorage.removeItem('shelf.recovery')
+      } catch {
+        this.recoveryCodes = null
+      }
       // ?s=<token> is the public share view — no session needed.
       const s = params.get('s')
       if (s) await this.openShare(s)
       // A magic link ends here with a code in the address: the client redeems it
       // when it is created, and `ready` is the outcome — the session, or a step.
       try {
-        const outcome = await backd.auth.ready
-        if (outcome && 'challenge' in outcome) await this.startStep(outcome)
+        const outcome = await root.auth.ready
+        if (outcome && 'challenge' in outcome) {
+          signing = root
+          await this.startStep(outcome)
+        } else if (outcome && 'org' in outcome && outcome.org) {
+          // The link signed in to a team: its session is that team's client's, named by its id.
+          openTeamPage(outcome.org)
+          return
+        }
       } catch (e) {
         this.error = e.message
       }
       try {
         this.user = await backd.auth.me()
+        this.org = this.user.org ?? null
       } catch (e) {
         this.user = null
         this.open = e instanceof NotFoundError
       }
+      if (!this.user) await this.loadOptions()
       await this.refilter()
       if (this.user) await Promise.all([this.loadMine(), this.loadDrafts(), this.loadInvites(), this.loadShares(), this.loadNotifs(), this.ensureMember(), this.loadAdmin(), this.loadMfa(), this.loadConsents(), this.loadExports()])
       if (this.user) await this.loadNames()
@@ -301,22 +348,33 @@ document.addEventListener('alpine:init', () => {
       this.error = null
       try {
         const credentials = { email: this.email, password: this.password }
-        if (this.mode === 'signup' && this.invitation) credentials.invitation = this.invitation
         // Chapter 17: the consents ticked, by name and the version shown.
         if (this.mode === 'signup' && this.consentList.length) {
           const missing = this.consentList.filter((c) => c.required && !this.ticked[c.name])
           if (missing.length) throw new Error('Please accept: ' + missing.map((c) => c.name).join(', '))
           credentials.consents = Object.fromEntries(this.consentList.filter((c) => this.ticked[c.name]).map((c) => [c.name, c.version]))
         }
-        // `signIn` hands back the second step as a value; signup rejects with it.
-        const result = this.mode === 'signup'
-          ? await backd.auth.signup(credentials).catch((e) => {
-              if (e instanceof SecondStepRequiredError) {
-                return { challenge: e.challenge, enrollmentRequired: e.code === 'mfa_enrollment_required', consentRequired: e.code === 'consent_required', consents: e.consents, methods: e.methods }
-              }
-              throw e
-            })
-          : await backd.auth.signIn(credentials)
+        // Chapter 20: the team of an invitation link, else the one typed; empty is the operators' door.
+        const ref = (this.joinToken ? this.joinOrg : this.company) ?? ''
+        signing = clientFor(ref)
+        const step = (/** @type {any} */ e) => {
+          if (e instanceof SecondStepRequiredError) {
+            return { challenge: e.challenge, enrollmentRequired: e.code === 'mfa_enrollment_required', consentRequired: e.code === 'consent_required', consents: e.consents, methods: e.methods }
+          }
+          throw e
+        }
+        let result
+        if (this.mode === 'signup' && this.joinToken) {
+          // Joining a team that invited you: an account for it, with its invitation.
+          result = await signing.auth.signup({ ...credentials, invitation: this.joinToken }).catch(step)
+        } else if (this.mode === 'signup') {
+          // Starting a team: the operator's invitation (chapter 4) lets a person in, and the team is theirs.
+          if (!this.teamName.trim() || !ref.trim()) throw new Error('Name your team and choose its short name')
+          result = await signing.auth.signUpWithOrg({ ...credentials, name: this.teamName.trim(), slug: ref.trim().toLowerCase(), invitation: this.invitation || undefined }).catch(step)
+        } else {
+          // An invitation is used as part of the sign-in.
+          result = await signing.auth.signIn(this.joinToken ? { ...credentials, invitation: this.joinToken } : credentials)
+        }
         this.password = ''
         this.invitation = ''
         await this.afterFirstStep(result)
@@ -355,28 +413,17 @@ document.addEventListener('alpine:init', () => {
         return
       }
       // The role requires a second factor and the user has none: set one up now.
-      const setup = await backd.auth.mfa.setup({ challenge: result.challenge })
+      const setup = await signing.auth.mfa.setup({ challenge: result.challenge })
       this.step = { kind: 'enroll', challenge: result.challenge, methods: [], setup, recovery: false }
     },
 
-    async signedIn(session) {
-      this.user = session.user
+    // The session is kept by the client of the team signed in to (the operators' by the one
+    // without a team): open the page there, so everything loads as that team's member.
+    async signedIn(session, hash = '#mine') {
       this.step = null
       this.code = ''
       this.magicSent = false
-      await this.refilter()
-      await this.loadMine()
-      await this.loadDrafts()
-      await this.loadInvites()
-      await this.loadNotifs()
-      await this.ensureMember()
-      await this.loadNames()
-      await this.loadAdmin()
-      await this.loadMfa()
-      await this.loadConsents()
-      await this.loadTeams()
-      await this.loadConfig() // a member reads more of it than a visitor
-      window.location.hash = this.joinOffer ? '#teams' : '#mine'
+      openTeamPage(signing.orgRef || session.org || '', this.joinToken ? '#teams' : hash)
     },
 
     // The code of the authenticator app (or a recovery code) after the password.
@@ -385,7 +432,7 @@ document.addEventListener('alpine:init', () => {
       this.error = null
       try {
         const method = this.step.recovery ? 'recovery_code' : 'totp'
-        await this.signedIn(await backd.auth.verifyMfa(this.step.challenge, method, this.code.trim()))
+        await this.signedIn(await signing.auth.verifyMfa(this.step.challenge, method, this.code.trim()))
       } catch (e) {
         this.error = e.message
         this.code = ''
@@ -400,15 +447,16 @@ document.addEventListener('alpine:init', () => {
       this.busy = true
       this.error = null
       try {
-        const done = await backd.auth.mfa.confirm({ challenge: this.step.challenge, setupId: this.step.setup.setup_id, code: this.code.trim() })
+        const done = await signing.auth.mfa.confirm({ challenge: this.step.challenge, setupId: this.step.setup.setup_id, code: this.code.trim() })
         this.recoveryCodes = done.recovery_codes
         if (done.consent) {
           // The terms come before the session (chapter 17); the codes wait on the account page.
           await this.startStep(done.consent)
           return
         }
-        await this.signedIn(done.session)
-        window.location.hash = '#account' // where the recovery codes are shown
+        // The recovery codes are shown once, on the account page: keep them for the page that opens.
+        window.sessionStorage.setItem('shelf.recovery', JSON.stringify(done.recovery_codes))
+        await this.signedIn(done.session, '#account')
       } catch (e) {
         this.error = e.message
         this.code = ''
@@ -424,7 +472,8 @@ document.addEventListener('alpine:init', () => {
       this.busy = true
       this.error = null
       try {
-        await backd.auth.magicLink.request(this.email)
+        signing = clientFor(this.company)
+        await signing.auth.magicLink.request(this.email)
         this.magicSent = true
       } catch (e) {
         this.error = e.message
@@ -439,7 +488,7 @@ document.addEventListener('alpine:init', () => {
       this.busy = true
       this.error = null
       try {
-        await this.afterFirstStep(await backd.auth.magicLink.verifyCode(this.code.trim()))
+        await this.afterFirstStep(await signing.auth.magicLink.verifyCode(this.code.trim()))
       } catch (e) {
         this.error = e.message
         this.code = ''
@@ -452,15 +501,8 @@ document.addEventListener('alpine:init', () => {
       this.closeGallery()
       galleryExtras.clear()
       await backd.auth.logout().catch(() => {})
-      this.user = null
-      this.mine = []
-      this.drafts = []
-      this.teams = []
-      this.team = null
-      this.pinList = []
-      window.location.hash = '#gallery'
-      await this.refilter()
-      await this.loadConfig() // the copies were dropped with the session: read what a visitor may
+      // The page opens again in the same team (its name stays in the sign-in form), signed out of it.
+      openTeamPage(teamRef, '#gallery')
     },
 
     // `{"tags": "docs"}` finds documents whose tags array contains "docs".
@@ -1065,26 +1107,57 @@ document.addEventListener('alpine:init', () => {
 
     // --- teams (chapter 20) ------------------------------------------------
 
+    // What the sign-in page can offer for the team typed: a password always, a link by email when
+    // the realm sends them. An unknown team looks like any other: the page can't say it is wrong.
+    async loadOptions() {
+      const ref = (this.joinOrg ?? this.company).trim()
+      try {
+        this.methods = ref ? (await root.auth.options({ org: ref })).methods : ['password', 'magic_link']
+      } catch {
+        this.methods = ['password', 'magic_link']
+      }
+    },
+
+    // What a join link offers, before anybody signs in: the invitation says which team and which roles.
+    async previewJoin() {
+      try {
+        const offer = await root.auth.previewInvitation(this.joinToken, { org: this.joinOrg })
+        this.joinOffer = { token: this.joinToken, org: offer.org, roles: offer.roles }
+        this.company = this.joinOrg
+        window.location.hash = '#auth'
+      } catch (e) {
+        this.error = e.code === 'invalid_invitation' ? 'That invitation is no longer valid.' : e.message
+        this.joinToken = null
+      }
+    },
+
+    // "Which teams am I in?" for someone who does not remember the short name: the answer goes to
+    // the mailbox of the address, and tells this page nothing.
+    async findTeams() {
+      this.busy = true
+      this.error = null
+      try {
+        await root.auth.findOrgs({ email: this.email })
+        this.companyMsg = 'If that address belongs to teams, an email with the links is on its way — see the mailbox.'
+      } catch (e) {
+        this.error = e.message
+      } finally {
+        this.busy = false
+      }
+    },
+
+    // The team this page works in, and the teams this browser holds a session for (the switcher).
     async loadTeams() {
       if (!this.user) return
       try {
-        this.teams = await backd.orgs.list()
-        if (this.team && !this.teams.some((t) => t.id === this.team)) this.team = null
-        if (!this.team && this.teams.length) this.team = this.teams[0].id
-        await this.openTeam(this.team)
-        // An invitation link opened while signed in: show what it offers.
-        if (this.joinToken && !this.joinOffer) {
-          const offer = await backd.orgs.invitations.preview(this.joinToken)
-          this.joinOffer = { token: this.joinToken, org: offer.org, roles: offer.roles }
-          window.location.hash = '#teams'
-        }
+        const held = await root.orgs.signedIn()
+        this.teams = await Promise.all(held.map(async (h) => {
+          const org = h.ref === teamRef ? this.org : await root.org(h.ref).auth.org().catch(() => null)
+          return { ref: h.ref, id: org?.id ?? h.id, name: org?.name ?? h.name ?? h.ref }
+        }))
+        await this.openTeam(this.org?.id ?? null)
       } catch (e) {
-        if (e.code === 'invalid_invitation' || e.code === 'invitation_not_for_you') {
-          this.error = e.code === 'invalid_invitation' ? 'That invitation is no longer valid.' : 'That invitation is for someone else.'
-          this.joinToken = null
-        } else if (e.code !== 'not_found') {
-          this.error = e.message
-        }
+        if (e.code !== 'not_found') this.error = e.message
       }
     },
 
@@ -1099,7 +1172,7 @@ document.addEventListener('alpine:init', () => {
       this.liveStatus = 'connecting'
       this.invite.link = null
       if (!id) return
-      liveTeam = pins.inOrg(id).subscribe({ load: { sort: '-_meta.created_at', limit: 50 } })
+      liveTeam = pins.subscribe({ load: { sort: '-_meta.created_at', limit: 50 } })
       liveTeam.on('change', (state) => {
         this.pinList = state.items
       })
@@ -1107,10 +1180,9 @@ document.addEventListener('alpine:init', () => {
         this.liveStatus = s
       })
       // A reload after a reset found that this member can no longer read the team: the list is
-      // empty and the team's page says so; the teams list is what they see next.
+      // empty and the team's page says so; signing in again is what they do next.
       liveTeam.on('access_lost', async () => {
         this.error = 'You are no longer a member of this team.'
-        await this.loadTeams()
       })
       liveTeam.on('error', async (e) => {
         // Chapter 24 hasn't set `realtime: true` on pins yet (or the stack
@@ -1119,7 +1191,7 @@ document.addEventListener('alpine:init', () => {
           liveTeam?.close()
           liveTeam = null
           try {
-            const page = await pins.inOrg(id).list({ orderBy: '-_meta.created_at', limit: 50 })
+            const page = await pins.list({ orderBy: '-_meta.created_at', limit: 50 })
             if (this.team === id) this.pinList = page.items
             this.liveStatus = 'not live'
           } catch (err) {
@@ -1144,7 +1216,7 @@ document.addEventListener('alpine:init', () => {
         const org = await backd.orgs.get(this.team)
         const tz = typeof org.claims?.timezone === 'string' ? org.claims.timezone : 'UTC'
         this.dashboardZone = tz
-        const { groups } = await pins.inOrg(this.team).aggregate({
+        const { groups } = await pins.aggregate({
           groupBy: ['author', '_meta.created_at:month'],
           metrics: ['count'],
           tz,
@@ -1162,25 +1234,32 @@ document.addEventListener('alpine:init', () => {
     },
 
     get currentTeam() {
-      return this.teams.find((t) => t.id === this.team) ?? null
+      return this.org
     },
 
     // The roles I hold in the open team decide what the page offers; the
     // server decides what is allowed.
     holds(...roles) {
-      return roles.some((r) => this.currentTeam?.roles.includes(r))
+      return roles.some((r) => this.org?.roles?.includes(r))
     },
 
+    // Another team of this browser: the page opens there (its session is already here).
+    switchTeam(ref) {
+      openTeamPage(ref, '#teams')
+    },
+
+    // Starting a team gives a session in it at once: no password to type again.
     async createTeam() {
       this.busy = true
       this.error = null
       try {
-        const org = await backd.orgs.create({ name: this.teamName })
+        const slug = this.teamSlug.trim().toLowerCase() || this.teamName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+        const org = await backd.orgs.create({ name: this.teamName.trim(), slug })
         this.teamName = ''
-        this.team = org.id
-        await this.loadTeams()
+        this.teamSlug = ''
+        openTeamPage(org.slug ?? org.id, '#teams')
       } catch (e) {
-        this.error = e.message
+        this.error = e.code === 'slug_taken' ? 'That short name is taken: choose another.' : e.message
       } finally {
         this.busy = false
       }
@@ -1232,23 +1311,6 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    async acceptJoin() {
-      this.busy = true
-      this.error = null
-      try {
-        const org = await backd.orgs.invitations.accept(this.joinOffer.token)
-        this.joinOffer = null
-        this.joinToken = null
-        window.history.replaceState({}, '', window.location.pathname + '#teams')
-        this.team = org.id
-        await this.loadTeams()
-      } catch (e) {
-        this.error = e.message
-      } finally {
-        this.busy = false
-      }
-    },
-
     async setMemberRoles(user, roles) {
       this.error = null
       try {
@@ -1264,8 +1326,9 @@ document.addEventListener('alpine:init', () => {
       this.error = null
       try {
         await backd.orgs.leave(this.team)
-        this.team = null
-        await this.loadTeams()
+        // Leaving ends the session's access at once; the page opens signed out of the team.
+        await backd.auth.logout().catch(() => {})
+        openTeamPage(teamRef, '#gallery')
       } catch (e) {
         this.error = e.code === 'last_org_manager' ? 'You are the last owner: make someone else an owner, or delete the team.' : e.message
       }
@@ -1280,8 +1343,8 @@ document.addEventListener('alpine:init', () => {
           async (methods) => this.askProof(methods),
           () => backd.orgs.delete(this.team),
         )
-        this.team = null
-        await this.loadTeams()
+        await backd.auth.logout().catch(() => {})
+        openTeamPage(teamRef, '#gallery')
       } catch (e) {
         this.error = e.message
       }
@@ -1395,7 +1458,7 @@ document.addEventListener('alpine:init', () => {
       this.busy = true
       this.error = null
       try {
-        await backd.auth.requestPasswordReset({ email: this.email })
+        await clientFor(this.company).auth.requestPasswordReset({ email: this.email })
         this.accountMsg = 'If that address has an account, a reset email is on its way — see the mailbox.'
       } catch (e) {
         this.error = e.message
@@ -1483,9 +1546,9 @@ document.addEventListener('alpine:init', () => {
           accepted[c.name] = c.version
         }
         for (const c of this.consentList) if (!c.required && this.ticked[c.name]) accepted[c.name] = c.version
-        const session = await backd.auth.acceptConsents(this.step.challenge, accepted)
-        await this.signedIn(session)
-        if (this.recoveryCodes) window.location.hash = '#account'
+        const session = await signing.auth.acceptConsents(this.step.challenge, accepted)
+        if (this.recoveryCodes) window.sessionStorage.setItem('shelf.recovery', JSON.stringify(this.recoveryCodes))
+        await this.signedIn(session, this.recoveryCodes ? '#account' : '#mine')
       } catch (e) {
         this.error = e.message
       } finally {

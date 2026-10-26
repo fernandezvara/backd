@@ -18,6 +18,11 @@ test('an administrator expires one password, and a new one makes the account usa
   await expect(page.getByTestId('user-email')).toHaveText(email)
   await expect(page.getByTestId('user-status')).toHaveText('Active')
 
+  // Only an administrator signs in at the realm's own login (people sign in to an organization), so this user gets an administrator role.
+  await page.getByLabel('Role', { exact: true }).selectOption('viewer')
+  await page.getByRole('button', { name: 'Add role' }).click()
+  await expect(page.getByTestId('user-roles')).toContainText('viewer')
+
   await page.getByTestId('expire-password').click()
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel('Reason (for the audit trail)').fill('e2e')

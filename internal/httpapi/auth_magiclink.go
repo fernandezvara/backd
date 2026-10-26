@@ -32,6 +32,9 @@ func (a *authAPI) magicLinkPost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *authAPI) requestMagicLink(w http.ResponseWriter, r *http.Request) {
+	if !a.signInToAnOrg(w, r) {
+		return
+	}
 	obj, ok := readObject(w, r)
 	if !ok {
 		return
@@ -69,7 +72,7 @@ func (a *authAPI) requestMagicLink(w http.ResponseWriter, r *http.Request) {
 	id, err := svc.RequestMagicLink(r.Context(), auth.MagicLinkInput{
 		Email: address, RedirectTo: redirectTo, CodeChallenge: challenge,
 		Locales: append([]string{locale}, acceptLanguages(r.Header.Get("Accept-Language"))...), IP: clientIP(r), RequestID: requestID(r.Context()),
-		Consents: consents,
+		Consents: consents, Org: chi.URLParam(r, "org"),
 	})
 	if err != nil {
 		authError(w, r, err)
@@ -178,6 +181,10 @@ func (a *authAPI) useMagicLink(w http.ResponseWriter, r *http.Request) {
 		authError(w, r, err)
 		return
 	}
+	viaOrg := ""
+	if c, cerr := svc.MagicLinkByToken(r.Context(), token); cerr == nil {
+		viaOrg = c.ViaOrg
+	}
 	code, dest, err := svc.UseMagicLink(r.Context(), token, clientIP(r))
 	switch {
 	case errors.Is(err, auth.ErrNoRedirect):
@@ -204,6 +211,10 @@ func (a *authAPI) useMagicLink(w http.ResponseWriter, r *http.Request) {
 			logger(r.Context()).Error("use a magic link", "error", err)
 		}
 		a.redirectToApp(w, r, dest, paramError, failure)
+		return
+	}
+	if viaOrg != "" {
+		a.redirectToApp(w, r, dest, paramCode, code, paramOrg, viaOrg)
 		return
 	}
 	a.redirectToApp(w, r, dest, paramCode, code)

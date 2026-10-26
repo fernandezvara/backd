@@ -6,7 +6,7 @@ weight: 527
 toc: true
 ---
 
-Recipes for [team roles](../team-roles/) and team-scoped documents. Each one is small and says what it relies on; the [HR absences](../hr-absences/) page puts them together in a tested example.
+Recipes for [team roles](../team-roles/) and team-scoped documents. Each one is small and says what it relies on; the [knowledge base](../example-knowledge-base/) page puts them together in a tested example.
 
 ## Concepts
 

@@ -80,6 +80,10 @@ func (s *Users) deleteOrg(ctx context.Context, orgID, by, requestID string) (Org
 	if err != nil {
 		return Org{}, err
 	}
+	// Access has ended; so do the sessions that belonged to the organization.
+	if _, err := s.Store.DeleteOrgSessions(context.WithoutCancel(ctx), orgID, "", ""); err != nil && s.Log != nil {
+		s.Log.Warn("end the sessions of a deleted organization", "org", orgID, "error", err)
+	}
 	j, err := s.enqueueCleanup(ctx, OrgDeleteOrigin, "org-delete:"+orgID, OrgDeleteJob{Org: orgID}, requestID)
 	if err != nil {
 		// Access has ended; the cleanup can be started again by deleting again from the admin API.
@@ -96,8 +100,10 @@ func (s *Users) AdminReactivateOrg(ctx context.Context, orgID, slug string) (Org
 	if _, err := s.orgs(); err != nil {
 		return Org{}, err
 	}
-	if err := validSlug(slug); err != nil {
-		return Org{}, err
+	if slug != "" {
+		if err := validSlug(slug); err != nil {
+			return Org{}, err
+		}
 	}
 	org, err := s.Store.OrgByID(ctx, orgID)
 	if err != nil {

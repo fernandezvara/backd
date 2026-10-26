@@ -60,6 +60,10 @@ type MagicLinkInput struct {
 	IP, RequestID string
 	// Consents are accepted for the account a new address gets when the link is used.
 	Consents map[string]string
+	// Org is the organization (id or slug) the person signs in to with the link: only its members
+	// are sent one, the session is scoped to it, and a new address never gets an account this way
+	// (design/scoped-sessions.md §5).
+	Org string
 }
 
 // RequestMagicLink makes a request and asks for its email, returning the request id the
@@ -118,6 +122,20 @@ func (s *Users) RequestMagicLink(ctx context.Context, in MagicLinkInput) (string
 		}
 	default:
 		return "", err
+	}
+	if in.Org != "" {
+		// For an organization, only a member is sent a link, and nobody is told whether they were:
+		// everyone else does the same work and ends with a request that nothing opens.
+		member := false
+		if org, oerr := s.OrgByRef(ctx, in.Org); oerr == nil && err == nil && send {
+			if _, merr := s.Store.OrgMember(ctx, org.ID, u.ID); merr == nil {
+				member, c.ViaOrg, c.Org = true, org.ID, org.ID
+			}
+		}
+		if !member {
+			send, kind = false, email.MagicLink
+			c.Purpose, c.UserID, c.Email = MagicLinkPurposeNoAccount, "", ""
+		}
 	}
 	if err := s.Store.PutChallenge(ctx, c); err != nil {
 		return "", err
@@ -221,7 +239,7 @@ func (s *Users) UseMagicLink(ctx context.Context, token, ip string) (code, desti
 	if err != nil {
 		return "", destination, err
 	}
-	code, err = s.IssueLoginCode(ctx, u.ID, MagicLinkLoginMethod, c.CodeChallenge, newUser, nil)
+	code, err = s.IssueLoginCodeIn(ctx, u.ID, MagicLinkLoginMethod, c.CodeChallenge, newUser, nil, c.ViaOrg)
 	return code, destination, err
 }
 
@@ -285,7 +303,7 @@ func (s *Users) VerifyMagicLinkCode(ctx context.Context, requestID, code, verifi
 	if err != nil {
 		return Redeemed{}, err
 	}
-	return s.afterFirstFactor(ctx, u, MagicLinkLoginMethod, handover{newUser: newUser})
+	return s.afterFirstFactor(ctx, u, MagicLinkLoginMethod, handover{newUser: newUser, org: c.ViaOrg})
 }
 
 // magicLinkUser resolves the user a redeemed request is for: the one it was made for, who becomes

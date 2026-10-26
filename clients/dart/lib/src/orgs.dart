@@ -1,16 +1,22 @@
+import 'dart:convert';
+
+import 'auth.dart';
 import 'client.dart';
+import 'storage.dart';
 
 /// Organizations of the signed-in user: `client.orgs`. Members, teams and
 /// invitations hang off one organization: `client.orgs.members(id)`,
-/// `client.orgs.teams(id)`, `client.orgs.invitations(id)`. Documents in an
-/// organization are created and listed with `collection.inOrg(id)`.
+/// `client.orgs.teams(id)`, `client.orgs.invitations(id)`. A session works in
+/// the one organization it was opened for, so its documents need none named;
+/// teams of it are reached with `collection.inTeam(id)`.
 final class Orgs {
   Orgs(this.client);
 
   final BackdClient<Object?> client;
 
   /// Creates an organization; the caller holds the realm's `creator_roles`
-  /// in it.
+  /// in it. The answer also holds `session`, a new session scoped to it:
+  /// the client keeps it, so `client.org(id)` is signed in.
   Future<Map<String, Object?>> create(Map<String, Object?> input,
       {RequestOptions? options}) async {
     final res = await client.request(RequestInit(
@@ -21,24 +27,48 @@ final class Orgs {
       retry: options?.retry,
       cache: options?.cache ?? true,
     ));
-    return Map<String, Object?>.from(res.data as Map);
+    final data = Map<String, Object?>.from(res.data as Map);
+    final made = data['session'];
+    if (made is Map && made['token'] is String && client.keepsOrgSessions) {
+      await client.org('${data['slug'] ?? data['id']}').auth.signedInWith(Session(
+            token: made['token'] as String,
+            sessionId: '',
+            expiresAt: '${made['expires_at'] ?? ''}',
+            user: null,
+            org: made['org'] as String?,
+          ));
+    }
+    return data;
   }
 
-  /// The organizations the user belongs to, with their roles there and
-  /// whether this session meets each one's second-factor requirement
-  /// (`mfa_met`).
-  Future<List<Map<String, Object?>>> list({RequestOptions? options}) async {
-    final res = await client.request(RequestInit(
-      method: 'GET',
-      path: const ['_orgs'],
-      headers: options?.headers,
-      retry: options?.retry,
-      cache: options?.cache ?? true,
-    ));
-    return [
-      for (final o in (res.data as Map?)?['items'] as List? ?? const [])
-        if (o is Map) Map<String, Object?>.from(o),
-    ];
+  /// The organizations this app holds a session for, as clients made with
+  /// `client.org`: one entry for each, with the id the sign-in answered
+  /// (when it did), when the session ends and, once `auth.org()` has been
+  /// asked, its name. It is what an organization switcher lists; the API
+  /// never lists the organizations a person is in.
+  Future<List<({String ref, String? id, String? expiresAt, String? name})>>
+      signedIn() async {
+    final storage = client.root.storage;
+    final names = await storage.slots();
+    final out = <({String ref, String? id, String? expiresAt, String? name})>[];
+    for (final ref in names.where((n) => !n.startsWith(orgNotePrefix))) {
+      Map<String, Object?> meta = const {};
+      try {
+        final text = await storage.slot('$orgNotePrefix$ref')?.get();
+        if (text != null) {
+          meta = Map<String, Object?>.from(jsonDecode(text) as Map);
+        }
+      } on Object {
+        // A damaged note is as if there was none.
+      }
+      out.add((
+        ref: ref,
+        id: meta['org'] as String?,
+        expiresAt: meta['expires_at'] as String?,
+        name: meta['name'] as String?,
+      ));
+    }
+    return out;
   }
 
   /// One organization. `ForbiddenError` (`not_org_member`) for a non-member
@@ -55,13 +85,21 @@ final class Orgs {
     return Map<String, Object?>.from(res.data as Map);
   }
 
-  /// Renames an organization, changes its slug, or sets `require_mfa`
-  /// (which asks for a fresh proof of identity: see `client.auth.reauth`).
+  /// Renames an organization, changes its slug, sets `require_mfa` or
+  /// shortens the lifetime of its sessions with [sessionMaxAge] (at least an
+  /// hour; `Duration.zero` goes back to the realm's). The last two ask for a
+  /// fresh proof of identity: see `client.auth.reauth`. [ssoRequired] `true`
+  /// makes the organization's connection the only way in: it needs a working
+  /// connection and a session opened through one (`409 sso_not_ready`), and
+  /// the answer counts the members who can't come in (`members_without_sso`,
+  /// listed by `members(id).list(sso: false)`).
   Future<Map<String, Object?>> update(
     String id, {
     String? name,
     String? slug,
     bool? requireMfa,
+    bool? ssoRequired,
+    Duration? sessionMaxAge,
     RequestOptions? options,
   }) async {
     final res = await client.request(RequestInit(
@@ -71,8 +109,10 @@ final class Orgs {
         if (name != null) 'name': name,
         if (slug != null) 'slug': slug,
         if (requireMfa != null) 'require_mfa': requireMfa,
+        if (ssoRequired != null) 'sso_required': ssoRequired,
+        if (sessionMaxAge != null) 'session_max_age': sessionMaxAge.inSeconds,
       },
-      reauth: requireMfa != null,
+      reauth: requireMfa != null || ssoRequired != null || sessionMaxAge != null,
       headers: options?.headers,
       retry: options?.retry,
       cache: options?.cache ?? true,
@@ -118,38 +158,6 @@ final class Orgs {
 
   /// The invitations of an organization.
   OrgInvitations invitations(String org) => OrgInvitations(client, org);
-
-  /// What a token offers (the organization, roles and teams), without
-  /// taking it: "Join Acme as editor?". Needs a session. An unknown,
-  /// expired, revoked or used-up token is `invalid_invitation`; a token
-  /// bound to someone else is `invitation_not_for_you`.
-  Future<Map<String, Object?>> previewInvitation(String token,
-      {RequestOptions? options}) async {
-    final res = await client.request(RequestInit(
-      method: 'POST',
-      path: const ['_orgs', 'invitations', 'preview'],
-      body: {'token': token},
-      headers: options?.headers,
-      retry: options?.retry,
-      cache: options?.cache ?? true,
-    ));
-    return Map<String, Object?>.from(res.data as Map);
-  }
-
-  /// Takes an invitation: the user becomes a member, or gains its roles and
-  /// teams.
-  Future<Map<String, Object?>> acceptInvitation(String token,
-      {RequestOptions? options}) async {
-    final res = await client.request(RequestInit(
-      method: 'POST',
-      path: const ['_orgs', 'invitations', 'accept'],
-      body: {'token': token},
-      headers: options?.headers,
-      retry: options?.retry,
-      cache: options?.cache ?? true,
-    ));
-    return Map<String, Object?>.from(res.data as Map);
-  }
 }
 
 /// The members of one organization.
@@ -164,12 +172,13 @@ final class OrgMembers {
   Future<Map<String, Object?>> list({
     int? limit,
     String? after,
+    bool? sso,
     RequestOptions? options,
   }) async {
     final res = await client.request(RequestInit(
       method: 'GET',
       path: ['_orgs', org, 'members'],
-      query: {'limit': limit, 'after': after},
+      query: {'limit': limit, 'after': after, if (sso == false) 'sso': 'false'},
       headers: options?.headers,
       retry: options?.retry,
       cache: options?.cache ?? true,

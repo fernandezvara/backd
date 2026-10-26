@@ -101,10 +101,11 @@ import { Job } from './functions.js'
  * returns it again for the same key and body, instead of creating a second
  * document. The client also retries such a request itself after a network
  * error, `429` or `503` (see `retry`).
- * `org` is the organization a document of a collection with `organization` is created in (the
- * caller must be a member; `?org=` on the wire), and `team` the team of it (a member, or a holder
- * of a team role there; `?team=`).
- * @typedef {RequestOptions & { idempotencyKey?: string, org?: string, team?: string }} CreateOptions
+ * `team` is the team of the session's organization a document of a collection with `team` is
+ * created in (a member, or a holder of a team role there; `?team=` on the wire). A session works
+ * in the organization it was opened for, so there is no organization to name. `org` is for the
+ * administrators' data route (`admin.data(...)`), which creates in any active organization.
+ * @typedef {RequestOptions & { idempotencyKey?: string, team?: string, org?: string }} CreateOptions
  */
 
 /**
@@ -243,46 +244,32 @@ export class Collection {
    * @param {Client} client
    * @param {string} database
    * @param {string} name
-   * @param {string} [org] The organization lists and creates are scoped to (see {@link Collection#inOrg}).
-   * @param {string} [team] The team of it (see {@link Collection#inTeam}).
+   * @param {string} [team] The team lists and creates are scoped to (see {@link Collection#inTeam}).
    */
-  constructor(client, database, name, org, team) {
+  constructor(client, database, name, team) {
     /** @internal */
     this.client = client
     /** @internal */
     this.path = [database, name]
     /** @internal */
-    this.org = org
-    /** @internal */
     this.team = team
   }
 
   /**
-   * The same collection scoped to an organization: `create` puts documents there and `list` and
-   * `iterate` show only its documents (the read rule still decides what is seen). The caller must
-   * be a member that counts: a create answers `NotOrgMemberError` otherwise.
-   * @param {string} org
-   * @returns {Collection<T>}
-   */
-  inOrg(org) {
-    return new Collection(this.client, /** @type {string} */ (this.path[0]), /** @type {string} */ (this.path[1]), org)
-  }
-
-  /**
-   * The same collection scoped to a team of an organization (call `inOrg` first): `create` puts
-   * documents in that team and `list` and `iterate` show only its documents (the read rule still
-   * decides what is seen). The caller must belong to the team or hold a team role in it: a
-   * create answers `NotTeamMemberError` otherwise.
+   * The same collection scoped to a team of the session's organization: `create` puts documents
+   * in that team and `list` and `iterate` show only its documents (the read rule still decides
+   * what is seen). The caller must belong to the team or hold a team role in it: a create answers
+   * `NotTeamMemberError` otherwise.
    * @param {string} team
    * @returns {Collection<T>}
    */
   inTeam(team) {
-    return new Collection(this.client, /** @type {string} */ (this.path[0]), /** @type {string} */ (this.path[1]), this.org, team)
+    return new Collection(this.client, /** @type {string} */ (this.path[0]), /** @type {string} */ (this.path[1]), team)
   }
 
   /**
    * Follows this collection live (see `client.realtime.subscribe`): a list that loads first, then
-   * keeps itself current. In a scope (`inOrg`, `inTeam`) the subscription filters on it.
+   * keeps itself current. In a team scope (`inTeam`) the subscription filters on it.
    * @param {Omit<import('./realtime.js').SubscriptionSpec, 'db' | 'collection'> & import('./realtime.js').SubscribeOptions} [spec]
    * @returns {import('./realtime.js').LiveView}
    */
@@ -290,7 +277,6 @@ export class Collection {
     const { jitterMs, random, maxBackoffMs, ...rest } = spec
     /** @type {Record<string, any>} */
     const where = { ...(typeof rest.where === 'object' ? rest.where : {}) }
-    if (this.org !== undefined) where['_meta.org'] = this.org
     if (this.team !== undefined) where['_meta.team'] = this.team
     return this.client.realtime.subscribe(
       [{ ...rest, db: this.path[0], collection: this.path[1], where: Object.keys(where).length ? where : undefined }],
@@ -305,7 +291,7 @@ export class Collection {
    * @returns {Promise<Page<T>>}
    */
   async list(params = {}, opts) {
-    const query = { ...listQuery(params), ...scopeQuery(this.org, this.team) }
+    const query = { ...listQuery(params), ...scopeQuery(this.team) }
     const { data } = await this.client.request({ method: 'GET', path: this.path, query, ...opts })
     return data
   }
@@ -340,7 +326,7 @@ export class Collection {
       order_by: list(params.orderBy),
       limit: params.limit,
       language: params.language,
-      ...scopeQuery(this.org, this.team),
+      ...scopeQuery(this.team),
     }
     const { data } = await this.client.request({ method: 'GET', path: [...this.path, '_aggregate'], query, ...opts })
     return data
@@ -418,7 +404,6 @@ export class Collection {
    */
   async create(doc, opts) {
     const scoped = { ...opts }
-    if (scoped.org === undefined && this.org !== undefined) scoped.org = this.org
     if (scoped.team === undefined && this.team !== undefined) scoped.team = this.team
     return (await this.client.request({ method: 'POST', path: this.path, body: doc, ...keyed(scoped) })).data
   }
@@ -603,15 +588,13 @@ function listQuery(p) {
 }
 
 /**
- * The `org` and `team` query parameters of a scope, the ones that are set.
- * @param {string} [org]
+ * The `team` query parameter of a scope, when it is set.
  * @param {string} [team]
  * @returns {Record<string, string>}
  */
-function scopeQuery(org, team) {
+function scopeQuery(team) {
   /** @type {Record<string, string>} */
   const q = {}
-  if (org !== undefined) q.org = org
   if (team !== undefined) q.team = team
   return q
 }
@@ -622,8 +605,8 @@ function scopeQuery(org, team) {
  * @returns {RequestOptions & { query?: Record<string, string> }}
  */
 function keyed(opts = {}) {
-  const { idempotencyKey, org, team, ...rest } = opts
-  const scope = scopeQuery(org, team)
+  const { idempotencyKey, team, org, ...rest } = opts
+  const scope = { ...scopeQuery(team), ...(org === undefined ? {} : { org }) }
   /** @type {RequestOptions & { query?: Record<string, string> }} */
   const out = Object.keys(scope).length === 0 ? rest : { ...rest, query: scope }
   return idempotencyKey === undefined ? out : { ...out, headers: { ...out.headers, 'Idempotency-Key': idempotencyKey } }

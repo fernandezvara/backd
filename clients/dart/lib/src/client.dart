@@ -142,6 +142,11 @@ final class RawResponse {
   final bool fromCache;
 }
 
+/// An organization as the person types it or the app keeps it: an id or a
+/// slug. Case and surrounding spaces do not matter to the server, so they do
+/// not matter here.
+String normalizeOrgRef(String? ref) => (ref ?? '').trim().toLowerCase();
+
 /// A client for one realm of one backd server.
 ///
 /// ```dart
@@ -157,6 +162,10 @@ class BackdClient<R> {
   ///
   /// - [apiKey] is for server-side programs only: an API key (`bdk_…`) gives
   ///   full access to the realm.
+  /// - [org] binds the client to an organization, by id or by the slug people
+  ///   know (`'acme'`): the sign-in calls go to `/_auth/orgs/{org}/…`, so the
+  ///   session is scoped to it, and the answer carries the id. For an app that
+  ///   works in several at once see [BackdClient.org].
   /// - [storage] is where the session token lives; memory by default.
   /// - [retry] enables retries for `429`/`503`; off by default.
   /// - [cache] keeps the last body and `ETag` of document and list reads in
@@ -191,10 +200,14 @@ class BackdClient<R> {
     this.types,
     this.onStaleTypes,
     this.oauthStorage,
+    String? org,
+    @internal this.parent,
     @visibleForTesting
     Duration Function(int attempt, Duration? retryAfter, Duration maxDelay)
         backoff = _defaultBackoff,
   })  : url = url.replaceAll(RegExp('/+\$'), ''),
+        orgRef = normalizeOrgRef(org),
+        _cacheOptions = cache,
         storage = storage ?? MemoryTokenStorage(),
         cache = (cache ?? const CacheOptions()).enabled
             ? RevalidationCache(cache ?? const CacheOptions())
@@ -238,6 +251,17 @@ class BackdClient<R> {
 
   /// Server-side only: an API key (`bdk_…`). Full access to the realm.
   final String? apiKey;
+
+  /// The organization this client is bound to, as it was given (an id or a
+  /// slug), or "".
+  final String orgRef;
+
+  /// The client this one was made from by [org], or null.
+  @internal
+  final BackdClient<R>? parent;
+
+  final CacheOptions? _cacheOptions;
+  final _orgClients = <String, BackdClient<R>>{};
 
   /// Where the session token lives.
   final TokenStorage storage;
@@ -296,7 +320,8 @@ class BackdClient<R> {
   ReauthProof? proof;
 
   /// Called by the request pipeline when a session token the server refused
-  /// (`unauthenticated`) should expire: `auth` clears storage and emits
+  /// (`unauthenticated`, or `session_unscoped`: a session from before sessions
+  /// were scoped to an organization) should expire: `auth` clears storage and emits
   /// `sessionExpired`.
   @internal
   FutureOr<void> Function()? onSessionExpired;
@@ -315,6 +340,56 @@ class BackdClient<R> {
 
   /// Whether the client was created with an API key.
   bool get hasApiKey => apiKey != null;
+
+  /// The client that made this one (the one without an organization), or this
+  /// client.
+  @internal
+  BackdClient<R> get root => parent ?? this;
+
+  /// Whether the storage can keep a token per organization, so [org] works.
+  @internal
+  bool get keepsOrgSessions => root.storage.slot('') != null;
+
+  /// The client of one organization, for an app that is signed in to several
+  /// at once: it has the same address, realm, transport and settings and a
+  /// token of its own, so its calls reach that organization and no other, and
+  /// signing out of it leaves the others signed in. The organization is its
+  /// id or the slug people know; asking again for the same gives the same
+  /// client. It needs a storage that can keep a token per organization
+  /// ([TokenStorage.slot]); the built-in ones can.
+  BackdClient<R> org(String ref) {
+    final key = normalizeOrgRef(ref);
+    if (key.isEmpty) {
+      throw ArgumentError.value(
+          ref, 'ref', 'the organization (an id or a slug) is required');
+    }
+    final r = root;
+    if (r.orgRef == key) return r;
+    return r._orgClients.putIfAbsent(key, () {
+      final slot = r.storage.slot(key);
+      if (slot == null) {
+        throw StateError(
+            'client.org: this storage cannot keep a token per organization; use MemoryTokenStorage or FileTokenStorage');
+      }
+      return BackdClient<R>(
+        url: r.url,
+        realm: r.realm,
+        storage: slot,
+        retry: r.retry,
+        cache: r._cacheOptions,
+        configStorage: r.configStorage,
+        headers: r.headers,
+        transport: r._transport,
+        streamTransport: r._streamTransport,
+        types: r.types,
+        onStaleTypes: r.onStaleTypes,
+        oauthStorage: r.oauthStorage,
+        org: key,
+        parent: r,
+        backoff: r._backoff,
+      );
+    });
+  }
 
   /// A database of the realm. Its collections hold the documents.
   Database db(String name) => Database(this, name);
@@ -343,6 +418,9 @@ class BackdClient<R> {
   /// stays the caller's to close.
   void close() {
     _closed = true;
+    for (final c in _orgClients.values) {
+      c._closed = true;
+    }
     _ownedTransport?.close();
   }
 
@@ -401,7 +479,7 @@ class BackdClient<R> {
       headers: res.headers,
       body: bytes,
     ));
-    if (err.code == 'unauthenticated' && sentSession) {
+    if (_sessionGone(err) && sentSession) {
       await onSessionExpired?.call();
     }
     throw err;
@@ -614,7 +692,7 @@ class BackdClient<R> {
         );
       }
       final err = errorFromResponse(res);
-      if (err.code == 'unauthenticated' && sentSession && req.expire) {
+      if (_sessionGone(err) && sentSession && req.expire) {
         await onSessionExpired?.call();
       }
       if (err is RetryableError && attempt < attempts) {
@@ -635,3 +713,9 @@ Duration _defaultBackoff(int attempt, Duration? retryAfter, Duration max) {
   final delay = retryAfter ?? fallback;
   return delay > max ? max : delay;
 }
+
+/// Whether the server no longer accepts the session: it expired or was ended
+/// (`unauthenticated`), or it belongs to no organization in a realm that has
+/// them (`session_unscoped`). Either way the person signs in again.
+bool _sessionGone(BackdException err) =>
+    err.code == 'unauthenticated' || err.code == 'session_unscoped';

@@ -21,12 +21,15 @@ const CallbackTokenPrefix = "bdf_"
 // a user, or neither for an anonymous caller) or full access (Admin), and
 // when it expires (the invocation's deadline).
 type CallbackClaims struct {
-	Realm    string    `json:"r"`
-	Function string    `json:"f"` // <database>/<name>
-	UserID   string    `json:"u,omitempty"`
-	KeyHash  string    `json:"k,omitempty"`
-	Admin    bool      `json:"a,omitempty"`
-	Expires  time.Time `json:"e"`
+	Realm    string `json:"r"`
+	Function string `json:"f"` // <database>/<name>
+	UserID   string `json:"u,omitempty"`
+	KeyHash  string `json:"k,omitempty"`
+	// Org is the organization the session of the user belongs to: the function's data calls reach
+	// that organization and no other.
+	Org     string    `json:"og,omitempty"`
+	Admin   bool      `json:"a,omitempty"`
+	Expires time.Time `json:"e"`
 	// Calls are the functions of the caller's database this invocation may
 	// ctx.call (its function.yaml `calls`); Depth counts the nested calls
 	// above it; Inv is its own invocation id, the parent of what it calls.
@@ -140,7 +143,7 @@ func (s *Users) CallbackCaller(ctx context.Context, c CallbackClaims) (Caller, e
 		if err != nil || u.Disabled {
 			return Caller{}, ErrInvalidCallback
 		}
-		caller.User = &Principal{User: u, Session: Session{MFA: c.MFA, Methods: c.Methods}}
+		caller.User = &Principal{User: u, Session: Session{MFA: c.MFA, Methods: c.Methods, Org: c.Org}}
 	}
 	return caller, nil
 }

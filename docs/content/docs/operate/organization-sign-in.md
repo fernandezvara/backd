@@ -42,9 +42,15 @@ organizations:
 - Sign-in routes share the rate limits of the realm's providers (30 starts a minute per address); the list of providers allows 60 a minute.
 - Providers are reached through backd's egress-restricted client, at fixed provider hosts: no manager can make backd call an address of their choosing.
 
+## When an organization can't reach its provider
+
+An organization can require its connection (`sso_required`, set by its managers). If its company loses access to the provider, nobody can sign in. A realm administrator clears the requirement: `backd orgs sso-required-off --id <org>` (or `PATCH /_admin/orgs/{org}` with `{"sso_required": false}`), audited as `org.sso_required`. Removing or disabling the last working connection clears it by itself. Administrators cannot turn it on: it needs someone who signed in through the connection.
+
+A session opened through a connection cannot change the person's credentials, link a provider, or delete or export the account (`403 sso_session`); administrators do the last two for people who exist only through a connection.
+
 ## Watching it
 
-The [audit trail](../administration/audit/) records `org.sso.set`, `org.sso.deleted` (never the secret), `org.sso.disabled` and one `org.sso.login` for every sign-in with whether it joined the person. `secret.set` and `secret.delete` records carry the `org`. The admin UI's organization page lists the connections and the recent sign-ins.
+The [audit trail](../administration/audit/) records `org.sso.set`, `org.sso.deleted` (never the secret), `org.sso.disabled`, `org.sso_required` and one `org.sso.login` for every sign-in with whether it joined the person. `secret.set` and `secret.delete` records carry the `org`. The admin UI's organization page lists the connections and the recent sign-ins.
 
 ## Moving and deleting
 

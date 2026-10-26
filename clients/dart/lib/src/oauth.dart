@@ -122,7 +122,8 @@ Future<Pending?> loadPending(OAuthStorage storage) async {
 
 /// What backd put in the address it sent the browser back to.
 final class OAuthReturn {
-  const OAuthReturn({this.code, this.error, this.linked, this.provider});
+  const OAuthReturn(
+      {this.code, this.error, this.linked, this.provider, this.org});
 
   /// A one-time login code.
   final String? code;
@@ -135,6 +136,9 @@ final class OAuthReturn {
 
   /// With `account_exists`: the provider that was tried.
   final String? provider;
+
+  /// With the code: the organization the session will be scoped to.
+  final String? org;
 }
 
 /// Reads the outcome of the redirect flow from the URI the app received (a
@@ -146,6 +150,7 @@ OAuthReturn? parseReturn(Uri uri) {
     error: q['${_paramPrefix}error'],
     linked: q['${_paramPrefix}linked'],
     provider: q['${_paramPrefix}provider'],
+    org: q['${_paramPrefix}org'],
   );
   return out.code != null || out.error != null || out.linked != null
       ? out

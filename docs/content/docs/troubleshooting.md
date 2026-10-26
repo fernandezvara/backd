@@ -2,7 +2,7 @@
 title: "Troubleshooting"
 description: "The messages you are most likely to meet when starting out with backd, what they mean, and what to do."
 icon: "lifebuoy"
-weight: 150
+weight: 600
 toc: true
 ---
 
@@ -34,7 +34,6 @@ These docs describe the current `main`. If a released image refuses a configurat
 
 - **`this account must use two-step verification: set up an authenticator app`**: the template's `admin` role requires a second factor, so the first `backd login` enrolls an authenticator. To skip it while developing, empty `mfa.required_roles` in `realm.yaml`.
 - **`no password on standard input`**: some commands (creating an API key, for one) ask for your password again as a fresh proof. In a terminal they prompt; in a script, pipe the password to the command's standard input.
-- **`backd` is not found inside the container**: the stack's images keep it at `/usr/local/bin/backd`; the plain `ghcr.io/fernandezvara/backd` image has it at `/backd`.
 
 ## What an HTTP error means
 

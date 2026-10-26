@@ -264,6 +264,24 @@ func (w *Worker) prepareEmail(ctx context.Context, log *slog.Logger, realm strin
 			extra["link"], extra["expires_at"] = data.Link, data.ExpiresAt.Format(time.RFC3339)
 		}
 	}
+	if kind == email.OrganizationsFound {
+		// The organizations the address belongs to now, each with its sign-in page; the message
+		// is the same for whoever asked.
+		links, err := svc.SignInLinks(ctx, userID)
+		switch {
+		case err != nil:
+			log.Warn("list the organizations of a user; leaving the job to be retried", "error", err)
+			return nil, nil, false
+		case len(links) == 0:
+			w.fail(ctx, log, svc, job, "the address no longer belongs to any organization")
+			return nil, nil, false
+		}
+		list := make([]map[string]string, len(links))
+		for i, l := range links {
+			list[i] = map[string]string{"name": l.Name, "link": l.Link}
+		}
+		data.Data["orgs"], extra["orgs"] = list, list
+	}
 	if kind == email.TemplateFailed && org != "" {
 		data.Data["org_name"] = svc.OrgName(ctx, org)
 	}

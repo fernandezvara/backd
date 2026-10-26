@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { NotFoundError, createClient, OrgRequiresMFAError, OrgRoleRequiresMFAError, NotTeamMemberError, TeamError, NotOrgMemberError, LastOrgManagerError, IdTakenError } from '../src/index.js'
+import { NotFoundError, createClient, OrgRequiresMFAError, OrgRoleRequiresMFAError, NotTeamMemberError, TeamError, NotOrgMemberError, LastOrgManagerError, IdTakenError, SsoRequiredError, SsoSessionError } from '../src/index.js'
 import { mockFetch, errorBody } from './helpers.js'
 
 /** @param {ReturnType<typeof mockFetch>} m @param {object} [extra] */
@@ -9,10 +9,9 @@ const make = (m, extra = {}) => createClient({ url: 'http://api.test', realm: 'a
 
 const org = { id: 'o1', name: 'Acme', slug: 'acme', status: 'active', require_mfa: false, mfa_met: true, claims: {}, created_at: 't', roles: ['owner'], effective_roles: [], teams: [] }
 
-test('create, list, get, update, leave and delete an organization', async () => {
+test('create, get, update, leave and delete an organization', async () => {
   const m = mockFetch([
     { status: 201, body: org },
-    { body: { items: [org] } },
     { body: org },
     { body: { ...org, name: 'Acme Inc' } },
     { status: 204 },
@@ -22,15 +21,14 @@ test('create, list, get, update, leave and delete an organization', async () => 
   assert.equal((await c.orgs.create({ name: 'Acme', slug: 'acme' })).id, 'o1')
   assert.deepEqual(m.calls[0].body, { name: 'Acme', slug: 'acme' })
   assert.equal(m.calls[0].url.pathname, '/v1/acme/_orgs')
-  assert.equal((await c.orgs.list()).length, 1)
   assert.equal((await c.orgs.get('o1')).name, 'Acme')
-  assert.equal(m.calls[2].url.pathname, '/v1/acme/_orgs/o1')
+  assert.equal(m.calls[1].url.pathname, '/v1/acme/_orgs/o1')
   assert.equal((await c.orgs.update('o1', { name: 'Acme Inc' })).name, 'Acme Inc')
-  assert.equal(m.calls[3].method, 'PATCH')
+  assert.equal(m.calls[2].method, 'PATCH')
   await c.orgs.leave('o1')
-  assert.equal(m.calls[4].url.pathname, '/v1/acme/_orgs/o1/leave')
+  assert.equal(m.calls[3].url.pathname, '/v1/acme/_orgs/o1/leave')
   await c.orgs.delete('o1')
-  assert.equal(m.calls[5].method, 'DELETE')
+  assert.equal(m.calls[4].method, 'DELETE')
 })
 
 test('members, teams and invitations hang off one organization', async () => {
@@ -79,36 +77,6 @@ test('team members and holders of a team role', async () => {
   assert.equal(m.calls[0].url.searchParams.get('limit'), '5')
 })
 
-test('preview and accept an invitation by its token', async () => {
-  const m = mockFetch([{ body: { org: { id: 'o1', name: 'Acme' }, roles: ['editor'], teams: [], binding: 'email', expires_at: 't' } }, { body: org }])
-  const c = make(m)
-  const pv = await c.orgs.invitations.preview('bdo_x')
-  assert.equal(pv.org.name, 'Acme')
-  assert.equal(m.calls[0].url.pathname, '/v1/acme/_orgs/invitations/preview')
-  assert.deepEqual(m.calls[0].body, { token: 'bdo_x' })
-  assert.equal((await c.orgs.invitations.accept('bdo_x')).id, 'o1')
-  assert.equal(m.calls[1].url.pathname, '/v1/acme/_orgs/invitations/accept')
-})
-
-test('documents are created and listed in an organization with inOrg', async () => {
-  const m = mockFetch([
-    { status: 201, body: { id: 'd1', title: 'x', _meta: { org: 'o1' } } },
-    { body: { items: [], limit: 50, skip: 0, has_more: false } },
-    { status: 201, body: { id: 'd2' } },
-  ])
-  const c = make(m)
-  const projects = c.db('app').collection('projects')
-  await projects.inOrg('o1').create({ title: 'x' }, { idempotencyKey: 'k1' })
-  assert.equal(m.calls[0].url.searchParams.get('org'), 'o1')
-  assert.equal(m.calls[0].headers['Idempotency-Key'], 'k1')
-  await projects.inOrg('o1').list({ where: { title: 'x' } })
-  assert.equal(m.calls[1].url.searchParams.get('org'), 'o1')
-  assert.equal(m.calls[1].url.searchParams.get('where'), '{"title":"x"}')
-  // The plain collection sends none, and an explicit org wins.
-  await projects.create({ title: 'y' }, { org: 'o2' })
-  assert.equal(m.calls[2].url.searchParams.get('org'), 'o2')
-})
-
 test('documents are created and listed in a team with inTeam', async () => {
   const m = mockFetch([
     { status: 201, body: { id: 'd1', _meta: { org: 'o1', team: 't1' } } },
@@ -116,15 +84,17 @@ test('documents are created and listed in a team with inTeam', async () => {
     { status: 201, body: { id: 'd2' } },
   ])
   const requests = make(m).db('app').collection('requests')
-  await requests.inOrg('o1').inTeam('t1').create({ title: 'x' })
-  assert.equal(m.calls[0].url.searchParams.get('org'), 'o1')
+  await requests.inTeam('t1').create({ title: 'x' }, { idempotencyKey: 'k1' })
   assert.equal(m.calls[0].url.searchParams.get('team'), 't1')
-  await requests.inOrg('o1').inTeam('t1').list()
+  assert.equal(m.calls[0].url.searchParams.get('org'), null)
+  assert.equal(m.calls[0].headers['Idempotency-Key'], 'k1')
+  await requests.inTeam('t1').list({ where: { title: 'x' } })
   assert.equal(m.calls[1].url.searchParams.get('team'), 't1')
-  // Moving to another organization drops the team, and an explicit one wins.
-  await requests.inOrg('o1').inTeam('t1').create({ title: 'y' }, { team: 't2' })
+  assert.equal(m.calls[1].url.searchParams.get('where'), '{"title":"x"}')
+  // The plain collection sends no team, and an explicit one wins.
+  await requests.inTeam('t1').create({ title: 'y' }, { team: 't2' })
   assert.equal(m.calls[2].url.searchParams.get('team'), 't2')
-  assert.equal(requests.inOrg('o1').inTeam('t1').inOrg('o2').team, undefined)
+  await requests.create({ title: 'z' }).catch(() => {})
 })
 
 test('team roles are granted, re-windowed and revoked', async () => {
@@ -162,7 +132,7 @@ test('the new codes are typed errors', async () => {
   await assert.rejects(c.db('app').collection('requests').create({}), (e) => e instanceof TeamError && e.code === 'team_required')
 })
 
-test('the company a person comes from travels with sign-in, sign-up and reset requests', async () => {
+test('the organization a person comes to is in the path of sign-in, sign-up and reset requests', async () => {
   const m = mockFetch([
     { status: 202, body: { status: 'accepted' } },
     { status: 202, body: { request_id: 'r1' } },
@@ -170,11 +140,14 @@ test('the company a person comes from travels with sign-in, sign-up and reset re
   ])
   const c = make(m)
   await c.auth.requestPasswordReset({ email: 'ada@example.com', org: 'o1' })
-  assert.deepEqual(m.calls[0].body, { email: 'ada@example.com', org: 'o1' })
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_auth/orgs/o1/reset-password/request')
+  assert.deepEqual(m.calls[0].body, { email: 'ada@example.com' })
   await c.auth.magicLink.request('ada@example.com', { org: 'o1', redirectTo: 'https://app.example/in' })
-  assert.equal(m.calls[1].body.org, 'o1')
-  await assert.rejects(c.auth.signup({ email: 'ada@example.com', password: 'dev-p4ssw0rd!', org: 'o1' }))
-  assert.equal(m.calls[2].body.org, 'o1')
+  assert.equal(m.calls[1].url.pathname, '/v1/acme/_auth/orgs/o1/magic-link')
+  assert.equal(m.calls[1].body.org, undefined)
+  await assert.rejects(c.auth.signup({ email: 'ada@example.com', password: 'dev-p4ssw0rd!', org: 'o1', invitation: 'bdo_x' }))
+  assert.equal(m.calls[2].url.pathname, '/v1/acme/_auth/orgs/o1/signup')
+  assert.equal(m.calls[2].body.org, undefined)
 })
 
 test('an organization writes, previews and tests its own emails', async () => {
@@ -231,4 +204,23 @@ test('sso.set leaves out what it was not given, so the stored secret is kept', a
   const m = mockFetch([{ body: { provider: 'microsoft' } }])
   await make(m).orgs.sso('o1').set('microsoft', { clientId: 'app', tenant: 'tenant-guid' })
   assert.deepEqual(m.calls[0].body, { client_id: 'app', tenant: 'tenant-guid' })
+})
+
+test('requiring the connection: the field, the members who cannot come in, and its two errors', async () => {
+  const m = mockFetch([
+    { body: { ...org, sso_required: true, members_without_sso: 3, sessions_revoked: 2 } },
+    { body: { items: [{ user: 'u9', roles: ['member'] }], has_more: false } },
+    { status: 400, body: errorBody('sso_required', 'use the connection') },
+    { status: 403, body: errorBody('sso_session', 'use your own credentials') },
+    { status: 409, body: errorBody('sso_not_ready', 'sign in through the connection first') },
+  ])
+  const c = make(m)
+  const on = await c.orgs.update('o1', { sso_required: true })
+  assert.deepEqual(m.calls[0].body, { sso_required: true })
+  assert.equal(on.members_without_sso, 3)
+  assert.equal((await c.orgs.members('o1').list({ sso: false })).items[0].user, 'u9')
+  assert.equal(m.calls[1].url.searchParams.get('sso'), 'false')
+  await assert.rejects(c.orgs.get('o1'), (e) => e instanceof SsoRequiredError && e.status === 400)
+  await assert.rejects(c.orgs.get('o1'), (e) => e instanceof SsoSessionError && e.status === 403)
+  await assert.rejects(c.orgs.update('o1', { sso_required: true }), (e) => /** @type {any} */ (e).code === 'sso_not_ready')
 })

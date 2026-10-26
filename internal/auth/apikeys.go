@@ -52,6 +52,10 @@ type KeyOptions struct {
 	Role     KeyRole           // "" means data
 	Networks registry.Networks // where the key may be used from; empty: anywhere
 	Scopes   Scopes            // what a data key reaches; empty: everything
+	// Org binds a data key that acts on behalf of users to one organization (its id or slug): it
+	// counts only that organization, as a session scoped to it would. Only in a realm with
+	// organizations.
+	Org string
 }
 
 // APIKey is a realm API key for server-side callers. Only a hash of the
@@ -66,6 +70,8 @@ type APIKey struct {
 	CreatedAt  time.Time
 	LastUsedAt *time.Time
 	ExpiresAt  *time.Time // nil: never expires
+	// Org is the organization the key is bound to when it acts on behalf of a user ("": none).
+	Org string
 }
 
 // Expired reports whether the key has expired at now.
@@ -91,13 +97,24 @@ func (s *Users) CreateAPIKey(ctx context.Context, name string, opts KeyOptions) 
 	if role == KeyRoleAdmin && opts.Scopes.Limited() {
 		return APIKey{}, "", errors.New("scopes limit data keys: an admin key reaches the admin API, which scopes don't cover")
 	}
+	bound := ""
+	if opts.Org != "" {
+		if role == KeyRoleAdmin {
+			return APIKey{}, "", &OrgInvalidError{"org", "binds a data key that acts on behalf of users: an admin key reaches every organization"}
+		}
+		o, err := s.OrgByRef(ctx, opts.Org)
+		if err != nil || o.Status != OrgActive {
+			return APIKey{}, "", &OrgInvalidError{"org", "is not an organization of the realm"}
+		}
+		bound = o.ID
+	}
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return APIKey{}, "", err
 	}
 	key := APIKeyPrefix + base64.RawURLEncoding.EncodeToString(b)
 	now := s.now()
-	k := APIKey{Name: name, Role: role, Networks: opts.Networks, Scopes: opts.Scopes, Prefix: key[:displayLen], Hash: HashToken(key), CreatedAt: now}
+	k := APIKey{Name: name, Role: role, Networks: opts.Networks, Scopes: opts.Scopes, Prefix: key[:displayLen], Hash: HashToken(key), CreatedAt: now, Org: bound}
 	if ttl > 0 {
 		exp := now.Add(ttl)
 		k.ExpiresAt = &exp
@@ -106,6 +123,9 @@ func (s *Users) CreateAPIKey(ctx context.Context, name string, opts KeyOptions) 
 		return APIKey{}, "", err
 	}
 	details := map[string]any{"role": string(k.Role), "networks": k.Networks.Strings(), "scopes": k.Scopes.Strings()}
+	if k.Org != "" {
+		details["org"] = k.Org
+	}
 	if k.ExpiresAt != nil {
 		details["expires_at"] = k.ExpiresAt.Format(time.RFC3339)
 	}
@@ -229,7 +249,8 @@ func (s *Users) OnBehalfOf(ctx context.Context, c Caller, userID string) (Caller
 	if u.Disabled {
 		return Caller{}, ErrUserDisabled
 	}
-	c.User = &Principal{User: u}
+	// A key bound to an organization acts as a session scoped to it; one that isn't counts none.
+	c.User = &Principal{User: u, Session: Session{Org: c.Key.Org}}
 	return c, nil
 }
 

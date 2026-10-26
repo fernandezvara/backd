@@ -63,6 +63,13 @@ var (
 	ErrOrgRequiresMFA = errors.New("this organization requires a second factor: sign in again with one")
 	// ErrRequireMFANotAllowed: realm.yaml's organizations.allow_require_mfa is false.
 	ErrRequireMFANotAllowed = errors.New("this realm doesn't let organizations require a second factor (organizations.allow_require_mfa)")
+	// ErrSSORequired: the organization's people sign in through its connection only.
+	ErrSSORequired = errors.New("this organization requires its sign-in connection: use the provider's button")
+	// ErrSSONotReady: sso_required can't be turned on yet.
+	ErrSSONotReady = errors.New("connect a provider and sign in through it before requiring it")
+	// ErrSSOSession: the session was opened through an organization's connection, which can't change
+	// what protects the person's account.
+	ErrSSOSession = errors.New("this action needs a sign-in with your own credentials, not through an organization's connection")
 	// ErrTeamNameTaken: the organization has a team of that name.
 	ErrTeamNameTaken = errors.New("the organization has a team with that name")
 	// ErrTeamLimit and ErrMemberTeamsLimit: max_teams_per_org and max_teams_per_member.
@@ -86,10 +93,16 @@ type Org struct {
 	CreatedBy  string // user id; "" when created by a function
 	Status     string
 	RequireMFA bool
-	Claims     map[string]any
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	DeletedAt  time.Time
+	// SSORequired makes the organization's connection the only way in: the other ways to sign in
+	// to it answer ErrSSORequired (design/scoped-sessions.md §6).
+	SSORequired bool
+	// SessionMaxAge shortens the lifetime of the sessions opened in the organization (0: the
+	// realm's).
+	SessionMaxAge time.Duration
+	Claims        map[string]any
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	DeletedAt     time.Time
 }
 
 // OrgUpdate changes an organization; nil fields stay.
@@ -98,7 +111,11 @@ type OrgUpdate struct {
 	Slug *string // "" removes it
 	// RequireMFA turns the organization's second-factor requirement on or off.
 	RequireMFA *bool
-	Claims     map[string]any
+	// SSORequired turns the requirement to sign in through the organization's connection on or off.
+	SSORequired *bool
+	// SessionMaxAge sets the organization's session lifetime (0 removes it).
+	SessionMaxAge *time.Duration
+	Claims        map[string]any
 	// ClaimsSet says Claims replaces the claims (an empty map clears them).
 	ClaimsSet bool
 	Status    string // "" leaves it
@@ -239,10 +256,13 @@ func validOrgName(name string) (string, error) {
 
 func validSlug(slug string) error {
 	if slug == "" {
-		return nil
+		return &OrgInvalidError{"slug", "is required: it is how people name the organization when they sign in"}
 	}
 	if len(slug) > maxSlugLength || !slugPattern.MatchString(slug) {
 		return &OrgInvalidError{"slug", fmt.Sprintf("must be lowercase letters and digits separated by single '-', at most %d characters", maxSlugLength)}
+	}
+	if LooksLikeOrgID(slug) {
+		return &OrgInvalidError{"slug", "must not look like an organization id (20 characters, 0-9 and a-v)"}
 	}
 	return nil
 }
@@ -828,6 +848,11 @@ func (s *Users) removeMember(ctx context.Context, orgID string, m OrgMember, act
 		return err
 	}
 	s.Audit(ctx, action, orgTarget(orgID), map[string]any{"user": m.User})
+	// Access ended at once (the session no longer counts); the sessions of that organization end
+	// too, so no stale token is left lying around.
+	if _, err := s.Store.DeleteOrgSessions(context.WithoutCancel(ctx), orgID, m.User, ""); err != nil && s.Log != nil {
+		s.Log.Warn("end the sessions of a member who left", "org", orgID, "user", m.User, "error", err)
+	}
 	return nil
 }
 
@@ -881,6 +906,23 @@ func (s *Users) keepManagerWith(ctx context.Context, orgID, skip string, teamRol
 		}
 	}
 	return ErrLastOrgManager
+}
+
+// AdminSetOrgSlug gives an organization its slug (or changes it): how the realm's older
+// organizations, made before slugs were required, get one.
+func (s *Users) AdminSetOrgSlug(ctx context.Context, orgID, slug string) (Org, error) {
+	if _, err := s.orgs(); err != nil {
+		return Org{}, err
+	}
+	if err := validSlug(slug); err != nil {
+		return Org{}, err
+	}
+	org, err := s.Store.UpdateOrg(ctx, orgID, OrgUpdate{Slug: &slug}, s.now())
+	if err != nil {
+		return Org{}, err
+	}
+	s.Audit(ctx, AuditOrgUpdate, orgTarget(orgID), map[string]any{"fields": []string{"slug"}})
+	return org, nil
 }
 
 // AdminSetClaims replaces an organization's claims.
@@ -988,51 +1030,53 @@ func diff(want, have []string) (added, removed []string) {
 	return added, removed
 }
 
-// Counts reports whether memberships of the organization count for a session: it is active
-// (or orphaned: its members keep access) and its require_mfa is met.
-func (o Org) Counts(mfa bool) bool {
-	return (o.Status == OrgActive || o.Status == OrgOrphaned) && (!o.RequireMFA || mfa)
+// Counts reports whether memberships of the organization count for a session: it is the
+// session's own organization (a session reaches one organization and no other, design/scoped-sessions.md),
+// it is active (or orphaned: its members keep access) and its require_mfa is met. It is the one
+// place that decides, so every reader of memberships goes through it.
+func (o Org) Counts(mfa bool, scope string) bool {
+	return o.ID == scope && (o.Status == OrgActive || o.Status == OrgOrphaned) && (!o.RequireMFA || mfa)
 }
 
-// RuleOrgs returns the memberships of a user that count for a session, in the form access
-// rules read them: the roles the user holds there (direct, default and through teams), the
-// teams and the organization's claims. Loaded when a rule asks, never cached, bounded by
-// max_memberships_per_user.
-func (s *Users) RuleOrgs(ctx context.Context, userID string, mfa bool) (map[string]*rules.UserOrg, error) {
+// RuleOrgs returns the membership of a user in the organization a session is scoped to, if it
+// counts, in the form access rules read it: the roles the user holds there (direct, default and
+// through teams), the teams and the organization's claims. A session reaches one organization,
+// so the map has one entry or none (an operator's session, which is scoped to none, has none).
+// Loaded when a rule asks, never cached.
+func (s *Users) RuleOrgs(ctx context.Context, userID string, mfa bool, scope string) (map[string]*rules.UserOrg, error) {
 	out := map[string]*rules.UserOrg{}
 	o := s.Settings.Organizations
-	if o == nil {
+	if o == nil || scope == "" {
 		return out, nil
 	}
-	members, err := s.Store.OrgMembershipsOf(ctx, userID, o.MaxMembershipsPerUser)
-	if err != nil || len(members) == 0 {
-		return out, err
+	m, err := s.Store.OrgMember(ctx, scope, userID)
+	if errors.Is(err, ErrNotFound) {
+		return out, nil
 	}
-	ids := make([]string, len(members))
-	for i, m := range members {
-		ids[i] = m.Org
-	}
-	orgs, err := s.Store.OrgsByIDs(ctx, ids)
 	if err != nil {
 		return nil, err
 	}
-	for _, m := range members {
-		org, ok := orgs[m.Org]
-		if !ok || !org.Counts(mfa) {
-			continue
-		}
-		r, err := s.resolve(ctx, m, mfa)
-		if err != nil {
-			return nil, err
-		}
-		roles := make([]string, 0, len(r.Roles))
-		for _, e := range r.Roles {
-			if o.Declared(e.Role) { // a role the realm no longer declares grants nothing
-				roles = append(roles, e.Role)
-			}
-		}
-		out[m.Org] = &rules.UserOrg{Roles: roles, Teams: nonNilStrings(m.Teams), TeamRoles: r.TeamRoles, Claims: org.Claims}
+	org, err := s.Store.OrgByID(ctx, scope)
+	if errors.Is(err, ErrNotFound) {
+		return out, nil
 	}
+	if err != nil {
+		return nil, err
+	}
+	if !org.Counts(mfa, scope) {
+		return out, nil
+	}
+	r, err := s.resolve(ctx, m, mfa)
+	if err != nil {
+		return nil, err
+	}
+	roles := make([]string, 0, len(r.Roles))
+	for _, e := range r.Roles {
+		if o.Declared(e.Role) { // a role the realm no longer declares grants nothing
+			roles = append(roles, e.Role)
+		}
+	}
+	out[m.Org] = &rules.UserOrg{Roles: roles, Teams: nonNilStrings(m.Teams), TeamRoles: r.TeamRoles, Claims: org.Claims}
 	return out, nil
 }
 
@@ -1099,6 +1143,41 @@ func (s *Users) SetOrgRequireMFA(ctx context.Context, p Principal, orgID string,
 		return Membership{}, err
 	}
 	s.Audit(ctx, AuditOrgRequireMFA, orgTarget(orgID), map[string]any{"value": on})
+	m.Org = org
+	return m, nil
+}
+
+// minOrgSessionMaxAge is the shortest lifetime an organization may give its sessions.
+const minOrgSessionMaxAge = time.Hour
+
+// SetOrgSessionMaxAge sets how long the sessions opened in the organization last (0 removes
+// the limit: the realm's applies). It needs manage: org. A session's expiry is fixed when it is
+// opened, so this changes the sessions opened from now on.
+func (s *Users) SetOrgSessionMaxAge(ctx context.Context, userID, orgID string, d time.Duration) (Membership, error) {
+	if _, err := s.orgs(); err != nil {
+		return Membership{}, err
+	}
+	m, err := s.MembershipOf(ctx, userID, orgID)
+	if err != nil {
+		return Membership{}, err
+	}
+	if _, err := s.requireCaps(m, registry.CapOrg); err != nil {
+		return Membership{}, err
+	}
+	if d < 0 || (d != 0 && d < minOrgSessionMaxAge) {
+		return Membership{}, &OrgInvalidError{"session_max_age", "must be at least one hour (3600 seconds), or 0 for the realm's"}
+	}
+	if d > s.Settings.MaxLifetime {
+		return Membership{}, &OrgInvalidError{"session_max_age", fmt.Sprintf("must not exceed the realm's session lifetime (%d seconds)", int64(s.Settings.MaxLifetime/time.Second))}
+	}
+	if m.Org.SessionMaxAge == d {
+		return m, nil
+	}
+	org, err := s.Store.UpdateOrg(ctx, orgID, OrgUpdate{SessionMaxAge: &d}, s.now())
+	if err != nil {
+		return Membership{}, err
+	}
+	s.Audit(ctx, AuditOrgUpdate, orgTarget(orgID), map[string]any{"fields": []string{"session_max_age"}, "value": int64(d / time.Second)})
 	m.Org = org
 	return m, nil
 }

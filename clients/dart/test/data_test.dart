@@ -140,18 +140,17 @@ void main() {
       expect(t.requests.single.url.path, '/v1/shelf/main/posts/p1');
     });
 
-    test('create posts the doc; org/team scope; idempotency header', () async {
+    test('create posts the doc; team scope; idempotency header', () async {
       final t = FakeTransport()..answer(respond(201, docJson('n1')));
       final posts = testClient(t, apiKey: 'k')
           .db('main')
-          .collection('posts')
-          .inOrg('acme');
+          .collection('posts');
       final doc =
           await posts.create({'title': 'hi'}, idempotencyKey: 'k-1', team: 'dev');
       expect(doc['id'], 'n1');
       final req = t.requests.single;
       expect(req.method, 'POST');
-      expect(req.url.queryParameters['org'], 'acme');
+      expect(req.url.queryParameters['org'], isNull);
       expect(req.url.queryParameters['team'], 'dev');
       expect(headerOf(req, 'Idempotency-Key'), 'k-1');
       expect(jsonDecode(utf8.decode(req.body!)), {'title': 'hi'});
@@ -250,7 +249,7 @@ void main() {
       final res = await testClient(t, apiKey: 'k')
           .db('main')
           .collection('orders')
-          .inOrg('acme')
+          .inTeam('sales')
           .aggregate(
             where: {'status': 'paid'},
             groupBy: ['category', 'paid_at:month'],
@@ -267,7 +266,7 @@ void main() {
       expect(q['tz'], 'Europe/Madrid');
       expect(q['order_by'], '-sum_total');
       expect(q['limit'], '20');
-      expect(q['org'], 'acme');
+      expect(q['team'], 'sales');
       expect(res.totalGroups, 40);
       expect(res.groups.single.key['category'], 'shoes');
       expect(res.groups.single.key['paid_at:month'], '2026-09');

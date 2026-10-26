@@ -23,6 +23,7 @@ type apiKey struct {
 	CreatedAt  string   `json:"created_at"`
 	LastUsedAt *string  `json:"last_used_at"`
 	ExpiresAt  *string  `json:"expires_at"`
+	Org        *string  `json:"org"`
 	Key        string   `json:"key"`
 }
 
@@ -41,6 +42,9 @@ func keyOptions(c *kli.CommandContext, body map[string]any) error {
 			return usageErr(fmt.Errorf("--networks: want comma-separated IP addresses or CIDR networks, got %q", v))
 		}
 		body["networks"] = nets.Strings()
+	}
+	if v := str(c, "org"); v != "" {
+		body["org"] = v
 	}
 	if v := str(c, "scopes"); v != "" {
 		grants := strings.Split(v, ",")

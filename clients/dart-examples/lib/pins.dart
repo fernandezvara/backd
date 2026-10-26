@@ -37,12 +37,14 @@ class _PinsTabState extends State<PinsTab> {
     loadOrgs();
   }
 
+  /// A session belongs to one team (the one signed in to): that is the team
+  /// whose pins this tab follows.
   Future<void> loadOrgs() async {
     try {
-      final list = await widget.state.client.orgs.list();
+      final team = await widget.state.client.auth.org();
       setState(() {
-        orgs = list;
-        orgId = list.isEmpty ? null : '${list.first['id']}';
+        orgs = team == null ? [] : [team];
+        orgId = team == null ? null : '${team['id']}';
       });
       if (orgId != null) follow();
     } on BackdException catch (e) {

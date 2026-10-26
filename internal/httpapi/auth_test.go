@@ -387,6 +387,7 @@ func TestSecurityHeaders(t *testing.T) {
 // account exists, and gets the 401 of an unknown email; it signs up after.)
 func TestLoginRightAfterSignup(t *testing.T) {
 	f := newRulesFixture(t)
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	creds := `{"email": "fresh@example.com", "password": "dev-p4ssw0rd!"}`
 	post := func(path, body string) (int, map[string]any) {
 		rec, out := f.doH(t, "POST", "/v1/acme/_auth/"+path, body, map[string]string{"Content-Type": "application/json"})
@@ -450,7 +451,8 @@ func TestAcceptLanguages(t *testing.T) {
 // Sign-up maps the language asked for to one the realm lists, silently; an
 // explicit change must name a listed one.
 func TestUserLocale(t *testing.T) {
-	f := newRulesFixture(t) // acme lists en (the default) and es
+	f := newRulesFixture(t)            // acme lists en (the default) and es
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	signup := func(email, body string, hdr ...string) map[string]any {
 		t.Helper()
 		h := map[string]string{"Content-Type": "application/json"}
@@ -531,6 +533,7 @@ func TestUserLocale(t *testing.T) {
 
 func TestAuthLoginWithAnExpiredPassword(t *testing.T) {
 	f := newAuthFixture(t)
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	f.signup(t, "ada@example.com")
 
 	later := time.Now().Add(time.Hour)

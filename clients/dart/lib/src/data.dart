@@ -214,8 +214,8 @@ final class Database {
   /// [VersionMismatchError], same as a single write.
   ///
   /// `idempotencyKey` makes a retry safe: the server remembers the answer of
-  /// the first request with a key for 24 hours. `org` and `team` scope the
-  /// creates (see [Collection.inOrg], [Collection.inTeam]).
+  /// the first request with a key for 24 hours. `team` scopes the creates
+  /// (see [Collection.inTeam]).
   ///
   /// Runs the operations atomically: all of them or none.
   Future<List<Doc>> batch(
@@ -283,31 +283,24 @@ final class Database {
 /// `Map<String, Object?>`; the generated realm types (issue #543) bind them
 /// to their classes.
 final class Collection {
-  /// [org] scopes lists and creates to an organization (see [inOrg]); [team]
-  /// to one of its teams (see [inTeam]).
-  const Collection(this.client, this.dbName, this.name, {this.org, this.team});
+  /// [team] scopes lists and creates to a team of the session's organization
+  /// (see [inTeam]); a session works in the one organization it was opened
+  /// for, so there is none to name.
+  const Collection(this.client, this.dbName, this.name, {this.team});
 
   final BackdClient<Object?> client;
   final String dbName;
   final String name;
-  final String? org;
   final String? team;
 
   List<String> get _path => [dbName, name];
 
-  /// The same collection scoped to an organization: [create] puts documents
-  /// there and [list] and [iterate] show only its documents (the read rule
-  /// still decides what is seen). The caller must be a member that counts: a
-  /// create answers [NotOrgMemberError] otherwise.
-  Collection inOrg(String org) =>
-      Collection(client, dbName, name, org: org, team: team);
-
-  /// The same collection scoped to a team of an organization (call [inOrg]
-  /// first): [create] puts documents in that team and [list] and [iterate]
-  /// show only its documents. The caller must belong to the team or hold a
-  /// team role in it: a create answers [NotTeamMemberError] otherwise.
+  /// The same collection scoped to a team of the session's organization:
+  /// [create] puts documents in that team and [list] and [iterate] show only
+  /// its documents. The caller must belong to the team or hold a team role in
+  /// it: a create answers [NotTeamMemberError] otherwise.
   Collection inTeam(String team) =>
-      Collection(client, dbName, name, org: org, team: team);
+      Collection(client, dbName, name, team: team);
 
   /// One page of documents the caller may read.
   ///
@@ -350,7 +343,7 @@ final class Collection {
           expand: expand,
           deleted: deleted,
         ),
-        ...scopeQuery(org, team),
+        ...scopeQuery(team),
       },
       retry: options?.retry,
       headers: options?.headers,
@@ -470,7 +463,7 @@ final class Collection {
         'order_by': listOf(orderBy),
         'limit': limit,
         'language': language,
-        ...scopeQuery(org, team),
+        ...scopeQuery(team),
       }),
       // Aggregations never share the read cache: `_aggregate` is not
       // cacheable anyway.
@@ -652,21 +645,19 @@ final class Collection {
   /// [idempotencyKey], a repeated request returns the document created by
   /// the first one; the client also retries such a request itself after a
   /// network error, `429` or `503` (see [RetryOptions]).
-  /// [org] and [team] override the scope of [inOrg]/[inTeam] for this create.
+  /// [team] overrides the scope of [inTeam] for this create.
   Future<Doc> create(
     Doc doc, {
     String? idempotencyKey,
-    String? org,
     String? team,
     RequestOptions? options,
   }) async {
-    final scopedOrg = org ?? this.org;
     final scopedTeam = team ?? this.team;
     return (await client.request(RequestInit(
       method: 'POST',
       path: _path,
       body: doc,
-      query: scopeQuery(scopedOrg, scopedTeam),
+      query: scopeQuery(scopedTeam),
       headers: {
         ...?options?.headers,
         if (idempotencyKey != null) 'Idempotency-Key': idempotencyKey,
@@ -751,9 +742,8 @@ final class Collection {
           .data as Doc;
 }
 
-/// The `org` and `team` query parameters of a scope, the ones that are set.
-Map<String, String> scopeQuery(String? org, String? team) => {
-      if (org != null) 'org': org,
+/// The `team` query parameter of a scope, when it is set.
+Map<String, String> scopeQuery(String? team) => {
       if (team != null) 'team': team,
     };
 

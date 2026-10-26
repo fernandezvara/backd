@@ -1,8 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
+
+import 'package:meta/meta.dart';
 
 import 'client.dart';
 import 'errors.dart';
 import 'oauth.dart';
+import 'storage.dart';
 
 /// A realm user as the user sees themselves.
 final class User {
@@ -86,6 +90,7 @@ final class Me extends User {
     required this.signInMethods,
     this.consents = const {},
     this.toAccept = const [],
+    this.org,
   });
 
   factory Me.fromJson(Map<String, Object?> json) => Me(
@@ -117,7 +122,14 @@ final class Me extends User {
                 version: '${c['version']}',
               ),
         ],
+        org: json['org'] is Map
+            ? Map<String, Object?>.from(json['org'] as Map)
+            : null,
       );
+
+  /// Only for a session scoped to an organization: the organization and what
+  /// the user is there (`id`, `name`, `slug`, `roles`, `teams`).
+  final Map<String, Object?>? org;
 
   /// The user's ways to sign in, oldest first.
   final List<Identity> identities;
@@ -173,6 +185,7 @@ final class Session extends SignInResult {
     this.newUser,
     this.profile,
     this.recoveryCodesLeft,
+    this.org,
   });
 
   /// The session of a sign-in, from the server's answer.
@@ -189,6 +202,7 @@ final class Session extends SignInResult {
             ? Profile.fromJson(Map<String, Object?>.from(json['profile'] as Map))
             : null,
         recoveryCodesLeft: json['recovery_codes_left'] as int?,
+        org: json['org'] as String?,
       );
 
   /// Session token (`bds_…`); already stored by the client.
@@ -213,6 +227,10 @@ final class Session extends SignInResult {
 
   /// After `recovery_code`: how many remain.
   final int? recoveryCodesLeft;
+
+  /// The organization the session is scoped to: its token reaches that
+  /// organization and no other.
+  final String? org;
 }
 
 /// A sign-in that needs a code of the user's second factor before it gives a
@@ -277,6 +295,8 @@ final class SessionInfo {
     required this.lastUsedAt,
     required this.expiresAt,
     required this.current,
+    this.org,
+    this.connection,
   });
 
   factory SessionInfo.fromJson(Map<String, Object?> json) => SessionInfo(
@@ -285,12 +305,21 @@ final class SessionInfo {
         lastUsedAt: json['last_used_at'] as String? ?? '',
         expiresAt: json['expires_at'] as String? ?? '',
         current: json['current'] as bool? ?? false,
+        org: json['org'] as String?,
+        connection: json['connection'] as String?,
       );
 
   final String id;
   final String createdAt;
   final String lastUsedAt;
   final String expiresAt;
+
+  /// The id of the organization the session is scoped to (null for an
+  /// operator's).
+  final String? org;
+
+  /// The provider of the organization's connection that opened it.
+  final String? connection;
 
   /// The session making this request.
   final bool current;
@@ -393,6 +422,20 @@ final class Auth {
   /// Sign-in, sign-out and session expiry, as a broadcast stream.
   final _events = StreamController<AuthChange>.broadcast();
 
+  /// The session this client signed in with, as the sign-in answered
+  /// ([Session.org] is the organization it is scoped to), or null. It is kept
+  /// in memory only: a client that has just started knows nothing until it
+  /// asks the server ([me], [org]).
+  Session? current;
+
+  /// The path of the sign-in routes for an organization: the one given, else
+  /// the client's own, else the realm's.
+  @internal
+  List<String> base([String? org]) {
+    final ref = org?.trim().isNotEmpty == true ? org!.trim() : client.orgRef;
+    return ref.isEmpty ? const ['_auth'] : ['_auth', 'orgs', ref];
+  }
+
   /// What changed on sign-in, sign-out or session expiry.
   Stream<AuthChange> get events => _events.stream;
 
@@ -417,6 +460,162 @@ final class Auth {
   OAuthStorage get oauthStorage =>
       client.oauthStorage ?? (_oauthStorage ??= MemoryOAuthStorage());
   set oauthStorage(OAuthStorage storage) => _oauthStorage = storage;
+
+  /// The organization this session is scoped to, and what the person is there
+  /// (`id`, `name`, `slug`, `roles`, `teams`); null for a session that is not
+  /// scoped. It asks the server, so it is right after a restart too. The name
+  /// is kept for [Orgs.signedIn].
+  Future<Map<String, Object?>?> org({RequestOptions? options}) async {
+    final res = await client.request(RequestInit(
+      method: 'GET',
+      path: const ['_auth', 'me'],
+      retry: options?.retry,
+      headers: options?.headers,
+      cache: options?.cache ?? true,
+    ));
+    final org = (res.data as Map?)?['org'];
+    if (org is! Map) return null;
+    final out = Map<String, Object?>.from(org);
+    if (out['name'] != null) {
+      await _remember({'name': out['name'], 'org': out['id']});
+    }
+    return out;
+  }
+
+  /// What an organization's sign-in page can offer: the providers (see
+  /// [providers]) and the other ways in, `password` and, when the realm has
+  /// them, `magic_link`. [org] defaults to the client's own; without either
+  /// the realm's providers are listed and `methods` is empty. [ssoRequired]
+  /// says the organization's people sign in through its connection only: then
+  /// `providers` holds just its buttons and `methods` is empty.
+  Future<({List<String> providers, List<String> methods, bool ssoRequired})>
+      options({
+    String? org,
+    RequestOptions? options,
+  }) async {
+    final res = await client.request(RequestInit(
+      method: 'GET',
+      path: [...base(org), 'providers'],
+      auth: false,
+      retry: options?.retry,
+      headers: options?.headers,
+      cache: options?.cache ?? true,
+    ));
+    final data = res.data as Map? ?? const {};
+    return (
+      providers: [for (final p in data['items'] as List? ?? const []) '$p'],
+      methods: [for (final m in data['methods'] as List? ?? const []) '$m'],
+      ssoRequired: data['sso_required'] == true,
+    );
+  }
+
+  /// The providers the app may offer right now, for the realm or, with
+  /// [org], for one organization (the realm's own and the organization's
+  /// connections): only those that are configured and usable. An unknown
+  /// organization answers like one without connections, so the list says
+  /// nothing about who exists.
+  Future<List<String>> providers(
+          {String? org, RequestOptions? options}) async =>
+      (await this.options(org: org, options: options)).providers;
+
+  /// Creates an account and an organization for a new person and signs in to
+  /// it: how a company starts. The realm's sign-up must be open; [slug] is
+  /// the name people will type to sign in (`acme-corp`) and is unique
+  /// (`slug_taken`, a [ConflictError], makes nothing). The session is scoped
+  /// to the new organization and stored by the client; the answer holds it
+  /// with the organization. A realm that verifies addresses first creates
+  /// both and throws a [VerificationRequiredError]. [invitation] is the realm's
+  /// invitation, for a realm that is invite-only.
+  Future<({Session session, Map<String, Object?> organization})> signUpWithOrg(
+    String email,
+    String password, {
+    required String name,
+    required String slug,
+    String? invitation,
+    String? locale,
+    String? redirectTo,
+    Map<String, String>? consents,
+    RequestOptions? options,
+  }) async {
+    final res = await client.request(RequestInit(
+      method: 'POST',
+      path: const ['_auth', 'orgs'],
+      auth: false,
+      body: {
+        'email': email,
+        'password': password,
+        'name': name,
+        'slug': slug,
+        ..._compact({
+          'invitation': invitation,
+          'locale': locale,
+          'redirect_to': redirectTo,
+          'consents': consents,
+        }),
+      },
+      retry: options?.retry,
+      headers: options?.headers,
+      cache: options?.cache ?? true,
+    ));
+    if (res.status == 202) {
+      throw VerificationRequiredError(
+        status: res.status,
+        code: 'verification_required',
+        message:
+            'the account and the organization were created: verify the email address, then sign in',
+      );
+    }
+    final data = Map<String, Object?>.from(res.data as Map);
+    final organization =
+        Map<String, Object?>.from(data.remove('organization') as Map);
+    // The session is the new organization's: kept under its own client (named
+    // as the person will type it: the slug) when the storage can, else in
+    // this one. A person whose role needs a second factor, or consents, has a
+    // step to take first: that throws a [SecondStepRequiredError].
+    final target = client.keepsOrgSessions ? client.org(slug).auth : this;
+    return (
+      session: target.session(await target.step(data)),
+      organization: organization
+    );
+  }
+
+  /// Asks the server to email an address the organizations it belongs to,
+  /// each with the link to its sign-in page: for someone on a new device who
+  /// does not remember the company. Always resolves, whatever the address is,
+  /// so it tells the caller nothing; the realm needs
+  /// `organizations.signin_link`.
+  Future<void> findOrgs(String email,
+          {String? locale, RequestOptions? options}) =>
+      _accepted(const ['_auth', 'orgs', 'find'],
+          {'email': email, 'locale': locale}, options);
+
+  /// What an invitation to an organization offers, before the person has
+  /// signed in: the organization (`org` with `id` and `name`), `roles`,
+  /// `teams`, `binding` and `expires_at`, so the app can ask "Join Acme as
+  /// editor?". Every token that does not work fails alike with
+  /// `invalid_invitation`. [org] is the organization the token is for, by id
+  /// or slug (the client's own by default).
+  Future<Map<String, Object?>> previewInvitation(
+    String token, {
+    String? org,
+    RequestOptions? options,
+  }) async {
+    final base = this.base(org);
+    if (base.length < 3) {
+      throw ArgumentError(
+          'previewInvitation: the organization is required (the client\'s org or the org argument)');
+    }
+    final res = await client.request(RequestInit(
+      method: 'POST',
+      path: [...base, 'invitations', 'preview'],
+      auth: false,
+      body: {'token': token},
+      retry: options?.retry,
+      headers: options?.headers,
+      cache: options?.cache ?? true,
+    ));
+    return Map<String, Object?>.from(res.data as Map);
+  }
 
   /// What a first factor answered: the session (stored), or the second step
   /// the user has to take.
@@ -505,7 +704,10 @@ final class Auth {
   /// version shown (`{terms: '2026-10'}`): every required one of the realm
   /// must be there at its current version, or this throws a
   /// [ConsentRequiredError] that lists them.
-  /// `org` is the company the person comes from (see [MagicLink.request]).
+  /// `org` is the organization the person joins (an id or a slug; the
+  /// client's own when it was made with one): the sign-up goes to
+  /// `/_auth/orgs/{org}/signup`, which needs the organization's `invitation`,
+  /// and the session is scoped to the organization.
   Future<Session> signup(
     String email,
     String password, {
@@ -518,7 +720,7 @@ final class Auth {
   }) async {
     final res = await client.request(RequestInit(
       method: 'POST',
-      path: const ['_auth', 'signup'],
+      path: [...base(org), 'signup'],
       auth: false,
       body: {
         'email': email,
@@ -528,7 +730,6 @@ final class Auth {
           'invitation': invitation,
           'locale': locale,
           'redirect_to': redirectTo,
-          'org': org,
         }),
       },
       retry: options?.retry,
@@ -550,18 +751,25 @@ final class Auth {
   /// user with a second factor, an [MfaChallenge] to finish with
   /// [verifyMfa], or an [EnrollmentChallenge] — or a [ConsentChallenge] to
   /// finish with [acceptConsents]. Nothing is stored until a session.
-  /// `org` is the company the person comes from (see [MagicLink.request]).
+  /// `org` is the organization the person signs in to (an id or a slug; the
+  /// client's own when it was made with one): the session, or the second
+  /// step, is scoped to it. A person who is not a member, an organization
+  /// that is not there and a wrong password all fail alike, with
+  /// `invalid_credentials`. `invitation` is an invitation token of the
+  /// organization, used as part of the sign-in.
   Future<SignInResult> signIn(
     String email,
     String password, {
     String? org,
+    String? invitation,
     RequestOptions? options,
   }) async {
     final res = await client.request(RequestInit(
       method: 'POST',
-      path: const ['_auth', 'login'],
+      path: [...base(org), 'login'],
       auth: false,
-      body: _compact({'email': email, 'password': password, 'org': org}),
+      body: _compact(
+          {'email': email, 'password': password, 'invitation': invitation}),
       retry: options?.retry,
       headers: options?.headers,
       cache: options?.cache ?? true,
@@ -576,9 +784,11 @@ final class Auth {
     String email,
     String password, {
     String? org,
+    String? invitation,
     RequestOptions? options,
   }) async =>
-      session(await signIn(email, password, org: org, options: options));
+      session(await signIn(email, password,
+          org: org, invitation: invitation, options: options));
 
   /// Starts signing in with a provider the realm lists (`google`,
   /// `microsoft` or `apple`): makes a PKCE verifier, keeps it for the return,
@@ -596,11 +806,13 @@ final class Auth {
     String? redirectTo,
     String? invitation,
     String? locale,
+    String? org,
     Map<String, String>? consents,
     FutureOr<void> Function(Uri url)? navigate,
     RequestOptions? options,
   }) =>
       _startOAuth(provider, 'signin',
+          org: org,
           redirectTo: redirectTo,
           invitation: invitation,
           locale: locale,
@@ -631,6 +843,7 @@ final class Auth {
   Future<({String authorizeUrl})> _startOAuth(
     String provider,
     String intent, {
+    String? org,
     String? redirectTo,
     String? invitation,
     String? locale,
@@ -641,7 +854,12 @@ final class Auth {
     final (:verifier, :challenge) = newPKCE();
     final res = await client.request(RequestInit(
       method: 'POST',
-      path: ['_auth', 'oauth', provider, 'start'],
+      path: [
+        ...(intent == 'link' ? const ['_auth'] : base(org)),
+        'oauth',
+        provider,
+        'start',
+      ],
       auth: intent == 'link',
       body: _compact({
         'redirect_to': redirectTo,
@@ -716,7 +934,13 @@ final class Auth {
         headers: options?.headers,
         cache: options?.cache ?? true,
       ));
-      final out = await step(res.data);
+      // A sign-in to an organization from a client that is not bound to one
+      // belongs to that organization's client.
+      final target =
+          ret.org != null && client.orgRef.isEmpty && client.keepsOrgSessions
+              ? client.org(ret.org!).auth
+              : this;
+      final out = await target.step(res.data);
       completer.complete(out);
       return out;
     } catch (e) {
@@ -907,7 +1131,9 @@ final class Auth {
   /// Asks for a password reset email. Always resolves, whatever the address
   /// is. Throws a [RetryableError] once the realm's limits for reset requests
   /// (per address and per client) are reached.
-  /// `org` is the company the person comes from (see [MagicLink.request]).
+  /// `org` is the organization whose page the person asks from (see
+  /// [MagicLink.request]): its members get the organization's context in the
+  /// email.
   Future<void> requestPasswordReset(
     String email, {
     String? redirectTo,
@@ -915,8 +1141,8 @@ final class Auth {
     RequestOptions? options,
   }) =>
       _accepted(
-        const ['_auth', 'reset-password', 'request'],
-        {'email': email, 'redirect_to': redirectTo, 'org': org},
+        [...base(org), 'reset-password', 'request'],
+        {'email': email, 'redirect_to': redirectTo},
         options,
       );
 
@@ -1180,15 +1406,50 @@ final class Auth {
   Future<Session> _signedIn(Session session) async {
     client.clearDerivedState();
     if (session.token != null) await client.storage.set(session.token!);
+    current = session;
+    await _remember({'org': session.org, 'expires_at': session.expiresAt});
     client.config.credentialChanged();
     _events.add(AuthChange(AuthEvent.signedIn, session));
     return session;
+  }
+
+  /// Stores a session this client did not get from a sign-in of its own (the
+  /// one creating an organization opens).
+  @internal
+  Future<Session> signedInWith(Session session) => _signedIn(session);
+
+  /// Keeps a note of the session beside the token of an organization's
+  /// client, for [Orgs.signedIn].
+  Future<void> _remember(Map<String, Object?> fields) async {
+    if (client.orgRef.isEmpty) return;
+    final note = client.root.storage.slot('$orgNotePrefix${client.orgRef}');
+    if (note == null) return;
+    var held = <String, Object?>{};
+    try {
+      final text = await note.get();
+      if (text != null) {
+        held = Map<String, Object?>.from(jsonDecode(text) as Map);
+      }
+    } on Object {
+      // A damaged note is replaced.
+    }
+    await note.set(jsonEncode({
+      ...held,
+      for (final e in fields.entries)
+        if (e.value != null) e.key: e.value,
+    }));
   }
 
   /// Forgets the stored token, clears derived state and emits [event].
   Future<void> _signedOut(AuthEvent event) async {
     client.clearDerivedState();
     await client.storage.remove();
+    current = null;
+    if (client.orgRef.isNotEmpty) {
+      await client.root.storage
+          .slot('$orgNotePrefix${client.orgRef}')
+          ?.remove();
+    }
     client.config.credentialChanged();
     _events.add(AuthChange(event, null));
   }
@@ -1325,9 +1586,9 @@ final class MagicLink {
   ///
   /// `consents` are accepted for the account a new address gets (a new
   /// account made without them is asked at its first sign-in).
-  /// `org` is the company the person comes from: when it is one they belong
-  /// to (or are invited to), the email and the page of the link look like the
-  /// company's; otherwise it is ignored without a word.
+  /// `org` is the organization the person signs in to (an id or a slug; the
+  /// client's own when it was made with one): only its members are sent a
+  /// link, and the session it gives is scoped to it.
   Future<({String requestId})> request(
     String email, {
     String? redirectTo,
@@ -1339,14 +1600,13 @@ final class MagicLink {
     final (:verifier, :challenge) = newPKCE();
     final res = await _auth.client.request(RequestInit(
       method: 'POST',
-      path: const ['_auth', 'magic-link'],
+      path: [..._auth.base(org), 'magic-link'],
       auth: false,
       body: _compact({
         'email': email,
         'redirect_to': redirectTo,
         'code_challenge': challenge,
         'locale': locale,
-        'org': org,
         'consents': consents,
       }),
       retry: options?.retry,

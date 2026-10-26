@@ -179,6 +179,10 @@ type OrgSettings struct {
 	Hooks OrgHooks
 	// InvitationLink is where invitation links point: it holds {token} and may hold {org}.
 	InvitationLink string
+	// SigninLink is where the sign-in page of an organization is, for the email that tells a
+	// person which organizations they belong to (design/scoped-sessions.md §5.4): it holds {slug}
+	// (the id for an organization with none) and may hold {org}. Empty: the realm has no such email.
+	SigninLink string
 	// SSO is the organization sign-in section (design/org-sso.md); nil when the realm doesn't
 	// let organizations set up their own providers.
 	SSO    *OrgSSOSettings
@@ -307,6 +311,7 @@ type orgsDoc struct {
 	AllowRequireMFA       *bool    `yaml:"allow_require_mfa"`
 	MembersVisibleTo      string   `yaml:"members_visible_to"`
 	InvitationLink        string   `yaml:"invitation_link"`
+	SigninLink            string   `yaml:"signin_link"`
 	SSO                   *struct {
 		Enabled   *bool    `yaml:"enabled"`
 		Providers []string `yaml:"providers"`
@@ -344,6 +349,7 @@ func (d *orgsDoc) apply(s *RealmSettings) []error {
 		AllowRequireMFA:       true,
 		MembersVisibleTo:      MembersVisibleToMembers,
 		InvitationLink:        d.InvitationLink,
+		SigninLink:            d.SigninLink,
 	}
 	if len(o.CreatorRoles) == 0 {
 		o.CreatorRoles = []string{"owner"}
@@ -470,8 +476,21 @@ func (d *orgsDoc) apply(s *RealmSettings) []error {
 		switch {
 		case strings.Count(o.InvitationLink, "{token}") != 1:
 			add("invitation_link: %q must contain {token} exactly once", o.InvitationLink)
+		case !strings.Contains(o.InvitationLink, "{org}"):
+			add("invitation_link: %q must contain {org}: the link is how the app learns which organization to sign in to", o.InvitationLink)
 		case !s.SignInRedirectAllowed(probe):
 			add("invitation_link: %q must be an absolute URL within sign_in.allowed_redirects (or email.allowed_redirects when it has none)", o.InvitationLink)
+		}
+	}
+	if o.SigninLink != "" {
+		probe := strings.NewReplacer("{slug}", "x", "{org}", "x").Replace(o.SigninLink)
+		switch {
+		case s.Email == nil:
+			add("signin_link: the email that carries it needs email: in realm.yaml")
+		case !strings.Contains(o.SigninLink, "{slug}"):
+			add("signin_link: %q must contain {slug}", o.SigninLink)
+		case !s.SignInRedirectAllowed(probe):
+			add("signin_link: %q must be an absolute URL within sign_in.allowed_redirects (or email.allowed_redirects when it has none)", o.SigninLink)
 		}
 	}
 	if d.SSO != nil && (d.SSO.Enabled == nil || *d.SSO.Enabled) {

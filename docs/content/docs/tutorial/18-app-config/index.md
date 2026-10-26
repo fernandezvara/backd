@@ -1,6 +1,7 @@
 ---
 title: "18. App configuration"
 description: "A maintenance banner every visitor sees, a switch that hides the export button and blocks the export function, changed by cron functions and administrators, cached by the client and pushed to open pages with realtime."
+icon: "sliders-horizontal"
 weight: 380
 toc: true
 ---

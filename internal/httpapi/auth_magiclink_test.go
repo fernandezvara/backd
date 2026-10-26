@@ -30,6 +30,7 @@ func (f *rulesFixture) askMagic(t *testing.T, body string) (int, map[string]any)
 
 func TestMagicLinkOverHTTP(t *testing.T) {
 	f, w := newMagicFixture(t)
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	verifier, challenge, _ := auth.NewPKCE()
 	code, out := f.askMagic(t, `{"email": "ada@example.com", "redirect_to": "https://app.acme.example/account?tab=2", "code_challenge": "`+challenge+`"}`)
 	requestID, _ := out["request_id"].(string)
@@ -74,6 +75,7 @@ func TestMagicLinkOverHTTP(t *testing.T) {
 
 func TestMagicLinkCodeOverHTTP(t *testing.T) {
 	f, w := newMagicFixture(t)
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	verifier, challenge, _ := auth.NewPKCE()
 	_, out := f.askMagic(t, `{"email": "ada@example.com", "code_challenge": "`+challenge+`"}`)
 	in := deliver(t, f, w)
@@ -100,6 +102,7 @@ func TestMagicLinkCodeOverHTTP(t *testing.T) {
 
 func TestMagicLinkRequestRefusals(t *testing.T) {
 	f, _ := newMagicFixture(t)
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	_, challenge, _ := auth.NewPKCE()
 	cases := map[string]struct {
 		body string
@@ -134,6 +137,7 @@ func TestMagicLinkRequestRefusals(t *testing.T) {
 
 func TestMagicLinkForANewcomerAndAMissingDestination(t *testing.T) {
 	f, w := newMagicFixture(t)
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	f.svc.Settings.MagicLink.Signup = true
 	verifier, challenge, _ := auth.NewPKCE()
 	_, out := f.askMagic(t, `{"email": "Fresh@Example.com", "code_challenge": "`+challenge+`"}`)
@@ -177,6 +181,7 @@ func TestMagicLinkForANewcomerAndAMissingDestination(t *testing.T) {
 // password, and can drop it again.
 func TestPasswordlessAccountLifecycle(t *testing.T) {
 	f, w := newMagicFixture(t)
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	f.svc.Settings.MagicLink.Signup = true
 	verifier, challenge, _ := auth.NewPKCE()
 	_, out := f.askMagic(t, `{"email": "kim@example.com", "code_challenge": "`+challenge+`"}`)

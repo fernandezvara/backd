@@ -1,6 +1,7 @@
 ---
 title: "9. On a schedule"
 description: "schedule: cron runs a function with nobody calling — ctx.admin.db always, no user, no input. cleanup sweeps expired shares."
+icon: "clock-counter-clockwise"
 weight: 290
 toc: true
 ---

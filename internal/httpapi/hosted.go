@@ -374,11 +374,18 @@ func (a *authAPI) requestPasswordReset(w http.ResponseWriter, r *http.Request) {
 // keep it. Anything else is ignored without a trace in the answer.
 func withOrgContext(r *http.Request, f map[string]any, address string) *http.Request {
 	org, _ := f["org"].(string)
-	if org == "" {
-		return r
-	}
 	svc := usersOf(r)
-	if svc == nil {
+	if ref := chi.URLParam(r, "org"); ref != "" {
+		// A route of an organization names it, by id or slug; one that can't be signed in to
+		// is no company context.
+		org = ""
+		if svc != nil {
+			if o, err := svc.OrgByRef(r.Context(), ref); err == nil {
+				org = o.ID
+			}
+		}
+	}
+	if org == "" || svc == nil {
 		return r
 	}
 	return r.WithContext(auth.WithOrgContext(r.Context(), svc.ResolveOrgContext(r.Context(), org, address)))
@@ -410,7 +417,7 @@ func (a *authAPI) changeEmail(w http.ResponseWriter, r *http.Request) {
 	if !a.checkRedirect(w, r, redirectTo) {
 		return
 	}
-	if !a.reauthed(w, r) {
+	if !a.accountReauthed(w, r) {
 		return
 	}
 	if err := usersOf(r).RequestEmailChange(r.Context(), principalOf(r), next, redirectTo, clientIP(r), requestID(r.Context())); err != nil {

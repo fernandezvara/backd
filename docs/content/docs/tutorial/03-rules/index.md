@@ -1,6 +1,7 @@
 ---
 title: "3. Who may touch what"
 description: "rules: in collection.yaml: read, create, update and delete rules per collection — and the hole only a function can close."
+icon: "shield-check"
 weight: 230
 toc: true
 ---

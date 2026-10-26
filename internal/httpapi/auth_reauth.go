@@ -16,6 +16,32 @@ func (a *authAPI) reauthed(w http.ResponseWriter, r *http.Request) bool {
 	return a.reauthedAs(w, r, principalOf(r))
 }
 
+// accountReauthed is reauthed for the actions that change what protects the person's account
+// (credentials, second factors, sign-in methods, erasing or exporting it). A session an
+// organization's connection opened can't take them: its provider vouches for who the person is
+// there, not that the account is theirs (design/scoped-sessions.md §7). It answers 403 sso_session
+// before asking for any proof.
+func (a *authAPI) accountReauthed(w http.ResponseWriter, r *http.Request) bool {
+	return a.accountReauthedAs(w, r, principalOf(r))
+}
+
+func (a *authAPI) accountReauthedAs(w http.ResponseWriter, r *http.Request, p auth.Principal) bool {
+	if !a.notViaConnection(w, r, p) {
+		return false
+	}
+	return a.reauthedAs(w, r, p)
+}
+
+// notViaConnection answers 403 sso_session (and returns false) for a session an organization's
+// connection opened.
+func (a *authAPI) notViaConnection(w http.ResponseWriter, r *http.Request, p auth.Principal) bool {
+	if _, _, via := p.Session.Connection(); via {
+		authError(w, r, auth.ErrSSOSession)
+		return false
+	}
+	return true
+}
+
 func (a *authAPI) reauthedAs(w http.ResponseWriter, r *http.Request, p auth.Principal) bool {
 	if err := usersOf(r).CheckReauth(r.Context(), p, r.Header.Get(reauthHeader)); err != nil {
 		authError(w, r, err)

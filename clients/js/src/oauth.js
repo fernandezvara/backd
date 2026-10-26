@@ -99,6 +99,7 @@ export function loadPending(storage) {
  * @property {string} [error]      Why the sign-in didn't work.
  * @property {string} [linked]     The provider that was linked to the signed-in user.
  * @property {string} [provider]   With `account_exists`: the provider that was tried.
+ * @property {string} [org]        With the code: the organization the session will be scoped to.
  */
 
 /**
@@ -118,7 +119,7 @@ export function parseReturn(href) {
   const q = u.searchParams
   /** @type {OAuthReturn} */
   const out = {}
-  for (const k of /** @type {const} */ (['code', 'error', 'linked', 'provider'])) {
+  for (const k of /** @type {const} */ (['code', 'error', 'linked', 'provider', 'org'])) {
     const v = q.get(PARAM_PREFIX + k)
     if (v) out[k] = v
   }
@@ -131,7 +132,7 @@ export function parseReturn(href) {
  */
 export function withoutReturn(href) {
   const u = new URL(String(href))
-  for (const k of ['code', 'error', 'linked', 'provider']) u.searchParams.delete(PARAM_PREFIX + k)
+  for (const k of ['code', 'error', 'linked', 'provider', 'org']) u.searchParams.delete(PARAM_PREFIX + k)
   return u.toString()
 }
 

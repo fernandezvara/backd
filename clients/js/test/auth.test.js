@@ -100,6 +100,16 @@ test('a refused session token expires the session', async () => {
   assert.deepEqual(events, [['SESSION_EXPIRED', null]])
 })
 
+test('a session that belongs to no organization expires like a refused one', async () => {
+  // A session from before sessions were scoped: the realm has organizations now.
+  const m = mockFetch([{ status: 401, body: errorBody('session_unscoped') }])
+  const { c, events } = clientWith(m)
+  await c.storage.set('bds_old')
+  await assert.rejects(c.auth.me(), AuthenticationError)
+  assert.equal(await c.auth.token(), null)
+  assert.deepEqual(events, [['SESSION_EXPIRED', null]])
+})
+
 test('logout ends the session, even one the server already forgot', async () => {
   const m = mockFetch([{ status: 204 }, { status: 401, body: errorBody('unauthenticated') }])
   const { c, events } = clientWith(m)

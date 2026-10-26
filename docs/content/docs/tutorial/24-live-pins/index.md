@@ -21,12 +21,12 @@ One line in `config/shelf/main/pins/collection.yaml`:
 In `app.js` the page keeps one live list of the open team's pins:
 
 ```js
-const live = pins.inOrg(teamId).subscribe({ load: { sort: '-_meta.created_at', limit: 50 } })
+const live = pins.subscribe({ load: { sort: '-_meta.created_at', limit: 50 } })
 live.on('change', (state) => { this.pinList = state.items })   // sorted, reconciled
 live.on('status', (s) => { this.liveStatus = s })              // connecting, live, resyncing
 ```
 
-`inOrg(teamId)` turns into a `where` on `_meta.org`, so this is a **grouped** subscription. Behind this call the client opens one stream for the whole page, loads the list with a normal read, applies the events that arrived meanwhile (ignoring versions that are not newer) and keeps the list sorted and trimmed to 50. Adding a pin no longer reloads anything: `addPin` calls the `pin` function and the new pin arrives through the stream, for you and for every other member.
+The session belongs to one team, so the read rule is an equality on `_meta.org` and this is a **grouped** subscription. Behind this call the client opens one stream for the whole page, loads the list with a normal read, applies the events that arrived meanwhile (ignoring versions that are not newer) and keeps the list sorted and trimmed to 50. Adding a pin no longer reloads anything: `addPin` calls the `pin` function and the new pin arrives through the stream, for you and for every other member.
 
 The server sends each member only what **their** read rule allows, evaluated on the pin before and after the change: a pin of another team never reaches you, and a member who is removed from the team stops receiving its pins.
 

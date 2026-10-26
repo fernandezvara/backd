@@ -120,7 +120,7 @@ rules:
 | `hasTeamRole(document._meta.team, "manager")` | they hold that role in the document's team, now | `_meta.team` is one of the teams where they hold it |
 
 - **Both are database filters in a read rule**, so lists and counts show only what the caller may see, and combine with `inOrg`, `hasOrgRole` and `orgClaims` by `&&`, `||` and `!`. In a read rule the first argument must be `document._meta.team`.
-- **Creating:** `POST …?org=<org>&team=<team>`. A person who isn't a member of the team and holds no team role in it answers `403 not_team_member`, the same answer as for an unknown team or one of another organization (so it can't be used to find teams). `?team=` needs `?org=`, and `required` collections answer `400 team_required` without it. A function with admin access, or an administrator, may create in any team of the organization.
+- **Creating:** `POST …?team=<team>`, in the organization of the session. A person who isn't a member of the team and holds no team role in it answers `403 not_team_member`, the same answer as for an unknown team or one of another organization (so it can't be used to find teams). `required` collections answer `400 team_required` without it. A function with admin access, or an administrator, may create in any team of the organization.
 - **Fixed afterwards:** `PUT` and `PATCH` naming another `_meta.team` answer `400 immutable_field`. Administrators move a document with the [transfer](../../api/documents/#fixing-data-as-an-administrator), naming `team` (or `null` to take it out of its team). Moving to another organization leaves the team: name the team of the new one.
 - **Deleting a team** removes the grants of its roles, and applies `on_team_delete` to its documents through a job.
 

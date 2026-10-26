@@ -37,6 +37,12 @@ CI fails the build when they drift from the config.
   `verifyMfa`, `EnrollmentChallenge` → `mfa.setup`/`confirm` with recovery
   codes, `ConsentChallenge` → `acceptConsents`) and the magic link
   (`magicLink.request` + `verifyCode`).
+- **Signing in to a team:** the Team field asks `auth.options(org:)` for the
+  methods the team allows, one generic failure message, "Forgot your team?"
+  (`auth.findOrgs`), a team switcher in the app bar built from
+  `client.orgs.signedIn()` (one session per team, `client.org(ref)`), and
+  "Start a team of your own" (`auth.signUpWithOrg`, with the operator's
+  invitation).
 - **Member flows:** the published gallery (`where`/`orderBy`/`expand`), the
   member's drafts — create/edit/replace with `ifMatch`, upload files, delete —
   and submitting an asset for review.

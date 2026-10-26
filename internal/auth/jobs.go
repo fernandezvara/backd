@@ -39,12 +39,15 @@ const leaseMargin = 30 * time.Second
 // job's input and result are — there's nowhere else to keep them until
 // the caller reads them back.
 type Job struct {
-	ID             string
-	Database       string
-	Function       string // name only; Database plus this is the function
-	Input          json.RawMessage
-	CallerActor    string // for display: "user:<id>", "key:<name>", "anonymous"
-	CallerUserID   string // "" unless the caller was a signed-in user
+	ID           string
+	Database     string
+	Function     string // name only; Database plus this is the function
+	Input        json.RawMessage
+	CallerActor  string // for display: "user:<id>", "key:<name>", "anonymous"
+	CallerUserID string // "" unless the caller was a signed-in user
+	// CallerOrg is the organization the caller's session belonged to when the job was queued, so
+	// that work started in one organization cannot read another's when it runs later.
+	CallerOrg      string
 	CallerKeyHash  string // "" unless the caller was an API key
 	Scheduled      bool   // created by the function's cron schedule, acts as the function itself
 	ActsAsFunction bool   // run as the function itself, with full access (a scheduled function run by hand)
@@ -315,7 +318,7 @@ func (s *Users) RerunJob(ctx context.Context, id string, timeoutMS int64) (Job, 
 	}
 	return s.EnqueueJob(ctx, Job{
 		Database: j.Database, Function: j.Function, Input: j.Input,
-		CallerActor: j.CallerActor, CallerUserID: j.CallerUserID, CallerKeyHash: j.CallerKeyHash,
+		CallerActor: j.CallerActor, CallerUserID: j.CallerUserID, CallerOrg: j.CallerOrg, CallerKeyHash: j.CallerKeyHash,
 		// A scheduled run acted as the function itself; its re-run isn't a cron run, but acts the same.
 		ActsAsFunction: j.ActsAsFunction || j.Scheduled,
 		Origin:         "admin", RerunOf: j.ID, TimeoutMS: timeoutMS,

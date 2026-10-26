@@ -1,6 +1,7 @@
 ---
 title: "17. Terms and consents"
 description: "Terms members accept to have an account, an optional consent for the digest by email, a function that respects it, and what happens when the terms change."
+icon: "seal-check"
 weight: 370
 toc: true
 ---

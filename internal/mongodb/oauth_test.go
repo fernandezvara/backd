@@ -13,13 +13,13 @@ func TestAuthStoreOAuthStatesAndCodesWorkOnce(t *testing.T) {
 	s, _ := authFixture(t)
 	ctx := context.Background()
 	now := time.Date(2126, 10, 9, 12, 0, 0, 0, time.UTC)
-	st := auth.OAuthState{ID: "h1", Provider: "google", Intent: auth.IntentSignIn, CodeChallenge: "c", Verifier: "v", Nonce: "n", RedirectTo: "https://app.example/x",
+	st := auth.OAuthState{ID: "h1", Provider: "google", ScopeOrg: "org1", Intent: auth.IntentSignIn, CodeChallenge: "c", Verifier: "v", Nonce: "n", RedirectTo: "https://app.example/x",
 		InvitationID: "inv", LinkUserID: "u1", Locales: []string{"es"}, CreatedAt: now, ExpiresAt: now.Add(10 * time.Minute)}
 	if err := s.PutOAuthState(ctx, st); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.ClaimOAuthState(ctx, "h1", now.Add(time.Minute))
-	if err != nil || got.Provider != "google" || got.Verifier != "v" || got.Nonce != "n" || got.InvitationID != "inv" || got.LinkUserID != "u1" || len(got.Locales) != 1 || !got.ExpiresAt.Equal(st.ExpiresAt) {
+	if err != nil || got.Provider != "google" || got.Verifier != "v" || got.Nonce != "n" || got.InvitationID != "inv" || got.ScopeOrg != "org1" || got.LinkUserID != "u1" || len(got.Locales) != 1 || !got.ExpiresAt.Equal(st.ExpiresAt) {
 		t.Fatalf("claim = %+v, %v", got, err)
 	}
 	if _, err := s.ClaimOAuthState(ctx, "h1", now.Add(time.Minute)); !errors.Is(err, auth.ErrNotFound) {

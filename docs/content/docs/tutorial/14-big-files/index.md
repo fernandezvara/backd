@@ -1,6 +1,7 @@
 ---
 title: "14. Big files and thumbnails"
 description: "Direct uploads with a progress bar, several attachments per asset, and a thumbnail declared as a version that a worker makes."
+icon: "cloud-arrow-up"
 weight: 340
 toc: true
 ---

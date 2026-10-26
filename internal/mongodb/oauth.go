@@ -16,6 +16,7 @@ type oauthStateDoc struct {
 	ID            string   `bson:"_id"`
 	Provider      string   `bson:"provider"`
 	Org           string   `bson:"org,omitempty"`
+	ScopeOrg      string   `bson:"scope_org,omitempty"`
 	Intent        string   `bson:"intent"`
 	CodeChallenge string   `bson:"code_challenge"`
 	Verifier      string   `bson:"verifier"`

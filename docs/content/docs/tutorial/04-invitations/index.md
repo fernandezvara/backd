@@ -1,6 +1,7 @@
 ---
 title: "4. Invitations"
 description: "signup: invite closes the realm; operators hand out one-time links — emailed once chapter 10 configures delivery."
+icon: "paper-plane-tilt"
 weight: 240
 toc: true
 ---

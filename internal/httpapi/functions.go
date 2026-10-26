@@ -632,7 +632,7 @@ func (f *functions) enqueue(w http.ResponseWriter, r *http.Request, fn *registry
 		ActsAsFunction: caller.Func != nil && caller.Func.Admin,
 	}
 	if caller.User != nil {
-		job.CallerUserID = caller.User.User.ID
+		job.CallerUserID, job.CallerOrg = caller.User.User.ID, caller.User.Session.Org
 	}
 	if caller.Key != nil {
 		job.CallerKeyHash = caller.Key.Hash
@@ -876,6 +876,9 @@ func userEnvelope(c auth.Caller, orgs map[string]any) json.RawMessage {
 	if orgs != nil {
 		env["orgs"] = orgs
 	}
+	if c.User.Session.Org != "" {
+		env["org"] = c.User.Session.Org // the organization the session belongs to
+	}
 	data, _ := json.Marshal(env)
 	return data
 }
@@ -897,6 +900,9 @@ func (f *functions) userOrgsEnvelope(ctx context.Context, realm string, c auth.C
 	}
 	out := map[string]any{}
 	for _, m := range list {
+		if m.Org.ID != c.User.Session.Org {
+			continue // a session reaches one organization: its own
+		}
 		claims := m.Org.Claims
 		if claims == nil {
 			claims = map[string]any{}
@@ -913,7 +919,7 @@ func (f *functions) userOrgsEnvelope(ctx context.Context, realm string, c auth.C
 		}
 		out[m.Org.ID] = map[string]any{
 			"name": m.Org.Name, "roles": nonNil(m.RoleNames()), "teams": nonNil(m.Member.Teams), "team_roles": grants,
-			"claims": claims, "counts": m.Org.Counts(mfa), "require_mfa": m.Org.RequireMFA,
+			"claims": claims, "counts": m.Org.Counts(mfa, c.User.Session.Org), "require_mfa": m.Org.RequireMFA,
 		}
 	}
 	return out
@@ -929,6 +935,7 @@ func (f *functions) callback(realm, database, name string, fn *registry.Function
 	if c.User != nil {
 		claims.UserID = c.User.User.ID
 		claims.MFA, claims.Methods = c.SignInMethods()
+		claims.Org = c.User.Session.Org
 	}
 	if c.Key != nil {
 		claims.KeyHash = c.Key.Hash

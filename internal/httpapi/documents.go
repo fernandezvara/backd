@@ -1106,17 +1106,17 @@ func (d *documents) createOrg(w http.ResponseWriter, r *http.Request, c *registr
 		}
 		return "", true
 	}
-	if org == "" {
-		if c.Organization == registry.OrgRequired {
-			writeError(w, r, http.StatusBadRequest, codeOrgRequired, "documents of this collection belong to an organization: say which with ?org=", Detail{Path: "org", Reason: "is required"})
-			return "", false
-		}
-		return "", true
-	}
 	caller, _ := callerOf(r)
 	// Administrators (the admin data route) and functions with admin access choose any
-	// organization that exists; everyone else is a member of it.
-	if adminData(r) || (caller.BypassesRules() && caller.Func != nil) {
+	// organization that exists, with ?org=.
+	if choosesOrg(r, caller) {
+		if org == "" {
+			if c.Organization == registry.OrgRequired {
+				writeError(w, r, http.StatusBadRequest, codeOrgRequired, "documents of this collection belong to an organization: say which with ?org=", Detail{Path: "org", Reason: "is required"})
+				return "", false
+			}
+			return "", true
+		}
 		svc := d.users(c.Realm)
 		if svc == nil || !svc.OrgActive(r.Context(), org) {
 			writeError(w, r, http.StatusNotFound, codeNotFound, "no such organization", Detail{Path: "org", Reason: "no active organization has this id"})
@@ -1124,15 +1124,34 @@ func (d *documents) createOrg(w http.ResponseWriter, r *http.Request, c *registr
 		}
 		return org, true
 	}
-	if caller.User == nil {
+	// Everyone else works in the organization their session belongs to; they do not say which.
+	if given {
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid query parameters", Detail{Path: "org", Reason: "is not accepted: a session works in the organization it belongs to; sign in to another to work in it"})
+		return "", false
+	}
+	scope := ""
+	if caller.User != nil {
+		scope = caller.User.Session.Org
+	}
+	if scope == "" {
+		if c.Organization == registry.OrgRequired {
+			writeError(w, r, http.StatusBadRequest, codeOrgRequired, "documents of this collection belong to an organization: sign in to one", Detail{Path: "org", Reason: "this session belongs to no organization"})
+			return "", false
+		}
+		return "", true
+	}
+	if _, member := d.userOrgs(r, c.Realm, caller)[scope]; !member {
 		writeError(w, r, http.StatusForbidden, codeNotOrgMember, "you are not a member of that organization")
 		return "", false
 	}
-	if _, member := d.userOrgs(r, c.Realm, caller)[org]; !member {
-		writeError(w, r, http.StatusForbidden, codeNotOrgMember, "you are not a member of that organization")
-		return "", false
-	}
-	return org, true
+	return scope, true
+}
+
+// choosesOrg says whether the caller names the organization of a document or a list with ?org=:
+// the administrators' data route and the functions with admin access. A session never does; it
+// works in the organization it belongs to.
+func choosesOrg(r *http.Request, caller auth.Caller) bool {
+	return adminData(r) || (caller.BypassesRules() && caller.Func != nil)
 }
 
 // createScope resolves where a new document is created: its organization (?org=) and team
@@ -1286,11 +1305,25 @@ func explainReferenceFilters(c *registry.Collection, details []Detail) []Detail 
 	return details
 }
 
-// scopeFilter adds the ?org= and ?team= shorthands of a read to filter, as conditions on
+// scopeFilter adds the scope of a read to filter, as conditions on
 // _meta.org and _meta.team. It answers 400 and returns false when the collection has no such
 // scope or the value is empty.
 func scopeFilter(w http.ResponseWriter, r *http.Request, c *registry.Collection, filter storage.Filter) (storage.Filter, bool) {
+	caller, _ := callerOf(r)
 	for _, f := range scopeFields {
+		if f.key == "org" && !choosesOrg(r, caller) {
+			// A session reads in the organization it belongs to: it does not say which, and in a
+			// collection that requires one it only ever sees that organization's documents, whatever
+			// the rules say.
+			if r.URL.Query().Has("org") {
+				writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid query parameters", Detail{Path: "org", Reason: "is not accepted: a session reads the organization it belongs to; sign in to another to read it"})
+				return nil, false
+			}
+			if c.Organization == registry.OrgRequired && caller.User != nil {
+				filter = and(filter, storage.Condition{Field: f.path, Op: storage.OpEq, Value: caller.User.Session.Org})
+			}
+			continue
+		}
 		if !r.URL.Query().Has(f.key) {
 			continue
 		}

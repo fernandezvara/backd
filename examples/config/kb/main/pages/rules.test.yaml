@@ -1,0 +1,70 @@
+# Who reads and writes what: the visitor, a plain member, another team's member, a contributor from
+# another team, an editor and an owner.
+users:
+  ana:   { id: u1, email: ana@acme.example, orgs: { acme: { roles: [member], teams: [platform], team_roles: { platform: [editor] } } } }
+  ben:   { id: u2, email: ben@acme.example, orgs: { acme: { roles: [member], teams: [platform] } } }
+  dan:   { id: u3, email: dan@acme.example, orgs: { acme: { roles: [member], teams: [support] } } }
+  # Helps Platform from Support: holds contributor there, without belonging to it.
+  carla: { id: u4, email: carla@acme.example, orgs: { acme: { roles: [member], teams: [support], team_roles: { platform: [contributor] } } } }
+  olga:  { id: u5, email: olga@acme.example, orgs: { acme: { roles: [member, owner] } } }
+
+documents:
+  policy:  { title: Time off policy, body: "...", status: published, visibility: org, _meta: { owner: u5, org: acme } }
+  runbook: { title: On-call runbook, body: "...", status: published, visibility: team, _meta: { owner: u1, org: acme, team: platform } }
+  guide:   { title: Deploy guide, body: "...", status: published, visibility: org, _meta: { owner: u1, org: acme, team: platform } }
+  api:     { title: Public API reference, body: "...", status: published, visibility: public, _meta: { owner: u1, org: acme, team: platform } }
+  draft:   { title: Incident template, body: "...", status: draft, visibility: org, _meta: { owner: u1, org: acme, team: platform } }
+  faq:     { title: Support FAQ, body: "...", status: published, visibility: team, _meta: { owner: u3, org: acme, team: support } }
+
+tests:
+  - name: a visitor reads only what is public
+    as: anonymous
+    read: { allow: [api], deny: [policy, runbook, guide, draft, faq] }
+
+  - name: a member reads the organization's pages and their team's, not another team's private ones
+    as: ben
+    read: { allow: [policy, runbook, guide, api], deny: [draft, faq] }
+    update:
+      - { document: runbook, patch: { body: "edited" }, expect: deny }
+    create:
+      - { data: { title: Notes, body: "...", status: draft, visibility: team }, org: acme, team: platform, expect: deny }
+
+  - name: another team's member reads what is shared with the organization, not the team's private pages
+    as: dan
+    read: { allow: [policy, guide, api, faq], deny: [runbook, draft] }
+
+  - name: an editor writes, publishes and decides who reads, in their own team
+    as: ana
+    read: { allow: [policy, runbook, guide, api, draft], deny: [faq] }
+    update:
+      - { document: draft, patch: { status: published }, expect: allow }
+      - { document: runbook, patch: { visibility: public }, expect: allow }
+      - { document: faq, patch: { body: "edited" }, expect: deny }
+      - { document: policy, patch: { body: "edited" }, expect: deny }
+    create:
+      - { data: { title: Handbook, body: "...", status: published, visibility: org }, org: acme, team: platform, expect: allow }
+      - { data: { title: Handbook, body: "...", status: published, visibility: org }, org: acme, team: support, expect: deny }
+      - { data: { title: Handbook, body: "...", status: published, visibility: org }, org: acme, expect: deny }
+    delete: { allow: [runbook, draft], deny: [faq] }
+
+  - name: a contributor from another team writes drafts and edits the text, but publishes nothing
+    as: carla
+    read: { allow: [policy, runbook, guide, api, faq], deny: [draft] }
+    update:
+      - { document: runbook, patch: { body: "edited" }, expect: allow }
+      - { document: runbook, patch: { visibility: public }, expect: deny }
+      - { document: runbook, patch: { status: draft }, expect: deny }
+    create:
+      - { data: { title: Section, body: "...", status: draft, visibility: team }, org: acme, team: platform, expect: allow }
+      - { data: { title: Section, body: "...", status: published, visibility: team }, org: acme, team: platform, expect: deny }
+      - { data: { title: Section, body: "...", status: draft, visibility: public }, org: acme, team: platform, expect: deny }
+
+  - name: an owner runs the company's pages and reads every published page, not other people's drafts
+    as: olga
+    read: { allow: [policy, runbook, guide, api, faq], deny: [draft] }
+    update:
+      - { document: policy, patch: { body: "edited" }, expect: allow }
+      - { document: runbook, patch: { body: "edited" }, expect: deny }
+    create:
+      - { data: { title: Handbook, body: "...", status: published, visibility: org }, org: acme, expect: allow }
+    delete: { allow: [policy], deny: [runbook] }

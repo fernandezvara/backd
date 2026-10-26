@@ -1,6 +1,7 @@
 ---
 title: "1. An empty shelf"
 description: "The shelf realm, the assets collection, dates stored as dates, and a public gallery with filters and cursor paging."
+icon: "package"
 weight: 210
 toc: true
 ---

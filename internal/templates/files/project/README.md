@@ -52,7 +52,7 @@ AGENTS.md                      repo guide for AI coding assistants
 3. Create the first administrator, once the realm is provisioned:
 
    ```sh
-   docker compose exec backd /usr/local/bin/backd bootstrap --realm __REALM__ --email ops@example.com
+   docker compose exec backd /backd bootstrap --realm __REALM__ --email ops@example.com
    ```
 
 4. Test a function's own logic without any of the above — no MongoDB, no running backd:

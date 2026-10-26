@@ -45,7 +45,7 @@ func (a *authAPI) routes(r chi.Router) {
 	r.Route("/v1/{realm}/_auth", func(r chi.Router) {
 		r.Use(noStore, a.resolveRealm, withTimeout(a.opTimeout))
 		json := requireContentType("application/json")
-		r.With(json).Post("/signup", a.signup)
+		r.With(json, a.signInOfOrgs).Post("/signup", a.signup)
 		// The public key a browser subscribes with: no session, cacheable.
 		r.Get("/devices/web-key", a.webKey)
 		r.With(json).Post("/login", a.login)
@@ -221,13 +221,21 @@ func (a *authAPI) signup(w http.ResponseWriter, r *http.Request) {
 	}
 	r = withOrgContext(r, f, email)
 	// The language asked for in the request comes first, then the browser's.
-	res, err := usersOf(r).SignUp(r.Context(), auth.SignupRequest{
+	req := auth.SignupRequest{
 		Email: email, Password: password, Invitation: invitation, RedirectTo: redirectTo, ClientIP: clientIP(r), RequestID: requestID(r.Context()),
 		Locales:  append([]string{requested}, acceptLanguages(r.Header.Get("Accept-Language"))...),
 		Consents: consents, UserAgent: r.UserAgent(),
-	})
+	}
+	var res auth.SignupResult
+	var err error
+	if ref := chi.URLParam(r, "org"); ref != "" {
+		// To an organization: the invitation is its, and the session is scoped to it.
+		res, err = usersOf(r).SignUpToOrg(r.Context(), auth.OrgSignupRequest{SignupRequest: req, Org: ref})
+	} else {
+		res, err = usersOf(r).SignUp(r.Context(), req)
+	}
 	if err != nil {
-		authError(w, r, err, "password")
+		orgError(w, r, err, "password")
 		return
 	}
 	if res.Pending {
@@ -243,7 +251,7 @@ func (a *authAPI) login(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"email": "string", "password": "string", "org": "string?", "cookie": "bool?"})
+	f, ok := fields(w, r, obj, map[string]string{"email": "string", "password": "string", "invitation": "string?", "org": "string?", "cookie": "bool?"})
 	if !ok {
 		return
 	}
@@ -253,9 +261,18 @@ func (a *authAPI) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = withOrgContext(r, f, f["email"].(string))
-	out, err := usersOf(r).SignIn(r.Context(), f["email"].(string), f["password"].(string), clientIP(r))
+	var out auth.Redeemed
+	var err error
+	if ref := chi.URLParam(r, "org"); ref != "" {
+		// To an organization: the person must belong to it (or hold an invitation), and the
+		// session is scoped to it.
+		invitation, _ := f["invitation"].(string)
+		out, err = usersOf(r).SignInToOrg(r.Context(), auth.OrgSignIn{Org: ref, Email: f["email"].(string), Password: f["password"].(string), IP: clientIP(r), Invitation: invitation})
+	} else {
+		out, err = usersOf(r).SignIn(r.Context(), f["email"].(string), f["password"].(string), clientIP(r))
+	}
 	if err != nil {
-		authError(w, r, err)
+		orgError(w, r, err)
 		return
 	}
 	a.answerSignIn(w, r, out, http.StatusOK, useCookie, false)
@@ -351,6 +368,9 @@ func (a *authAPI) me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out["sign_in_methods"] = signIn
+	if org := principalOf(r).Session.Org; org != "" {
+		out["org"] = a.sessionOrgJSON(r, u.ID, org)
+	}
 	if len(usersOf(r).Settings.Consents) > 0 {
 		for k, v := range consentStateJSON(usersOf(r), u) {
 			out[k] = v
@@ -421,7 +441,7 @@ func acceptLanguages(header string) []string {
 }
 
 func (a *authAPI) deleteMe(w http.ResponseWriter, r *http.Request) {
-	if !a.reauthed(w, r) {
+	if !a.accountReauthed(w, r) {
 		return
 	}
 	if err := usersOf(r).DeactivateAccount(r.Context(), principalOf(r)); err != nil {
@@ -437,7 +457,7 @@ func (a *authAPI) changePassword(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !a.reauthed(w, r) {
+	if !a.accountReauthed(w, r) {
 		return
 	}
 	if err := usersOf(r).ChangePassword(r.Context(), principalOf(r), f["new_password"]); err != nil {
@@ -462,6 +482,14 @@ func (a *authAPI) sessions(w http.ResponseWriter, r *http.Request) {
 			"last_used_at": formatTime(s.LastUsedAt),
 			"expires_at":   formatTime(s.ExpiresAt),
 			"current":      s.ID == p.Session.ID,
+		}
+		// The organization each session is scoped to (none for an operator's), and the provider
+		// of the connection that opened it.
+		if s.Org != "" {
+			items[i]["org"] = s.Org
+		}
+		if _, provider, via := s.Connection(); via {
+			items[i]["connection"] = provider
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
@@ -609,6 +637,18 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 		writeError(w, r, http.StatusForbidden, codeEmailNotVerified, err.Error())
 	case errors.Is(err, auth.ErrUnauthenticated):
 		unauthenticated(w, r, true, err.Error())
+	case errors.Is(err, auth.ErrSSORequired):
+		// The organization's people sign in through its connection: the app shows only its buttons.
+		writeError(w, r, http.StatusBadRequest, codeSSORequired, err.Error())
+	case errors.Is(err, auth.ErrSSOSession):
+		writeError(w, r, http.StatusForbidden, codeSSOSession, err.Error())
+	case errors.Is(err, auth.ErrSSONotReady):
+		writeError(w, r, http.StatusConflict, codeSSONotReady, err.Error())
+	case errors.Is(err, auth.ErrSessionUnscoped):
+		// The session is good but has no organization (it is from before sessions were scoped): the
+		// person signs in again, to one.
+		w.Header().Set("WWW-Authenticate", `Bearer realm="`+chi.URLParam(r, "realm")+`", error="invalid_token"`)
+		writeError(w, r, http.StatusUnauthorized, codeSessionUnscoped, err.Error())
 	case errors.Is(err, auth.ErrEmailTaken):
 		writeError(w, r, http.StatusConflict, codeEmailTaken, err.Error(), Detail{Path: "email", Reason: "is already registered"})
 	case errors.Is(err, auth.ErrSignupClosed), errors.Is(err, auth.ErrInvitationRequired), errors.Is(err, auth.ErrInvalidInvitation):
@@ -636,6 +676,9 @@ func sessionJSON(p auth.Principal, token, locale string) map[string]any {
 		out["token"] = token
 		out["token_type"] = "Bearer"
 	}
+	if p.Session.Org != "" {
+		out["org"] = p.Session.Org
+	}
 	return out
 }
 
@@ -655,3 +698,23 @@ func userJSON(u auth.User, locale string) map[string]any {
 }
 
 func formatTime(t time.Time) string { return t.UTC().Format(timeFormat) }
+
+// sessionOrgJSON is the organization a session is scoped to as its person sees it: what to call it
+// and what they are there. When they are not a member any more only the id is left.
+func (a *authAPI) sessionOrgJSON(r *http.Request, userID, org string) map[string]any {
+	out := map[string]any{"id": org}
+	m, err := usersOf(r).MembershipOf(r.Context(), userID, org)
+	if err != nil {
+		return out
+	}
+	out["name"], out["slug"] = m.Org.Name, nil
+	if m.Org.Slug != "" {
+		out["slug"] = m.Org.Slug
+	}
+	out["roles"], out["teams"] = nonNil(m.RoleNames()), nonNil(m.Member.Teams)
+	// Whether the organization asks for a second factor and this session has one: the app uses it
+	// to ask for the factor.
+	out["require_mfa"] = m.Org.RequireMFA
+	out["mfa_met"] = !m.Org.RequireMFA || principalOf(r).Session.MFA
+	return out
+}

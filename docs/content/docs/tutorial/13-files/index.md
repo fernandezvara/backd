@@ -1,6 +1,7 @@
 ---
 title: "13. Files on assets"
 description: "Give assets a file: backd's own storage in a MinIO next to it, files: in collection.yaml, uploads, previews and download buttons, and the rules that already protect them."
+icon: "paperclip"
 weight: 330
 toc: true
 ---

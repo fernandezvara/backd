@@ -34,6 +34,7 @@ func TestDeleteAnOrganization(t *testing.T) {
 	if rec.Code != 200 || out["to_delete"] != float64(1) || out["to_keep"] != float64(1) {
 		t.Fatalf("owned: %d %v", rec.Code, out)
 	}
+	inside := f.sessionIn(t, f.ada, org)
 	// A manager needs a fresh proof; a member who can't manage is refused first.
 	if rec, _ := f.doH(t, "DELETE", orgsPath+"/"+org, "", bearer(f.bob)); rec.Code != 403 {
 		t.Errorf("an editor deletes: %d", rec.Code)
@@ -51,7 +52,7 @@ func TestDeleteAnOrganization(t *testing.T) {
 			t.Errorf("after deleting: %d %v", rec.Code, out)
 		}
 	}
-	if rec, _ := f.doH(t, "POST", projects+"?org="+org, `{"title": "x"}`, jsonHdr(f.ada)); rec.Code != 403 {
+	if rec, _ := f.fixture.doH(t, "POST", projects, `{"title": "x"}`, jsonHdr(inside)); rec.Code != 401 {
 		t.Errorf("create in a deleted organization: %d", rec.Code)
 	}
 	// The record stays, with no slug, and the cleanup follows.
@@ -126,8 +127,7 @@ func TestDeletedOrganizationsGiveUpTheirSlug(t *testing.T) {
 	if rec, out := f.doH(t, "POST", admin+"/"+first+"/reactivate", `{"slug": "first-again"}`, jsonHdr(f.bob)); rec.Code != 200 || out["slug"] != "first-again" {
 		t.Errorf("reactivate with another: %d %v", rec.Code, out)
 	}
-	f.orgOf(t, f.ada, "Three")
-	if rec, out := f.doH(t, "POST", orgsPath, `{"name": "Four"}`, jsonHdr(f.ada)); rec.Code != 409 || errCode(out) != "org_limit_reached" {
+	if rec, out := f.doH(t, "POST", orgsPath, `{"name": "Four", "slug": "four"}`, jsonHdr(f.ada)); rec.Code != 409 || errCode(out) != "org_limit_reached" {
 		t.Errorf("the cap counts deleted ones: %d %v", rec.Code, out)
 	}
 }
@@ -172,7 +172,7 @@ func TestEraseAUserInOrganizations(t *testing.T) {
 		m := o.(map[string]any)
 		last[m["id"].(string)] = m["last_manager"].(bool)
 	}
-	if len(orgs) != 2 || !last[alone] || last[shared] {
+	if len(orgs) != 3 || !last[alone] || last[shared] {
 		t.Errorf("organizations: %v", orgs)
 	}
 	kept := out["kept_in_organizations"].([]any)

@@ -1,6 +1,7 @@
 ---
 title: "22. Search and a team dashboard"
 description: "Search Shelf's assets with a weighted text index, best match first and in the user's language, and show how many pins each member added per month in the team's time zone with one declared aggregation: the missing-index warning and its fix."
+icon: "magnifying-glass"
 weight: 420
 toc: true
 ---
@@ -82,7 +83,7 @@ A month starts at midnight **somewhere**. A pin made at 23:30 UTC on March 31st 
 ```js
 const org = await backd.orgs.get(team)
 const tz = org.claims.timezone ?? 'UTC'
-const { groups } = await pins.inOrg(team).aggregate({
+const { groups } = await pins.aggregate({
   groupBy: ['author', '_meta.created_at:month'],
   metrics: ['count'],
   tz,

@@ -136,7 +136,7 @@ export class InvalidIdError extends ValidationError {}
 
 /**
  * 403 `org_requires_mfa`: the organization requires a second factor and this session used none.
- * Ask for one (see `mfa_met` of `client.orgs.list()`); leaving the organization still works.
+ * Ask for one (see `mfa_met` of the organization in `client.auth.me()`); leaving the organization still works.
  */
 export class OrgRequiresMFAError extends ForbiddenError {}
 
@@ -204,6 +204,20 @@ export class SearchNotEnabledError extends ValidationError {}
  * `email_domains`). Nothing was created: they have no account to try again with.
  */
 export class NotAllowedError extends ForbiddenError {}
+
+/**
+ * 400 `sso_required`: the organization's people sign in through its connection only; password,
+ * magic link, reset and the realm's own providers are closed to it. `auth.options()` says so
+ * (`ssoRequired`) and lists just the connection's buttons.
+ */
+export class SsoRequiredError extends ValidationError {}
+
+/**
+ * 403 `sso_session`: the session was opened through an organization's connection, which can't change
+ * what protects the account (password, email, second factor, linked providers) or delete or export
+ * it. The person signs in with their own credentials to do it.
+ */
+export class SsoSessionError extends ForbiddenError {}
 
 /** 403 `not_org_member`: not a member of the organization, or there is no such organization. */
 export class NotOrgMemberError extends ForbiddenError {}
@@ -307,6 +321,10 @@ function typedClass(code, fallback) {
       return NotOrgMemberError
     case 'not_allowed':
       return NotAllowedError
+    case 'sso_required':
+      return SsoRequiredError
+    case 'sso_session':
+      return SsoSessionError
     case 'last_org_manager':
       return LastOrgManagerError
     case 'invalid_aggregate':

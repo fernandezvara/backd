@@ -32,12 +32,8 @@ func (a *authAPI) orgRoutes(r chi.Router) {
 		r.Use(noStore, a.resolveRealm, withTimeout(a.opTimeout), a.requireSession)
 		json := requireContentType("application/json")
 		r.With(json).Post("/", a.createOrg)
-		r.Get("/", a.listOrgs)
-		// What an invitation offers, and taking it: the token proves the right to know.
-		r.With(json).Post("/invitations/preview", a.previewOrgInvitation)
-		r.With(json).Post("/invitations/accept", a.acceptOrgInvitation)
 		r.Route("/{org}", func(r chi.Router) {
-			r.Use(a.orgMFAGate)
+			r.Use(a.orgScopeGate, a.orgMFAGate)
 			r.Get("/", a.getOrg)
 			r.With(json).Patch("/", a.updateOrg)
 			r.Delete("/", a.deleteOrg)
@@ -70,7 +66,7 @@ func (a *authAPI) orgRoutes(r chi.Router) {
 }
 
 // orgError maps organization errors, falling back to the sign-in errors.
-func orgError(w http.ResponseWriter, r *http.Request, err error) {
+func orgError(w http.ResponseWriter, r *http.Request, err error, passwordField ...string) {
 	var bad *auth.OrgInvalidError
 	var needsMFA *auth.RoleRequiresMFAError
 	switch {
@@ -129,7 +125,7 @@ func orgError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.As(err, &bad):
 		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: bad.Field, Reason: bad.Reason})
 	default:
-		authError(w, r, err)
+		authError(w, r, err, passwordField...)
 	}
 }
 
@@ -139,13 +135,17 @@ func orgJSON(o auth.Org) map[string]any {
 		claims = map[string]any{}
 	}
 	out := map[string]any{
-		"id": o.ID, "name": o.Name, "status": o.Status, "require_mfa": o.RequireMFA,
+		"id": o.ID, "name": o.Name, "status": o.Status, "require_mfa": o.RequireMFA, "sso_required": o.SSORequired,
 		"created_at": formatTime(o.CreatedAt), "claims": claims,
 	}
 	if o.Slug != "" {
 		out["slug"] = o.Slug
 	} else {
 		out["slug"] = nil
+	}
+	out["session_max_age"] = nil
+	if o.SessionMaxAge > 0 {
+		out["session_max_age"] = int64(o.SessionMaxAge / time.Second)
 	}
 	return out
 }
@@ -227,31 +227,27 @@ func (a *authAPI) createOrg(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"name": "string", "slug": "string?"})
+	f, ok := fields(w, r, obj, map[string]string{"name": "string", "slug": "string"})
 	if !ok {
 		return
 	}
 	slug, _ := f["slug"].(string)
-	m, err := usersOf(r).CreateOrg(r.Context(), principalOf(r), f["name"].(string), slug)
+	svc, p := usersOf(r), principalOf(r)
+	m, err := svc.CreateOrg(r.Context(), p, f["name"].(string), slug)
 	if err != nil {
 		orgError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, membershipJSON(m, principalOf(r).Session.MFA))
-}
-
-// listOrgs handles GET /_orgs: the caller's organizations.
-func (a *authAPI) listOrgs(w http.ResponseWriter, r *http.Request) {
-	list, err := usersOf(r).MyOrgs(r.Context(), principalOf(r).User.ID)
+	// The caller's session stays as it is; the new organization gets a session of its own,
+	// scoped to it, for the app to keep beside the other (design/scoped-sessions.md §5.2).
+	opened, token, err := svc.OpenOrgSession(r.Context(), p, m.Org.ID)
 	if err != nil {
 		orgError(w, r, err)
 		return
 	}
-	items := make([]map[string]any, len(list))
-	for i, m := range list {
-		items[i] = membershipJSON(m, principalOf(r).Session.MFA)
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	out := membershipJSON(m, p.Session.MFA)
+	out["session"] = map[string]any{"token": token, "expires_at": formatTime(opened.Session.ExpiresAt), "org": m.Org.ID}
+	writeJSON(w, http.StatusCreated, out)
 }
 
 // getOrg handles GET /_orgs/{org}.
@@ -270,7 +266,7 @@ func (a *authAPI) updateOrg(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"name": "string?", "slug": "string?", "require_mfa": "bool?"})
+	f, ok := fields(w, r, obj, map[string]string{"name": "string?", "slug": "string?", "require_mfa": "bool?", "sso_required": "bool?", "session_max_age": "int?"})
 	if !ok {
 		return
 	}
@@ -283,8 +279,11 @@ func (a *authAPI) updateOrg(w http.ResponseWriter, r *http.Request) {
 	}
 	svc, p, org := usersOf(r), principalOf(r), chi.URLParam(r, "org")
 	on, setMFA := f["require_mfa"].(bool)
-	// Changing what every member must hold is a sensitive act: a fresh proof first.
-	if setMFA && !a.reauthed(w, r) {
+	age, setAge := f["session_max_age"].(int)
+	sso, setSSO := f["sso_required"].(bool)
+	// Changing what every member must hold, or how long their sessions last, is a sensitive act: a
+	// fresh proof first.
+	if (setMFA || setAge || setSSO) && !a.reauthed(w, r) {
 		return
 	}
 	m, err := svc.UpdateOrg(r.Context(), p.User.ID, org, name, slug)
@@ -298,7 +297,27 @@ func (a *authAPI) updateOrg(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	writeJSON(w, http.StatusOK, membershipJSON(m, principalOf(r).Session.MFA))
+	if setAge {
+		if m, err = svc.SetOrgSessionMaxAge(r.Context(), p.User.ID, org, time.Duration(age)*time.Second); err != nil {
+			orgError(w, r, err)
+			return
+		}
+	}
+	out := membershipJSON(m, principalOf(r).Session.MFA)
+	if setSSO {
+		res, err := svc.SetOrgSSORequired(r.Context(), p, org, sso)
+		if err != nil {
+			orgError(w, r, err)
+			return
+		}
+		out = membershipJSON(res.Membership, principalOf(r).Session.MFA)
+		if sso {
+			// Who can't come in until they sign in through the connection, and what ending the other
+			// sessions did.
+			out["members_without_sso"], out["sessions_revoked"] = res.WithoutSSO, res.Revoked
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // pageParams reads limit and after from the query.
@@ -403,7 +422,20 @@ func teamRoleHandler(op auth.TeamRoleOp, admin bool) http.HandlerFunc {
 // orgMembers handles GET /_orgs/{org}/members.
 func (a *authAPI) orgMembers(w http.ResponseWriter, r *http.Request) {
 	limit, after := pageParams(r)
-	list, more, err := usersOf(r).Members(r.Context(), principalOf(r).User.ID, chi.URLParam(r, "org"), after, limit)
+	var list []auth.MemberView
+	var more bool
+	var err error
+	// ?sso=false: the members with no identity on the organization's connection, who can't come in
+	// once it requires it.
+	switch r.URL.Query().Get("sso") {
+	case "":
+		list, more, err = usersOf(r).Members(r.Context(), principalOf(r).User.ID, chi.URLParam(r, "org"), after, limit)
+	case "false":
+		list, more, err = usersOf(r).MembersWithoutSSO(r.Context(), principalOf(r).User.ID, chi.URLParam(r, "org"), after, limit)
+	default:
+		writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "invalid query parameters", Detail{Path: "sso", Reason: "must be false"})
+		return
+	}
 	if err != nil {
 		orgError(w, r, err)
 		return
@@ -483,7 +515,7 @@ func (a *adminAPI) createOrg(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"name": "string", "slug": "string?", "owner": "string"})
+	f, ok := fields(w, r, obj, map[string]string{"name": "string", "slug": "string", "owner": "string"})
 	if !ok {
 		return
 	}
@@ -507,6 +539,26 @@ func (a *adminAPI) getOrg(w http.ResponseWriter, r *http.Request) {
 }
 
 // adminOrgMembers handles GET /orgs/{org}/members.
+// updateOrg handles PATCH /orgs/{org}: administrators clear `sso_required`, the break glass for an
+// organization whose people can't reach their provider. Only a manager who signed in through the
+// connection turns it on.
+func (a *adminAPI) updateOrg(w http.ResponseWriter, r *http.Request) {
+	obj, ok := readObject(w, r)
+	if !ok {
+		return
+	}
+	f, ok := fields(w, r, obj, map[string]string{"sso_required": "bool"})
+	if !ok {
+		return
+	}
+	res, err := usersOf(r).AdminSetOrgSSORequired(r.Context(), chi.URLParam(r, "org"), f["sso_required"].(bool))
+	if err != nil {
+		adminOrgError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, orgJSON(res.Membership.Org))
+}
+
 func (a *adminAPI) orgMembers(w http.ResponseWriter, r *http.Request) {
 	limit, after := pageParams(r)
 	list, more, err := usersOf(r).AdminMembers(r.Context(), chi.URLParam(r, "org"), after, limit)
@@ -570,6 +622,24 @@ func (a *adminAPI) setOrgClaims(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	o, err := usersOf(r).AdminSetClaims(r.Context(), chi.URLParam(r, "org"), obj)
+	if err != nil {
+		adminOrgError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, orgJSON(o))
+}
+
+// setOrgSlug handles PUT /orgs/{org}/slug.
+func (a *adminAPI) setOrgSlug(w http.ResponseWriter, r *http.Request) {
+	obj, ok := readObject(w, r)
+	if !ok {
+		return
+	}
+	f, ok := fields(w, r, obj, map[string]string{"slug": "string"})
+	if !ok {
+		return
+	}
+	o, err := usersOf(r).AdminSetOrgSlug(r.Context(), chi.URLParam(r, "org"), f["slug"].(string))
 	if err != nil {
 		adminOrgError(w, r, err)
 		return
@@ -734,49 +804,6 @@ func orgInvitationError(w http.ResponseWriter, r *http.Request, err error) {
 	default:
 		orgError(w, r, err)
 	}
-}
-
-// previewOrgInvitation handles POST /_orgs/invitations/preview.
-func (a *authAPI) previewOrgInvitation(w http.ResponseWriter, r *http.Request) {
-	obj, ok := readObject(w, r)
-	if !ok {
-		return
-	}
-	f, ok := fields(w, r, obj, map[string]string{"token": "string"})
-	if !ok {
-		return
-	}
-	pv, err := usersOf(r).PreviewOrgInvitation(r.Context(), principalOf(r), f["token"].(string))
-	if err != nil {
-		orgError(w, r, err)
-		return
-	}
-	teams := make([]map[string]any, len(pv.Teams))
-	for i, t := range pv.Teams {
-		teams[i] = map[string]any{"id": t.ID, "name": t.Name}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"org": map[string]any{"id": pv.Org.ID, "name": pv.Org.Name}, "roles": nonNil(pv.Roles), "teams": teams,
-		"binding": pv.Binding, "expires_at": formatTime(pv.ExpiresAt),
-	})
-}
-
-// acceptOrgInvitation handles POST /_orgs/invitations/accept.
-func (a *authAPI) acceptOrgInvitation(w http.ResponseWriter, r *http.Request) {
-	obj, ok := readObject(w, r)
-	if !ok {
-		return
-	}
-	f, ok := fields(w, r, obj, map[string]string{"token": "string"})
-	if !ok {
-		return
-	}
-	m, err := usersOf(r).AcceptOrgInvitation(r.Context(), principalOf(r), f["token"].(string))
-	if err != nil {
-		orgError(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, membershipJSON(m, principalOf(r).Session.MFA))
 }
 
 // Administrators.
@@ -1120,6 +1147,18 @@ func (a *authAPI) orgMFAGate(next http.Handler) http.Handler {
 		}
 		if usersOf(r).OrgNeedsMFA(r.Context(), p.User.ID, chi.URLParam(r, "org")) {
 			writeError(w, r, http.StatusForbidden, codeOrgRequiresMFA, auth.ErrOrgRequiresMFA.Error())
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// orgScopeGate answers 403 not_org_member for an organization other than the one the session
+// belongs to, as it does for a non-member: a session reaches one organization (design/scoped-sessions.md §4.2).
+func (a *authAPI) orgScopeGate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if principalOf(r).Session.Org != chi.URLParam(r, "org") {
+			writeError(w, r, http.StatusForbidden, codeNotOrgMember, "you are not a member of that organization")
 			return
 		}
 		next.ServeHTTP(w, r)

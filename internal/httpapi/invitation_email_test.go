@@ -14,6 +14,7 @@ const sendBody = `{"email": "Invited@Example.com", "send": true, "redirect_to": 
 // password creates a verified account, and no session is started.
 func TestInvitationByEmail(t *testing.T) {
 	f, w := newVerifyFixture(t)
+	f.svc.Settings.Organizations = nil // plain sign-in: a realm without organizations
 	ctx := context.Background()
 
 	code, out := f.as(t, f.key, "POST", "/v1/acme/_admin/invitations", sendBody)

@@ -36,6 +36,7 @@ Keys are managed by the realm's administrators, with `backd apikey` (after [`bac
 | `backd apikey create --realm <realm> --name <name> --role admin` | Create an `admin` key, for the [admin API](../../../operate/administration/admin/) |
 | `backd apikey create --realm <realm> --name <name> --networks 10.0.0.0/8,192.0.2.7` | Create a key that works only from those networks |
 | `backd apikey create --realm <realm> --name <name> --scopes read:blog/posts,call:main/contact` | Create a key that reaches only what the [scopes](#scopes) grant |
+| `backd apikey create --realm <realm> --name <name> --org acme-corp` | In a realm with [organizations](../../organizations/api/#api-keys-on-behalf-of-a-user), bind a key that acts on behalf of users to one organization |
 | `backd apikey create --realm <realm> --name <name> --expires 90d` | Create a key that stops working after 90 days (days or Go durations such as `12h`) |
 | `backd apikey list --realm <realm>` | List keys: name, role, first characters, scopes, networks, creation, last use and expiry |
 | `backd apikey revoke --realm <realm> --name <name>` | Delete the key; it stops working at once |
@@ -134,6 +135,7 @@ curl https://localhost:8443/v1/blog/main/posts \
 - The user's [access rules](../rules/) apply, exactly as if they had signed in. The key's full access doesn't.
 - Documents it creates are owned by the user: `_meta.owner` is their id, and `_meta.created_by` / `updated_by` are `user:<id>`.
 - The access log records the actor as `key:<name> as user:<id>`, so the service stays visible.
+- **In a realm with organizations the key is bound to one:** `--org` when it is made (the organization's id or slug). The request counts only that organization, as a session scoped to it would; a key without one counts none, so a collection that belongs to organizations answers `400 org_required` to a create and nothing to a list. See [API keys on behalf of a user](../../organizations/api/#api-keys-on-behalf-of-a-user).
 - Only API keys may send the header. With a session or without credentials it answers `400 invalid_header`, as does an id that isn't a user of the realm. A disabled user answers `403 forbidden`.
 
 Use it when a backend handles a request for a user and should be bound by the same rules, for example a server-rendered page or a webhook acting for an account.

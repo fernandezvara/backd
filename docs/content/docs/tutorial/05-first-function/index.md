@@ -1,6 +1,7 @@
 ---
 title: "5. The first function"
 description: "publish, share and share-open: what rules can't say, TypeScript on a Deno sandbox says — admin access, invoke rules, idempotency."
+icon: "function"
 weight: 250
 toc: true
 ---

@@ -1,0 +1,49 @@
+# A page belongs to an organization, and to a team when it is the team's: a page with no team is
+# the organization's (a handbook, a policy). `visibility` says who reads a published page:
+#   team   the team's members, editors and contributors (and nobody else, for a company page)
+#   org    every member of the organization
+#   public anyone, signed in or not
+organization: required
+on_org_delete:
+  action: delete
+team: optional
+on_team_delete:
+  action: keep          # the pages stay, with the old team id, readable by their visibility and the owners
+
+rules:
+  # A draft is its author's alone. A published page is read by its visibility; owners read every
+  # published page of the organization.
+  read: >
+    (user != nil && document._meta.owner == user.id)
+    || (document.status == 'published' && (
+        document.visibility == 'public'
+        || (document.visibility == 'org' && inOrg(document._meta.org))
+        || inTeam(document._meta.team)
+        || hasTeamRole(document._meta.team, 'editor')
+        || hasTeamRole(document._meta.team, 'contributor')
+        || hasOrgRole(document._meta.org, 'owner')
+    ))
+  # Owners write the company's pages; editors write their team's; contributors only start drafts
+  # that only the team sees.
+  create: >
+    user != nil && (
+      (data._meta.team == nil && hasOrgRole(data._meta.org, 'owner'))
+      || hasTeamRole(data._meta.team, 'editor')
+      || (hasTeamRole(data._meta.team, 'contributor') && data.status == 'draft' && data.visibility == 'team')
+    )
+  # Editors (and owners, for company pages) change anything, publishing and visibility included.
+  # Contributors and authors edit the text and leave status and visibility as they are.
+  update: >
+    user != nil && (
+      (document._meta.team == nil && hasOrgRole(document._meta.org, 'owner'))
+      || hasTeamRole(document._meta.team, 'editor')
+      || ((document._meta.owner == user.id || hasTeamRole(document._meta.team, 'contributor'))
+          && data.status == document.status && data.visibility == document.visibility)
+    )
+  # Authors discard their own drafts; editors and owners remove pages.
+  delete: >
+    user != nil && (
+      (document._meta.owner == user.id && document.status == 'draft')
+      || (document._meta.team == nil && hasOrgRole(document._meta.org, 'owner'))
+      || hasTeamRole(document._meta.team, 'editor')
+    )

@@ -452,17 +452,45 @@ type OrgInvitationPreview struct {
 	invitation OrgInvitation
 }
 
-// lookupOrgInvitation finds the invitation of a token for a signed-in user. Unknown, expired,
-// revoked and used-up tokens are all ErrInvalidOrgInvitation; a binding that doesn't fit is
+// lookupOrgInvitation finds the invitation of a token for a user. Unknown, expired, revoked and
+// used-up tokens are all ErrInvalidOrgInvitation; a binding that doesn't fit is
 // ErrInvitationNotForYou, said only once the token has proved valid.
-func (s *Users) lookupOrgInvitation(ctx context.Context, p Principal, token string) (OrgInvitationPreview, error) {
-	if _, err := s.orgs(); err != nil {
+func (s *Users) lookupOrgInvitation(ctx context.Context, u User, token string) (OrgInvitationPreview, error) {
+	pv, err := s.lookupOrgInvitationToken(ctx, token)
+	if err != nil {
 		return OrgInvitationPreview{}, err
 	}
+	inv := pv.invitation
+	switch inv.Binding {
+	case BindUser:
+		if u.ID != inv.User {
+			return OrgInvitationPreview{}, ErrInvitationNotForYou
+		}
+	case BindEmail:
+		if !u.EmailVerified || u.Email != inv.Email {
+			return OrgInvitationPreview{}, ErrInvitationNotForYou
+		}
+	}
+	return pv, nil
+}
+
+// lookupOrgInvitationToken finds the invitation of a token without asking who holds it: the
+// token alone proves nothing about the binding. Unknown, expired, revoked and used-up tokens are
+// all ErrInvalidOrgInvitation.
+func (s *Users) lookupOrgInvitationToken(ctx context.Context, token string) (OrgInvitationPreview, error) {
 	if !strings.HasPrefix(token, OrgInvitationPrefix) {
 		return OrgInvitationPreview{}, ErrInvalidOrgInvitation
 	}
-	inv, err := s.Store.OrgInvitationByHash(ctx, HashToken(token))
+	return s.lookupOrgInvitationHash(ctx, HashToken(token))
+}
+
+// lookupOrgInvitationHash is lookupOrgInvitationToken for a token that is only known by its hash
+// (a sign-in attempt keeps no more).
+func (s *Users) lookupOrgInvitationHash(ctx context.Context, hash string) (OrgInvitationPreview, error) {
+	if _, err := s.orgs(); err != nil {
+		return OrgInvitationPreview{}, err
+	}
+	inv, err := s.Store.OrgInvitationByHash(ctx, hash)
 	if errors.Is(err, ErrNotFound) {
 		return OrgInvitationPreview{}, ErrInvalidOrgInvitation
 	}
@@ -479,16 +507,6 @@ func (s *Users) lookupOrgInvitation(ctx context.Context, p Principal, token stri
 	if err != nil {
 		return OrgInvitationPreview{}, err
 	}
-	switch inv.Binding {
-	case BindUser:
-		if p.User.ID != inv.User {
-			return OrgInvitationPreview{}, ErrInvitationNotForYou
-		}
-	case BindEmail:
-		if !p.User.EmailVerified || p.User.Email != inv.Email {
-			return OrgInvitationPreview{}, ErrInvitationNotForYou
-		}
-	}
 	teamRoles, teams, err := s.teamRoles(ctx, inv.Org, inv.Teams)
 	if err != nil {
 		return OrgInvitationPreview{}, err
@@ -503,25 +521,52 @@ func (s *Users) lookupOrgInvitation(ctx context.Context, p Principal, token stri
 
 // PreviewOrgInvitation says what accepting a token would do, without doing it.
 func (s *Users) PreviewOrgInvitation(ctx context.Context, p Principal, token string) (OrgInvitationPreview, error) {
-	return s.lookupOrgInvitation(ctx, p, token)
+	return s.lookupOrgInvitation(ctx, p.User, token)
+}
+
+// PreviewOrgInvitationOf says what a token offers to someone who hasn't signed in: the
+// organization it is for must be the one named (an id or a slug). Anything else, an invitation
+// of another organization included, is ErrInvalidOrgInvitation. The binding is not checked: it
+// is checked when the invitation is used.
+func (s *Users) PreviewOrgInvitationOf(ctx context.Context, orgRef, token string) (OrgInvitationPreview, error) {
+	pv, err := s.lookupOrgInvitationToken(ctx, token)
+	if err != nil {
+		return OrgInvitationPreview{}, err
+	}
+	org, err := s.OrgByRef(ctx, orgRef)
+	if err != nil || org.ID != pv.Org.ID {
+		return OrgInvitationPreview{}, ErrInvalidOrgInvitation
+	}
+	return pv, nil
 }
 
 // AcceptOrgInvitation uses the token: the user becomes a member, or gains the roles and teams
 // of the invitation. It returns the membership.
 func (s *Users) AcceptOrgInvitation(ctx context.Context, p Principal, token string) (Membership, error) {
-	pv, err := s.lookupOrgInvitation(ctx, p, token)
+	return s.acceptOrgInvitation(ctx, p.User, token)
+}
+
+// acceptOrgInvitation is AcceptOrgInvitation for a user whose sign-in is under way: there is no
+// session yet.
+func (s *Users) acceptOrgInvitation(ctx context.Context, u User, token string) (Membership, error) {
+	pv, err := s.lookupOrgInvitation(ctx, u, token)
 	if err != nil {
 		return Membership{}, err
 	}
+	return s.useOrgInvitation(ctx, u, pv)
+}
+
+// useOrgInvitation takes one use of a looked-up invitation and makes the user a member.
+func (s *Users) useOrgInvitation(ctx context.Context, user User, pv OrgInvitationPreview) (Membership, error) {
 	o := s.Settings.Organizations
 	inv := pv.invitation
-	existing, err := s.Store.OrgMember(ctx, inv.Org, p.User.ID)
+	existing, err := s.Store.OrgMember(ctx, inv.Org, user.ID)
 	isMember := err == nil
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return Membership{}, err
 	}
 	if !isMember {
-		if err := s.checkMembershipCap(ctx, o, p.User.ID); err != nil {
+		if err := s.checkMembershipCap(ctx, o, user.ID); err != nil {
 			return Membership{}, err
 		}
 	}
@@ -540,7 +585,7 @@ func (s *Users) AcceptOrgInvitation(ctx context.Context, p Principal, token stri
 		was := existing
 		before = &was
 	} else {
-		m = OrgMember{Org: inv.Org, User: p.User.ID, JoinedAt: now, InvitedBy: used.CreatedBy}
+		m = OrgMember{Org: inv.Org, User: user.ID, JoinedAt: now, InvitedBy: used.CreatedBy}
 	}
 	have := m.DirectRoles(now)
 	for _, r := range used.Roles {
@@ -557,10 +602,10 @@ func (s *Users) AcceptOrgInvitation(ctx context.Context, p Principal, token stri
 		return Membership{}, err
 	}
 	// An invitation is the way back for someone a manager removed.
-	if err := s.Store.UnblockOrgMember(ctx, inv.Org, p.User.ID); err != nil && s.Log != nil {
+	if err := s.Store.UnblockOrgMember(ctx, inv.Org, user.ID); err != nil && s.Log != nil {
 		s.Log.Warn("take a member off a connection's blocked list", "org", inv.Org, "error", err)
 	}
-	s.Audit(ctx, AuditOrgInviteAccept, orgTarget(inv.Org), map[string]any{"invitation": inv.ID, "user": p.User.ID, "roles": used.Roles, "teams": m.Teams})
+	s.Audit(ctx, AuditOrgInviteAccept, orgTarget(inv.Org), map[string]any{"invitation": inv.ID, "user": user.ID, "roles": used.Roles, "teams": m.Teams})
 	return s.membership(ctx, pv.Org, m)
 }
 
@@ -605,4 +650,48 @@ func (s *Users) OrgInvitationEmail(ctx context.Context, ref string) (OrgInvitati
 		return OrgInvitationEmail{}, err
 	}
 	return OrgInvitationEmail{Address: inv.Email, Org: orgID, OrgName: org.Name, Roles: inv.Roles, Token: token, Link: s.invitationLink(token, orgID), ExpiresAt: inv.ExpiresAt}, nil
+}
+
+// EnterOrg is what a sign-in through a provider does about the organization it is for, after the
+// person is known: the invitation it carried (known by its hash) is used when it is theirs and
+// for this organization, and the answer says whether the person is a member now. A failing
+// invitation never fails the sign-in; it just does not join anyone.
+func (s *Users) EnterOrg(ctx context.Context, u User, orgID, invitationHash string) bool {
+	if invitationHash != "" {
+		if pv, err := s.lookupOrgInvitationHash(ctx, invitationHash); err == nil && pv.Org.ID == orgID && s.invitationFits(pv.invitation, u) {
+			if _, err := s.useOrgInvitation(ctx, u, pv); err != nil && s.Log != nil && !errors.Is(err, ErrInvalidOrgInvitation) {
+				s.Log.Warn("use an organization invitation at sign-in", "org", orgID, "error", err)
+			}
+		}
+	}
+	_, err := s.Store.OrgMember(ctx, orgID, u.ID)
+	return err == nil
+}
+
+// invitationFits says whether the user may use the invitation, by its binding.
+func (s *Users) invitationFits(inv OrgInvitation, u User) bool {
+	switch inv.Binding {
+	case BindUser:
+		return inv.User == u.ID
+	case BindEmail:
+		return u.EmailVerified && inv.Email == u.Email
+	}
+	return true
+}
+
+// invitationAdmits says whether an invitation (by hash) for this organization lets someone with
+// this address make an account; viaAddress says the invitation was bound to that address, whose
+// owner is then vouching for it.
+func (s *Users) invitationAdmits(ctx context.Context, hash, orgID, address string) (ok, viaAddress bool) {
+	pv, err := s.lookupOrgInvitationHash(ctx, hash)
+	if err != nil || pv.Org.ID != orgID {
+		return false, false
+	}
+	switch pv.invitation.Binding {
+	case BindUser:
+		return false, false
+	case BindEmail:
+		return pv.invitation.Email == address, true
+	}
+	return true, false
 }

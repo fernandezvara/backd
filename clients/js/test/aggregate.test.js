@@ -36,10 +36,10 @@ test('aggregate sends the declared parameters and returns the groups', async () 
   assert.equal(res.groups[0].sum_total, '300.5')
   assert.equal(res.total_groups, 1)
 
-  // A counter: nothing but the path, in the scope of an organization.
+  // A counter: nothing but the path, in the scope of a team.
   const g = mockFetch([{ body: { groups: [{ key: {}, count: 4 }], total_groups: 1 } }])
-  await createClient({ url: 'https://api.test', realm: 'acme', fetch: g.fetch }).db('shop').collection('orders').inOrg('o1').aggregate()
-  assert.equal(new URL(g.calls[0].url).search, '?org=o1')
+  await createClient({ url: 'https://api.test', realm: 'acme', fetch: g.fetch }).db('shop').collection('orders').inTeam('t1').aggregate()
+  assert.equal(new URL(g.calls[0].url).search, '?team=t1')
 })
 
 test('search is a list sorted by relevance with the text as $search', async () => {

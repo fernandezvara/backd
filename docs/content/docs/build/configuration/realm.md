@@ -185,6 +185,7 @@ organizations:
   max_created_per_user: 5
   sso: { providers: [google, microsoft] }   # optional: organizations connect their own provider
   invitation_link: "https://app.acme.example/join?token={token}&org={org}"
+  signin_link: "https://app.acme.example/{slug}/signin"   # optional: the "which companies am I in?" email
 ```
 
 | Key | What it says | Default |
@@ -203,6 +204,7 @@ organizations:
 | `members_visible_to` | Who sees other members' emails: `members`, or `managers` (holders of any role with a `manage` capability) | `members` |
 | `sso` | [Organization sign-in](../../organizations/api/#sign-in-connections): `enabled` (default `true` once the section is there), `providers` (`google`, `microsoft`; default both) and `max_per_org` (default and most: the number of providers). Without the section, or with `enabled: false`, the whole surface answers `404`. Needs a role with `manage: sso` | off |
 | `invitation_link` | Where invitation links point: an absolute URL with `{token}` once (and `{org}` if you want it) within `sign_in.allowed_redirects` | none |
+| `signin_link` | Where an organization's sign-in page is, for the ["which companies am I in?" email](../../organizations/api/#which-companies-am-i-in): an absolute URL with `{slug}` (the organization's id when it has none; `{org}` is always the id) within `sign_in.allowed_redirects`. Needs `email:`. Without it `POST /_auth/orgs/find` answers `404` | none |
 
 The capabilities of `manage`:
 
@@ -214,7 +216,7 @@ The capabilities of `manage`:
 | `teams` | create and change teams |
 | `sso` | set up, replace and remove the organization's [sign-in connections](../../organizations/api/#sign-in-connections), when the realm turns `sso` on |
 
-Startup checks the section and names what is wrong: unknown capabilities, no role with `manage: org` (or `manage: sso` when `sso` is on), a `create` rule that doesn't compile, an `invitation_link` outside the allowed redirects. Organizations need `auth: enabled`. A role removed from this section stays in the stored memberships and grants nothing; `backd` logs it at startup. Which collections belong to organizations is declared in [`collection.yaml`](../config-dir/#organizations). Realm administrators with the `users` area manage organizations with [`backd orgs`](../../../operate/administration/cli/) and the [admin API](../../../operate/administration/admin/); people use the [organizations API](../../organizations/api/).
+Startup checks the section and names what is wrong: unknown capabilities, no role with `manage: org` (or `manage: sso` when `sso` is on), a `create` rule that doesn't compile, an `invitation_link` without `{token}` or `{org}`, or outside the allowed redirects. Organizations need `auth: enabled`. A role removed from this section stays in the stored memberships and grants nothing; `backd` logs it at startup. Which collections belong to organizations is declared in [`collection.yaml`](../config-dir/#organizations). Realm administrators with the `users` area manage organizations with [`backd orgs`](../../../operate/administration/cli/) and the [admin API](../../../operate/administration/admin/); people use the [organizations API](../../organizations/api/).
 
 ## Network restrictions
 

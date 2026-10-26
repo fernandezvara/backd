@@ -1,6 +1,7 @@
 ---
 title: "16. A second factor and magic links"
 description: "Sign in with a link by email, require an authenticator app of the admin role, a rule that asks for it, and proofs before sensitive actions."
+icon: "fingerprint"
 weight: 360
 toc: true
 ---

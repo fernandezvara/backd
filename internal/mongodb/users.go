@@ -482,6 +482,68 @@ func (s *AuthStore) DeleteSessions(ctx context.Context, userID string) (int64, e
 	return res.DeletedCount, nil
 }
 
+// DeleteOrgSessions implements auth.Store.
+func (s *AuthStore) DeleteOrgSessions(ctx context.Context, org, user, provider string) (int64, error) {
+	filter := bson.D{{Key: "org", Value: org}}
+	if user != "" {
+		filter = append(filter, bson.E{Key: "user_id", Value: user})
+	}
+	if provider != "" {
+		filter = append(filter, bson.E{Key: "methods.0", Value: provider})
+	}
+	cur, err := s.sessions().Find(ctx, filter, options.Find().SetProjection(bson.D{{Key: "_id", Value: 1}}))
+	if err != nil {
+		return 0, err
+	}
+	var ids []string
+	for cur.Next(ctx) {
+		ids = append(ids, cur.Current.Lookup("_id").StringValue())
+	}
+	if err := cur.Close(ctx); err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	if _, err := s.devices().DeleteMany(ctx, bson.D{{Key: "session_id", Value: bson.D{{Key: "$in", Value: ids}}}}); err != nil {
+		return 0, err
+	}
+	res, err := s.sessions().DeleteMany(ctx, bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: ids}}}})
+	if err != nil {
+		return 0, err
+	}
+	return res.DeletedCount, nil
+}
+
+// DeleteOrgSessionsNotOpenedBy implements auth.Store.
+func (s *AuthStore) DeleteOrgSessionsNotOpenedBy(ctx context.Context, org string) (int64, error) {
+	res, err := s.sessions().Find(ctx, bson.D{
+		{Key: "org", Value: org},
+		{Key: "methods.0", Value: bson.D{{Key: "$not", Value: bson.D{{Key: "$regex", Value: "^" + regexp.QuoteMeta(auth.ConnectionMethodPrefix(org))}}}}},
+	}, options.Find().SetProjection(bson.D{{Key: "_id", Value: 1}}))
+	if err != nil {
+		return 0, err
+	}
+	var ids []string
+	for res.Next(ctx) {
+		ids = append(ids, res.Current.Lookup("_id").StringValue())
+	}
+	if err := res.Close(ctx); err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	if _, err := s.devices().DeleteMany(ctx, bson.D{{Key: "session_id", Value: bson.D{{Key: "$in", Value: ids}}}}); err != nil {
+		return 0, err
+	}
+	del, err := s.sessions().DeleteMany(ctx, bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: ids}}}})
+	if err != nil {
+		return 0, err
+	}
+	return del.DeletedCount, nil
+}
+
 // DeleteAllSessions implements auth.Store.
 func (s *AuthStore) DeleteAllSessions(ctx context.Context) (int64, error) {
 	if _, err := s.devices().DeleteMany(ctx, bson.D{}); err != nil {
@@ -528,22 +590,23 @@ func (s *AuthStore) CountPasswordIdentities(ctx context.Context) (int64, error) 
 }
 
 type sessionDoc struct {
-	ID         string    `bson:"_id"`
-	TokenHash  string    `bson:"token_hash"`
-	UserID     string    `bson:"user_id"`
-	CreatedAt  time.Time `bson:"created_at"`
-	LastUsedAt time.Time `bson:"last_used_at"`
-	ExpiresAt  time.Time `bson:"expires_at"`
-	Methods    []string  `bson:"methods,omitempty"`
-	MFA        bool      `bson:"mfa,omitempty"`
-	Org        string    `bson:"org,omitempty"`
+	ID          string    `bson:"_id"`
+	TokenHash   string    `bson:"token_hash"`
+	UserID      string    `bson:"user_id"`
+	CreatedAt   time.Time `bson:"created_at"`
+	LastUsedAt  time.Time `bson:"last_used_at"`
+	ExpiresAt   time.Time `bson:"expires_at"`
+	Methods     []string  `bson:"methods,omitempty"`
+	MFA         bool      `bson:"mfa,omitempty"`
+	Org         string    `bson:"org,omitempty"`
+	MaxLifetime int64     `bson:"max_lifetime,omitempty"` // seconds
 }
 
 func (d sessionDoc) session() auth.Session {
 	return auth.Session{
 		ID: d.ID, UserID: d.UserID, TokenHash: d.TokenHash,
 		CreatedAt: d.CreatedAt.UTC(), LastUsedAt: d.LastUsedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC(),
-		Methods: d.Methods, MFA: d.MFA, Org: d.Org,
+		Methods: d.Methods, MFA: d.MFA, Org: d.Org, MaxLifetime: time.Duration(d.MaxLifetime) * time.Second,
 	}
 }
 
@@ -551,7 +614,7 @@ func (s *AuthStore) CreateSession(ctx context.Context, x auth.Session) error {
 	_, err := s.sessions().InsertOne(ctx, sessionDoc{
 		ID: x.ID, TokenHash: x.TokenHash, UserID: x.UserID,
 		CreatedAt: x.CreatedAt, LastUsedAt: x.LastUsedAt, ExpiresAt: x.ExpiresAt,
-		Methods: x.Methods, MFA: x.MFA, Org: x.Org,
+		Methods: x.Methods, MFA: x.MFA, Org: x.Org, MaxLifetime: int64(x.MaxLifetime / time.Second),
 	})
 	return err
 }
@@ -641,6 +704,7 @@ type apiKeyDoc struct {
 	CreatedAt  time.Time  `bson:"created_at"`
 	LastUsedAt *time.Time `bson:"last_used_at,omitempty"`
 	ExpiresAt  *time.Time `bson:"expires_at,omitempty"`
+	Org        string     `bson:"org,omitempty"`
 }
 
 // scopes reads a key's stored grants. A grant that doesn't parse (the document
@@ -665,12 +729,12 @@ func (d apiKeyDoc) key() auth.APIKey {
 		u := t.UTC()
 		return &u
 	}
-	return auth.APIKey{Name: d.Name, Role: auth.KeyRole(d.Role), Networks: networks(d.Networks), Scopes: scopes(d.Scopes), Prefix: d.Prefix, Hash: d.Hash, CreatedAt: d.CreatedAt.UTC(), LastUsedAt: utc(d.LastUsedAt), ExpiresAt: utc(d.ExpiresAt)}
+	return auth.APIKey{Name: d.Name, Role: auth.KeyRole(d.Role), Networks: networks(d.Networks), Scopes: scopes(d.Scopes), Prefix: d.Prefix, Hash: d.Hash, CreatedAt: d.CreatedAt.UTC(), LastUsedAt: utc(d.LastUsedAt), ExpiresAt: utc(d.ExpiresAt), Org: d.Org}
 }
 
 func (s *AuthStore) CreateAPIKey(ctx context.Context, k auth.APIKey) error {
 	_, err := s.apiKeys().InsertOne(ctx, apiKeyDoc{
-		Hash: k.Hash, Name: k.Name, Role: string(k.Role), Networks: k.Networks.Strings(), Scopes: k.Scopes.Strings(), Prefix: k.Prefix, CreatedAt: k.CreatedAt, LastUsedAt: k.LastUsedAt, ExpiresAt: k.ExpiresAt,
+		Hash: k.Hash, Name: k.Name, Role: string(k.Role), Networks: k.Networks.Strings(), Scopes: k.Scopes.Strings(), Prefix: k.Prefix, CreatedAt: k.CreatedAt, LastUsedAt: k.LastUsedAt, ExpiresAt: k.ExpiresAt, Org: k.Org,
 	})
 	if mongo.IsDuplicateKeyError(err) {
 		return auth.ErrKeyNameTaken
