@@ -34,6 +34,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"go.yaml.in/yaml/v3"
 	"golang.org/x/text/language"
@@ -435,7 +436,7 @@ func (r *runner) run(i int, t Test) {
 		}
 		next := u.Data
 		if u.Patch != nil {
-			next = mergePatch(userOnly(d), u.Patch)
+			next = docutil.MergePatch(userOnly(d), u.Patch)
 		}
 		data, valid := r.checked(fmt.Sprintf("%s.%s result", where, field), next)
 		if !valid {
@@ -474,7 +475,7 @@ func userOnly(doc map[string]any) map[string]any {
 	out := maps.Clone(doc)
 	delete(out, "id")
 	delete(out, "_meta")
-	return deepCopy(out).(map[string]any)
+	return docutil.DeepCopy(out).(map[string]any)
 }
 
 type decision struct {
@@ -627,41 +628,4 @@ func summary(m map[string]any) string {
 		s = s[:67] + "..."
 	}
 	return s
-}
-
-// mergePatch applies an RFC 7396 merge patch to target, in place.
-func mergePatch(target, patch map[string]any) map[string]any {
-	if target == nil {
-		target = map[string]any{}
-	}
-	for k, v := range patch {
-		switch pv := v.(type) {
-		case nil:
-			delete(target, k)
-		case map[string]any:
-			tv, _ := target[k].(map[string]any)
-			target[k] = mergePatch(tv, pv)
-		default:
-			target[k] = v
-		}
-	}
-	return target
-}
-
-func deepCopy(v any) any {
-	switch x := v.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(x))
-		for k, e := range x {
-			out[k] = deepCopy(e)
-		}
-		return out
-	case []any:
-		out := make([]any, len(x))
-		for i, e := range x {
-			out[i] = deepCopy(e)
-		}
-		return out
-	}
-	return v
 }

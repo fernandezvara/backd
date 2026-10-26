@@ -16,6 +16,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/fernandezvara/backd/api"
+	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/rules"
 )
@@ -243,7 +244,7 @@ func (b *builder) addStatic(contractPath, rel string, subst map[string]string) {
 	if item == nil {
 		return
 	}
-	cp := deepCopy(item).(map[string]any)
+	cp := docutil.DeepCopy(item).(map[string]any)
 	drop := []string{"realm", "database", "collection", "function"}
 	for k := range subst {
 		drop = append(drop, strings.Trim(k, "{}"))
@@ -370,24 +371,6 @@ func (b *builder) usedTags() []any {
 		}
 	}
 	return out
-}
-
-func deepCopy(v any) any {
-	switch t := v.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(t))
-		for k, e := range t {
-			out[k] = deepCopy(e)
-		}
-		return out
-	case []any:
-		out := make([]any, len(t))
-		for i, e := range t {
-			out[i] = deepCopy(e)
-		}
-		return out
-	}
-	return v
 }
 
 // rewriteRefs replaces $ref targets by the mapping (full pointer → pointer), in place.

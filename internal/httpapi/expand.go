@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/fernandezvara/backd/internal/query"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage"
@@ -299,7 +300,7 @@ func (run *expandRun) access(target *registry.Collection) targetAccess {
 // sourceValues are the reference values a document holds in path, in order and without
 // duplicates; anything that isn't a non-empty string is ignored.
 func sourceValues(doc storage.Document, path string, many bool) []string {
-	v, ok := docValueAt(doc, path)
+	v, ok := docutil.GetPath(doc, path)
 	if !ok {
 		return nil
 	}
@@ -327,24 +328,9 @@ func sourceValues(doc storage.Document, path string, many bool) []string {
 }
 
 func fieldString(doc storage.Document, path string) (string, bool) {
-	v, ok := docValueAt(doc, path)
+	v, ok := docutil.GetPath(doc, path)
 	s, isString := v.(string)
 	return s, ok && isString && s != ""
-}
-
-// valueAt reads a dotted path of a document.
-func docValueAt(doc map[string]any, path string) (any, bool) {
-	var cur any = map[string]any(doc)
-	for part := range strings.SplitSeq(path, ".") {
-		m, ok := cur.(map[string]any)
-		if !ok {
-			return nil, false
-		}
-		if cur, ok = m[part]; !ok {
-			return nil, false
-		}
-	}
-	return cur, true
 }
 
 // selectFields renders an expanded document: the whole of it, or its id and the selected
@@ -356,11 +342,11 @@ func selectFields(doc storage.Document, fields []string) map[string]any {
 	}
 	out := map[string]any{"id": doc["id"]}
 	for _, f := range fields {
-		v, ok := docValueAt(doc, f)
+		v, ok := docutil.GetPath(doc, f)
 		if !ok {
 			continue
 		}
-		setPath(out, f, v)
+		docutil.SetPath(out, f, v)
 	}
 	return render(out)
 }
@@ -380,19 +366,6 @@ func markRedacted(out map[string]any, fields, redacted []string) {
 	if len(hidden) > 0 {
 		out["_meta"] = map[string]any{"redacted": hidden}
 	}
-}
-
-func setPath(m map[string]any, path string, v any) {
-	parts := strings.Split(path, ".")
-	for _, p := range parts[:len(parts)-1] {
-		next, ok := m[p].(map[string]any)
-		if !ok {
-			next = map[string]any{}
-			m[p] = next
-		}
-		m = next
-	}
-	m[parts[len(parts)-1]] = v
 }
 
 // expandError answers a failed expansion: too large a response is the caller's to fix, the

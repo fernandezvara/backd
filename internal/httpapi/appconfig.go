@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/go-chi/chi/v5"
 
 	"github.com/fernandezvara/backd/internal/appconfig"
@@ -67,7 +68,7 @@ func (d *documents) readAppConfig(w http.ResponseWriter, r *http.Request) {
 	values := map[string]any{}
 	for _, p := range cfg.SortedPaths() {
 		if v, ok := flat[p]; ok {
-			setNested(values, p, v)
+			docutil.SetPath(values, p, v)
 		}
 	}
 
@@ -85,33 +86,6 @@ func (d *documents) readAppConfig(w http.ResponseWriter, r *http.Request) {
 		"values": values, "version": appconfig.FormatVersion(version),
 		"cache_ttl": int(rl.Settings.AppConfigTTL().Seconds()),
 	})
-}
-
-// valueAt returns the value at a dot path of a nested document.
-func valueAt(m map[string]any, path string) any {
-	var cur any = m
-	for k := range strings.SplitSeq(path, ".") {
-		next, ok := cur.(map[string]any)
-		if !ok {
-			return nil
-		}
-		cur = next[k]
-	}
-	return cur
-}
-
-// setNested puts v at a dot path of a nested document.
-func setNested(m map[string]any, path string, v any) {
-	parts := strings.Split(path, ".")
-	for _, k := range parts[:len(parts)-1] {
-		next, ok := m[k].(map[string]any)
-		if !ok {
-			next = map[string]any{}
-			m[k] = next
-		}
-		m = next
-	}
-	m[parts[len(parts)-1]] = v
 }
 
 // readableConfig is what the caller may read of the realm's configuration, as the values of
@@ -153,7 +127,7 @@ func (d *documents) readableConfig(ctx context.Context, realm string, caller aut
 			continue
 		}
 		public = public && literal
-		flat[p] = valueAt(view.Values, p)
+		flat[p] = docutil.Get(view.Values, p)
 	}
 	return flat, view.Version, public, vals.User != nil, nil
 }

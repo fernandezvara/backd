@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/fernandezvara/backd/internal/jsonnum"
 	"github.com/fernandezvara/backd/internal/registry"
 )
@@ -358,7 +359,7 @@ func (r *Ring) Encrypt(ctx context.Context, c *registry.Collection, doc map[stri
 		delete(out, registry.EncRoot)
 	}
 	for _, ef := range c.Encrypted {
-		v, ok := lookup(doc, ef.Path)
+		v, ok := docutil.GetPath(doc, ef.Path)
 		if !ok {
 			continue
 		}
@@ -470,7 +471,7 @@ func (r *Ring) Decrypt(ctx context.Context, c *registry.Collection, doc map[stri
 	}
 	id, _ := doc["id"].(string)
 	for _, path := range paths {
-		v, ok := lookup(doc, path)
+		v, ok := docutil.GetPath(doc, path)
 		if !ok {
 			continue
 		}
@@ -482,7 +483,7 @@ func (r *Ring) Decrypt(ctx context.Context, c *registry.Collection, doc map[stri
 		if err != nil {
 			return err
 		}
-		set(doc, path, val)
+		docutil.SetPathExisting(doc, path, val)
 	}
 	return nil
 }
@@ -584,35 +585,6 @@ func decodeJSON(b []byte) (any, error) {
 		return nil, err
 	}
 	return jsonnum.Normalize(v), nil
-}
-
-// lookup reads a dot path of a document.
-func lookup(doc map[string]any, path string) (any, bool) {
-	var cur any = doc
-	for p := range strings.SplitSeq(path, ".") {
-		m, ok := cur.(map[string]any)
-		if !ok {
-			return nil, false
-		}
-		if cur, ok = m[p]; !ok {
-			return nil, false
-		}
-	}
-	return cur, true
-}
-
-// set writes a dot path of a document in place; the maps along it exist.
-func set(doc map[string]any, path string, v any) {
-	parts := strings.Split(path, ".")
-	cur := doc
-	for _, p := range parts[:len(parts)-1] {
-		next, ok := cur[p].(map[string]any)
-		if !ok {
-			return
-		}
-		cur = next
-	}
-	cur[parts[len(parts)-1]] = v
 }
 
 // shallow copies the top level of a document; store copies the maps it descends into.

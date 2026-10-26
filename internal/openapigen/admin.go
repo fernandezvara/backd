@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/fernandezvara/backd/api"
+	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -135,7 +136,7 @@ func (b *builder) adminInvoke(db string, fn *registry.Function) {
 	if item == nil {
 		return
 	}
-	cp := deepCopy(item).(map[string]any)
+	cp := docutil.DeepCopy(item).(map[string]any)
 	dropParams(cp, "realm", "database")
 	// The contract's generic `name` parameter is the path's literal here.
 	delete(cp, "parameters")

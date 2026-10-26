@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/xid"
 
@@ -511,7 +512,7 @@ func (a *adminAPI) uniqueClash(ctx context.Context, repo storage.Repository, c *
 		var names []string
 		complete := true
 		for _, k := range ix.Keys {
-			v := valueAt(doc, k.Field)
+			v := docutil.Get(doc, k.Field)
 			switch v.(type) {
 			case nil, map[string]any, []any:
 				complete = false
@@ -889,7 +890,7 @@ func (a *adminAPI) openEncrypted(ctx context.Context, r *http.Request, c *regist
 	id, _ := doc["id"].(string)
 	svc := usersOf(r)
 	for _, f := range run.fields[c.Database+"/"+c.Name] {
-		v, ok := docValueAt(doc, f.path)
+		v, ok := docutil.GetPath(doc, f.path)
 		if !ok {
 			continue
 		}
@@ -920,7 +921,7 @@ func (a *adminAPI) openEncrypted(ctx context.Context, r *http.Request, c *regist
 			problem("can't be opened with the key " + f.key + ": " + err.Error())
 			continue
 		}
-		setPath(doc, f.path, plain)
+		docutil.SetPath(doc, f.path, plain)
 	}
 	// A value left encrypted would be stored as binary where the schema expects its plain form.
 	return problems

@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/go-chi/chi/v5"
 
 	"github.com/fernandezvara/backd/internal/auth"
@@ -714,10 +715,10 @@ func (a *adminAPI) exportAuthPart(w http.ResponseWriter, r *http.Request, l *exp
 func (a *adminAPI) anonymizeDocument(ctx context.Context, r *http.Request, c *registry.Collection, key string, anon *exportAnon, doc map[string]any) {
 	if rule := anon.rules[key]; rule != nil {
 		for _, f := range rule.Remove {
-			exportpkg.Remove(doc, f)
+			docutil.RemovePath(doc, f)
 		}
 		for f, v := range rule.Replace {
-			exportpkg.Set(doc, f, v)
+			docutil.SetPath(doc, f, v)
 		}
 		svc := usersOf(r)
 		rewrite := func(v any) any {
@@ -732,15 +733,15 @@ func (a *adminAPI) anonymizeDocument(ctx context.Context, r *http.Request, c *re
 			return "unknown-" + hex.EncodeToString(sum[:4]) + "@example.invalid"
 		}
 		for _, f := range rule.Emails {
-			switch v := exportpkg.Get(doc, f).(type) {
+			switch v := docutil.Get(doc, f).(type) {
 			case string:
-				exportpkg.Set(doc, f, rewrite(v))
+				docutil.SetPath(doc, f, rewrite(v))
 			case []any:
 				out := make([]any, len(v))
 				for i, e := range v {
 					out[i] = rewrite(e)
 				}
-				exportpkg.Set(doc, f, out)
+				docutil.SetPath(doc, f, out)
 			}
 		}
 	}

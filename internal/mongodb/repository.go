@@ -11,6 +11,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
+	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/fernandezvara/backd/internal/fieldcrypt"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage"
@@ -96,23 +97,10 @@ func (r *Repository) bsonOf(doc storage.Document) bson.D {
 	if r.languageField == "" {
 		return out
 	}
-	if v, ok := lookupPath(doc, r.languageField).(string); ok && v != "" {
+	if v, ok := docutil.Get(doc, r.languageField).(string); ok && v != "" {
 		out = append(out, bson.E{Key: registry.TextSearchField, Value: registry.SearchLanguage(v)})
 	}
 	return out
-}
-
-// lookupPath reads a dot path of a document; a missing field is nil.
-func lookupPath(doc map[string]any, path string) any {
-	var cur any = map[string]any(doc)
-	for p := range strings.SplitSeq(path, ".") {
-		m, ok := cur.(map[string]any)
-		if !ok {
-			return nil
-		}
-		cur = m[p]
-	}
-	return cur
 }
 
 var _ storage.Repository = (*Repository)(nil)

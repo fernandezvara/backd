@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/fernandezvara/backd/internal/registry"
@@ -177,7 +178,7 @@ func (s *Service) usable(stored map[string]any) (map[string]any, []Problem) {
 func (s *Service) merge(flat map[string]any) map[string]any {
 	out := normalize(s.Config.Defaults).(map[string]any)
 	for _, p := range slices.Sorted(maps.Keys(flat)) {
-		setPath(out, p, flat[p])
+		docutil.SetPath(out, p, flat[p])
 	}
 	return out
 }
@@ -374,22 +375,9 @@ func flatten(m map[string]any, prefix string) map[string]any {
 func nest(flat map[string]any) map[string]any {
 	out := map[string]any{}
 	for p, v := range flat {
-		setPath(out, p, v)
+		docutil.SetPath(out, p, v)
 	}
 	return out
-}
-
-func setPath(m map[string]any, path string, v any) {
-	parts := strings.Split(path, ".")
-	for _, k := range parts[:len(parts)-1] {
-		next, ok := m[k].(map[string]any)
-		if !ok {
-			next = map[string]any{}
-			m[k] = next
-		}
-		m = next
-	}
-	m[parts[len(parts)-1]] = v
 }
 
 // equal compares two plain JSON values.

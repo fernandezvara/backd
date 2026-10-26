@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/xid"
 
@@ -514,7 +515,7 @@ func (d *documents) replace(w http.ResponseWriter, r *http.Request) {
 		}
 		candidate := body
 		if len(c.Files) > 0 { // a PUT keeps the document's files
-			candidate = deepCopy(body)
+			candidate = docutil.DeepCopyMap(body)
 			keepFileFields(c, candidate, timesToStrings(current).(map[string]any))
 		}
 		if pending != nil && !pending.apply(w, r, c, candidate, timesToStrings(current).(map[string]any)) {
@@ -545,7 +546,7 @@ func (d *documents) patch(w http.ResponseWriter, r *http.Request) {
 		}
 		// Deep copies: merging must not modify the stored document, which the
 		// update rule (changed()) compares against.
-		merged := mergePatch(timesToStrings(userFields(current)).(map[string]any), deepCopy(patch))
+		merged := docutil.MergePatch(timesToStrings(userFields(current)).(map[string]any), docutil.DeepCopyMap(patch))
 		if pending != nil && !pending.apply(w, r, c, merged, timesToStrings(current).(map[string]any)) {
 			return nil, false
 		}
@@ -720,29 +721,6 @@ func (d *documents) delete(w http.ResponseWriter, r *http.Request) {
 func versionMismatch(w http.ResponseWriter, r *http.Request, current int64) {
 	w.Header().Set("ETag", etag(current))
 	writeError(w, r, http.StatusPreconditionFailed, codeVersionMismatch, "If-Match does not match the current version "+etag(current))
-}
-
-// deepCopy copies nested maps and slices so a patch can be re-applied on retry.
-func deepCopy(m map[string]any) map[string]any {
-	var cp func(v any) any
-	cp = func(v any) any {
-		switch t := v.(type) {
-		case map[string]any:
-			out := make(map[string]any, len(t))
-			for k, e := range t {
-				out[k] = cp(e)
-			}
-			return out
-		case []any:
-			out := make([]any, len(t))
-			for i, e := range t {
-				out[i] = cp(e)
-			}
-			return out
-		}
-		return v
-	}
-	return cp(m).(map[string]any)
 }
 
 func (d *documents) timestamp() time.Time {

@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/fernandezvara/backd/internal/docutil"
 )
 
 // Metric operations of an aggregation.
@@ -192,7 +194,7 @@ func AggregateDocs(docs []Document, q AggregateQuery) (AggregateResult, error) {
 
 // groupValue is a document's value for one group field: a bucket's text, the value itself or nil.
 func groupValue(d Document, g GroupField) any {
-	v := lookup(d, g.Field)
+	v := docutil.Get(d, g.Field)
 	if g.Bucket == "" {
 		return v
 	}
@@ -228,7 +230,7 @@ func metricValue(docs []Document, m Metric, maxDistinct int) (any, error) {
 	case MetricCountDistinct:
 		seen := map[string]bool{}
 		for _, d := range docs {
-			if v := lookup(d, m.Field); v != nil {
+			if v := docutil.Get(d, m.Field); v != nil {
 				seen[fmt.Sprintf("%T:%v", v, v)] = true
 			}
 		}
@@ -239,7 +241,7 @@ func metricValue(docs []Document, m Metric, maxDistinct int) (any, error) {
 	case MetricSum, MetricAvg:
 		sum, scale, n := new(big.Rat), 0, 0
 		for _, d := range docs {
-			r, s, ok := decimalOf(lookup(d, m.Field))
+			r, s, ok := decimalOf(docutil.Get(d, m.Field))
 			if !ok {
 				continue
 			}
@@ -257,7 +259,7 @@ func metricValue(docs []Document, m Metric, maxDistinct int) (any, error) {
 	case MetricMin, MetricMax:
 		var best any
 		for _, d := range docs {
-			v := lookup(d, m.Field)
+			v := docutil.Get(d, m.Field)
 			if v == nil {
 				continue
 			}

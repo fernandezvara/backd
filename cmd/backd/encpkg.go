@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/fernandezvara/kli"
 
 	"github.com/fernandezvara/backd/internal/auth"
@@ -183,7 +184,7 @@ func (d *decryptor) line(database, collection string, line []byte) ([]byte, erro
 	id, _ := doc["id"].(string)
 	changed := false
 	for _, e := range entries {
-		v, ok := lookupDoc(doc, e.Path)
+		v, ok := docutil.GetPath(doc, e.Path)
 		if !ok {
 			continue
 		}
@@ -203,40 +204,13 @@ func (d *decryptor) line(database, collection string, line []byte) ([]byte, erro
 		if err != nil {
 			return nil, fmt.Errorf("document %s: %s: %w", id, e.Path, err)
 		}
-		setDoc(doc, e.Path, plain)
+		docutil.SetPathExisting(doc, e.Path, plain)
 		changed = true
 	}
 	if !changed {
 		return line, nil
 	}
 	return exportpkg.EncodeDocument(doc)
-}
-
-func lookupDoc(doc map[string]any, path string) (any, bool) {
-	var cur any = doc
-	for p := range strings.SplitSeq(path, ".") {
-		m, ok := cur.(map[string]any)
-		if !ok {
-			return nil, false
-		}
-		if cur, ok = m[p]; !ok {
-			return nil, false
-		}
-	}
-	return cur, true
-}
-
-func setDoc(doc map[string]any, path string, v any) {
-	parts := strings.Split(path, ".")
-	cur := doc
-	for _, p := range parts[:len(parts)-1] {
-		next, ok := cur[p].(map[string]any)
-		if !ok {
-			return
-		}
-		cur = next
-	}
-	cur[parts[len(parts)-1]] = v
 }
 
 // part rewrites a collection's part of the package with its fields opened, and returns what

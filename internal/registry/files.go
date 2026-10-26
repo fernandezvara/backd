@@ -18,6 +18,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/fernandezvara/backd/internal/imaging"
 )
 
@@ -494,7 +495,7 @@ func versionStateSchema() map[string]any {
 // field's schema added: the details object, or an array of them (at most
 // max_files). The author's schema.json is not modified.
 func withFileSchemas(schema map[string]any, files map[string]*FileField) map[string]any {
-	out := cloneSchema(schema).(map[string]any)
+	out := docutil.DeepCopy(schema).(map[string]any)
 	props, _ := out["properties"].(map[string]any)
 	if props == nil {
 		props = map[string]any{}
@@ -508,22 +509,4 @@ func withFileSchemas(schema map[string]any, files map[string]*FileField) map[str
 		}
 	}
 	return out
-}
-
-func cloneSchema(v any) any {
-	switch t := v.(type) {
-	case map[string]any:
-		m := make(map[string]any, len(t))
-		for k, e := range t {
-			m[k] = cloneSchema(e)
-		}
-		return m
-	case []any:
-		s := make([]any, len(t))
-		for i, e := range t {
-			s[i] = cloneSchema(e)
-		}
-		return s
-	}
-	return v
 }

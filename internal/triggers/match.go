@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/fernandezvara/backd/internal/changefeed"
+	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/rules"
 )
@@ -252,7 +253,7 @@ func project(doc map[string]any, fields []string) any {
 		}
 	}
 	for _, path := range fields {
-		pick(doc, out, strings.Split(path, "."))
+		docutil.CopyPath(out, doc, strings.Split(path, "."))
 	}
 	return out
 }
@@ -285,30 +286,6 @@ func dropPath(m map[string]any, path []string) {
 	maps.Copy(cp, next)
 	m[path[0]] = cp
 	dropPath(cp, path[1:])
-}
-
-// pick copies the value at path from src into dst, keeping the nesting.
-func pick(src, dst map[string]any, path []string) {
-	v, ok := src[path[0]]
-	if !ok {
-		return
-	}
-	if len(path) == 1 {
-		dst[path[0]] = v
-		return
-	}
-	sub, ok := v.(map[string]any)
-	if !ok {
-		return
-	}
-	next, _ := dst[path[0]].(map[string]any)
-	if next == nil {
-		next = map[string]any{}
-	}
-	pick(sub, next, path[1:])
-	if len(next) > 0 {
-		dst[path[0]] = next
-	}
 }
 
 // writerOf is the user who wrote the change, from the document's `_meta.updated_by`: the

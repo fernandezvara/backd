@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/fernandezvara/backd/internal/jsonnum"
 	"github.com/fernandezvara/backd/internal/registry"
 )
@@ -108,13 +109,13 @@ func translateObject(s map[string]any, path string, om *[]Omission) map[string]a
 		sub := path + "/" + escapePointer(k)
 		switch {
 		case copied[k]:
-			out[k] = jsonnum.Normalize(deepCopy(v))
+			out[k] = jsonnum.Normalize(docutil.DeepCopy(v))
 		case k == "type":
 			if t := bsonType(v); t != nil {
 				out["bsonType"] = t
 			}
 		case k == "const":
-			out["enum"] = []any{jsonnum.Normalize(deepCopy(v))}
+			out["enum"] = []any{jsonnum.Normalize(docutil.DeepCopy(v))}
 		case k == "properties":
 			props := map[string]any{}
 			m, _ := v.(map[string]any)
@@ -232,24 +233,6 @@ func toFloat(v any) float64 {
 	return 0
 }
 
-func deepCopy(v any) any {
-	switch t := v.(type) {
-	case map[string]any:
-		m := make(map[string]any, len(t))
-		for k, e := range t {
-			m[k] = deepCopy(e)
-		}
-		return m
-	case []any:
-		s := make([]any, len(t))
-		for i, e := range t {
-			s[i] = deepCopy(e)
-		}
-		return s
-	}
-	return v
-}
-
 func escapePointer(s string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(s, "~", "~0"), "/", "~1")
 }
@@ -265,7 +248,7 @@ func pointerOrRoot(p string) string {
 // encrypted field as BSON binary, while schema.json validates the plaintext (the API validates
 // that before the field is encrypted). It never modifies schema.
 func EncryptedSchema(schema map[string]any, paths []string) map[string]any {
-	out := deepCopy(schema).(map[string]any)
+	out := docutil.DeepCopy(schema).(map[string]any)
 	for _, p := range paths {
 		cur := out
 		parts := strings.Split(p, ".")
