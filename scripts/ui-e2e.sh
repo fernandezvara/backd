@@ -13,6 +13,7 @@
 # the one `npx playwright install` downloads.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+root=$PWD
 
 command -v docker >/dev/null || { echo "needs 'docker' on your PATH" >&2; exit 1; }
 command -v node >/dev/null || { echo "needs 'node' on your PATH" >&2; exit 1; }
@@ -23,7 +24,7 @@ origin=https://localhost:8443
 
 cleanup() {
   trap - EXIT
-  docker compose down -v >/dev/null 2>&1 || true
+  cd "$root" && docker compose down -v >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -76,6 +77,6 @@ npm ci --no-audit --no-fund
 [ -n "${PLAYWRIGHT_CHROMIUM:-}" ] || npx playwright install --with-deps chromium
 export NODE_EXTRA_CA_CERTS=$PWD/../../$ca E2E_URL=$origin
 npx playwright test || {
-  docker compose logs --tail 100 backd >&2
+  (cd "$root" && docker compose logs --tail 100 backd >&2)
   exit 1
 }

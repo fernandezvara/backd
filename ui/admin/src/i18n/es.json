@@ -315,7 +315,7 @@
       "none": "Sin roles.",
       "add": "Añadir rol",
       "pick": "Rol",
-      "remove": "Quitar {role}",
+      "remove": "Eliminar {role}",
       "dbOnly": "solo en la base de datos",
       "dbOnlyHelp": "Esta asignación no figura en realm.yaml: solo existe en la base de datos, y un realm reconstruido no la tendría.",
       "added": "{role} añadido.",
