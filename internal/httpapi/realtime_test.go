@@ -190,6 +190,7 @@ func (f *realtimeFixture) subscribe(t *testing.T, token, body string) (*http.Res
 				ev.Data = line[6:]
 			}
 		}
+		_ = sc.Err() // the test ends the stream by closing the body
 	}()
 	return resp, out
 }

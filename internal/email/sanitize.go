@@ -80,7 +80,9 @@ func SanitizeHTML(in string) (out string, removed []string) {
 			for i, o := range slices.Backward(open) {
 				if o == tag {
 					for j := len(open) - 1; j >= i; j-- {
-						b.WriteString("</" + open[j] + ">")
+						b.WriteString("</")
+						b.WriteString(open[j])
+						b.WriteString(">")
 					}
 					open = open[:i]
 					break
@@ -91,7 +93,9 @@ func SanitizeHTML(in string) (out string, removed []string) {
 		}
 	}
 	for _, o := range slices.Backward(open) {
-		b.WriteString("</" + o + ">")
+		b.WriteString("</")
+		b.WriteString(o)
+		b.WriteString(">")
 	}
 	return b.String(), removed
 }
@@ -126,7 +130,8 @@ var allowedAttrs = map[string][]string{
 
 func openTag(tag string, attrs map[string]string, drop func(string)) string {
 	var b strings.Builder
-	b.WriteString("<" + tag)
+	b.WriteString("<")
+	b.WriteString(tag)
 	for _, name := range allowedAttrs[tag] {
 		v, ok := attrs[name]
 		if !ok {
@@ -152,11 +157,17 @@ func openTag(tag string, attrs map[string]string, drop func(string)) string {
 				continue
 			}
 		}
-		b.WriteString(" " + name + `="` + html.EscapeString(v) + `"`)
+		b.WriteString(" ")
+		b.WriteString(name)
+		b.WriteString(`="`)
+		b.WriteString(html.EscapeString(v))
+		b.WriteString(`"`)
 	}
 	if style, ok := attrs["style"]; ok {
 		if clean := safeStyle(style); clean != "" {
-			b.WriteString(` style="` + html.EscapeString(clean) + `"`)
+			b.WriteString(` style="`)
+			b.WriteString(html.EscapeString(clean))
+			b.WriteString(`"`)
 		} else if strings.TrimSpace(style) != "" {
 			drop("inline styles outside the allowed ones")
 		}

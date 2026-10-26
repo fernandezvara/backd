@@ -207,14 +207,35 @@ func emailLines(realm, prefix, suffix string) string {
 	var b strings.Builder
 	for _, kind := range email.SystemKinds {
 		for _, name := range []string{"en.html", "en.subject.txt", "en.txt"} {
-			b.WriteString(prefix + realm + "/_realm/email/" + kind + "/" + name + suffix + "\n")
+			b.WriteString(prefix)
+			b.WriteString(realm)
+			b.WriteString("/_realm/email/")
+			b.WriteString(kind)
+			b.WriteString("/")
+			b.WriteString(name)
+			b.WriteString(suffix)
+			b.WriteString("\n")
 		}
 	}
 	for _, kind := range append(slices.Clone(email.PageKinds), email.OptionalPageKinds...) {
-		b.WriteString(prefix + realm + "/_realm/pages/" + kind + "/en.html" + suffix + "\n")
+		b.WriteString(prefix)
+		b.WriteString(realm)
+		b.WriteString("/_realm/pages/")
+		b.WriteString(kind)
+		b.WriteString("/en.html")
+		b.WriteString(suffix)
+		b.WriteString("\n")
 	}
-	b.WriteString(prefix + realm + "/_realm/compliance/readme/en.html" + suffix + "\n")
-	b.WriteString(prefix + realm + "/_realm/push/example/en.yaml" + suffix + "\n")
+	b.WriteString(prefix)
+	b.WriteString(realm)
+	b.WriteString("/_realm/compliance/readme/en.html")
+	b.WriteString(suffix)
+	b.WriteString("\n")
+	b.WriteString(prefix)
+	b.WriteString(realm)
+	b.WriteString("/_realm/push/example/en.yaml")
+	b.WriteString(suffix)
+	b.WriteString("\n")
 	return b.String()
 }
 

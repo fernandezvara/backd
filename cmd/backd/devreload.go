@@ -266,7 +266,7 @@ func snapshot(root string) (map[string]string, error) {
 		if err != nil {
 			return nil
 		}
-		sum := sha256.Sum256([]byte(fmt.Sprintf("%d/%d", fi.Size(), fi.ModTime().UnixNano())))
+		sum := sha256.Sum256(fmt.Appendf(nil, "%d/%d", fi.Size(), fi.ModTime().UnixNano()))
 		out[filepath.ToSlash(rel)] = hex.EncodeToString(sum[:8])
 		return nil
 	})

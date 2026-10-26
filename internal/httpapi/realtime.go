@@ -225,10 +225,16 @@ func (d *documents) realtime(w http.ResponseWriter, r *http.Request) {
 			b.WriteString(": heartbeat\n\n")
 		default:
 			if f.ID != "" {
-				b.WriteString("id: " + f.ID + "\n")
+				b.WriteString("id: ")
+				b.WriteString(f.ID)
+				b.WriteString("\n")
 			}
-			b.WriteString("event: " + f.Event + "\n")
-			b.WriteString("data: " + string(f.Data) + "\n\n")
+			b.WriteString("event: ")
+			b.WriteString(f.Event)
+			b.WriteString("\n")
+			b.WriteString("data: ")
+			b.WriteString(string(f.Data))
+			b.WriteString("\n\n")
 		}
 		if _, err := io.WriteString(w, b.String()); err != nil {
 			return err
