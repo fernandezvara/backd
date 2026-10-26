@@ -62,7 +62,7 @@ type leaseDoc struct {
 func (s *TriggerState) AcquireLease(ctx context.Context, holder string, ttl time.Duration) (triggers.Lease, bool, error) {
 	// The document is made once, empty and expired; taking it is then a plain conditional
 	// update (an upsert can't carry the $expr that compares with the database's clock).
-	_, err := s.state().UpdateOne(ctx, bson.D{{Key: "_id", Value: s.id()}},
+	_, err := s.state().UpdateOne(ctx, byID(s.id()),
 		bson.D{{Key: "$setOnInsert", Value: bson.D{
 			{Key: "holder", Value: ""}, {Key: "epoch", Value: int64(0)}, {Key: "expires_at", Value: time.Unix(0, 0).UTC()},
 		}}}, options.UpdateOne().SetUpsert(true))
@@ -117,7 +117,7 @@ func (s *TriggerState) Watermark(ctx context.Context) (changefeed.Position, time
 		Token bson.Binary `bson:"token"`
 		At    time.Time   `bson:"at"`
 	}
-	err := s.state().FindOne(ctx, bson.D{{Key: "_id", Value: s.id()}}).Decode(&d)
+	err := s.state().FindOne(ctx, byID(s.id())).Decode(&d)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return nil, time.Time{}, false, nil
 	}
@@ -182,7 +182,7 @@ func (s *TriggerState) Status(ctx context.Context) (triggers.DispatcherStatus, e
 		Token   bson.Binary `bson:"token"`
 		At      time.Time   `bson:"at"`
 	}
-	err := s.state().FindOne(ctx, bson.D{{Key: "_id", Value: s.id()}}).Decode(&d)
+	err := s.state().FindOne(ctx, byID(s.id())).Decode(&d)
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return triggers.DispatcherStatus{}, nil
 	}
@@ -211,12 +211,8 @@ func (s *TriggerState) Gaps(ctx context.Context, realm string, all bool, limit i
 	if limit <= 0 {
 		limit = 100
 	}
-	cur, err := s.gaps().Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "recorded_at", Value: -1}}).SetLimit(int64(limit)))
+	docs, err := findAll[gapDoc](ctx, s.gaps(), filter, options.Find().SetSort(bson.D{{Key: "recorded_at", Value: -1}}).SetLimit(int64(limit)))
 	if err != nil {
-		return nil, err
-	}
-	var docs []gapDoc
-	if err := cur.All(ctx, &docs); err != nil {
 		return nil, err
 	}
 	out := make([]triggers.GapRecord, len(docs))

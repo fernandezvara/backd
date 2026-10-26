@@ -121,18 +121,14 @@ func (s *AuthStore) CreateOrg(ctx context.Context, o auth.Org, first auth.OrgMem
 		return err
 	}
 	if _, err := s.orgMembers().InsertOne(ctx, memberDoc(first)); err != nil {
-		_, _ = s.orgs().DeleteOne(context.WithoutCancel(ctx), bson.D{{Key: "_id", Value: o.ID}})
+		_, _ = s.orgs().DeleteOne(context.WithoutCancel(ctx), byID(o.ID))
 		return err
 	}
 	return nil
 }
 
 func (s *AuthStore) OrgByID(ctx context.Context, id string) (auth.Org, error) {
-	var d orgDoc
-	err := s.orgs().FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&d)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return auth.Org{}, auth.ErrNotFound
-	}
+	d, err := getOne[orgDoc](ctx, s.orgs(), byID(id), auth.ErrNotFound)
 	if err != nil {
 		return auth.Org{}, err
 	}
@@ -140,11 +136,7 @@ func (s *AuthStore) OrgByID(ctx context.Context, id string) (auth.Org, error) {
 }
 
 func (s *AuthStore) OrgBySlug(ctx context.Context, slug string) (auth.Org, error) {
-	var d orgDoc
-	err := s.orgs().FindOne(ctx, bson.D{{Key: "slug", Value: slug}, {Key: "status", Value: bson.D{{Key: "$ne", Value: auth.OrgDeleted}}}}).Decode(&d)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return auth.Org{}, auth.ErrNotFound
-	}
+	d, err := getOne[orgDoc](ctx, s.orgs(), bson.D{{Key: "slug", Value: slug}, {Key: "status", Value: bson.D{{Key: "$ne", Value: auth.OrgDeleted}}}}, auth.ErrNotFound)
 	if err != nil {
 		return auth.Org{}, err
 	}
@@ -156,12 +148,8 @@ func (s *AuthStore) OrgsByIDs(ctx context.Context, ids []string) (map[string]aut
 	if len(ids) == 0 {
 		return out, nil
 	}
-	cur, err := s.orgs().Find(ctx, bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: ids}}}})
+	docs, err := findAll[orgDoc](ctx, s.orgs(), bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: ids}}}})
 	if err != nil {
-		return nil, err
-	}
-	var docs []orgDoc
-	if err := cur.All(ctx, &docs); err != nil {
 		return nil, err
 	}
 	for _, d := range docs {
@@ -215,7 +203,7 @@ func (s *AuthStore) UpdateOrg(ctx context.Context, id string, upd auth.OrgUpdate
 		update = append(update, bson.E{Key: "$unset", Value: unset})
 	}
 	var d orgDoc
-	err := s.orgs().FindOneAndUpdate(ctx, bson.D{{Key: "_id", Value: id}}, update,
+	err := s.orgs().FindOneAndUpdate(ctx, byID(id), update,
 		options.FindOneAndUpdate().SetReturnDocument(options.After)).Decode(&d)
 	switch {
 	case errors.Is(err, mongo.ErrNoDocuments):
@@ -229,12 +217,8 @@ func (s *AuthStore) UpdateOrg(ctx context.Context, id string, upd auth.OrgUpdate
 }
 
 func (s *AuthStore) ForgetUserInOrgs(ctx context.Context, userID, email string) ([]string, error) {
-	cur, err := s.orgMembers().Find(ctx, bson.D{{Key: "user", Value: userID}}, options.Find().SetProjection(bson.D{{Key: "org", Value: 1}}))
+	docs, err := findAll[orgMemberDoc](ctx, s.orgMembers(), bson.D{{Key: "user", Value: userID}}, options.Find().SetProjection(bson.D{{Key: "org", Value: 1}}))
 	if err != nil {
-		return nil, err
-	}
-	var docs []orgMemberDoc
-	if err := cur.All(ctx, &docs); err != nil {
 		return nil, err
 	}
 	orgs := make([]string, len(docs))
@@ -321,19 +305,11 @@ func (s *AuthStore) ListOrgs(ctx context.Context, status string) ([]auth.Org, er
 	if status != "" {
 		filter = bson.D{{Key: "status", Value: status}}
 	}
-	cur, err := s.orgs().Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}))
+	docs, err := findAll[orgDoc](ctx, s.orgs(), filter, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}))
 	if err != nil {
 		return nil, err
 	}
-	var docs []orgDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, err
-	}
-	out := make([]auth.Org, len(docs))
-	for i, d := range docs {
-		out[i] = d.org()
-	}
-	return out, nil
+	return mapAll(docs, orgDoc.org), nil
 }
 
 func (s *AuthStore) CountOrgMembers(ctx context.Context, orgs []string) (map[string]int, error) {
@@ -367,11 +343,7 @@ func (s *AuthStore) CountOrgsCreatedBy(ctx context.Context, userID string) (int,
 }
 
 func (s *AuthStore) OrgMember(ctx context.Context, org, user string) (auth.OrgMember, error) {
-	var d orgMemberDoc
-	err := s.orgMembers().FindOne(ctx, bson.D{{Key: "_id", Value: orgMemberID(org, user)}}).Decode(&d)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return auth.OrgMember{}, auth.ErrNotFound
-	}
+	d, err := getOne[orgMemberDoc](ctx, s.orgMembers(), byID(orgMemberID(org, user)), auth.ErrNotFound)
 	if err != nil {
 		return auth.OrgMember{}, err
 	}
@@ -392,12 +364,8 @@ func (s *AuthStore) pageOrgMembers(ctx context.Context, filter bson.D, after str
 	if limit > 0 {
 		opts.SetLimit(int64(limit) + 1)
 	}
-	cur, err := s.orgMembers().Find(ctx, filter, opts)
+	docs, err := findAll[orgMemberDoc](ctx, s.orgMembers(), filter, opts)
 	if err != nil {
-		return nil, false, err
-	}
-	var docs []orgMemberDoc
-	if err := cur.All(ctx, &docs); err != nil {
 		return nil, false, err
 	}
 	more := limit > 0 && len(docs) > limit
@@ -412,19 +380,11 @@ func (s *AuthStore) pageOrgMembers(ctx context.Context, filter bson.D, after str
 }
 
 func (s *AuthStore) OrgMembersWithRoles(ctx context.Context, org string, roles []string) ([]auth.OrgMember, error) {
-	cur, err := s.orgMembers().Find(ctx, bson.D{{Key: "org", Value: org}, {Key: "roles.role", Value: bson.D{{Key: "$in", Value: roles}}}})
+	docs, err := findAll[orgMemberDoc](ctx, s.orgMembers(), bson.D{{Key: "org", Value: org}, {Key: "roles.role", Value: bson.D{{Key: "$in", Value: roles}}}})
 	if err != nil {
 		return nil, err
 	}
-	var docs []orgMemberDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, err
-	}
-	out := make([]auth.OrgMember, len(docs))
-	for i, d := range docs {
-		out[i] = d.member()
-	}
-	return out, nil
+	return mapAll(docs, orgMemberDoc.member), nil
 }
 
 // NextOrgMemberSeq counts a membership event of a user in an organization.
@@ -433,7 +393,7 @@ func (s *AuthStore) NextOrgMemberSeq(ctx context.Context, org, user string) (int
 		Seq int64 `bson:"seq"`
 	}
 	err := s.db.Collection(OrgMemberSeqCollection).FindOneAndUpdate(ctx,
-		bson.D{{Key: "_id", Value: orgMemberID(org, user)}},
+		byID(orgMemberID(org, user)),
 		bson.D{{Key: "$inc", Value: bson.D{{Key: "seq", Value: int64(1)}}}, {Key: "$setOnInsert", Value: bson.D{{Key: "org", Value: org}, {Key: "user", Value: user}}}},
 		options.FindOneAndUpdate().SetUpsert(true).SetReturnDocument(options.After)).Decode(&d)
 	return d.Seq, err
@@ -475,19 +435,11 @@ func (s *AuthStore) OrgMembershipsOf(ctx context.Context, user string, limit int
 	if limit > 0 {
 		opts.SetLimit(int64(limit))
 	}
-	cur, err := s.orgMembers().Find(ctx, bson.D{{Key: "user", Value: user}}, opts)
+	docs, err := findAll[orgMemberDoc](ctx, s.orgMembers(), bson.D{{Key: "user", Value: user}}, opts)
 	if err != nil {
 		return nil, err
 	}
-	var docs []orgMemberDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, err
-	}
-	out := make([]auth.OrgMember, len(docs))
-	for i, d := range docs {
-		out[i] = d.member()
-	}
-	return out, nil
+	return mapAll(docs, orgMemberDoc.member), nil
 }
 
 func (s *AuthStore) CountOrgMembershipsOf(ctx context.Context, user string) (int, error) {
@@ -497,12 +449,12 @@ func (s *AuthStore) CountOrgMembershipsOf(ctx context.Context, user string) (int
 
 func (s *AuthStore) PutOrgMember(ctx context.Context, m auth.OrgMember) error {
 	d := memberDoc(m)
-	_, err := s.orgMembers().ReplaceOne(ctx, bson.D{{Key: "_id", Value: d.ID}}, d, options.Replace().SetUpsert(true))
+	_, err := s.orgMembers().ReplaceOne(ctx, byID(d.ID), d, options.Replace().SetUpsert(true))
 	return err
 }
 
 func (s *AuthStore) DeleteOrgMember(ctx context.Context, org, user string) error {
-	res, err := s.orgMembers().DeleteOne(ctx, bson.D{{Key: "_id", Value: orgMemberID(org, user)}})
+	res, err := s.orgMembers().DeleteOne(ctx, byID(orgMemberID(org, user)))
 	if err != nil {
 		return err
 	}
@@ -559,11 +511,7 @@ func (s *AuthStore) CreateOrgInvitation(ctx context.Context, inv auth.OrgInvitat
 }
 
 func (s *AuthStore) findOrgInvitation(ctx context.Context, filter bson.D) (auth.OrgInvitation, error) {
-	var d orgInvitationDoc
-	err := s.orgInvitations().FindOne(ctx, filter).Decode(&d)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return auth.OrgInvitation{}, auth.ErrNotFound
-	}
+	d, err := getOne[orgInvitationDoc](ctx, s.orgInvitations(), filter, auth.ErrNotFound)
 	if err != nil {
 		return auth.OrgInvitation{}, err
 	}
@@ -579,20 +527,12 @@ func (s *AuthStore) OrgInvitationByID(ctx context.Context, org, id string) (auth
 }
 
 func (s *AuthStore) ListOrgInvitations(ctx context.Context, org string) ([]auth.OrgInvitation, error) {
-	cur, err := s.orgInvitations().Find(ctx, bson.D{{Key: "org", Value: org}},
+	docs, err := findAll[orgInvitationDoc](ctx, s.orgInvitations(), bson.D{{Key: "org", Value: org}},
 		options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}))
 	if err != nil {
 		return nil, err
 	}
-	var docs []orgInvitationDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, err
-	}
-	out := make([]auth.OrgInvitation, len(docs))
-	for i, d := range docs {
-		out[i] = d.invitation()
-	}
-	return out, nil
+	return mapAll(docs, orgInvitationDoc.invitation), nil
 }
 
 func (s *AuthStore) OrgInvitationsAddressedTo(ctx context.Context, userID, email string) ([]auth.OrgInvitation, error) {
@@ -606,20 +546,12 @@ func (s *AuthStore) OrgInvitationsAddressedTo(ctx context.Context, userID, email
 	if len(any) == 0 {
 		return nil, nil
 	}
-	cur, err := s.orgInvitations().Find(ctx, bson.D{{Key: "$or", Value: any}},
+	docs, err := findAll[orgInvitationDoc](ctx, s.orgInvitations(), bson.D{{Key: "$or", Value: any}},
 		options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}))
 	if err != nil {
 		return nil, err
 	}
-	var docs []orgInvitationDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, err
-	}
-	out := make([]auth.OrgInvitation, len(docs))
-	for i, d := range docs {
-		out[i] = d.invitation()
-	}
-	return out, nil
+	return mapAll(docs, orgInvitationDoc.invitation), nil
 }
 
 // pendingOrgInvitation matches the invitations that can still be used at now.
@@ -638,7 +570,7 @@ func (s *AuthStore) CountPendingOrgInvitations(ctx context.Context, org string, 
 }
 
 func (s *AuthStore) UseOrgInvitation(ctx context.Context, id string, now time.Time) (auth.OrgInvitation, error) {
-	filter := append(bson.D{{Key: "_id", Value: id}}, pendingOrgInvitation(now)...)
+	filter := append(byID(id), pendingOrgInvitation(now)...)
 	var d orgInvitationDoc
 	err := s.orgInvitations().FindOneAndUpdate(ctx, filter, bson.D{{Key: "$inc", Value: bson.D{{Key: "uses", Value: 1}}}},
 		options.FindOneAndUpdate().SetReturnDocument(options.After)).Decode(&d)
@@ -750,50 +682,30 @@ func (s *AuthStore) DeleteOrgTeam(ctx context.Context, org, id string) error {
 }
 
 func (s *AuthStore) ListOrgTeams(ctx context.Context, org string) ([]auth.OrgTeam, error) {
-	cur, err := s.orgTeams().Find(ctx, bson.D{{Key: "org", Value: org}}, options.Find().SetSort(bson.D{{Key: "name", Value: 1}}))
+	docs, err := findAll[orgTeamDoc](ctx, s.orgTeams(), bson.D{{Key: "org", Value: org}}, options.Find().SetSort(bson.D{{Key: "name", Value: 1}}))
 	if err != nil {
 		return nil, err
 	}
-	var docs []orgTeamDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, err
-	}
-	out := make([]auth.OrgTeam, len(docs))
-	for i, d := range docs {
-		out[i] = d.team()
-	}
-	return out, nil
+	return mapAll(docs, orgTeamDoc.team), nil
 }
 
 func (s *AuthStore) OrgMembersInTeams(ctx context.Context, org string, teams []string) ([]auth.OrgMember, error) {
 	if len(teams) == 0 {
 		return nil, nil
 	}
-	cur, err := s.orgMembers().Find(ctx, bson.D{{Key: "org", Value: org}, {Key: "teams", Value: bson.D{{Key: "$in", Value: teams}}}})
+	docs, err := findAll[orgMemberDoc](ctx, s.orgMembers(), bson.D{{Key: "org", Value: org}, {Key: "teams", Value: bson.D{{Key: "$in", Value: teams}}}})
 	if err != nil {
 		return nil, err
 	}
-	var docs []orgMemberDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, err
-	}
-	out := make([]auth.OrgMember, len(docs))
-	for i, d := range docs {
-		out[i] = d.member()
-	}
-	return out, nil
+	return mapAll(docs, orgMemberDoc.member), nil
 }
 
 func (s *AuthStore) OrgTeamsByIDs(ctx context.Context, org string, ids []string) ([]auth.OrgTeam, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	cur, err := s.orgTeams().Find(ctx, bson.D{{Key: "org", Value: org}, {Key: "_id", Value: bson.D{{Key: "$in", Value: ids}}}})
+	docs, err := findAll[orgTeamDoc](ctx, s.orgTeams(), bson.D{{Key: "org", Value: org}, {Key: "_id", Value: bson.D{{Key: "$in", Value: ids}}}})
 	if err != nil {
-		return nil, err
-	}
-	var docs []orgTeamDoc
-	if err := cur.All(ctx, &docs); err != nil {
 		return nil, err
 	}
 	out := make([]auth.OrgTeam, len(docs))
@@ -840,11 +752,7 @@ func (d orgTemplateDoc) template() auth.OrgTemplate {
 }
 
 func (s *AuthStore) OrgTemplate(ctx context.Context, org, kind, locale string) (auth.OrgTemplate, error) {
-	var d orgTemplateDoc
-	err := s.orgTemplates().FindOne(ctx, bson.D{{Key: "_id", Value: orgTemplateID(org, kind, locale)}}).Decode(&d)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return auth.OrgTemplate{}, auth.ErrNotFound
-	}
+	d, err := getOne[orgTemplateDoc](ctx, s.orgTemplates(), byID(orgTemplateID(org, kind, locale)), auth.ErrNotFound)
 	if err != nil {
 		return auth.OrgTemplate{}, err
 	}
@@ -852,19 +760,11 @@ func (s *AuthStore) OrgTemplate(ctx context.Context, org, kind, locale string) (
 }
 
 func (s *AuthStore) ListOrgTemplates(ctx context.Context, org string) ([]auth.OrgTemplate, error) {
-	cur, err := s.orgTemplates().Find(ctx, bson.D{{Key: "org", Value: org}}, options.Find().SetSort(bson.D{{Key: "kind", Value: 1}, {Key: "locale", Value: 1}}))
+	docs, err := findAll[orgTemplateDoc](ctx, s.orgTemplates(), bson.D{{Key: "org", Value: org}}, options.Find().SetSort(bson.D{{Key: "kind", Value: 1}, {Key: "locale", Value: 1}}))
 	if err != nil {
 		return nil, err
 	}
-	var docs []orgTemplateDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, err
-	}
-	out := make([]auth.OrgTemplate, len(docs))
-	for i, d := range docs {
-		out[i] = d.template()
-	}
-	return out, nil
+	return mapAll(docs, orgTemplateDoc.template), nil
 }
 
 func (s *AuthStore) PutOrgTemplate(ctx context.Context, t auth.OrgTemplate) error {
@@ -873,12 +773,12 @@ func (s *AuthStore) PutOrgTemplate(ctx context.Context, t auth.OrgTemplate) erro
 	for _, v := range t.Versions {
 		d.Versions = append(d.Versions, orgTemplateVersionDoc{Version: v.Version, Subject: v.Subject, Text: v.Text, HTML: v.HTML, By: v.By, At: v.At})
 	}
-	_, err := s.orgTemplates().ReplaceOne(ctx, bson.D{{Key: "_id", Value: d.ID}}, d, options.Replace().SetUpsert(true))
+	_, err := s.orgTemplates().ReplaceOne(ctx, byID(d.ID), d, options.Replace().SetUpsert(true))
 	return err
 }
 
 func (s *AuthStore) DeleteOrgTemplate(ctx context.Context, org, kind, locale string) error {
-	res, err := s.orgTemplates().DeleteOne(ctx, bson.D{{Key: "_id", Value: orgTemplateID(org, kind, locale)}})
+	res, err := s.orgTemplates().DeleteOne(ctx, byID(orgTemplateID(org, kind, locale)))
 	if err != nil {
 		return err
 	}

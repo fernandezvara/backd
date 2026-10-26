@@ -2,7 +2,6 @@ package mongodb
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -67,11 +66,7 @@ func (s *AuthStore) CreateUserExport(ctx context.Context, e auth.UserExport) err
 
 // UserExportByID implements auth.Store.
 func (s *AuthStore) UserExportByID(ctx context.Context, id string) (auth.UserExport, error) {
-	var d userExportDoc
-	err := s.userExports().FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&d)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return auth.UserExport{}, auth.ErrNotFound
-	}
+	d, err := getOne[userExportDoc](ctx, s.userExports(), byID(id), auth.ErrNotFound)
 	if err != nil {
 		return auth.UserExport{}, err
 	}
@@ -80,7 +75,7 @@ func (s *AuthStore) UserExportByID(ctx context.Context, id string) (auth.UserExp
 
 // ReplaceUserExport implements auth.Store.
 func (s *AuthStore) ReplaceUserExport(ctx context.Context, e auth.UserExport) error {
-	res, err := s.userExports().ReplaceOne(ctx, bson.D{{Key: "_id", Value: e.ID}}, userExportToDoc(e))
+	res, err := s.userExports().ReplaceOne(ctx, byID(e.ID), userExportToDoc(e))
 	if err != nil {
 		return err
 	}
@@ -91,19 +86,11 @@ func (s *AuthStore) ReplaceUserExport(ctx context.Context, e auth.UserExport) er
 }
 
 func (s *AuthStore) findUserExports(ctx context.Context, filter bson.D, opts *options.FindOptionsBuilder) ([]auth.UserExport, error) {
-	cur, err := s.userExports().Find(ctx, filter, opts)
+	docs, err := findAll[userExportDoc](ctx, s.userExports(), filter, opts)
 	if err != nil {
 		return nil, err
 	}
-	var docs []userExportDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, err
-	}
-	out := make([]auth.UserExport, len(docs))
-	for i, d := range docs {
-		out[i] = d.export()
-	}
-	return out, nil
+	return mapAll(docs, userExportDoc.export), nil
 }
 
 // ListUserExports implements auth.Store.

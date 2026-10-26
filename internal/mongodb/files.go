@@ -102,19 +102,11 @@ func (s *AuthStore) StaleFileJournal(ctx context.Context, before, now time.Time,
 		// A proxy upload that stopped.
 		bson.D{{Key: "status", Value: waiting}, {Key: "updated_at", Value: bson.D{{Key: "$lt", Value: before}}}, {Key: "pending_until", Value: bson.D{{Key: "$not", Value: bson.D{{Key: "$gt", Value: epoch}}}}}},
 	}}}
-	cur, err := s.fileJournal().Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "updated_at", Value: 1}}).SetLimit(int64(limit)))
+	docs, err := findAll[fileJournalDoc](ctx, s.fileJournal(), filter, options.Find().SetSort(bson.D{{Key: "updated_at", Value: 1}}).SetLimit(int64(limit)))
 	if err != nil {
 		return nil, err
 	}
-	var docs []fileJournalDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, err
-	}
-	out := make([]auth.FileJournalEntry, len(docs))
-	for i, d := range docs {
-		out[i] = d.entry()
-	}
-	return out, nil
+	return mapAll(docs, fileJournalDoc.entry), nil
 }
 
 // QueueFileDeletion adds an object to delete; the same key twice is one.
@@ -146,7 +138,7 @@ func (s *AuthStore) ClaimFileDeletions(ctx context.Context, now, lease time.Time
 
 // CompleteFileDeletion removes a deletion that was carried out.
 func (s *AuthStore) CompleteFileDeletion(ctx context.Context, key string) error {
-	_, err := s.fileDeletions().DeleteOne(ctx, bson.D{{Key: "_id", Value: key}})
+	_, err := s.fileDeletions().DeleteOne(ctx, byID(key))
 	return err
 }
 
@@ -158,11 +150,7 @@ func (s *AuthStore) RetryFileDeletion(ctx context.Context, key string, notBefore
 
 // FileJournalEntry returns one upload's record.
 func (s *AuthStore) FileJournalEntry(ctx context.Context, id string) (auth.FileJournalEntry, error) {
-	var d fileJournalDoc
-	err := s.fileJournal().FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&d)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return auth.FileJournalEntry{}, auth.ErrNotFound
-	}
+	d, err := getOne[fileJournalDoc](ctx, s.fileJournal(), byID(id), auth.ErrNotFound)
 	if err != nil {
 		return auth.FileJournalEntry{}, err
 	}
@@ -258,7 +246,7 @@ func (s *AuthStore) StorageUsage(ctx context.Context, limit int) (auth.StorageUs
 		Bytes int64 `bson:"bytes"`
 		Files int64 `bson:"files"`
 	}
-	switch err := s.storageUsage().FindOne(ctx, bson.D{{Key: "_id", Value: "realm"}}).Decode(&realm); {
+	switch err := s.storageUsage().FindOne(ctx, byID("realm")).Decode(&realm); {
 	case err == nil:
 		out.Realm = auth.StorageUsageTotals{Bytes: realm.Bytes, Files: realm.Files}
 	case !errors.Is(err, mongo.ErrNoDocuments):
@@ -313,7 +301,7 @@ func (s *AuthStore) StorageUsageOf(ctx context.Context, owner string) (auth.Stor
 			Bytes int64 `bson:"bytes"`
 			Files int64 `bson:"files"`
 		}
-		err := s.storageUsage().FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&d)
+		err := s.storageUsage().FindOne(ctx, byID(id)).Decode(&d)
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return auth.StorageUsageTotals{}, nil
 		}

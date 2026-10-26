@@ -3,7 +3,6 @@ package mongodb
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -164,11 +163,7 @@ func (s *AuthStore) CreatePushSend(ctx context.Context, p auth.PushSend) error {
 }
 
 func (s *AuthStore) PushSendByID(ctx context.Context, id string) (auth.PushSend, error) {
-	var d pushSendDoc
-	err := s.pushSends().FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&d)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return auth.PushSend{}, auth.ErrPushSendNotFound
-	}
+	d, err := getOne[pushSendDoc](ctx, s.pushSends(), byID(id), auth.ErrPushSendNotFound)
 	if err != nil {
 		return auth.PushSend{}, err
 	}
@@ -177,11 +172,7 @@ func (s *AuthStore) PushSendByID(ctx context.Context, id string) (auth.PushSend,
 
 // settlePush sets completed_at once everything of the send is done.
 func (s *AuthStore) settlePush(ctx context.Context, id string, now time.Time) (auth.PushSend, error) {
-	var d pushSendDoc
-	err := s.pushSends().FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&d)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return auth.PushSend{}, auth.ErrPushSendNotFound
-	}
+	d, err := getOne[pushSendDoc](ctx, s.pushSends(), byID(id), auth.ErrPushSendNotFound)
 	if err != nil {
 		return auth.PushSend{}, err
 	}
@@ -215,7 +206,7 @@ func (s *AuthStore) AddPushSend(ctx context.Context, id string, d auth.PushDelta
 		}
 	}
 	if d.Sent != 0 || d.Invalid != 0 || d.Failed != 0 {
-		_, err := s.pushSends().UpdateOne(ctx, bson.D{{Key: "_id", Value: id}},
+		_, err := s.pushSends().UpdateOne(ctx, byID(id),
 			bson.D{{Key: "$inc", Value: bson.D{{Key: "sent", Value: int32(d.Sent)}, {Key: "invalid", Value: int32(d.Invalid)}, {Key: "failed", Value: int32(d.Failed)}}}})
 		if err != nil {
 			return auth.PushSend{}, err
@@ -233,7 +224,7 @@ func (s *AuthStore) AddPushSend(ctx context.Context, id string, d auth.PushDelta
 }
 
 func (s *AuthStore) SetPushPlanned(ctx context.Context, id string, batches int, now time.Time) error {
-	_, err := s.pushSends().UpdateOne(ctx, bson.D{{Key: "_id", Value: id}},
+	_, err := s.pushSends().UpdateOne(ctx, byID(id),
 		bson.D{{Key: "$set", Value: bson.D{{Key: "planned", Value: true}, {Key: "batches", Value: int32(batches)}}}})
 	if err != nil {
 		return err
@@ -245,19 +236,11 @@ func (s *AuthStore) SetPushPlanned(ctx context.Context, id string, batches int, 
 // --- devices and users, for a send ---
 
 func (s *AuthStore) DevicesByIDs(ctx context.Context, ids []string) ([]auth.Device, error) {
-	cur, err := s.devices().Find(ctx, bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: ids}}}})
+	docs, err := findAll[deviceDoc](ctx, s.devices(), bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: ids}}}})
 	if err != nil {
 		return nil, err
 	}
-	var docs []deviceDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, err
-	}
-	out := make([]auth.Device, len(docs))
-	for i, d := range docs {
-		out[i] = d.device()
-	}
-	return out, nil
+	return mapAll(docs, deviceDoc.device), nil
 }
 
 func (s *AuthStore) LiveDevicesOf(ctx context.Context, userIDs []string, now time.Time) (map[string][]auth.Device, error) {
@@ -283,24 +266,16 @@ func (s *AuthStore) LiveDevicesOf(ctx context.Context, userIDs []string, now tim
 }
 
 func (s *AuthStore) DeleteDeviceByID(ctx context.Context, id string) error {
-	_, err := s.devices().DeleteOne(ctx, bson.D{{Key: "_id", Value: id}})
+	_, err := s.devices().DeleteOne(ctx, byID(id))
 	return err
 }
 
 func (s *AuthStore) UsersByIDs(ctx context.Context, ids []string) ([]auth.User, error) {
-	cur, err := s.users().Find(ctx, bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: ids}}}})
+	docs, err := findAll[userDoc](ctx, s.users(), bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: ids}}}})
 	if err != nil {
 		return nil, err
 	}
-	var docs []userDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, err
-	}
-	out := make([]auth.User, len(docs))
-	for i, d := range docs {
-		out[i] = d.user()
-	}
-	return out, nil
+	return mapAll(docs, userDoc.user), nil
 }
 
 func (s *AuthStore) AudienceUserIDs(ctx context.Context, a auth.PushAudience, after string, limit int) ([]string, error) {
@@ -356,32 +331,16 @@ func (s *AuthStore) ListPushSends(ctx context.Context, f auth.PushSendFilter) ([
 	if f.Sender != "" {
 		filter = append(filter, bson.E{Key: "sender", Value: f.Sender})
 	}
-	created := bson.D{}
-	if !f.Since.IsZero() {
-		created = append(created, bson.E{Key: "$gte", Value: f.Since})
-	}
-	if !f.Until.IsZero() {
-		created = append(created, bson.E{Key: "$lt", Value: f.Until})
-	}
-	if len(created) > 0 {
-		filter = append(filter, bson.E{Key: "created_at", Value: created})
-	}
+	filter = withinTime(filter, "created_at", f.Since, f.Until)
 	limit := f.Limit
 	if limit <= 0 {
 		limit = 50
 	}
-	cur, err := s.pushSends().Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "_id", Value: -1}}).SetSkip(int64(f.Skip)).SetLimit(int64(limit+1)))
+	docs, err := findAll[pushSendDoc](ctx, s.pushSends(), filter, pageOpts(bson.D{{Key: "_id", Value: -1}}, f.Skip, limit))
 	if err != nil {
 		return nil, false, err
 	}
-	var docs []pushSendDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, false, err
-	}
-	more := len(docs) > limit
-	if more {
-		docs = docs[:limit]
-	}
+	docs, more := trimPage(docs, limit)
 	out := make([]auth.PushSend, len(docs))
 	for i, d := range docs {
 		out[i] = d.send()
@@ -415,12 +374,8 @@ func (s *AuthStore) PutPushOutbox(ctx context.Context, e auth.PushOutboxEntry) e
 }
 
 func (s *AuthStore) ListPushOutbox(ctx context.Context, limit int) ([]auth.PushOutboxEntry, error) {
-	cur, err := s.db.Collection(PushOutboxCollection).Find(ctx, bson.D{}, options.Find().SetSort(bson.D{{Key: "_id", Value: -1}}).SetLimit(int64(limit)))
+	docs, err := findAll[pushOutboxDoc](ctx, s.db.Collection(PushOutboxCollection), bson.D{}, options.Find().SetSort(bson.D{{Key: "_id", Value: -1}}).SetLimit(int64(limit)))
 	if err != nil {
-		return nil, err
-	}
-	var docs []pushOutboxDoc
-	if err := cur.All(ctx, &docs); err != nil {
 		return nil, err
 	}
 	out := make([]auth.PushOutboxEntry, len(docs))

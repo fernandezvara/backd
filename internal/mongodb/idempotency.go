@@ -48,7 +48,7 @@ func (s *AuthStore) ClaimIdempotency(ctx context.Context, rec auth.IdempotencyRe
 		return auth.IdempotencyRecord{}, false, err
 	}
 	var d idempotencyDoc
-	if err := s.idempotency().FindOne(ctx, bson.D{{Key: "_id", Value: rec.ID}}).Decode(&d); err != nil {
+	if err := s.idempotency().FindOne(ctx, byID(rec.ID)).Decode(&d); err != nil {
 		return auth.IdempotencyRecord{}, false, err
 	}
 	return idempotencyFromDoc(d), false, nil
@@ -80,6 +80,6 @@ func (s *AuthStore) CompleteIdempotency(ctx context.Context, id string, result *
 
 // ReleaseIdempotency removes a claim that shouldn't be remembered.
 func (s *AuthStore) ReleaseIdempotency(ctx context.Context, id string) error {
-	_, err := s.idempotency().DeleteOne(ctx, bson.D{{Key: "_id", Value: id}})
+	_, err := s.idempotency().DeleteOne(ctx, byID(id))
 	return err
 }

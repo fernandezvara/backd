@@ -6,7 +6,6 @@ import (
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
-	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/fernandezvara/backd/internal/auth"
 )
@@ -59,32 +58,13 @@ func (s *AuthStore) ListInvocations(ctx context.Context, f auth.InvocationFilter
 			filter = append(filter, bson.E{Key: c.key, Value: c.value})
 		}
 	}
-	at := bson.D{}
-	if !f.Since.IsZero() {
-		at = append(at, bson.E{Key: "$gte", Value: f.Since})
-	}
-	if !f.Until.IsZero() {
-		at = append(at, bson.E{Key: "$lt", Value: f.Until})
-	}
-	if len(at) > 0 {
-		filter = append(filter, bson.E{Key: "at", Value: at})
-	}
-	opts := options.Find().SetSort(bson.D{{Key: "at", Value: -1}, {Key: "_id", Value: -1}}).SetSkip(int64(f.Skip))
-	if f.Limit > 0 {
-		opts.SetLimit(int64(f.Limit) + 1)
-	}
-	cur, err := s.invocations().Find(ctx, filter, opts)
+	filter = withinTime(filter, "at", f.Since, f.Until)
+	opts := pageOpts(bson.D{{Key: "at", Value: -1}, {Key: "_id", Value: -1}}, f.Skip, f.Limit)
+	docs, err := findAll[invocationDoc](ctx, s.invocations(), filter, opts)
 	if err != nil {
 		return nil, false, err
 	}
-	var docs []invocationDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, false, err
-	}
-	more := f.Limit > 0 && len(docs) > f.Limit
-	if more {
-		docs = docs[:f.Limit]
-	}
+	docs, more := trimPage(docs, f.Limit)
 	out := make([]auth.InvocationRecord, len(docs))
 	for i, d := range docs {
 		logs := make([]auth.LogLine, len(d.Logs))

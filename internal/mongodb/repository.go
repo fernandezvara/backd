@@ -45,15 +45,7 @@ func (s *Store) Repository(c *registry.Collection) storage.Repository {
 // (e.g. a write conflict with another transaction), so fn must have no
 // side effects beyond the repositories it's given.
 func (s *Store) Transact(ctx context.Context, fn func(ctx context.Context) error) error {
-	sess, err := s.Client.StartSession()
-	if err != nil {
-		return mapError(err)
-	}
-	defer sess.EndSession(ctx)
-	_, err = sess.WithTransaction(ctx, func(sessCtx context.Context) (any, error) {
-		return nil, fn(sessCtx)
-	})
-	return mapError(err)
+	return mapError(withTransaction(ctx, s.Client, fn))
 }
 
 // Repository implements storage.Repository for one MongoDB collection.
@@ -146,7 +138,7 @@ func (r *Repository) Create(ctx context.Context, doc storage.Document) error {
 
 func (r *Repository) Get(ctx context.Context, id string) (storage.Document, error) {
 	var d bson.D
-	if err := r.coll.FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&d); err != nil {
+	if err := r.coll.FindOne(ctx, byID(id)).Decode(&d); err != nil {
 		return nil, mapError(err)
 	}
 	doc := fromBSON(d)
@@ -276,7 +268,7 @@ func (r *Repository) Delete(ctx context.Context, id string, ifVersion *int64) er
 // versionFilter selects a document by id and, when ifVersion is set, by
 // version. Version 0 matches documents stored without a version.
 func versionFilter(id string, ifVersion *int64) bson.D {
-	f := bson.D{{Key: "_id", Value: id}}
+	f := byID(id)
 	switch {
 	case ifVersion == nil:
 	case *ifVersion == 0:
@@ -289,7 +281,7 @@ func versionFilter(id string, ifVersion *int64) bson.D {
 
 // missOrMismatch explains why a conditional write matched nothing.
 func (r *Repository) missOrMismatch(ctx context.Context, id string) error {
-	n, err := r.coll.CountDocuments(ctx, bson.D{{Key: "_id", Value: id}})
+	n, err := r.coll.CountDocuments(ctx, byID(id))
 	if err != nil {
 		return mapError(err)
 	}
