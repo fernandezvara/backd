@@ -150,8 +150,7 @@ func (s *Users) RequestMagicLink(ctx context.Context, in MagicLinkInput) (string
 		req.ChallengeID, req.UserID = "", "" // counts the limits only
 	}
 	if _, err := s.QueueEmail(ctx, req); err != nil {
-		var limited *EmailLimitedError
-		if !errors.As(err, &limited) {
+		if _, ok := errors.AsType[*EmailLimitedError](err); !ok {
 			return "", err
 		}
 		// Over a limit: nobody is mailed, and the caller isn't told.

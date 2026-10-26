@@ -2,6 +2,7 @@ package realtime
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"time"
 
@@ -148,12 +149,7 @@ func (s *Stream) systemChange(c changefeed.Change) {
 func (s *Stream) inOrg(id string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, o := range s.access.Orgs {
-		if o == id {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(s.access.Orgs, id)
 }
 
 // end tells the client its stream is over, and stops delivering to it once that is written.
@@ -320,10 +316,7 @@ func (s *Stream) startExpiry() {
 	}
 	var arm func(time.Time)
 	arm = func(at time.Time) {
-		d := time.Until(at)
-		if d < 0 {
-			d = 0
-		}
+		d := max(time.Until(at), 0)
 		t := time.AfterFunc(d, func() {
 			s.mu.Lock()
 			next := s.access.Expires

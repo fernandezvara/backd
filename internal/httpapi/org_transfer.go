@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 	"slices"
 
@@ -173,9 +174,7 @@ func (d *documents) transfer(w http.ResponseWriter, r *http.Request) {
 		teamSet = true
 	}
 	meta := map[string]any{}
-	for k, v := range stored {
-		meta[k] = v
-	}
+	maps.Copy(meta, stored)
 	meta["version"], meta["updated_at"] = read+1, d.timestamp()
 	stampUpdate(r, stored, meta) // keeps the owner and records who moved it
 	if toNone {
@@ -190,9 +189,7 @@ func (d *documents) transfer(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	fields := map[string]any{}
-	for k, v := range current {
-		fields[k] = v
-	}
+	maps.Copy(fields, current)
 	fields["_meta"] = meta
 	switch err := repo.Replace(r.Context(), fields, read); {
 	case err == nil:
@@ -250,9 +247,8 @@ func (d *documents) assignOrg(w http.ResponseWriter, r *http.Request) {
 	}
 	filter, err := query.ParseWhere(whereJSON, c.Fields)
 	if err != nil {
-		var qe query.Errors
 		var details []Detail
-		if errors.As(err, &qe) {
+		if qe, ok := errors.AsType[query.Errors](err); ok {
 			for _, e := range qe {
 				details = append(details, Detail{Path: e.Path, Reason: e.Reason})
 			}

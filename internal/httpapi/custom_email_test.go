@@ -190,7 +190,7 @@ func TestCustomEmailCaps(t *testing.T) {
 
 	// The per-recipient limit applies to the same address however many functions ask.
 	limits.PerFunctionPerHour, limits.PerInvocation = 1000, 1000
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if rec := send("inv-F", "same@example.org"); rec.Code != 202 {
 			t.Fatalf("same address %d: %d", i, rec.Code)
 		}

@@ -103,7 +103,7 @@ func TestProviderLoginLinkingByAddress(t *testing.T) {
 	ctx := context.Background()
 	svc, store, _ := providerFixture(t)
 	// A user with a verified address and a password.
-	u, err := svc.Create(ctx, "ada@example.com", ptr("dev-p4ssw0rd!"))
+	u, err := svc.Create(ctx, "ada@example.com", new("dev-p4ssw0rd!"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestProviderLoginLinkingByAddress(t *testing.T) {
 	}
 
 	// Each condition on its own stops it.
-	other, _ := svc.Create(ctx, "bob@example.com", ptr("dev-p4ssw0rd!"))
+	other, _ := svc.Create(ctx, "bob@example.com", new("dev-p4ssw0rd!"))
 	if err := store.UpdateUser(ctx, other.ID, UserUpdate{EmailVerified: &verified}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -160,8 +160,8 @@ func TestProviderLoginLinkingByAddress(t *testing.T) {
 func TestProviderLoginExplicitLinking(t *testing.T) {
 	ctx := context.Background()
 	svc, _, _ := providerFixture(t)
-	ada, _ := svc.Create(ctx, "ada@example.com", ptr("dev-p4ssw0rd!"))
-	bob, _ := svc.Create(ctx, "bob@example.com", ptr("dev-p4ssw0rd!"))
+	ada, _ := svc.Create(ctx, "ada@example.com", new("dev-p4ssw0rd!"))
+	bob, _ := svc.Create(ctx, "bob@example.com", new("dev-p4ssw0rd!"))
 	link := func(user User, subject string) (ProviderResult, error) {
 		return svc.ResolveProviderLogin(ctx, ProviderLogin{Provider: "google", Subject: subject, Email: "someone@gmail.example", EmailVerified: true, TrustsEmail: true, Intent: IntentLink, LinkUserID: user.ID})
 	}

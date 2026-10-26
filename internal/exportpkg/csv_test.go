@@ -46,7 +46,7 @@ func TestWriteCSVFieldOrder(t *testing.T) {
 	if _, err := WriteCSV(src, &out, []string{"z", "address", "a"}); err != nil {
 		t.Fatal(err)
 	}
-	if first := strings.SplitN(out.String(), "\n", 2)[0]; first != "id,z,address.city,address.zip,a" {
+	if first, _, _ := strings.Cut(out.String(), "\n"); first != "id,z,address.city,address.zip,a" {
 		t.Errorf("header: %s", first)
 	}
 }

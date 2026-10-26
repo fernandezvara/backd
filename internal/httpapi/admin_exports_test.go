@@ -143,7 +143,7 @@ func TestAdministratorExportsAUsersData(t *testing.T) {
 	if code != http.StatusAccepted {
 		t.Fatalf("ada asks: %d %v", code, mine)
 	}
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if !f.w.RunOnce(ctx) {
 			break
 		}

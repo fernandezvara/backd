@@ -125,8 +125,7 @@ func (a *adminAPI) startDataCheck(w http.ResponseWriter, r *http.Request) {
 	svc := usersOf(r)
 	caller, _ := callerOf(r)
 	job, err := svc.StartSchemaCheck(r.Context(), auth.CheckJob{Collections: keys, Database: in.Database, Collection: in.Collection, Limit: limit}, caller.Actor(), requestID(r.Context()))
-	var running *auth.ErrCheckRunning
-	if errors.As(err, &running) {
+	if running, ok := errors.AsType[*auth.ErrCheckRunning](err); ok {
 		writeError(w, r, http.StatusConflict, codeCheckRunning, "a schema check is already queued or running in this realm; wait for it to finish or cancel it", Detail{Path: "job_id", Reason: running.JobID})
 		return
 	}

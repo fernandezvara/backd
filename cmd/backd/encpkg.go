@@ -49,7 +49,7 @@ func (k *fieldKey) name() string {
 // parseFieldKeys reads the value of --field.
 func parseFieldKeys(spec string, getenv func(string) string, warn io.Writer) ([]*fieldKey, error) {
 	var out []*fieldKey
-	for _, entry := range strings.Split(spec, ";") {
+	for entry := range strings.SplitSeq(spec, ";") {
 		entry = strings.TrimSpace(entry)
 		if entry == "" {
 			continue
@@ -214,7 +214,7 @@ func (d *decryptor) line(database, collection string, line []byte) ([]byte, erro
 
 func lookupDoc(doc map[string]any, path string) (any, bool) {
 	var cur any = doc
-	for _, p := range strings.Split(path, ".") {
+	for p := range strings.SplitSeq(path, ".") {
 		m, ok := cur.(map[string]any)
 		if !ok {
 			return nil, false

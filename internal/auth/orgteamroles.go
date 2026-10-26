@@ -245,7 +245,7 @@ func (s *Users) setTeamRole(ctx context.Context, by, orgID, teamID, target, role
 		if len(tm.TeamRoles) >= registry.MaxTeamRolesPerMember {
 			return TeamMemberView{}, ErrTeamRoleLimit
 		}
-		tm.TeamRoles = append(slices.Clone(tm.TeamRoles), TeamRoleGrant{Team: teamID, RoleGrant: RoleGrant{Role: role, From: w.From, Until: w.Until, GrantedBy: by, GrantedAt: s.now()}})
+		tm.TeamRoles = append(slices.Clone(tm.TeamRoles), TeamRoleGrant{Team: teamID, Role: role, From: w.From, Until: w.Until, GrantedBy: by, GrantedAt: s.now()})
 		action = AuditOrgTeamRoleGrant
 	case TeamRoleWindowOp:
 		if held < 0 {

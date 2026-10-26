@@ -109,7 +109,7 @@ func plainID(sort []storage.SortField) bool {
 // document; a missing field is nil.
 func valueAt(doc storage.Document, path string) any {
 	var cur any = map[string]any(doc)
-	for _, part := range strings.Split(path, ".") {
+	for part := range strings.SplitSeq(path, ".") {
 		m, ok := cur.(map[string]any)
 		if !ok {
 			return nil
@@ -206,7 +206,7 @@ func after(sort []storage.SortField, values []any) storage.Filter {
 	var terms storage.Or
 	for i, s := range sort {
 		var term storage.And
-		for j := 0; j < i; j++ {
+		for j := range i {
 			term = append(term, equal(sort[j].Field, values[j]))
 		}
 		next := follows(s, values[i])

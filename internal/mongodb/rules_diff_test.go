@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"go.yaml.in/yaml/v3"
+	"maps"
 	"math/rand/v2"
 	"slices"
 	"strings"
@@ -115,7 +116,7 @@ func provisionOne(t *testing.T, schema string) (*registry.Collection, *Repositor
 func withoutReferences(config string) string {
 	var out []string
 	skipping := false
-	for _, line := range strings.Split(config, "\n") {
+	for line := range strings.SplitSeq(config, "\n") {
 		top := line != "" && line[0] != ' ' && line[0] != '#' && line[0] != '\t'
 		if top {
 			skipping = strings.HasPrefix(line, "references:") || strings.HasPrefix(line, "triggers:")
@@ -254,9 +255,7 @@ func insert(t *testing.T, repo *Repository, fields map[string]any, created time.
 		"created_at": created, "updated_at": created, "version": int64(1),
 		"owner": owner, "created_by": "key:test", "updated_by": "key:test",
 	}}
-	for k, v := range fields {
-		doc[k] = v
-	}
+	maps.Copy(doc, fields)
 	if err := repo.Create(context.Background(), doc); err != nil {
 		t.Fatalf("insert %v: %v", doc, err)
 	}

@@ -417,8 +417,7 @@ func parseListQuery(v url.Values, fields map[string]registry.Field) (storage.Que
 		}
 	}
 	addErr := func(err error) {
-		var qe query.Errors
-		if errors.As(err, &qe) {
+		if qe, ok := errors.AsType[query.Errors](err); ok {
 			for _, e := range qe {
 				details = append(details, Detail{Path: e.Path, Reason: e.Reason, Code: e.Code})
 			}
@@ -754,8 +753,7 @@ func (d *documents) timestamp() time.Time {
 // numbers as json.Number. It answers 400 invalid_json otherwise.
 func readObject(w http.ResponseWriter, r *http.Request) (map[string]any, bool) {
 	data, err := io.ReadAll(r.Body)
-	var tooBig *http.MaxBytesError
-	if errors.As(err, &tooBig) {
+	if tooBig, ok := errors.AsType[*http.MaxBytesError](err); ok {
 		tooLarge(w, r, tooBig.Limit)
 		return nil, false
 	}
@@ -802,9 +800,7 @@ func stripSystemFields(doc map[string]any) {
 // userFields returns a copy of doc without system fields.
 func userFields(doc map[string]any) map[string]any {
 	out := make(map[string]any, len(doc))
-	for k, v := range doc {
-		out[k] = v
-	}
+	maps.Copy(out, doc)
 	stripSystemFields(out)
 	return out
 }
@@ -831,9 +827,7 @@ func writeDocument(w http.ResponseWriter, status int, doc map[string]any) {
 // render prepares a stored document for the response, formatting _meta timestamps.
 func render(doc map[string]any) map[string]any {
 	out := make(map[string]any, len(doc))
-	for k, v := range doc {
-		out[k] = v
-	}
+	maps.Copy(out, doc)
 	// Every time becomes text: _meta's timestamps, and the fields stored as dates.
 	for k, v := range out {
 		out[k] = timesToStrings(v)
@@ -853,8 +847,7 @@ func storageError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, r, http.StatusNotFound, codeNotFound, "document not found")
 	case errors.Is(err, storage.ErrConflict):
 		var details []Detail
-		var ce *storage.ConflictError
-		if errors.As(err, &ce) {
+		if ce, ok := errors.AsType[*storage.ConflictError](err); ok {
 			reason := "must be unique"
 			if len(ce.Fields) > 1 {
 				reason = "must be unique in combination with " + strings.Join(ce.Fields, ", ")
@@ -907,9 +900,7 @@ func (d *documents) restoredDocument(r *http.Request, current map[string]any) ma
 // withMeta is the user fields and id of doc with a new _meta.
 func withMeta(doc, meta map[string]any) map[string]any {
 	out := make(map[string]any, len(doc))
-	for k, v := range doc {
-		out[k] = v
-	}
+	maps.Copy(out, doc)
 	out["_meta"] = meta
 	return out
 }

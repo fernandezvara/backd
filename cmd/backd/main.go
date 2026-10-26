@@ -628,7 +628,7 @@ func (a *app) handlerConfig() httpapi.Config {
 // dev landing page shows. Entries without '=' are skipped.
 func devLinks(spec string) []httpapi.DevLink {
 	var links []httpapi.DevLink
-	for _, entry := range strings.Split(spec, ";") {
+	for entry := range strings.SplitSeq(spec, ";") {
 		label, url, ok := strings.Cut(strings.TrimSpace(entry), "=")
 		if !ok || label == "" || url == "" {
 			continue

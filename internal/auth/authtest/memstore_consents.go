@@ -2,6 +2,7 @@ package authtest
 
 import (
 	"context"
+	"maps"
 	"time"
 
 	"github.com/fernandezvara/backd/internal/auth"
@@ -34,9 +35,7 @@ func (m *MemStore) SetUserConsent(_ context.Context, userID, consent, version st
 		return auth.ErrNotFound
 	}
 	next := map[string]string{}
-	for k, v := range u.Consents {
-		next[k] = v
-	}
+	maps.Copy(next, u.Consents)
 	if version == "" {
 		delete(next, consent)
 	} else {

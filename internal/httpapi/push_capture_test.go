@@ -55,7 +55,7 @@ func TestCaptureProviderEndToEnd(t *testing.T) {
 		t.Fatalf("first attempt: %+v", rec)
 	}
 	// Past the backoff, twice: the retry device is sent, the other runs out of attempts.
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		offset := time.Duration(i+1) * time.Minute
 		f.svc.Now = func() time.Time { return time.Now().Add(offset) }
 		f.drain(t)

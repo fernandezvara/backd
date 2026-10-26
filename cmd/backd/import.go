@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/url"
 	"os"
 	"path"
@@ -439,9 +440,7 @@ func uploadFiles(t *target, dir string, m *exportpkg.Manifest, fileFields map[st
 				}
 				st, _ := f.Stat()
 				hdr := map[string]string{"X-Backd-Sha256": strings.TrimPrefix(sum, "sha256:")}
-				for k, v := range lease {
-					hdr[k] = v
-				}
+				maps.Copy(hdr, lease)
 				err = t.send("PUT", "_admin/import", url.Values{"file": {db.Name + "/" + col.Name + "/" + id}}, f, st.Size(), "application/octet-stream", hdr, nil)
 				f.Close()
 				if err != nil {

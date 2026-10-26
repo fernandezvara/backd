@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -117,8 +118,6 @@ func (a *authAPI) devPush(w http.ResponseWriter, r *http.Request) {
 // provider, which needs nothing from outside.
 func pushSendersOf(cfg Config, users func(string) *auth.Users, now func() time.Time) map[string]push.Sender {
 	out := map[string]push.Sender{push.ProviderCapture: &captureSender{users: users, now: now}}
-	for k, v := range cfg.PushSenders {
-		out[k] = v
-	}
+	maps.Copy(out, cfg.PushSenders)
 	return out
 }

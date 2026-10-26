@@ -657,7 +657,7 @@ func TestNestedCalls(t *testing.T) {
 	if code, out := nested(carlTok, "echo", `{"n": 1}`); code != 200 {
 		t.Errorf("invoke rule applied to a nested call: %d %v", code, out)
 	}
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		if code, out := nested(carlTok, "capped", `{}`); code != 200 {
 			t.Errorf("rate limit applied to a nested call (%d): %d %v", i, code, out)
 		}

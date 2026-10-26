@@ -91,7 +91,7 @@ func (r *recorder) Gap(_ context.Context, g Gap) {
 
 func (r *recorder) wait(t *testing.T, n int) {
 	t.Helper()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		select {
 		case <-r.ch:
 		case <-time.After(3 * time.Second):
@@ -165,8 +165,7 @@ func TestConsumerReopensAfterAnErrorFromTheLastPosition(t *testing.T) {
 	c := &Consumer{Name: "t", Source: src, Backoff: fastBackoff}
 	c.SetWatched(set("items"))
 	rec := newRecorder()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go c.Run(ctx, nil, rec) //nolint:errcheck
 	rec.wait(t, 1)
 	deadline := time.Now().Add(3 * time.Second)
@@ -195,8 +194,7 @@ func TestConsumerReportsAGapAndContinuesFromNow(t *testing.T) {
 	c := &Consumer{Name: "t", Source: src, Backoff: fastBackoff}
 	c.SetWatched(set("items"))
 	rec := newRecorder()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go c.Run(ctx, Position("stale"), rec) //nolint:errcheck
 	rec.wait(t, 1)
 	if len(rec.gaps) != 1 || string(rec.gaps[0].From) != "stale" {
@@ -227,8 +225,7 @@ func TestSetWatchedReopensAfterTheLastPosition(t *testing.T) {
 	c := &Consumer{Name: "t", Source: src, Backoff: fastBackoff}
 	c.SetWatched(set("items"))
 	rec := newRecorder()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go c.Run(ctx, nil, rec) //nolint:errcheck
 	rec.wait(t, 1)
 	c.SetWatched(set("items", "orders"))
@@ -255,8 +252,7 @@ func TestConsumerWaitsWhileNothingIsWatched(t *testing.T) {
 	src := &fakeSource{script: []func(openCall) (Stream, error){func(openCall) (Stream, error) { return &fakeStream{pos: Position("p0")}, nil }}}
 	c := &Consumer{Name: "t", Source: src, Backoff: fastBackoff}
 	rec := newRecorder()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go c.Run(ctx, nil, rec) //nolint:errcheck
 	time.Sleep(50 * time.Millisecond)
 	if n := len(src.calls()); n != 0 {
@@ -278,7 +274,7 @@ func TestLazyOpensOnFirstSubscriberAndClosesAfterGrace(t *testing.T) {
 	src := &fakeSource{script: []func(openCall) (Stream, error){func(openCall) (Stream, error) {
 		opens.Add(1)
 		live.Add(1)
-		return &countedStream{fakeStream: fakeStream{pos: Position("p0")}, live: &live}, nil
+		return &countedStream{pos: Position("p0"), live: &live}, nil
 	}}}
 	c := &Consumer{Name: "t", Source: src, Backoff: fastBackoff}
 	c.SetWatched(set("items"))

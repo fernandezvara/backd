@@ -202,4 +202,5 @@ roles:
 	call(in, "DELETE", base+"_admin/audit", "", ada, 405)
 }
 
-func ptr[T any](v T) *T { return &v }
+//go:fix inline
+func ptr[T any](v T) *T { return new(v) }

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -21,12 +22,7 @@ func (c ifMatch) matches(v int64) bool {
 	if !c.present || c.any {
 		return true
 	}
-	for _, want := range c.versions {
-		if want == v {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.versions, v)
 }
 
 // parseIfMatch parses If-Match header values: "*" or a comma-separated list
@@ -35,7 +31,7 @@ func (c ifMatch) matches(v int64) bool {
 func parseIfMatch(values []string) (ifMatch, error) {
 	var c ifMatch
 	for _, v := range values {
-		for _, tag := range strings.Split(v, ",") {
+		for tag := range strings.SplitSeq(v, ",") {
 			tag = strings.TrimSpace(tag)
 			if tag == "" {
 				continue

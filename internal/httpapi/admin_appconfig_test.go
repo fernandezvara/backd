@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"maps"
 	"net/http"
 	"strings"
 	"testing"
@@ -36,9 +37,7 @@ const appConfigRules = `read:
 func (f *rulesFixture) configDo(t *testing.T, method, path, body string, cred string, extra map[string]string) (int, map[string]any, http.Header) {
 	t.Helper()
 	h := jsonHdr(cred)
-	for k, v := range extra {
-		h[k] = v
-	}
+	maps.Copy(h, extra)
 	rec, out := f.doH(t, method, admin+path, body, h)
 	return rec.Code, out, rec.Header()
 }

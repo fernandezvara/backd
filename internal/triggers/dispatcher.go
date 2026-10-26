@@ -179,11 +179,9 @@ func (d *Dispatcher) lead(ctx context.Context, lease Lease) {
 
 	// Keep the lease; losing it, or not being able to tell for a whole TTL, ends the lead.
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		d.keepLease(lctx, lease, cancel)
-	}()
+	})
 
 	pos, at, found, err := d.State.Watermark(lctx)
 	if err != nil {
@@ -204,9 +202,7 @@ func (d *Dispatcher) lead(ctx context.Context, lease Lease) {
 	d.mu.Unlock()
 
 	// The timer flushes what the stream's own quiet would leave waiting.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		t := time.NewTicker(d.flushEvery())
 		defer t.Stop()
 		for {
@@ -217,7 +213,7 @@ func (d *Dispatcher) lead(ctx context.Context, lease Lease) {
 				h.tick(lctx)
 			}
 		}
-	}()
+	})
 
 	_, _ = c.Run(lctx, pos, h)
 	cancel()

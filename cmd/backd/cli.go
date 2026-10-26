@@ -134,8 +134,7 @@ func act(name string, fn kli.CommandFunc) kli.CommandFunc {
 			return kli.Exit(kli.ExitUsage, fmt.Errorf("backd %s: unexpected arguments: %v (values are given as flags: see `backd %s --help`)", name, extra, name))
 		}
 		if err := fn(c); err != nil {
-			var ee *kli.ExitError
-			if errors.As(err, &ee) {
+			if _, ok := errors.AsType[*kli.ExitError](err); ok {
 				return err
 			}
 			return fmt.Errorf("backd %s: %w", name, err)

@@ -261,7 +261,7 @@ func TestLoadImport(t *testing.T) {
 func TestLoadHotCollectionSeveralTriggers(t *testing.T) {
 	n := 1000 * loadScale()
 	var clauses []string
-	for i := 0; i < 40; i++ {
+	for i := range 40 {
 		clauses = append(clauses, fmt.Sprintf("(document.n >= %d || document.n < %d)", -i, i+1))
 	}
 	e := newLoadEnv(t, `triggers:
@@ -355,11 +355,9 @@ func TestLoadLeaseFailoverDuringTraffic(t *testing.T) {
 	stopA := e.dispatcher("a", nil)
 	e.waitPosition()
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		e.insertMany("fo", n, "new", nil)
-	}()
+	})
 	waitFor(t, "traffic", func() bool { return e.jobsOf("on_new") >= n/4 })
 	stopA()
 	stopB := e.dispatcher("b", nil)

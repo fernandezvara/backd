@@ -53,9 +53,7 @@ func TestLoginFloodMemoryBounded(t *testing.T) {
 	var wg sync.WaitGroup
 	var ok, busy atomic.Int32
 	for i := range logins {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			// Distinct accounts: logins for one account are serialized, and
 			// unknown emails still hash (against the dummy hash).
 			_, _, err := svc.Login(ctx, fmt.Sprintf("user%d@example.com", i), "dev-p4ssw0rd!", "")
@@ -67,7 +65,7 @@ func TestLoginFloodMemoryBounded(t *testing.T) {
 			default:
 				t.Error(err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(stop)

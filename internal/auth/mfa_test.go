@@ -37,7 +37,7 @@ func newMFAFixture(t *testing.T) *mfaFixture {
 	if svc.Cipher, err = NewSecretCipher([]byte("01234567890123456789012345678901")); err != nil {
 		t.Fatal(err)
 	}
-	u, err := svc.Create(context.Background(), "ada@example.com", ptr(mfaPassword))
+	u, err := svc.Create(context.Background(), "ada@example.com", new(mfaPassword))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestSecondFactorIsAskedAfterTheFirst(t *testing.T) {
 		t.Errorf("Login: %v", err)
 	}
 	// Someone without a second factor still gets their session at once.
-	if _, err := f.svc.Create(ctx, "bob@example.com", ptr(mfaPassword)); err != nil {
+	if _, err := f.svc.Create(ctx, "bob@example.com", new(mfaPassword)); err != nil {
 		t.Fatal(err)
 	}
 	p, token, err := f.svc.Login(ctx, "bob@example.com", mfaPassword, "")
@@ -201,7 +201,7 @@ func TestFailedSecondFactorsLockTheUser(t *testing.T) {
 	ctx := context.Background()
 	f := newMFAFixture(t)
 	// Each challenge only gives five tries; the lock counts across them.
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		ch := f.challenge(t)
 		if _, err := f.svc.VerifyMFA(ctx, ch, MethodTOTP, "000000", ""); err == nil {
 			t.Fatal("a wrong code was accepted")
@@ -257,7 +257,7 @@ func TestProviderSignInGetsTheSecondStepToo(t *testing.T) {
 func TestRequiredRoleWithoutMFAIsAskedToEnroll(t *testing.T) {
 	ctx := context.Background()
 	f := newMFAFixture(t)
-	boss, err := f.svc.Create(ctx, "boss@example.com", ptr(mfaPassword))
+	boss, err := f.svc.Create(ctx, "boss@example.com", new(mfaPassword))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +275,7 @@ func TestRequiredRoleWithoutMFAIsAskedToEnroll(t *testing.T) {
 	}
 	// `all` asks everyone who has no second factor yet.
 	f.svc.Settings.MFA = registry.MFASettings{RequiredAll: true}
-	if _, err := f.svc.Create(ctx, "bob@example.com", ptr(mfaPassword)); err != nil {
+	if _, err := f.svc.Create(ctx, "bob@example.com", new(mfaPassword)); err != nil {
 		t.Fatal(err)
 	}
 	out, err = f.svc.SignIn(ctx, "bob@example.com", mfaPassword, "")

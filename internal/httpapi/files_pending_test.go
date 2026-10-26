@@ -240,7 +240,7 @@ func TestPendingUploadLimits(t *testing.T) {
 	f := newFilesFixture(t)
 	f.svc.Now = func() time.Time { return *f.clock }
 	var ids, tokens []string
-	for i := 0; i < auth.MaxOpenPendingUploads; i++ {
+	for i := range auth.MaxOpenPendingUploads {
 		id, tok := f.pending(t, f.ada, "forms", "scan", pngBytes(i))
 		ids, tokens = append(ids, id), append(tokens, tok)
 	}

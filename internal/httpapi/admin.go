@@ -664,8 +664,7 @@ func (a *adminAPI) sendInvitation(w http.ResponseWriter, r *http.Request, f map[
 	case errors.Is(err, auth.ErrInvitationNeedsAddress):
 		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "email", Reason: "is required to send an invitation"})
 	case err != nil:
-		var limited *auth.EmailLimitedError
-		if errors.As(err, &limited) {
+		if _, ok := errors.AsType[*auth.EmailLimitedError](err); ok {
 			authError(w, r, err)
 			return
 		}

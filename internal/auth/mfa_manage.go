@@ -286,8 +286,7 @@ func (s *Users) CompleteEnrollment(ctx context.Context, challenge, setupID, code
 		return Verified{}, nil, err
 	}
 	codes, err := s.ConfirmTOTP(ctx, u, "", setupID, code)
-	var bad *InvalidCodeError
-	if errors.As(err, &bad) {
+	if _, ok := errors.AsType[*InvalidCodeError](err); ok {
 		cur, cerr := s.Store.CountChallengeAttempt(ctx, c.ID, s.now())
 		if errors.Is(cerr, ErrNotFound) || (cerr == nil && cur.Attempts >= MaxChallengeAttempts) {
 			_ = s.Store.DeleteChallenge(ctx, c.ID)

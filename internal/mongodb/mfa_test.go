@@ -34,13 +34,11 @@ func TestAuthStoreChallengesWorkOnce(t *testing.T) {
 	var won atomic.Int32
 	var wg sync.WaitGroup
 	for range 4 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if _, err := s.ClaimChallenge(ctx, "h1", now); err == nil {
 				won.Add(1)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if won.Load() != 1 {
@@ -101,13 +99,11 @@ func TestAuthStoreSecondFactors(t *testing.T) {
 	var won atomic.Int32
 	var wg sync.WaitGroup
 	for range 4 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if _, ok, err := s.UseRecoveryCode(ctx, "u1", "h2"); err == nil && ok {
 				won.Add(1)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if won.Load() != 1 {

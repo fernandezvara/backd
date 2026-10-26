@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"maps"
 	"strings"
 	"testing"
 )
@@ -14,9 +15,7 @@ func filesTree(t *testing.T, collectionYAML string, extra map[string]string) (*R
 		"shop/app/notes/schema.json":     `{"type": "object", "properties": {"title": {"type": "string"}}, "required": ["title"]}`,
 		"shop/app/notes/collection.yaml": collectionYAML,
 	}
-	for k, v := range extra {
-		files[k] = v
-	}
+	maps.Copy(files, extra)
 	return Load(writeTree(t, files))
 }
 

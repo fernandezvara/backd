@@ -119,14 +119,14 @@ func TestSlugProbingIsLimited(t *testing.T) {
 	f, _, _ := newOrgSignInFixture(t)
 	body := `{"email": "probe@example.com", "password": "dev-p4ssw0rd!", "name": "Probe", "slug": "acme-corp"}`
 	var last int
-	for i := 0; i < orgCreationRate+1; i++ {
+	for range orgCreationRate + 1 {
 		rec, _ := f.doH(t, "POST", orgAuthPath, body, anon)
 		last = rec.Code
 	}
 	if last != 429 {
 		t.Errorf("the %dth try to start a company: %d", orgCreationRate+1, last)
 	}
-	for i := 0; i < orgSignInGateRate+1; i++ {
+	for range orgSignInGateRate + 1 {
 		rec, _ := f.doH(t, "POST", orgAuthPath+"/walking-slugs/login", `{"email": "x@example.com", "password": "x"}`, anon)
 		last = rec.Code
 	}

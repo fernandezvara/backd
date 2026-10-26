@@ -52,7 +52,7 @@ func ParseAggregate(p AggregateParams, f AggregateFields) (q storage.AggregateQu
 
 	seen := map[string]bool{}
 	if p.GroupBy != "" {
-		for _, part := range strings.Split(p.GroupBy, ",") {
+		for part := range strings.SplitSeq(p.GroupBy, ",") {
 			field, bucket, hasBucket := strings.Cut(strings.TrimSpace(part), ":")
 			switch {
 			case !slices.Contains(f.GroupBy, field):
@@ -131,7 +131,7 @@ func ParseAggregate(p AggregateParams, f AggregateFields) (q storage.AggregateQu
 		for n := range names {
 			known[n] = true
 		}
-		for _, part := range strings.Split(p.OrderBy, ",") {
+		for part := range strings.SplitSeq(p.OrderBy, ",") {
 			name := strings.TrimSpace(part)
 			desc := strings.HasPrefix(name, "-")
 			name = strings.TrimPrefix(name, "-")

@@ -20,11 +20,11 @@ func TestAccountExportHoldsTheirDataAndNoSecrets(t *testing.T) {
 	clock := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	svc := newUsers(store, &clock)
 
-	u, err := svc.Create(ctx, "ada@example.com", ptr("dev-p4ssw0rd!"))
+	u, err := svc.Create(ctx, "ada@example.com", new("dev-p4ssw0rd!"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, _ := svc.Create(ctx, "bob@example.com", ptr("dev-p4ssw0rd!"))
+	other, _ := svc.Create(ctx, "bob@example.com", new("dev-p4ssw0rd!"))
 	_ = store.CreateSession(ctx, Session{ID: "sess1", UserID: u.ID, TokenHash: "SESSION-TOKEN-HASH", CreatedAt: clock, LastUsedAt: clock, ExpiresAt: clock.Add(time.Hour), Methods: []string{"password"}})
 	_ = store.PutMFA(ctx, MFARecord{UserID: u.ID, Secret: "TOTP-SECRET", EnabledAt: clock, LastStep: 1000, RecoveryCodes: []string{"HASH-A", "HASH-B"}})
 	_ = store.AppendConsentRecord(ctx, ConsentRecord{ID: "c1", UserID: u.ID, Consent: "terms", Version: "1", Locale: "en", TextHash: "abc", Action: ConsentAccepted, Method: ConsentMethodSignup, At: clock, IP: "203.0.113.9"})

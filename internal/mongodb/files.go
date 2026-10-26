@@ -278,7 +278,7 @@ func (s *AuthStore) StorageUsage(ctx context.Context, limit int) (auth.StorageUs
 		return out, err
 	}
 	for _, d := range docs {
-		out.Users = append(out.Users, auth.UserUsage{UserID: strings.TrimPrefix(d.ID, "user:"), StorageUsageTotals: auth.StorageUsageTotals{Bytes: d.Bytes, Files: d.Files}})
+		out.Users = append(out.Users, auth.UserUsage{UserID: strings.TrimPrefix(d.ID, "user:"), Bytes: d.Bytes, Files: d.Files})
 	}
 	return out, nil
 }

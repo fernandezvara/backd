@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"strings"
 
@@ -70,9 +71,7 @@ func AnonymizeRules(rl *Realm, overrides map[string]AnonOverride) (map[string]*A
 			rule := &AnonRule{Replace: map[string]any{}}
 			if p := c.Erasure; p != nil {
 				rule.Remove = slices.Clone(p.Remove)
-				for f, v := range p.Replace {
-					rule.Replace[f] = v
-				}
+				maps.Copy(rule.Replace, p.Replace)
 				for f, m := range p.Pull {
 					if m == MatchEmail {
 						rule.Emails = append(rule.Emails, f)

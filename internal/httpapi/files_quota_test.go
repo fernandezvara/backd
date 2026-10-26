@@ -22,7 +22,7 @@ func TestUserQuotaIsEnforcedBeforeTheBytes(t *testing.T) {
 	f.setQuota(0, 100)
 	id := f.newDoc(t, "library")
 	// 36 bytes fit; 36 + 36 + 36 passes 100 for this user.
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		if rec, out := f.upload(t, f.ada, "library", id, "receipts", "r.png", "image/png", pngBytes(20), nil); rec.Code != 201 {
 			t.Fatalf("upload %d: %d %v", i, rec.Code, out)
 		}

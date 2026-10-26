@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -651,9 +652,7 @@ func TestRealmProviderSignsInToAnOrganization(t *testing.T) {
 		f.idp.SetUser(person)
 		verifier, challenge, _ := auth.NewPKCE()
 		q := url.Values{"redirect_to": {appRedirect}, "code_challenge": {challenge}}
-		for k, v := range extra {
-			q[k] = v
-		}
+		maps.Copy(q, extra)
 		rec, _ := f.doH(t, "GET", base+"/google/start?"+q.Encode(), "", nil)
 		if rec.Code != http.StatusFound {
 			t.Fatalf("start: %d %s", rec.Code, rec.Body)

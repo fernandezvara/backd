@@ -2,6 +2,7 @@ package email
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 )
@@ -130,9 +131,7 @@ func (c *CompiledOverride) Render(d Data, orgName string) (msg Message, removed 
 func SampleData(kind string) Data {
 	d := sample
 	d.Data = map[string]any{}
-	for k, v := range sample.Data {
-		d.Data[k] = v
-	}
+	maps.Copy(d.Data, sample.Data)
 	d.ExpiresAt = time.Now().UTC().Add(48 * time.Hour).Truncate(time.Hour)
 	if TokenPurpose(kind) == "" && kind != OrgInvitation && kind != MagicLink {
 		d.Link = ""

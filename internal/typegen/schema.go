@@ -301,7 +301,7 @@ func resolvePointer(root map[string]any, ptr string) any {
 	if ptr == "" {
 		return cur
 	}
-	for _, part := range strings.Split(strings.TrimPrefix(ptr, "/"), "/") {
+	for part := range strings.SplitSeq(strings.TrimPrefix(ptr, "/"), "/") {
 		part = strings.NewReplacer("~1", "/", "~0", "~").Replace(part)
 		m, ok := cur.(map[string]any)
 		if !ok {
@@ -351,7 +351,7 @@ func pascal(s string) string {
 // schemaAt finds the schema of a dot path of `properties`, or nil.
 func schemaAt(root map[string]any, path string) any {
 	var cur any = root
-	for _, part := range strings.Split(path, ".") {
+	for part := range strings.SplitSeq(path, ".") {
 		m, ok := cur.(map[string]any)
 		if !ok {
 			return nil

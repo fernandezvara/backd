@@ -3,6 +3,7 @@ package httpapi
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -130,12 +131,12 @@ func (a *adminAPI) deleteKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func joinUses(uses []string) string {
-	out := ""
+	var out strings.Builder
 	for i, u := range uses {
 		if i > 0 {
-			out += ", "
+			out.WriteString(", ")
 		}
-		out += u
+		out.WriteString(u)
 	}
-	return out
+	return out.String()
 }

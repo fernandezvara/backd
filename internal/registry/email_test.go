@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,9 +37,7 @@ func emailTree(t *testing.T, realmYAML, deliverYAML string, extra map[string]str
 		}
 		files["shop/_realm/pages/"+kind+"/en.html"] = string(page)
 	}
-	for p, c := range extra {
-		files[p] = c
-	}
+	maps.Copy(files, extra)
 	return writeTree(t, files)
 }
 

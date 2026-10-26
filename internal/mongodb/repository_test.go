@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"testing"
 	"time"
@@ -30,9 +31,7 @@ func testRepository(t *testing.T) storage.Repository {
 func newDoc(fields map[string]any) storage.Document {
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	doc := storage.Document{"id": xid.New().String(), "_meta": map[string]any{"created_at": now, "updated_at": now, "version": int64(1)}}
-	for k, v := range fields {
-		doc[k] = v
-	}
+	maps.Copy(doc, fields)
 	return doc
 }
 

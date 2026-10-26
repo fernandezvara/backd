@@ -3,6 +3,7 @@ package typegen
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -1328,14 +1329,10 @@ func (g *dartGen) partialFor(db string, c *registry.Collection) {
 	}
 	// The expansion always carries the id; the other fields may be selected out.
 	partial := map[string]any{}
-	for k, v := range docSchema {
-		partial[k] = v
-	}
+	maps.Copy(partial, docSchema)
 	props := map[string]any{"id": map[string]any{"type": "string"}}
 	if p, ok := docSchema["properties"].(map[string]any); ok {
-		for k, v := range p {
-			props[k] = v
-		}
+		maps.Copy(props, p)
 	}
 	partial["properties"] = props
 	partial["required"] = []any{"id"}

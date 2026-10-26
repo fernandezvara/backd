@@ -34,7 +34,7 @@ func consentUsers(t *testing.T) (*Users, *authtest.MemStore, *time.Time) {
 
 func mustCreate(t *testing.T, svc *Users, email string) User {
 	t.Helper()
-	u, err := svc.Create(context.Background(), email, ptr("dev-p4ssw0rd!"))
+	u, err := svc.Create(context.Background(), email, new("dev-p4ssw0rd!"))
 	if err != nil {
 		t.Fatal(err)
 	}

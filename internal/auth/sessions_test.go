@@ -62,13 +62,13 @@ func TestLogin(t *testing.T) {
 	store := authtest.NewMemStore()
 	clock := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
 	svc := newUsers(store, &clock)
-	if _, err := svc.Create(ctx, "ada@example.com", ptr("dev-p4ssw0rd!")); err != nil {
+	if _, err := svc.Create(ctx, "ada@example.com", new("dev-p4ssw0rd!")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.Create(ctx, "nopw@example.com", nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.Create(ctx, "off@example.com", ptr("dev-p4ssw0rd!")); err != nil {
+	if _, err := svc.Create(ctx, "off@example.com", new("dev-p4ssw0rd!")); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.SetDisabled(ctx, "off@example.com", true); err != nil {
@@ -290,7 +290,7 @@ func TestAdminSessionLimits(t *testing.T) {
 	login := func(email string) (Principal, string) {
 		t.Helper()
 		clock = start
-		if _, err := svc.Create(ctx, email, ptr("dev-p4ssw0rd!")); err != nil {
+		if _, err := svc.Create(ctx, email, new("dev-p4ssw0rd!")); err != nil {
 			t.Fatal(err)
 		}
 		p, token, err := svc.Login(ctx, email, "dev-p4ssw0rd!", "")

@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -413,16 +414,10 @@ func (b *builder) prune() map[string]any {
 	all := map[string]map[string]any{}
 	for _, kind := range []string{"schemas", "responses", "parameters", "headers", "requestBodies", "examples"} {
 		all[kind] = map[string]any{}
-		for k, v := range b.components(kind) {
-			all[kind][k] = v
-		}
+		maps.Copy(all[kind], b.components(kind))
 	}
-	for k, v := range b.extra {
-		all["schemas"][k] = v
-	}
-	for k, v := range b.responses {
-		all["responses"][k] = v
-	}
+	maps.Copy(all["schemas"], b.extra)
+	maps.Copy(all["responses"], b.responses)
 	keep := map[string]map[string]bool{}
 	var visit func(v any)
 	visit = func(v any) {

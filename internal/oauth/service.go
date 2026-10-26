@@ -419,7 +419,7 @@ func nonceOK(got, want string, native bool) bool {
 // minute) when the key is not among them.
 func (s *Service) verifySignature(ctx context.Context, p *registry.Provider, jws *jose.JSONWebSignature, kid string) ([]byte, error) {
 	url := s.endpoints(p).JWKS
-	for attempt := 0; attempt < 2; attempt++ {
+	for attempt := range 2 {
 		keys, err := s.keys(ctx, url, attempt > 0)
 		if err != nil {
 			return nil, err
@@ -487,7 +487,7 @@ func (s *Service) staleKeys(url string, cause error) (jose.JSONWebKeySet, error)
 
 // cacheTTL reads max-age from a Cache-Control header, within sane limits.
 func cacheTTL(h string) time.Duration {
-	for _, part := range strings.Split(h, ",") {
+	for part := range strings.SplitSeq(h, ",") {
 		k, v, ok := strings.Cut(strings.TrimSpace(part), "=")
 		if ok && strings.EqualFold(k, "max-age") {
 			if n, err := strconv.Atoi(v); err == nil {

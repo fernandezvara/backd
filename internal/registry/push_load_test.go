@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"maps"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -16,9 +17,7 @@ func pushTree(t *testing.T, realmYAML string, files map[string]string) string {
 		"shop/notify/_functions/ship/index.ts":      "export default () => 1;\n",
 		"shop/notify/_functions/ship/function.yaml": "invoke: \"true\"\n",
 	}
-	for k, v := range files {
-		all[k] = v
-	}
+	maps.Copy(all, files)
 	for p, content := range all {
 		writeFile(t, filepath.Join(root, p), content)
 	}
@@ -67,12 +66,8 @@ func TestPushLoadErrors(t *testing.T) {
 	}
 	with := func(extra map[string]string) map[string]string {
 		m := map[string]string{}
-		for k, v := range good {
-			m[k] = v
-		}
-		for k, v := range extra {
-			m[k] = v
-		}
+		maps.Copy(m, good)
+		maps.Copy(m, extra)
 		return m
 	}
 	for name, c := range map[string]struct {

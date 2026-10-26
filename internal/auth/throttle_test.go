@@ -40,8 +40,7 @@ func failLogins(t *testing.T, svc *Users, email, ip string, n int) {
 }
 
 func retryAfter(err error) time.Duration {
-	var te *ThrottledError
-	if errors.As(err, &te) {
+	if te, ok := errors.AsType[*ThrottledError](err); ok {
 		return te.RetryAfter
 	}
 	return -1
@@ -53,7 +52,7 @@ func TestLoginThrottlePerAccount(t *testing.T) {
 	start := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
 	clock := start
 	svc := newUsers(store, &clock)
-	if _, err := svc.Create(ctx, "ada@example.com", ptr("dev-p4ssw0rd!")); err != nil {
+	if _, err := svc.Create(ctx, "ada@example.com", new("dev-p4ssw0rd!")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -134,7 +133,7 @@ func TestLoginThrottlePerIP(t *testing.T) {
 	store := authtest.NewMemStore()
 	clock := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
 	svc := newUsers(store, &clock)
-	if _, err := svc.Create(ctx, "ada@example.com", ptr("dev-p4ssw0rd!")); err != nil {
+	if _, err := svc.Create(ctx, "ada@example.com", new("dev-p4ssw0rd!")); err != nil {
 		t.Fatal(err)
 	}
 	// 50 failures spread over many accounts (below each account's threshold).
@@ -185,9 +184,7 @@ func TestLoginThrottleParallel(t *testing.T) {
 	var wg sync.WaitGroup
 	var invalid, throttled atomic.Int32
 	for range 10 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, _, err := svc.Login(ctx, "ada@example.com", "dev-p4ssw0rd!0", "")
 			switch {
 			case errors.Is(err, ErrInvalidCredentials):
@@ -197,7 +194,7 @@ func TestLoginThrottleParallel(t *testing.T) {
 			default:
 				t.Error(err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if invalid.Load() != 5 || throttled.Load() != 5 {
@@ -218,9 +215,7 @@ func TestLoginThrottleParallelAcrossInstances(t *testing.T) {
 		svc := newUsers(store, &clock)
 		svc.DisableLocalLock()
 		for range 5 {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				_, _, err := svc.Login(ctx, "ada@example.com", "dev-p4ssw0rd!0", "")
 				switch {
 				case errors.Is(err, ErrInvalidCredentials):
@@ -230,7 +225,7 @@ func TestLoginThrottleParallelAcrossInstances(t *testing.T) {
 				default:
 					t.Errorf("instance %d: %v", i, err)
 				}
-			}()
+			})
 		}
 	}
 	wg.Wait()
@@ -271,7 +266,7 @@ func TestLoginThrottleConfigured(t *testing.T) {
 	clock := time.Date(2026, 9, 26, 12, 0, 0, 0, time.UTC)
 	svc := newUsers(store, &clock)
 	svc.Settings.LoginThrottle = registry.LoginThrottle{AccountThreshold: 3, IPThreshold: 10, Window: 2 * time.Minute, MaxDelay: 10 * time.Second}
-	if _, err := svc.Create(ctx, "ada@example.com", ptr("dev-p4ssw0rd!")); err != nil {
+	if _, err := svc.Create(ctx, "ada@example.com", new("dev-p4ssw0rd!")); err != nil {
 		t.Fatal(err)
 	}
 

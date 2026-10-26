@@ -487,7 +487,7 @@ func (e *Executor) run(ctx context.Context, bundle string, req InvokeRequest, ti
 	maxLine := int(req.MaxOutput) + 4096 + maxStepsBytes
 	go func() {
 		r := bufio.NewReaderSize(stdoutPipe, 64<<10)
-		for i := 0; i < 2; i++ {
+		for range 2 {
 			data, err := readLine(r, maxLine)
 			lines <- line{data, err}
 			if err != nil {
@@ -650,7 +650,7 @@ func lastLines(s string, n int) string {
 // Lines that aren't the runner's JSON (Deno's own messages) are errors.
 func parseLogs(s string, masked []string) []LogLine {
 	var out []LogLine
-	for _, raw := range strings.Split(s, "\n") {
+	for raw := range strings.SplitSeq(s, "\n") {
 		if strings.TrimSpace(raw) == "" {
 			continue
 		}

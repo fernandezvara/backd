@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"errors"
+	"maps"
 	"net/url"
 	"strings"
 	"testing"
@@ -31,9 +32,7 @@ var (
 
 func googleClaims(extra map[string]any) map[string]any {
 	c := map[string]any{"iss": "https://accounts.google.com", "aud": "g-client", "sub": "g-123", "email": "ada@example.com", "email_verified": true}
-	for k, v := range extra {
-		c[k] = v
-	}
+	maps.Copy(c, extra)
 	return c
 }
 
@@ -103,9 +102,7 @@ func TestVerifyMicrosoftTenants(t *testing.T) {
 	tid := "11111111-2222-3333-4444-555555555555"
 	claims := func(tid string, extra map[string]any) map[string]any {
 		c := map[string]any{"iss": "https://login.microsoftonline.com/" + tid + "/v2.0", "aud": microsoft.ClientID, "sub": "pairwise", "tid": tid, "oid": "obj-1", "email": "ada@corp.example", "nonce": "n"}
-		for k, v := range extra {
-			c[k] = v
-		}
+		maps.Copy(c, extra)
 		return c
 	}
 	at := func(tenant string) *registry.Provider { m := *microsoft; m.Tenant = tenant; return &m }

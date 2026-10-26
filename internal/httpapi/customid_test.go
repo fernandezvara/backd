@@ -90,7 +90,7 @@ func TestDuplicateAttemptsAreLimited(t *testing.T) {
 	f := newRulesFixture(t)
 	f.doH(t, "POST", "/v1/acme/app/invoices", `{"id": "INV-0001", "title": "x"}`, bearer(f.ada))
 	// duplicate_limit is 3: three duplicates answer 409, then the caller is held.
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if code, out := f.as(t, f.bob, "POST", "/v1/acme/app/invoices", `{"id": "INV-0001", "title": "x"}`); code != 409 {
 			t.Fatalf("attempt %d: %d %v", i, code, out)
 		}

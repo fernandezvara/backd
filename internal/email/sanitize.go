@@ -3,6 +3,7 @@ package email
 import (
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -76,8 +77,8 @@ func SanitizeHTML(in string) (out string, removed []string) {
 				continue
 			}
 			// Close only what is open, so the output is balanced whatever the input did.
-			for i := len(open) - 1; i >= 0; i-- {
-				if open[i] == tag {
+			for i, o := range slices.Backward(open) {
+				if o == tag {
 					for j := len(open) - 1; j >= i; j-- {
 						b.WriteString("</" + open[j] + ">")
 					}
@@ -89,8 +90,8 @@ func SanitizeHTML(in string) (out string, removed []string) {
 			drop("comments and doctype")
 		}
 	}
-	for j := len(open) - 1; j >= 0; j-- {
-		b.WriteString("</" + open[j] + ">")
+	for _, o := range slices.Backward(open) {
+		b.WriteString("</" + o + ">")
 	}
 	return b.String(), removed
 }
@@ -180,10 +181,8 @@ func safeURL(v string, schemes ...string) bool {
 		return false
 	}
 	scheme := strings.ToLower(u.Scheme)
-	for _, s := range schemes {
-		if scheme == s {
-			return scheme != "https" && scheme != "http" || u.Host != ""
-		}
+	if slices.Contains(schemes, scheme) {
+		return scheme != "https" && scheme != "http" || u.Host != ""
 	}
 	return false
 }
@@ -204,7 +203,7 @@ var styleValue = regexp.MustCompile(`^[#a-zA-Z0-9%.,\s'"-]+$|^rgba?\([0-9,.\s%]+
 // safeStyle keeps the declarations of a style attribute that are on the list and have plain values.
 func safeStyle(style string) string {
 	var out []string
-	for _, decl := range strings.Split(style, ";") {
+	for decl := range strings.SplitSeq(style, ";") {
 		prop, value, ok := strings.Cut(decl, ":")
 		prop, value = strings.ToLower(strings.TrimSpace(prop)), strings.TrimSpace(value)
 		if !ok || !styleProperties[prop] || value == "" || len(value) > 100 || !styleValue.MatchString(value) {

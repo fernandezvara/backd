@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -26,9 +27,7 @@ func functionTree(t *testing.T, files map[string]string) string {
 		fnPrefix + "deno.json":       `{}`,
 		fnPrefix + "lib/money.ts":    "export const x = 1;\n",
 	}
-	for p, c := range files {
-		all[p] = c
-	}
+	maps.Copy(all, files)
 	return writeTree(t, all)
 }
 
@@ -404,9 +403,7 @@ func TestOnComplete(t *testing.T) {
 			fnPrefix + "notify/function.yaml": "mode: async\n",
 			fnPrefix + "notify/index.js":      "export default () => 1;\n",
 		}
-		for k, v := range extra {
-			m[k] = v
-		}
+		maps.Copy(m, extra)
 		return m
 	}
 	reg, err := Load(functionTree(t, files(nil)))

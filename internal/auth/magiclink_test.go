@@ -212,7 +212,7 @@ func TestMagicLinkAnswersTheSameForEveryone(t *testing.T) {
 	ctx := context.Background()
 	f := newLinkFixture(t)
 	_, challenge, _ := NewPKCE()
-	disabled, _ := f.svc.Create(ctx, "off@example.com", ptr(mfaPassword))
+	disabled, _ := f.svc.Create(ctx, "off@example.com", new(mfaPassword))
 	if err := f.svc.SetDisabled(ctx, disabled.Email, true); err != nil {
 		t.Fatal(err)
 	}

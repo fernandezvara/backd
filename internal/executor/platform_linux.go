@@ -44,7 +44,7 @@ func rssOf(pid int) int64 {
 	if err != nil {
 		return 0
 	}
-	for _, l := range strings.Split(string(data), "\n") {
+	for l := range strings.SplitSeq(string(data), "\n") {
 		if rest, ok := strings.CutPrefix(l, "VmRSS:"); ok {
 			f := strings.Fields(rest)
 			if len(f) > 0 {

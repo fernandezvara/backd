@@ -42,7 +42,7 @@ func commandSummaries(getenv func(string) string) map[string]string {
 	_ = cfg.Execute([]string{"backd", "--help"})
 	out := map[string]string{"help": helpCommand}
 	line := regexp.MustCompile(`^  (\S+)\s+(\S.*)$`)
-	for _, l := range strings.Split(flat.String(), "\n") {
+	for l := range strings.SplitSeq(flat.String(), "\n") {
 		if m := line.FindStringSubmatch(l); m != nil {
 			out[m[1]] = m[2]
 		}

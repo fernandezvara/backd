@@ -71,8 +71,7 @@ type directStart struct {
 func readDirectStart(w http.ResponseWriter, r *http.Request, f *registry.FileField, obj *storage.Objects) (directStart, bool) {
 	var in directStart
 	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxMultipartStartBody))
-	var tooBig *http.MaxBytesError
-	if errors.As(err, &tooBig) {
+	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 		tooLarge(w, r, maxMultipartStartBody)
 		return in, false
 	}

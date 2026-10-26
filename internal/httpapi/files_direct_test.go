@@ -185,7 +185,7 @@ func TestDirectStartRefusals(t *testing.T) {
 		t.Errorf("stale If-Match: %d", rec.Code)
 	}
 	// max_files is answered at the start, before anything is signed.
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		rec, out := f.startOn(t, f.ada, path, declare("a.png", pngBytes(i+1), "image/png"))
 		if rec.Code != 201 {
 			t.Fatal(rec.Code)
@@ -357,7 +357,7 @@ func TestDirectUploadBeforeTheDocumentExists(t *testing.T) {
 		t.Errorf("journal after: %+v", e)
 	}
 	// Direct uploads count among a caller's open uploads.
-	for i := 0; i < auth.MaxOpenPendingUploads; i++ {
+	for i := range auth.MaxOpenPendingUploads {
 		if rec, _ := f.startOn(t, f.bob, "/v1/acme/app/videos/_files/clip/uploads", declare("a", pngBytes(i), "image/png")); rec.Code != 201 {
 			t.Fatalf("start %d: %d", i, rec.Code)
 		}

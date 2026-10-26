@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"time"
 
 	"github.com/rs/xid"
@@ -242,9 +243,7 @@ func (s *Users) AuditAs(ctx context.Context, actor, action, target string, detai
 	}
 	if off, _ := ctx.Value(offlineKey{}).(bool); off {
 		marked := map[string]any{"offline": true}
-		for k, v := range details {
-			marked[k] = v
-		}
+		maps.Copy(marked, details)
 		details = marked
 	}
 	now := s.now()

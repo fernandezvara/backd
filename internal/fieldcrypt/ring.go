@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"sync"
 	"time"
@@ -375,9 +376,7 @@ func (r *Ring) Encrypt(ctx context.Context, c *registry.Collection, doc map[stri
 		store(out, ef.Path, ct)
 		enc, _ := out[registry.EncRoot].(map[string]any)
 		nextEnc := make(map[string]any, len(enc)+1)
-		for k, x := range enc {
-			nextEnc[k] = x
-		}
+		maps.Copy(nextEnc, enc)
 		nextEnc[registry.MarkerField(ef.Path)] = kid
 		out[registry.EncRoot] = nextEnc
 		if ef.Search != "" {
@@ -387,9 +386,7 @@ func (r *Ring) Encrypt(ctx context.Context, c *registry.Collection, doc map[stri
 			}
 			bidx, _ := out[registry.BlindRoot].(map[string]any)
 			next := make(map[string]any, len(bidx)+1)
-			for k, x := range bidx {
-				next[k] = x
-			}
+			maps.Copy(next, bidx)
 			next[registry.MarkerField(ef.Path)] = b
 			out[registry.BlindRoot] = next
 		}
@@ -592,7 +589,7 @@ func decodeJSON(b []byte) (any, error) {
 // lookup reads a dot path of a document.
 func lookup(doc map[string]any, path string) (any, bool) {
 	var cur any = doc
-	for _, p := range strings.Split(path, ".") {
+	for p := range strings.SplitSeq(path, ".") {
 		m, ok := cur.(map[string]any)
 		if !ok {
 			return nil, false
@@ -621,9 +618,7 @@ func set(doc map[string]any, path string, v any) {
 // shallow copies the top level of a document; store copies the maps it descends into.
 func shallow(doc map[string]any) map[string]any {
 	out := make(map[string]any, len(doc))
-	for k, v := range doc {
-		out[k] = v
-	}
+	maps.Copy(out, doc)
 	return out
 }
 

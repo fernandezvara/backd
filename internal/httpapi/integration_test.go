@@ -262,15 +262,13 @@ func TestConcurrentPatchesLoseNoUpdates(t *testing.T) {
 	codes := make([]int, writers)
 	var wg sync.WaitGroup
 	for i := range writers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			req := httptest.NewRequest("PATCH", doc, strings.NewReader(fmt.Sprintf(`{"f%d": %d}`, i, i)))
 			setContentType(req)
 			rec := httptest.NewRecorder()
 			f.h.ServeHTTP(rec, req)
 			codes[i] = rec.Code
-		}()
+		})
 	}
 	wg.Wait()
 

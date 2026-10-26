@@ -100,7 +100,7 @@ func (f *authFixture) signupWith(t *testing.T, email, extra string) (string, map
 func TestConsentChallengeAtSignIn(t *testing.T) {
 	f := consentFixture(t)
 	// An account from before the consent existed (nothing accepted).
-	if _, err := f.svc.Create(t.Context(), "old@example.com", ptr("dev-p4ssw0rd!")); err != nil {
+	if _, err := f.svc.Create(t.Context(), "old@example.com", new("dev-p4ssw0rd!")); err != nil {
 		t.Fatal(err)
 	}
 	rec, out := f.do(t, "POST", authBase+"/login", `{"email": "old@example.com", "password": "dev-p4ssw0rd!"}`)
@@ -259,7 +259,7 @@ func TestEnrolmentKeepsTheRecoveryCodesWhenConsentsFollow(t *testing.T) {
 	f := consentFixture(t)
 	f.svc.Cipher, _ = auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
 	f.svc.Settings.MFA.RequiredAll = true
-	if _, err := f.svc.Create(t.Context(), "root@example.com", ptr("dev-p4ssw0rd!")); err != nil {
+	if _, err := f.svc.Create(t.Context(), "root@example.com", new("dev-p4ssw0rd!")); err != nil {
 		t.Fatal(err)
 	}
 	rec, out := f.do(t, "POST", authBase+"/login", `{"email": "root@example.com", "password": "dev-p4ssw0rd!"}`)

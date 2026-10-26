@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -419,12 +420,7 @@ func TestProvidersOfAnOrganizationListTheMethods(t *testing.T) {
 }
 
 func contains(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(list, s)
 }
 
 func containsAny(list []any, s string) bool {

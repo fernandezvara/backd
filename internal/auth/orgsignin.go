@@ -295,8 +295,7 @@ func (s *Users) FindOrgs(ctx context.Context, address, locale, ip, requestID str
 		locale = s.LocaleOf(u)
 	}
 	_, err = s.QueueEmail(ctx, EmailRequest{Kind: email.OrganizationsFound, UserID: u.ID, Locale: locale, ClientIP: ip, RequestID: requestID, Notice: true})
-	var limited *EmailLimitedError
-	if errors.As(err, &limited) {
+	if _, ok := errors.AsType[*EmailLimitedError](err); ok {
 		return nil
 	}
 	return err

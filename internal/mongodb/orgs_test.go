@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/fernandezvara/backd/internal/auth"
-	"github.com/fernandezvara/backd/internal/email"
 )
 
 func TestAuthStoreOrganizations(t *testing.T) {
@@ -414,7 +413,7 @@ func TestAuthStoreTeamRoles(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	grant := func(team, role string, from, until time.Time) auth.TeamRoleGrant {
-		return auth.TeamRoleGrant{Team: team, RoleGrant: auth.RoleGrant{Role: role, From: from, Until: until, GrantedBy: "u9", GrantedAt: now}}
+		return auth.TeamRoleGrant{Team: team, Role: role, From: from, Until: until, GrantedBy: "u9", GrantedAt: now}
 	}
 	put := func(user string, teams []string, grants ...auth.TeamRoleGrant) {
 		t.Helper()
@@ -519,9 +518,9 @@ func TestAuthStoreOrgTemplates(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	put := func(org, kind, locale string, version int, subject string) {
 		t.Helper()
-		tpl := auth.OrgTemplate{Org: org, Kind: kind, Locale: locale, Override: email.Override{Subject: subject, Text: "t", HTML: "h"}, Version: version, UpdatedBy: "u1", UpdatedAt: now}
+		tpl := auth.OrgTemplate{Org: org, Kind: kind, Locale: locale, Subject: subject, Text: "t", HTML: "h", Version: version, UpdatedBy: "u1", UpdatedAt: now}
 		if version > 1 {
-			tpl.Versions = []auth.OrgTemplateVersion{{Version: version - 1, Override: email.Override{Subject: "old", Text: "t0", HTML: "h0"}, By: "u2", At: now.Add(-time.Hour)}}
+			tpl.Versions = []auth.OrgTemplateVersion{{Version: version - 1, Subject: "old", Text: "t0", HTML: "h0", By: "u2", At: now.Add(-time.Hour)}}
 		}
 		if err := s.PutOrgTemplate(ctx, tpl); err != nil {
 			t.Fatal(err)

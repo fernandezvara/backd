@@ -317,8 +317,7 @@ func TestFeedSurvivesALostCursor(t *testing.T) {
 // replaced and the position carries over, so nothing written meanwhile is lost.
 func TestConsumerContinuesAfterSetChange(t *testing.T) {
 	f := newFeedFixture(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	c := &changefeed.Consumer{Name: "test", Source: f.src, Backoff: func(int) time.Duration { return 50 * time.Millisecond }}
 	c.SetWatched(f.set)
 	got := make(chan changefeed.Change, 32)

@@ -3,6 +3,7 @@ package authtest
 import (
 	"bytes"
 	"context"
+	"maps"
 	"sort"
 
 	"github.com/fernandezvara/backd/internal/auth"
@@ -39,9 +40,7 @@ func (m *MemStore) Portable(collection string) map[string]map[string]any {
 
 func clonePortable(d map[string]any) map[string]any {
 	out := make(map[string]any, len(d))
-	for k, v := range d {
-		out[k] = v
-	}
+	maps.Copy(out, d)
 	return out
 }
 

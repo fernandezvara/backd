@@ -135,8 +135,7 @@ func mapError(err error) error {
 	if errors.As(err, &nf) || errors.As(err, &nk) {
 		return fmt.Errorf("%w", ErrObjectNotFound)
 	}
-	var api smithy.APIError
-	if errors.As(err, &api) {
+	if api, ok := errors.AsType[smithy.APIError](err); ok {
 		switch api.ErrorCode() {
 		case "NoSuchKey", "NotFound":
 			return ErrObjectNotFound
@@ -372,8 +371,7 @@ func (o *Objects) Encryption(ctx context.Context) (string, error) {
 func (o *Objects) HeadBucket(ctx context.Context) error {
 	_, err := o.client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(o.cfg.Bucket)})
 	if err != nil {
-		var nf *types.NotFound
-		if errors.As(err, &nf) { // a HEAD has no body to name the error: a 404 is a missing bucket
+		if _, ok := errors.AsType[*types.NotFound](err); ok { // a HEAD has no body to name the error: a 404 is a missing bucket
 			return ErrBucketNotFound
 		}
 	}

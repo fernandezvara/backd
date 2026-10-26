@@ -101,7 +101,7 @@ func writeLoad(ctx context.Context, coll *mongo.Collection, size, writers, ops i
 	docs := min(ops, 3000)
 	body := strings.Repeat("x", size)
 	var seed []any
-	for i := 0; i < docs; i++ {
+	for i := range docs {
 		seed = append(seed, bson.D{{Key: "_id", Value: i}, {Key: "_meta", Value: bson.D{{Key: "version", Value: int64(1)}}}, {Key: "body", Value: body}})
 	}
 	for lo := 0; lo < len(seed); lo += 500 {
@@ -112,12 +112,10 @@ func writeLoad(ctx context.Context, coll *mongo.Collection, size, writers, ops i
 	var all []time.Duration
 	var wg sync.WaitGroup
 	start := time.Now()
-	for w := 0; w < writers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for w := range writers {
+		wg.Go(func() {
 			lat := make([]time.Duration, 0, per)
-			for i := 0; i < per; i++ {
+			for i := range per {
 				id := (w*per + i) % docs
 				d := bson.D{{Key: "_id", Value: id}, {Key: "_meta", Value: bson.D{{Key: "version", Value: int64(2 + i)}}}, {Key: "body", Value: body}}
 				t0 := time.Now()
@@ -127,7 +125,7 @@ func writeLoad(ctx context.Context, coll *mongo.Collection, size, writers, ops i
 			mu.Lock()
 			all = append(all, lat...)
 			mu.Unlock()
-		}()
+		})
 	}
 	wg.Wait()
 	total := time.Since(start)
@@ -183,9 +181,9 @@ func drainWithNoise(t *testing.T, ctx context.Context, client *mongo.Client, rea
 			batch = batch[:0]
 		}
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		_, _ = watched.InsertOne(ctx, bson.D{{Key: "_id", Value: i}, {Key: "_meta", Value: bson.D{{Key: "version", Value: int64(1)}}}, {Key: "body", Value: "x"}})
-		for j := 0; j < ratio; j++ {
+		for j := range ratio {
 			batch = append(batch, bson.D{{Key: "n", Value: i*ratio + j}})
 		}
 		if len(batch) >= 1000 {
@@ -232,7 +230,7 @@ func drainMany(t *testing.T, ctx context.Context, client *mongo.Client, realm st
 	start := st.Position()
 	st.Close()
 	var docs []any
-	for i := 0; i < n; i++ {
+	for i := range n {
 		docs = append(docs, bson.D{{Key: "_id", Value: i}, {Key: "_meta", Value: bson.D{{Key: "version", Value: int64(1)}}}, {Key: "body", Value: "x"}})
 	}
 	for lo := 0; lo < n; lo += 500 {
@@ -240,12 +238,10 @@ func drainMany(t *testing.T, ctx context.Context, client *mongo.Client, realm st
 	}
 	var wg sync.WaitGroup
 	t0 := time.Now()
-	for c := 0; c < consumers; c++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range consumers {
+		wg.Go(func() {
 			timeDrain(t, ctx, src, set, start, n)
-		}()
+		})
 	}
 	wg.Wait()
 	return time.Since(t0)

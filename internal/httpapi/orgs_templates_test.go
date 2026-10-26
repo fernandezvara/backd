@@ -220,7 +220,7 @@ func TestRealPreviewsAreLimited(t *testing.T) {
 	org := f.orgOf(t, f.ada, "Acme")
 	base := orgsPath + "/" + org + "/templates/reset-password/en/preview"
 	draft := `{"subject": "s", "text": "{{Link}}", "html": "{{Link}}", "data": "real"}`
-	for i := 0; i < auth.OrgTemplateRealPreviewsPerHour; i++ {
+	for i := range auth.OrgTemplateRealPreviewsPerHour {
 		if rec, out := f.doH(t, "POST", base, draft, jsonHdr(f.ada)); rec.Code != 200 {
 			t.Fatalf("preview %d: %d %v", i+1, rec.Code, out)
 		}

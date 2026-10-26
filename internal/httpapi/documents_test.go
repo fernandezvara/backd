@@ -258,7 +258,7 @@ func (r *memRepo) Delete(_ context.Context, id string, ifVersion *int64) error {
 // sortValue reads a dotted path of a stored document.
 func sortValue(doc map[string]any, path string) any {
 	var cur any = doc
-	for _, part := range strings.Split(path, ".") {
+	for part := range strings.SplitSeq(path, ".") {
 		m, ok := cur.(map[string]any)
 		if !ok {
 			return nil

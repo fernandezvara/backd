@@ -237,8 +237,7 @@ func aggregateError(parent, run context.Context, err error) error {
 	if run.Err() != nil && parent.Err() == nil {
 		return storage.ErrAggregateTooExpensive
 	}
-	var ce mongo.CommandError
-	if errors.As(err, &ce) {
+	if ce, ok := errors.AsType[mongo.CommandError](err); ok {
 		if ce.Code == 27 {
 			return storage.ErrIndexBuilding
 		}

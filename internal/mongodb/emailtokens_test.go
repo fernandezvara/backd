@@ -33,10 +33,8 @@ func TestEmailTokensOnMongoDB(t *testing.T) {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	wins := 0
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 8 {
+		wg.Go(func() {
 			if tk, err := s.RedeemEmailToken(ctx, "h1", "reset-password", now); err == nil {
 				if tk.UserID != "u1" || tk.RedirectTo != "https://app.example/welcome" || !tk.UsedAt.Equal(now) {
 					t.Errorf("redeemed token: %+v", tk)
@@ -47,7 +45,7 @@ func TestEmailTokensOnMongoDB(t *testing.T) {
 			} else if !errors.Is(err, auth.ErrInvalidToken) {
 				t.Errorf("redeem: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if wins != 1 {

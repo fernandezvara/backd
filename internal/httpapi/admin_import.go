@@ -255,8 +255,7 @@ func (a *adminAPI) importChunk(w http.ResponseWriter, r *http.Request, realm, ph
 	rc := http.NewResponseController(w)
 	_ = rc.SetWriteDeadline(time.Now().Add(importWindow))
 	body, err := io.ReadAll(r.Body)
-	var tooBig *http.MaxBytesError
-	if errors.As(err, &tooBig) {
+	if tooBig, ok := errors.AsType[*http.MaxBytesError](err); ok {
 		tooLarge(w, r, tooBig.Limit)
 		return
 	}
@@ -647,8 +646,7 @@ func (a *adminAPI) importFile(w http.ResponseWriter, r *http.Request, realm, fil
 	h := sha256.New()
 	body := io.TeeReader(deadlineReader{http.MaxBytesReader(w, r.Body, limit), http.NewResponseController(w)}, h)
 	if err := obj.PutStream(r.Context(), key, body, ""); err != nil {
-		var tooBig *http.MaxBytesError
-		if errors.As(err, &tooBig) {
+		if tooBig, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			_ = obj.Delete(r.Context(), key)
 			tooLarge(w, r, tooBig.Limit)
 			return
@@ -696,8 +694,7 @@ func (a *adminAPI) finishImport(w http.ResponseWriter, r *http.Request) {
 // organizations that exist for the documents imported after them.
 func (a *adminAPI) importAuthChunk(w http.ResponseWriter, r *http.Request, l *exportLease, coll string, write bool) {
 	body, err := io.ReadAll(r.Body)
-	var tooBig *http.MaxBytesError
-	if errors.As(err, &tooBig) {
+	if tooBig, ok := errors.AsType[*http.MaxBytesError](err); ok {
 		tooLarge(w, r, tooBig.Limit)
 		return
 	}
@@ -852,8 +849,7 @@ func orDash(s string) string {
 // for the import only.
 func (a *adminAPI) importKeys(w http.ResponseWriter, r *http.Request, l *exportLease) {
 	body, err := io.ReadAll(r.Body)
-	var tooBig *http.MaxBytesError
-	if errors.As(err, &tooBig) {
+	if tooBig, ok := errors.AsType[*http.MaxBytesError](err); ok {
 		tooLarge(w, r, tooBig.Limit)
 		return
 	}

@@ -75,7 +75,7 @@ func TestHostedGetThenPost(t *testing.T) {
 	token := f.token(t, "verify-email", "https://app.acme.example/welcome")
 	link := "/v1/acme/_auth/verify-email?token=" + token
 
-	for i := 0; i < 3; i++ { // a mail scanner opens it first, repeatedly
+	for i := range 3 { // a mail scanner opens it first, repeatedly
 		rec := f.page(t, "GET", link, "", "", "")
 		if rec.Code != 200 || !strings.Contains(rec.Body.String(), `name="token" value="`+token+`"`) {
 			t.Fatalf("GET %d: %d %s", i, rec.Code, rec.Body.String())

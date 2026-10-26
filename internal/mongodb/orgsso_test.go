@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"testing"
 	"time"
@@ -259,9 +260,7 @@ func TestOrgConnectionsAreExportedAndImported(t *testing.T) {
 	}
 	// A different document with the same id is a conflict; a bad shape is invalid.
 	changed := map[string]any{}
-	for k, v := range docs[0] {
-		changed[k] = v
-	}
+	maps.Copy(changed, docs[0])
 	changed["client_id"] = "c-2"
 	if res, _ := dst.ImportSystem(ctx, "org_connections", []map[string]any{changed}, "create", true); res[0].Outcome != auth.PortableConflict {
 		t.Errorf("a different connection: %+v", res)

@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -155,9 +156,7 @@ func TestTutorialChaptersLoad(t *testing.T) {
 			if err := yaml.Unmarshal([]byte(snippet), &add); err != nil {
 				t.Fatal(err)
 			}
-			for k, v := range add {
-				m[k] = v
-			}
+			maps.Copy(m, add)
 		}
 		out, err := yaml.Marshal(m)
 		if err != nil {

@@ -246,7 +246,7 @@ func Load(getenv func(string) string) (Settings, error) {
 		}
 	}
 
-	for _, v := range strings.Split(getenv("TRUSTED_PROXIES"), ",") {
+	for v := range strings.SplitSeq(getenv("TRUSTED_PROXIES"), ",") {
 		if v = strings.TrimSpace(v); v == "" {
 			continue
 		}

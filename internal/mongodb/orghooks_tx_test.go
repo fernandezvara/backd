@@ -156,7 +156,7 @@ func TestKeyedJobsCollapse(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 	job := auth.Job{ID: auth.KeyedJobID("test", "a", "1"), Database: "app", Function: "hook", Input: json.RawMessage(`{}`), CallerActor: "system", TimeoutMS: 1000}
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		isNew, err := svc.EnqueueKeyedJob(ctx, job)
 		if err != nil || isNew != (i == 0) {
 			t.Fatalf("attempt %d: new=%v err=%v", i, isNew, err)

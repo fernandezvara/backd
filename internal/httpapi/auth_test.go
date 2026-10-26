@@ -409,7 +409,7 @@ func TestLoginRightAfterSignup(t *testing.T) {
 	// Logging in at once, and many at once, succeeds with a session of its own.
 	results := make(chan int, 10)
 	tokens := make(chan string, 10)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		go func() {
 			code, out := post("login", creds)
 			results <- code
@@ -421,7 +421,7 @@ func TestLoginRightAfterSignup(t *testing.T) {
 		}()
 	}
 	seen := map[string]bool{}
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		if code := <-results; code != 200 {
 			t.Errorf("login %d right after sign-up: %d", i, code)
 		}

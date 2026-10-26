@@ -136,8 +136,7 @@ func (d *documents) pendingGate(w http.ResponseWriter, r *http.Request, c *regis
 func (d *documents) uploadGate(w http.ResponseWriter, r *http.Request, svc *auth.Users) (string, bool) {
 	callerKey := uploadCallerKey(r)
 	if err := svc.RateLimit(r.Context(), "pending:"+callerKey, pendingRateLimit, pendingRateWindow); err != nil {
-		var te *auth.ThrottledError
-		if errors.As(err, &te) {
+		if te, ok := errors.AsType[*auth.ThrottledError](err); ok {
 			w.Header().Set("Retry-After", strconv.Itoa(max(int((te.RetryAfter+time.Second-1)/time.Second), 1)))
 			writeError(w, r, http.StatusTooManyRequests, codeTooManyRequests, "too many uploads started; retry later")
 			return "", false

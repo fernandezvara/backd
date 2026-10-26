@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -92,9 +93,7 @@ func (f *oauthFixture) signIn(t *testing.T, provider string, person map[string]a
 	f.idp.SetUser(person)
 	verifier, challenge, _ := auth.NewPKCE()
 	q := url.Values{"redirect_to": {appRedirect}, "code_challenge": {challenge}}
-	for k, v := range extra {
-		q[k] = v
-	}
+	maps.Copy(q, extra)
 	rec, _ := f.doH(t, "GET", oauthBase+"/"+provider+"/start?"+q.Encode(), "", nil)
 	if rec.Code != http.StatusFound {
 		t.Fatalf("start: %d %s", rec.Code, rec.Body)
@@ -333,9 +332,7 @@ func TestOAuthStartRefusals(t *testing.T) {
 	good := url.Values{"redirect_to": {appRedirect}, "code_challenge": {challenge}}
 	with := func(k, v string) url.Values {
 		q := url.Values{}
-		for kk, vv := range good {
-			q[kk] = vv
-		}
+		maps.Copy(q, good)
 		if v == "" {
 			q.Del(k)
 		} else {

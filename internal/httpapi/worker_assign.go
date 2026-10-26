@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"time"
 
 	"github.com/fernandezvara/backd/internal/auth"
@@ -148,15 +149,11 @@ func (w *Worker) assignOne(ctx context.Context, repo storage.Repository, doc sto
 		meta, _ := doc["_meta"].(map[string]any)
 		read := version(doc)
 		next := map[string]any{}
-		for k, v := range meta {
-			next[k] = v
-		}
+		maps.Copy(next, meta)
 		next["org"], next["version"], next["updated_at"], next["updated_by"] = org, read+1, w.fns.docs.timestamp(), assignedBy
 		delete(next, "chain") // no trigger caused this write: it carries no chain
 		fields := map[string]any{}
-		for k, v := range doc {
-			fields[k] = v
-		}
+		maps.Copy(fields, doc)
 		fields["_meta"] = next
 		err := repo.Replace(ctx, fields, read)
 		switch {

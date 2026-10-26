@@ -73,7 +73,7 @@ func Set(doc map[string]any, path string, value any) {
 // Get returns the value at a dotted path of a document, or nil.
 func Get(doc map[string]any, path string) any {
 	var cur any = doc
-	for _, p := range strings.Split(path, ".") {
+	for p := range strings.SplitSeq(path, ".") {
 		m, ok := cur.(map[string]any)
 		if !ok {
 			return nil

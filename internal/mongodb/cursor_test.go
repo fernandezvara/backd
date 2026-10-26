@@ -33,7 +33,7 @@ func TestCursorPagingOnMongoDB(t *testing.T) {
 	names := []any{"ada", "bob", "ada", "carl", nil, "bob", "", "Zed"}
 	base := time.Date(2126, 1, 1, 0, 0, 0, 0, time.UTC)
 	const total = 60
-	for i := 0; i < total; i++ {
+	for range total {
 		doc := newDoc(map[string]any{"score": int64(rng.Intn(5)), "ratio": float64(rng.Intn(4)) / 2, "flag": rng.Intn(2) == 0})
 		switch n := names[rng.Intn(len(names))]; n {
 		case nil:

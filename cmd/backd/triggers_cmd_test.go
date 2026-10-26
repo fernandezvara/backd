@@ -37,8 +37,8 @@ func (s *stateFake) Gaps(_ context.Context, realm string, all bool, _ int) ([]tr
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	g := triggers.GapRecord{
-		Gap: triggers.Gap{Realm: realm, Collection: "orders", Trigger: "on_paid", Reason: triggers.GapWindow, From: time.Now().Add(-time.Hour), To: time.Now(), Count: 1},
-		ID:  "gap-abc", RecordedAt: time.Now(),
+		Realm: realm, Collection: "orders", Trigger: "on_paid", Reason: triggers.GapWindow, From: time.Now().Add(-time.Hour), To: time.Now(), Count: 1,
+		ID: "gap-abc", RecordedAt: time.Now(),
 	}
 	if s.resolved {
 		if !all {

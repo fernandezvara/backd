@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -158,9 +159,7 @@ func exportAction(c *kli.CommandContext) error {
 		q.Set("include", include)
 	}
 	headers := map[string]string{}
-	for k, v := range proof {
-		headers[k] = v
-	}
+	maps.Copy(headers, proof)
 	if progress.Lease != "" {
 		headers["X-Backd-Export"] = progress.Lease
 	}
@@ -399,7 +398,7 @@ func fetchCSV(t *target, out, part string, q url.Values, headers map[string]stri
 
 func splitList(s string) []string {
 	var out []string
-	for _, v := range strings.Split(s, ",") {
+	for v := range strings.SplitSeq(s, ",") {
 		if v = strings.TrimSpace(v); v != "" {
 			out = append(out, v)
 		}
@@ -452,13 +451,12 @@ func partIntact(out, part string, p exportedPart) bool {
 // appears under its name once whole. A transfer that breaks is retried from its start.
 func fetchPart(t *target, out, part string, q url.Values, headers map[string]string, lines bool) (exportedPart, error) {
 	var last error
-	for attempt := 0; attempt < 3; attempt++ {
+	for range 3 {
 		p, err := fetchPartOnce(t, out, part, q, headers, lines)
 		if err == nil {
 			return p, nil
 		}
-		var ae *apiError
-		if errors.As(err, &ae) {
+		if _, ok := errors.AsType[*apiError](err); ok {
 			return exportedPart{}, err
 		}
 		last = err

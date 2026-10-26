@@ -42,7 +42,7 @@ func docETag(version int64, representation string) string {
 func noneMatch(values []string, tag string) bool {
 	want := strings.TrimPrefix(tag, "W/")
 	for _, v := range values {
-		for _, t := range strings.Split(v, ",") {
+		for t := range strings.SplitSeq(v, ",") {
 			t = strings.TrimSpace(t)
 			if t == "*" || (t != "" && strings.TrimPrefix(t, "W/") == want) {
 				return true

@@ -207,7 +207,7 @@ func TestStoredValuesThatStopValidatingFallBack(t *testing.T) {
 func TestHistoryRetention(t *testing.T) {
 	s, store, now := testService(t)
 	ctx := context.Background()
-	for i := 0; i < HistoryVersions+20; i++ {
+	for i := range HistoryVersions + 20 {
 		*now = now.Add(time.Hour)
 		if _, err := s.Apply(ctx, int64(i), Input{Set: map[string]any{"features.reports.limit": float64(i%50 + 11)}}, "u"); err != nil {
 			t.Fatal(err)

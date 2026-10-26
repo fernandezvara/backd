@@ -105,7 +105,7 @@ func (r *Repository) bsonOf(doc storage.Document) bson.D {
 // lookupPath reads a dot path of a document; a missing field is nil.
 func lookupPath(doc map[string]any, path string) any {
 	var cur any = map[string]any(doc)
-	for _, p := range strings.Split(path, ".") {
+	for p := range strings.SplitSeq(path, ".") {
 		m, ok := cur.(map[string]any)
 		if !ok {
 			return nil

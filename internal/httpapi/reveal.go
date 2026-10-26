@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"log/slog"
+	"maps"
 	"net/http"
 	"slices"
 	"sort"
@@ -105,17 +106,13 @@ func (rv *revealer) view(doc map[string]any) (map[string]any, []string) {
 		return doc, nil
 	}
 	out := make(map[string]any, len(doc))
-	for k, v := range doc {
-		out[k] = v
-	}
+	maps.Copy(out, doc)
 	for _, p := range hidden {
 		nullAt(out, p)
 	}
 	meta := map[string]any{}
 	if m, ok := doc["_meta"].(map[string]any); ok {
-		for k, v := range m {
-			meta[k] = v
-		}
+		maps.Copy(meta, m)
 	}
 	sorted := slices.Clone(hidden)
 	sort.Strings(sorted)
@@ -174,9 +171,7 @@ func nullAt(doc map[string]any, path string) {
 			next = map[string]any{}
 		}
 		cp := make(map[string]any, len(next))
-		for k, v := range next {
-			cp[k] = v
-		}
+		maps.Copy(cp, next)
 		cur[p] = cp
 		cur = cp
 	}

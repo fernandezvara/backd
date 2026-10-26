@@ -57,7 +57,7 @@ func Match(doc Document, f Filter) (bool, error) {
 // lookup reads a dot path from a document; a missing field is nil.
 func lookup(doc map[string]any, path string) any {
 	var v any = map[string]any(doc)
-	for _, p := range strings.Split(path, ".") {
+	for p := range strings.SplitSeq(path, ".") {
 		m, ok := v.(map[string]any)
 		if !ok {
 			return nil

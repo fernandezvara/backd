@@ -490,9 +490,8 @@ func (d *documents) writeBatchError(w http.ResponseWriter, r *http.Request, err 
 	case isIDConflict(ie.err):
 		d.idTaken(w, r, ops[ie.index].collection, fmt.Sprintf("operation %d: a document with this id already exists", ie.index), Detail{Path: idx + ".id", Reason: "already exists"})
 	case errors.Is(ie.err, storage.ErrConflict):
-		var ce *storage.ConflictError
 		var details []Detail
-		if errors.As(ie.err, &ce) {
+		if ce, ok := errors.AsType[*storage.ConflictError](ie.err); ok {
 			reason := "must be unique"
 			if len(ce.Fields) > 1 {
 				reason = "must be unique in combination with " + strings.Join(ce.Fields, ", ")

@@ -91,7 +91,7 @@ func TestTheEpochOnlyMovesForward(t *testing.T) {
 func TestOneUsersPasswordCanBeExpired(t *testing.T) {
 	ctx := context.Background()
 	svc, _, clock, ada := enrollFixture(t)
-	bob, err := svc.Create(ctx, "bob@example.com", ptr(expiryPassword))
+	bob, err := svc.Create(ctx, "bob@example.com", new(expiryPassword))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestAnExpiredPasswordDoesNotStartTheSecondFactor(t *testing.T) {
 func TestExpiringEveryPasswordEndsTheSessions(t *testing.T) {
 	ctx := context.Background()
 	svc, store, clock, ada := enrollFixture(t)
-	if _, err := svc.Create(ctx, "bob@example.com", ptr(expiryPassword)); err != nil {
+	if _, err := svc.Create(ctx, "bob@example.com", new(expiryPassword)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.Create(ctx, "nopass@example.com", nil); err != nil {
