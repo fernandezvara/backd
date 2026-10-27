@@ -31,7 +31,7 @@ The UI needs the admin API on the same instance: `BACKD_ADMIN_UI=true` with `BAC
 
 ## Who sees what
 
-{{< screenshot src="admin-ui/overview.png" alt="The overview of a full administrator: the realm in the header, the level, and the areas the account may read and change" >}}
+{{< screenshot src="admin-ui/overview.png" alt="The overview of a full administrator: the realm in the bar, the breadcrumb, the level, and the areas the account may read and change" >}}
 
 Signing in needs a user with one of the realm's [admin roles](../admin/#admin-rights); a user without one is refused, and their session is ended at once. After sign-in the UI asks the server what the account may do (`GET /_admin/whoami`) and shows only that: a read-only administrator sees no buttons that change anything, and `admin.read_access` decides whether they see users and data. The server enforces every permission anyway; the interface only avoids offering what would be refused.
 
@@ -39,7 +39,23 @@ The overview page lists the level (full, read-only or custom) and the areas the 
 
 ## Navigation
 
-The pages are in five menus along the top: **Identity** (Overview, Users, Organizations, Invitations), **Access** (API keys, Secrets), **Data** (Data, Storage), **Compute** (Functions, Push, Jobs and history) and **Platform** (Audit, Configuration). A menu opens with a click or with Enter on its button, shows what each page is for, and closes with Escape; the page you are on is marked. The menus show only the pages the account may read: a group with nothing to show is not there, and neither are Organizations, Storage or Push in a realm that has not switched them on. Under the bar, a **breadcrumb** shows where you are, from the realm to the page (for example Data › Data › main › notes › a document); every part that has a page of its own leads there, and the tab of the browser carries the name of the page. On the right, the **account menu** (the button with your initial) shows who is signed in, the language and theme choices and **Sign out**; the realm's name at the left opens a small menu that leads to the page where another realm is chosen (an administrator works in one realm at a time, so it does not switch without signing in). On a narrow screen the groups and the account controls stack under one menu button.
+{{< screenshot src="admin-ui/menu.png" alt="The bar with the Compute menu open: Functions, Push, and Jobs and history, each with a line saying what it is for; the breadcrumb below the bar" >}}
+
+The pages are in five menus along the top:
+
+| Menu | Pages |
+|---|---|
+| **Identity** | Overview, Users, Organizations, Invitations |
+| **Access** | API keys, Secrets |
+| **Data** | Data (with the schema checks), Storage |
+| **Compute** | Functions, Push, Jobs and history |
+| **Platform** | Audit, Configuration |
+
+A menu opens with a click, or with Enter or Space on its button; it lists its pages with a line saying what each is for, puts the focus on the first, and closes with Escape or a click elsewhere. The page you are on is marked, and so is its menu. The menus show only the pages the account may read: a group with nothing to show is not there, and neither are Organizations, Storage or Push in a realm that has not switched them on.
+
+Under the bar, the **breadcrumb** shows where you are, from the realm to the page (for example `adminui › Data › main › notes › a document`). Every part that has a page of its own leads there; a database has none, so it is plain text. The tab of the browser carries the name of the page too.
+
+On the right, the **account menu** (the button with your initial) shows who is signed in, the language and theme choices and **Sign out**. The realm's name at the left opens a small menu that leads to the page where another realm is chosen: an administrator works in one realm at a time, so it does not switch without signing in. On a narrow screen the five menus and the account controls stack under one **Menu** button.
 
 ## Users and invitations
 
