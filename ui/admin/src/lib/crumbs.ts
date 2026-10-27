@@ -57,8 +57,9 @@ export function crumbsFor(name: string, params: Params, c: CrumbContext): Crumb[
   const here = (route: string) => ({ name: route, params: { realm: c.realm } })
   const parts: Crumb[] = [
     { label: c.realm, to: here('home') },
-    // A group is not a page: it leads to its first page, which is where its menu starts.
-    { label: c.t(group.label), to: here(group.items[0].route) },
+    // A group is not a page: it leads to its first page, which is where its menu starts. When the
+    // group and its page are called the same (Data, Data) the page says it.
+    ...(c.t(group.label) === c.t(item.label) ? [] : [{ label: c.t(group.label), to: here(group.items[0].route) }]),
     { label: c.t(item.label), to: here(item.route) },
     ...extra,
   ]

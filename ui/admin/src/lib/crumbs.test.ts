@@ -31,6 +31,11 @@ describe('breadcrumb', () => {
     expect(crumbs[4].to).toEqual({ name: 'data-collection', params: { realm: 'acme', database: 'main', collection: 'notes' } })
   })
 
+  test('a group called like its page is said once', () => {
+    const same = { ...ctx, t: (k: string) => (k.startsWith('nav.groups.data') || k === 'nav.data' ? 'Data' : k) }
+    expect(crumbsFor('data-collection', params, same)!.map((c) => c.label)).toEqual(['acme', 'Data', 'main', 'notes'])
+  })
+
   test('a user is named by email once the page has it, by id until then', () => {
     expect(crumbsFor('user', params, ctx)!.at(-1)!.label).toBe('u1@example.com')
     expect(crumbsFor('user', params, { ...ctx, name: () => undefined })!.at(-1)!.label).toBe('u1')
