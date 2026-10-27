@@ -7,6 +7,7 @@ import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FormDialog from '@/components/FormDialog.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import ProofField from '@/components/ProofField.vue'
 import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
@@ -307,7 +308,7 @@ onMounted(async () => {
   <AppAlert v-if="loadError" kind="error" class="mt-4">{{ loadError }}</AppAlert>
 
   <template v-if="user">
-    <h1 class="mt-2 text-2xl font-semibold" data-testid="user-email">{{ user.email }}</h1>
+    <PageHeader :title="user.email" testid="user-email" />
 
     <dl class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">

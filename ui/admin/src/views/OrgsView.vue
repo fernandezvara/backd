@@ -5,7 +5,9 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
+import AppCard from '@/components/AppCard.vue'
 import FormDialog from '@/components/FormDialog.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
 import { errorText, formatDate } from '@/lib/format'
@@ -83,10 +85,9 @@ async function create() {
 </script>
 
 <template>
-  <div class="flex flex-wrap items-end justify-between gap-4">
-    <h1 class="text-2xl font-semibold">{{ t('orgs.title') }}</h1>
+  <PageHeader :title="t('orgs.title')" :description="t('nav.desc.orgs')">
     <AppButton v-if="canWrite" @click="openCreate">{{ t('orgs.create.open') }}</AppButton>
-  </div>
+  </PageHeader>
 
   <form class="mt-4 flex flex-wrap items-end gap-4" role="search" @submit.prevent="load()">
     <div class="w-full max-w-md">
@@ -108,7 +109,7 @@ async function create() {
     <button type="button" class="ml-2 underline" @click="load()">{{ t('common.retry') }}</button>
   </AppAlert>
 
-  <div class="mt-4 overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+  <AppCard flush class="mt-4">
     <table class="w-full text-left text-sm" data-testid="orgs-table">
       <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
         <tr>
@@ -136,7 +137,7 @@ async function create() {
         </tr>
       </tbody>
     </table>
-  </div>
+  </AppCard>
   <p v-if="loading" class="mt-3 text-sm text-slate-600 dark:text-slate-400" role="status">{{ t('common.loading') }}</p>
 
   <FormDialog v-model:open="creating" :title="t('orgs.create.title')" :submit="t('common.create')" :busy="createBusy" :error="createError" @submit="create">

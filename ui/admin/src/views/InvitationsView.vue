@@ -4,8 +4,10 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
+import AppCard from '@/components/AppCard.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FormDialog from '@/components/FormDialog.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
 import { errorText, formatDate } from '@/lib/format'
@@ -116,18 +118,17 @@ async function revoke() {
 </script>
 
 <template>
-  <div class="flex flex-wrap items-end justify-between gap-4">
-    <h1 class="text-2xl font-semibold">{{ t('invitations.title') }}</h1>
-    <div v-if="canWrite" class="flex gap-2">
+  <PageHeader :title="t('invitations.title')" :description="t('nav.desc.invitations')">
+    <template v-if="canWrite">
       <AppButton v-if="realmConfig.sendsEmail !== false" variant="secondary" @click="openSend">{{ t('invitations.send.open') }}</AppButton>
       <AppButton @click="openCreate">{{ t('invitations.create.open') }}</AppButton>
-    </div>
-  </div>
+    </template>
+  </PageHeader>
 
   <AppAlert v-if="error" kind="error" class="mt-4">{{ error }}</AppAlert>
   <p v-if="loading" class="mt-4 text-sm" role="status">{{ t('common.loading') }}</p>
 
-  <div class="mt-4 overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+  <AppCard flush class="mt-4">
     <table class="w-full text-left text-sm" data-testid="invitations-table">
       <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
         <tr>
@@ -153,7 +154,7 @@ async function revoke() {
         </tr>
       </tbody>
     </table>
-  </div>
+  </AppCard>
 
   <FormDialog v-model:open="creating" :title="t('invitations.create.title')" :submit="t('common.create')" :busy="createBusy" :error="createError" @submit="create">
     <TextField v-model="createEmail" type="email" :label="t('invitations.create.email')" :help="t('invitations.create.emailHelp')" autocomplete="off" />
