@@ -1,8 +1,6 @@
 package httpapi
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -36,9 +34,7 @@ func (a *adminAPI) regenerateVersions(w http.ResponseWriter, r *http.Request) {
 		Rate        *int   `json:"rate"`
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 4<<10))
-	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.DisallowUnknownFields()
-	if err != nil || dec.Decode(&in) != nil {
+	if err != nil || strictDecode(body, &in) != nil {
 		writeError(w, r, http.StatusBadRequest, codeInvalidJSON, `the body must be {"database", "collection", "field", "version"?, "missing_only"?, "rate"?}`)
 		return
 	}

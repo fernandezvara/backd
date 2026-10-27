@@ -337,7 +337,7 @@ func (f *functions) run(w http.ResponseWriter, r *http.Request, fn *registry.Fun
 		if !f.concurrency.tryAcquire(funcKey, fn.Concurrency) {
 			f.metrics.FunctionRefused(realm, database+"/"+name, "concurrency")
 			f.releaseClaim(r.Context(), realm, claimID)
-			w.Header().Set("Retry-After", "1")
+			retryAfter(w, time.Second)
 			writeError(w, r, fullStatus, fullCode, "this function is at its concurrency limit on this instance; retry shortly")
 			return
 		}
@@ -347,7 +347,7 @@ func (f *functions) run(w http.ResponseWriter, r *http.Request, fn *registry.Fun
 			f.metrics.FunctionRefused(realm, database+"/"+name, "concurrency")
 			f.concurrency.release(funcKey, fn.Concurrency)
 			f.releaseClaim(r.Context(), realm, claimID)
-			w.Header().Set("Retry-After", "1")
+			retryAfter(w, time.Second)
 			writeError(w, r, fullStatus, fullCode, "this realm is at its function concurrency limit on this instance; retry shortly")
 			return
 		}
@@ -601,8 +601,7 @@ func (f *functions) checkRateLimit(w http.ResponseWriter, r *http.Request, fn *r
 		if te, ok := errors.AsType[*auth.ThrottledError](err); ok {
 			f.metrics.FunctionRefused(realm, database+"/"+name, "rate_limit")
 			f.metrics.RateLimited(realm, "function")
-			secs := int((te.RetryAfter + time.Second - 1) / time.Second)
-			w.Header().Set("Retry-After", strconv.Itoa(max(secs, 1)))
+			retryAfter(w, te.RetryAfter)
 			writeError(w, r, http.StatusTooManyRequests, codeTooManyRequests, "this function's rate limit was reached; retry later")
 			return false
 		}
@@ -1003,7 +1002,7 @@ func (f *functions) respond(w http.ResponseWriter, r *http.Request, fn *registry
 	case executor.StatusOutputTooBig:
 		writeError(w, r, http.StatusInternalServerError, codeInvalidOutput, "the function's output is larger than its max_output")
 	case executor.StatusBusy:
-		w.Header().Set("Retry-After", "1")
+		retryAfter(w, time.Second)
 		writeError(w, r, http.StatusServiceUnavailable, codeUnavailable, "the function executor is busy; retry shortly")
 	default:
 		writeError(w, r, http.StatusInternalServerError, codeFunctionFailed, "the function failed")

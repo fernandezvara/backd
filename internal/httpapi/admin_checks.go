@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"io"
 	"maps"
@@ -98,9 +97,7 @@ func (a *adminAPI) startDataCheck(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, codeInvalidJSON, "could not read the body")
 		return
 	} else if len(bytes.TrimSpace(body)) > 0 { // no body: the whole realm
-		dec := json.NewDecoder(bytes.NewReader(body))
-		dec.DisallowUnknownFields()
-		if dec.Decode(&in) != nil {
+		if strictDecode(body, &in) != nil {
 			writeError(w, r, http.StatusBadRequest, codeInvalidJSON, "the body must be {database?, collection?, limit?}")
 			return
 		}

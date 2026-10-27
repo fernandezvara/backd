@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -48,7 +49,7 @@ func templateError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, auth.ErrTemplateNotCustomizable):
 		writeError(w, r, http.StatusBadRequest, codeTemplateNotCustomizable, err.Error(), Detail{Path: "kind", Reason: "isn't in email.customizable"})
 	case errors.Is(err, auth.ErrTemplateTestLimit), errors.Is(err, auth.ErrTemplatePreviewLimit):
-		w.Header().Set("Retry-After", "3600")
+		retryAfter(w, time.Hour)
 		writeError(w, r, http.StatusTooManyRequests, codeTemplateTestLimit, err.Error())
 	case errors.Is(err, auth.ErrNotFound):
 		writeError(w, r, http.StatusNotFound, codeNotFound, "the organization has no template of that kind in that language")

@@ -567,9 +567,8 @@ const maxWriteAttempts = 3
 // specific If-Match fails with 412; otherwise the cycle is retried, and
 // gives up with 409 write_conflict after maxWriteAttempts.
 func (d *documents) write(w http.ResponseWriter, r *http.Request, c *registry.Collection, repo storage.Repository, pending *pendingSet, build func(current map[string]any) (map[string]any, bool)) {
-	cond, err := parseIfMatch(r.Header.Values("If-Match"))
-	if err != nil {
-		writeError(w, r, http.StatusBadRequest, codeInvalidHeader, err.Error())
+	cond, ok := ifMatchFrom(w, r)
+	if !ok {
 		return
 	}
 	a := d.accessFor(r)
@@ -658,9 +657,8 @@ func (d *documents) delete(w http.ResponseWriter, r *http.Request) {
 		d.softDelete(w, r, c, repo)
 		return
 	}
-	cond, err := parseIfMatch(r.Header.Values("If-Match"))
-	if err != nil {
-		writeError(w, r, http.StatusBadRequest, codeInvalidHeader, err.Error())
+	cond, ok := ifMatchFrom(w, r)
+	if !ok {
 		return
 	}
 	a := d.accessFor(r)
@@ -819,7 +817,7 @@ func storageError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, storage.ErrSearchTooExpensive):
 		writeError(w, r, http.StatusUnprocessableEntity, codeSearchTooCostly, "this search needs more time than allowed: use fewer or rarer words, or narrow `where`")
 	case errors.Is(err, storage.ErrIndexBuilding):
-		w.Header().Set("Retry-After", "5")
+		retryAfter(w, 5*time.Second)
 		writeError(w, r, http.StatusServiceUnavailable, codeIndexBuilding, "the text index of this collection is being rebuilt: try again in a few seconds")
 	case errors.Is(err, storage.ErrNotFound):
 		writeError(w, r, http.StatusNotFound, codeNotFound, "document not found")
@@ -887,9 +885,8 @@ func withMeta(doc, meta map[string]any) map[string]any {
 // stays, marked deleted, and nobody sees it until it is restored or purged.
 func (d *documents) softDelete(w http.ResponseWriter, r *http.Request, c *registry.Collection, repo storage.Repository) {
 	id := chi.URLParam(r, "id")
-	cond, err := parseIfMatch(r.Header.Values("If-Match"))
-	if err != nil {
-		writeError(w, r, http.StatusBadRequest, codeInvalidHeader, err.Error())
+	cond, ok := ifMatchFrom(w, r)
+	if !ok {
 		return
 	}
 	a := d.accessFor(r)
@@ -945,9 +942,8 @@ func (d *documents) purge(w http.ResponseWriter, r *http.Request, c *registry.Co
 		return
 	}
 	id := chi.URLParam(r, "id")
-	cond, err := parseIfMatch(r.Header.Values("If-Match"))
-	if err != nil {
-		writeError(w, r, http.StatusBadRequest, codeInvalidHeader, err.Error())
+	cond, ok := ifMatchFrom(w, r)
+	if !ok {
 		return
 	}
 	a := d.accessFor(r)
@@ -1002,9 +998,8 @@ func (d *documents) restore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := chi.URLParam(r, "id")
-	cond, err := parseIfMatch(r.Header.Values("If-Match"))
-	if err != nil {
-		writeError(w, r, http.StatusBadRequest, codeInvalidHeader, err.Error())
+	cond, ok := ifMatchFrom(w, r)
+	if !ok {
 		return
 	}
 	a := d.accessFor(r)

@@ -89,7 +89,7 @@ func (d *documents) aggregate(w http.ResponseWriter, r *http.Request) {
 	limiter := limiterFor(d.reg)
 	if !limiter.tryAcquire(key, 1) {
 		outcome = "limited"
-		w.Header().Set("Retry-After", "1")
+		retryAfter(w, time.Second)
 		writeError(w, r, http.StatusTooManyRequests, codeTooManyRequests, "another aggregation of this collection is running for you: wait for it to finish")
 		return
 	}

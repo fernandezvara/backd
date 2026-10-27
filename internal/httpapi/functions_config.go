@@ -3,7 +3,6 @@ package httpapi
 import (
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -131,14 +130,9 @@ func (f *functions) configHistory(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	limit := 20
-	if s := r.URL.Query().Get("limit"); s != "" {
-		n, err := strconv.Atoi(s)
-		if err != nil || n < 1 {
-			writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "limit must be a positive number")
-			return
-		}
-		limit = n
+	limit, ok := parsePositiveLimit(w, r, 20)
+	if !ok {
+		return
 	}
 	hist, err := svc.History(r.Context(), limit)
 	if err != nil {

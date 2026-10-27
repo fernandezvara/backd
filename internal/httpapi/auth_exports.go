@@ -52,7 +52,7 @@ func (a *authAPI) requestExport(w http.ResponseWriter, r *http.Request) {
 	var soon *auth.ErrExportTooSoon
 	switch {
 	case errors.As(err, &soon):
-		w.Header().Set("Retry-After", strconv.Itoa(max(int((soon.RetryAfter+time.Second-1)/time.Second), 1)))
+		retryAfter(w, soon.RetryAfter)
 		writeError(w, r, http.StatusTooManyRequests, codeTooManyRequests, soon.Error())
 		return
 	case errors.Is(err, auth.ErrExportRunning):

@@ -1,15 +1,12 @@
 package httpapi
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -65,9 +62,7 @@ func (f *functions) emailSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in emailSendInput
-	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.DisallowUnknownFields()
-	if err != nil || dec.Decode(&in) != nil {
+	if err != nil || strictDecode(body, &in) != nil {
 		writeError(w, r, http.StatusBadRequest, codeInvalidJSON, "the body must be a JSON object with kind, data and a recipient")
 		return
 	}
@@ -141,7 +136,7 @@ func (f *functions) emailSend(w http.ResponseWriter, r *http.Request) {
 	var limited *auth.EmailLimitedError
 	switch {
 	case errors.As(err, &limited):
-		w.Header().Set("Retry-After", strconv.Itoa(max(int((limited.RetryAfter+time.Second-1)/time.Second), 1)))
+		retryAfter(w, limited.RetryAfter)
 		writeError(w, r, http.StatusTooManyRequests, codeEmailLimited, limited.Error())
 	case err != nil:
 		logger(r.Context()).Error("queue a function's email", "function", fn, "error", err)

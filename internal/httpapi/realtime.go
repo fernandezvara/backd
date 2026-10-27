@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
@@ -103,9 +102,7 @@ func (d *documents) realtime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req realtimeRequest
-	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
+	if err := strictDecode(body, &req); err != nil {
 		writeError(w, r, http.StatusBadRequest, codeInvalidJSON, "request body is not valid JSON: "+err.Error())
 		return
 	}
@@ -198,11 +195,11 @@ func (d *documents) realtime(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, codeTooManySubscriptions, "too many subscriptions")
 		return
 	case errors.Is(err, realtime.ErrOpenTooFast):
-		w.Header().Set("Retry-After", "1")
+		retryAfter(w, time.Second)
 		writeError(w, r, http.StatusTooManyRequests, codeTooManyRequests, "streams are opened too fast: retry in a second")
 		return
 	case errors.Is(err, realtime.ErrUserStreams), errors.Is(err, realtime.ErrTooManyStreams):
-		w.Header().Set("Retry-After", "5")
+		retryAfter(w, 5*time.Second)
 		writeError(w, r, http.StatusTooManyRequests, codeTooManyRequests, "too many open streams: close one and retry")
 		return
 	case err != nil:

@@ -550,11 +550,10 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 	var badConsents *auth.InvalidConsentsError
 	switch {
 	case errors.As(err, &te):
-		secs := int((te.RetryAfter + time.Second - 1) / time.Second)
-		w.Header().Set("Retry-After", strconv.Itoa(max(secs, 1)))
+		retryAfter(w, te.RetryAfter)
 		writeError(w, r, http.StatusTooManyRequests, codeTooManyRequests, "too many failed attempts; retry later")
 	case errors.As(err, &locked):
-		w.Header().Set("Retry-After", strconv.Itoa(max(int((locked.RetryAfter+time.Second-1)/time.Second), 1)))
+		retryAfter(w, locked.RetryAfter)
 		writeError(w, r, http.StatusTooManyRequests, codeMFALocked, "too many wrong codes; try again later")
 	case errors.As(err, &badCode):
 		if badCode.AttemptsLeft < 0 {
@@ -626,7 +625,7 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 	case errors.Is(err, auth.ErrSameEmail):
 		writeError(w, r, http.StatusBadRequest, codeValidation, err.Error(), Detail{Path: "new_email", Reason: "is already the address of this account"})
 	case errors.As(err, &el):
-		w.Header().Set("Retry-After", strconv.Itoa(max(int((el.RetryAfter+time.Second-1)/time.Second), 1)))
+		retryAfter(w, el.RetryAfter)
 		writeError(w, r, http.StatusTooManyRequests, codeTooManyRequests, "too many emails; retry later")
 	case errors.Is(err, auth.ErrEmailNotVerified):
 		writeError(w, r, http.StatusForbidden, codeEmailNotVerified, err.Error())
@@ -651,7 +650,7 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 	case errors.As(err, &pe) && len(passwordField) > 0:
 		writeError(w, r, http.StatusBadRequest, codeValidation, "password does not meet the policy", Detail{Path: passwordField[0], Reason: pe.Reason})
 	case errors.Is(err, auth.ErrBusy), errors.Is(err, context.DeadlineExceeded):
-		w.Header().Set("Retry-After", "1")
+		retryAfter(w, time.Second)
 		writeError(w, r, http.StatusServiceUnavailable, codeUnavailable, "service busy; try again later")
 	default:
 		logger(r.Context()).Error("auth error", "error", err)

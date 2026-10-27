@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"fmt"
+	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -54,4 +55,15 @@ func parseIfMatch(values []string) (ifMatch, error) {
 		}
 	}
 	return c, nil
+}
+
+// ifMatchFrom parses the If-Match header of r. A malformed one is answered with 400 and ok is
+// false.
+func ifMatchFrom(w http.ResponseWriter, r *http.Request) (cond ifMatch, ok bool) {
+	cond, err := parseIfMatch(r.Header.Values("If-Match"))
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, codeInvalidHeader, err.Error())
+		return ifMatch{}, false
+	}
+	return cond, true
 }
