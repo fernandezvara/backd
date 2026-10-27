@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import AppCard from '@/components/AppCard.vue'
 import type { CheckReport } from 'backd-js'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import CheckReportView from '@/components/CheckReportView.vue'
 import CheckRunning from '@/components/CheckRunning.vue'
 import CheckStartDialog from '@/components/CheckStartDialog.vue'
@@ -53,17 +55,15 @@ const canStart = computed(() => checks.running.value === null)
 </script>
 
 <template>
-  <div class="mt-2 flex flex-wrap items-end justify-between gap-4">
-    <h1 class="text-2xl font-semibold">{{ t('checks.title') }}</h1>
+  <PageHeader :title="t('checks.title')" :description="t('checks.help')">
     <AppButton :disabled="!canStart" data-testid="check-all" @click="ask()">{{ t('checks.checkAll') }}</AppButton>
-  </div>
-  <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">{{ t('checks.help') }}</p>
+  </PageHeader>
   <p class="mt-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100">{{ t('checks.start.warning') }}</p>
 
   <AppAlert v-if="checks.error.value" kind="error" class="mt-4">{{ checks.error.value }}</AppAlert>
   <div v-if="checks.running.value" class="mt-4"><CheckRunning :job="checks.running.value" :percent="checks.percent.value" @cancel="checks.cancel" /></div>
 
-  <div class="mt-4 overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+  <AppCard flush class="mt-4">
     <table class="w-full text-left text-sm" data-testid="checks-table">
       <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
         <tr>
@@ -106,7 +106,7 @@ const canStart = computed(() => checks.running.value === null)
         </tr>
       </tbody>
     </table>
-  </div>
+  </AppCard>
 
   <CheckStartDialog v-model:open="asking" :scope="scopeText" :busy="checks.starting.value" @submit="confirm" />
 </template>

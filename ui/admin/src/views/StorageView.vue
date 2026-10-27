@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import AppCard from '@/components/AppCard.vue'
 import type { StorageStatus } from 'backd-js'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { useAdmin } from '@/lib/admin'
 import { errorText, formatBytes, formatDate, percentOf } from '@/lib/format'
 import { useSession } from '@/stores/session'
@@ -44,13 +46,10 @@ const canOpenUsers = computed(() => session.canRead('users'))
 </script>
 
 <template>
-  <div class="flex flex-wrap items-baseline justify-between gap-2">
-    <h1 class="text-2xl font-semibold">{{ t('storage.title') }}</h1>
-    <div class="flex items-center gap-3">
-      <span v-if="loadedAt" class="text-xs text-slate-600 dark:text-slate-400">{{ t('storage.asOf', { date: formatDate(loadedAt) }) }}</span>
-      <AppButton variant="secondary" :busy="loading" @click="load">{{ t('storage.refresh') }}</AppButton>
-    </div>
-  </div>
+  <PageHeader :title="t('storage.title')" :description="t('nav.desc.storage')">
+    <span v-if="loadedAt" class="text-xs text-slate-600 dark:text-slate-400">{{ t('storage.asOf', { date: formatDate(loadedAt) }) }}</span>
+    <AppButton variant="secondary" :busy="loading" @click="load">{{ t('storage.refresh') }}</AppButton>
+  </PageHeader>
 
   <AppAlert v-if="error" kind="error" class="mt-4">{{ error }}</AppAlert>
 
@@ -84,7 +83,7 @@ const canOpenUsers = computed(() => session.canRead('users'))
       <section class="mt-6" aria-labelledby="users-h">
         <h2 id="users-h" class="text-lg font-semibold">{{ t('storage.users') }}</h2>
         <p v-if="!usage?.users.length" class="mt-1 text-sm text-slate-600 dark:text-slate-400">{{ t('storage.noUsers') }}</p>
-        <div v-else class="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+        <AppCard v-else flush class="mt-2">
           <table class="w-full text-left text-sm" data-testid="storage-users">
             <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
               <tr>
@@ -111,7 +110,7 @@ const canOpenUsers = computed(() => session.canRead('users'))
               </tr>
             </tbody>
           </table>
-        </div>
+        </AppCard>
         <p class="mt-2 text-xs text-slate-600 dark:text-slate-400">{{ t('storage.usersNote') }}</p>
       </section>
 

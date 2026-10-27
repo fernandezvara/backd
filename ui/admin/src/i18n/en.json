@@ -876,6 +876,7 @@
     "collection": {
       "assign": {"open": "Assign an organization", "title": "Assign an organization", "help": "Gives the documents that have none this organization, in a job. Documents that already belong to one never move.", "action": "Assign", "matched": "{n} documents have no organization.", "done": "The assignment was queued: follow it under Functions, Jobs."},
       "new": "New document",
+      "in": "A collection of the {database} database.",
       "trash": "Trash",
       "live": "Documents",
       "view": "Show",

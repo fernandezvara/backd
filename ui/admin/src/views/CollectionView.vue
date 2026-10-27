@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import AppCard from '@/components/AppCard.vue'
 import type { AdminOrg, Doc } from 'backd-js'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import FormDialog from '@/components/FormDialog.vue'
 import JsonView from '@/components/JsonView.vue'
 import SchemaCheckPanel from '@/components/SchemaCheckPanel.vue'
@@ -215,17 +217,14 @@ const showStatus = computed(() => (total.value !== undefined ? t('data.collectio
 </script>
 
 <template>
-  <div class="mt-2 flex flex-wrap items-end justify-between gap-4">
-    <h1 class="font-mono text-2xl font-semibold">{{ collection }}</h1>
-    <div class="flex flex-wrap items-center gap-2">
-      <div v-if="softDelete" class="flex overflow-hidden rounded-md border border-slate-300 text-sm dark:border-slate-600" role="group" :aria-label="t('data.collection.view')">
-        <button type="button" class="px-3 py-1.5" :class="view === 'live' ? 'bg-brand-700 text-white' : ''" :aria-pressed="view === 'live'" @click="switchView('live')">{{ t('data.collection.live') }}</button>
-        <button type="button" class="px-3 py-1.5" :class="view === 'trash' ? 'bg-brand-700 text-white' : ''" :aria-pressed="view === 'trash'" @click="switchView('trash')">{{ t('data.collection.trash') }}</button>
-      </div>
-      <AppButton v-if="canWrite && orgMode" variant="secondary" @click="openAssign">{{ t('data.collection.assign.open') }}</AppButton>
-      <RouterLink v-if="canWrite" :to="{ name: 'data-new', params: { realm, database, collection } }" class="rounded-md bg-brand-700 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-800">{{ t('data.collection.new') }}</RouterLink>
+  <PageHeader :title="collection" :description="t('data.collection.in', { database })">
+    <div v-if="softDelete" class="flex overflow-hidden rounded-md border border-slate-300 text-sm dark:border-slate-600" role="group" :aria-label="t('data.collection.view')">
+      <button type="button" class="px-3 py-1.5" :class="view === 'live' ? 'bg-brand-700 text-white' : ''" :aria-pressed="view === 'live'" @click="switchView('live')">{{ t('data.collection.live') }}</button>
+      <button type="button" class="px-3 py-1.5" :class="view === 'trash' ? 'bg-brand-700 text-white' : ''" :aria-pressed="view === 'trash'" @click="switchView('trash')">{{ t('data.collection.trash') }}</button>
     </div>
-  </div>
+    <AppButton v-if="canWrite && orgMode" variant="secondary" @click="openAssign">{{ t('data.collection.assign.open') }}</AppButton>
+    <RouterLink v-if="canWrite" :to="{ name: 'data-new', params: { realm, database, collection } }" class="rounded-md bg-brand-700 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-800">{{ t('data.collection.new') }}</RouterLink>
+  </PageHeader>
 
   <SchemaCheckPanel :realm="realm" :database="database" :collection="collection" :total="conditions.length || view === 'trash' ? undefined : total" />
 
@@ -306,7 +305,7 @@ const showStatus = computed(() => (total.value !== undefined ? t('data.collectio
     </div>
   </div>
 
-  <div v-if="!asJson" class="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+  <AppCard v-if="!asJson" flush class="mt-2">
     <table class="w-full text-left text-sm" data-testid="docs-table">
       <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
         <tr>
@@ -334,7 +333,7 @@ const showStatus = computed(() => (total.value !== undefined ? t('data.collectio
         </tr>
       </tbody>
     </table>
-  </div>
+  </AppCard>
   <div v-else class="mt-2"><JsonView :value="docs" :label="t('data.collection.json')" /></div>
 
   <div class="mt-3 flex items-center gap-3">

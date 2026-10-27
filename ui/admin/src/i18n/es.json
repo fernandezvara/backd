@@ -876,6 +876,7 @@
     "collection": {
       "assign": {"open": "Asignar una organización", "title": "Asignar una organización", "help": "Da esta organización a los documentos que no tienen ninguna, en un trabajo. Los que ya pertenecen a una no se mueven.", "action": "Asignar", "matched": "{n} documentos no tienen organización.", "done": "La asignación quedó en cola: síguela en Funciones, Trabajos."},
       "new": "Nuevo documento",
+      "in": "Una colección de la base de datos {database}.",
       "trash": "Papelera",
       "live": "Documentos",
       "view": "Mostrar",
