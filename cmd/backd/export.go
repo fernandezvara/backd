@@ -308,11 +308,7 @@ func exportAction(c *kli.CommandContext) error {
 			m.Files++
 		}
 	}
-	data, err := m.Marshal()
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(out, exportpkg.ManifestName), data, 0o600); err != nil {
+	if err := m.Write(out); err != nil {
 		return err
 	}
 	_ = os.Remove(filepath.Join(out, progressName))
@@ -377,20 +373,11 @@ func fetchCSV(t *target, out, part string, q url.Values, headers map[string]stri
 	}
 	defer src.Close()
 	dst := filepath.Join(out, filepath.FromSlash(part))
-	f, err := os.OpenFile(dst+".partial", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	h, err := exportpkg.WriteAtomic(dst, func(w io.Writer) error {
+		_, err := exportpkg.WriteCSV(src, w, fields)
+		return err
+	})
 	if err != nil {
-		return exportedPart{}, err
-	}
-	h := exportpkg.NewHasher()
-	_, err = exportpkg.WriteCSV(src, io.MultiWriter(f, h), fields)
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	if err == nil {
-		err = os.Rename(dst+".partial", dst)
-	}
-	if err != nil {
-		_ = os.Remove(dst + ".partial")
 		return exportedPart{}, fmt.Errorf("%s: %w", part, err)
 	}
 	return exportedPart{Checksum: h.Sum(), Size: h.Size(), Documents: got.Documents}, nil
@@ -474,25 +461,15 @@ func fetchPartOnce(t *target, out, part string, q url.Values, headers map[string
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return exportedPart{}, err
 	}
-	f, err := os.OpenFile(dst+".partial", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-	if err != nil {
-		return exportedPart{}, err
-	}
-	h := exportpkg.NewHasher()
 	counter := &lineCounter{}
-	w := io.Writer(io.MultiWriter(f, h))
-	if lines {
-		w = io.MultiWriter(f, h, counter)
-	}
-	_, err = io.Copy(w, res.Body)
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
+	h, err := exportpkg.WriteAtomic(dst, func(w io.Writer) error {
+		if lines {
+			w = io.MultiWriter(w, counter)
+		}
+		_, err := io.Copy(w, res.Body)
+		return err
+	})
 	if err != nil {
-		_ = os.Remove(dst + ".partial")
-		return exportedPart{}, err
-	}
-	if err := os.Rename(dst+".partial", dst); err != nil {
 		return exportedPart{}, err
 	}
 	return exportedPart{Checksum: h.Sum(), Size: h.Size(), Documents: counter.n}, nil

@@ -302,15 +302,6 @@ func decryptPackage(dir string, m *exportpkg.Manifest, d *decryptor) (int, error
 	return n, nil
 }
 
-// writeManifest writes the manifest of a package.
-func writeManifest(dir string, m *exportpkg.Manifest) error {
-	data, err := m.Marshal()
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(dir, exportpkg.ManifestName), data, 0o600)
-}
-
 // exportDecrypt handles `backd export-decrypt`: a copy of a package with some encrypted fields
 // opened, made offline.
 func exportDecrypt(c *kli.CommandContext) error {
@@ -354,7 +345,7 @@ func exportDecrypt(c *kli.CommandContext) error {
 		_ = os.RemoveAll(out)
 		return err
 	}
-	if err := writeManifest(out, m); err != nil {
+	if err := m.Write(out); err != nil {
 		return err
 	}
 	if left := ciphertextFields(m); len(left) > 0 {
