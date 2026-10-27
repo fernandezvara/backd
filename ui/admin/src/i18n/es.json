@@ -99,11 +99,7 @@
     "canRead": "Puede leer",
     "canWrite": "Puede modificar",
     "nothing": "Nada",
-    "key": "una clave de API ({name})",
-    "links": {
-      "users": "Gestionar usuarios",
-      "invitations": "Gestionar invitaciones"
-    }
+    "key": "una clave de API ({name})"
   },
   "areas": {
     "users": "Usuarios",

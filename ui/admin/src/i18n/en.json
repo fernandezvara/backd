@@ -99,11 +99,7 @@
     "canRead": "Can read",
     "canWrite": "Can change",
     "nothing": "Nothing",
-    "key": "an API key ({name})",
-    "links": {
-      "users": "Manage users",
-      "invitations": "Manage invitations"
-    }
+    "key": "an API key ({name})"
   },
   "areas": {
     "users": "Users",

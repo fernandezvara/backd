@@ -16,7 +16,8 @@ const out = (name: string) => {
 
 test('screenshots of the main views', async ({ page, signIn }) => {
   await page.goto(`/_ui/r/${REALM}/signin`)
-  await setTheme(page, 'Light')
+  // The sign-in page has no shell: its theme choice is on the page.
+  await page.getByLabel('Theme').selectOption({ label: 'Light' })
   await page.screenshot({ path: out('signin') })
 
   await signIn('admin', { keep: true })
