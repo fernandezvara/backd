@@ -53,7 +53,6 @@ const canStart = computed(() => checks.running.value === null)
 </script>
 
 <template>
-  <nav class="text-sm" aria-label="Breadcrumb"><RouterLink :to="{ name: 'data', params: { realm } }" class="underline">{{ t('nav.data') }}</RouterLink></nav>
   <div class="mt-2 flex flex-wrap items-end justify-between gap-4">
     <h1 class="text-2xl font-semibold">{{ t('checks.title') }}</h1>
     <AppButton :disabled="!canStart" data-testid="check-all" @click="ask()">{{ t('checks.checkAll') }}</AppButton>

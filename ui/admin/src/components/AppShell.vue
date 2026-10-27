@@ -1,17 +1,23 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, watchEffect } from 'vue'
+import { useRoute } from 'vue-router'
+import { crumbsFor } from '@/lib/crumbs'
 import { visibleNav } from '@/lib/nav'
 import { useRealmConfig } from '@/stores/config'
+import { useCrumbNames } from '@/stores/crumbs'
 import { useSession } from '@/stores/session'
 import AccountControls from './AccountControls.vue'
 import AccountMenu from './AccountMenu.vue'
+import AppBreadcrumb from './AppBreadcrumb.vue'
 import AppNav from './AppNav.vue'
 import RealmMenu from './RealmMenu.vue'
 
 const { t } = useI18n()
 const session = useSession()
 const cfg = useRealmConfig()
+const route = useRoute()
+const names = useCrumbNames()
 onMounted(() => void cfg.load())
 
 // Organizations show when the realm has them; a level that can't read the configuration is
@@ -22,6 +28,14 @@ const groups = computed(() =>
   visibleNav({ canRead: session.canRead, orgs: orgsEnabled.value, storage: !!cfg.config?.settings.storage, push: !!cfg.config?.settings.push }),
 )
 
+const crumbs = computed(() =>
+  typeof route.name === 'string' ? crumbsFor(route.name, route.params, { t, realm: session.realm, groups: groups.value, name: names.get }) : null,
+)
+// The tab says where you are too.
+watchEffect(() => {
+  const here = crumbs.value?.at(-1)
+  document.title = here ? `${here.label} · ${t('app.name')}` : t('app.name')
+})
 </script>
 
 <template>
@@ -42,6 +56,7 @@ const groups = computed(() =>
       </div>
     </div>
   </header>
+  <AppBreadcrumb v-if="crumbs" :crumbs="crumbs" />
   <main id="main" class="mx-auto max-w-6xl px-4 py-6">
     <slot />
   </main>

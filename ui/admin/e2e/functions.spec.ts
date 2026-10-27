@@ -75,7 +75,7 @@ test('running by hand: a sync function answers, an async one queues a job, and b
   await expect(row).toContainText('ok')
 
   // The history has both runs; the sync one's log line is there, as text.
-  await page.getByRole('link', { name: 'History' }).click()
+  await page.getByRole('link', { name: 'History', exact: true }).click()
   await expect(page.getByText('Logs hold whatever the functions printed')).toBeVisible()
   await page.getByRole('textbox', { name: 'Function' }).fill('main/greet')
   await page.getByRole('button', { name: 'Filter' }).click()
@@ -91,9 +91,9 @@ test('a read-only administrator reads everything and runs nothing', async ({ pag
   await go(page, 'Functions')
   await expect(page.getByTestId('fn-main-greet')).toBeVisible()
   await expect(page.getByRole('button', { name: /^Run/ })).toHaveCount(0)
-  await page.getByRole('link', { name: 'History' }).click()
+  await page.getByRole('link', { name: 'History', exact: true }).click()
   await expect(page.getByTestId('history-table')).toBeVisible()
-  await page.getByRole('link', { name: 'Jobs' }).click()
+  await page.getByRole('link', { name: 'Jobs', exact: true }).click()
   await expect(page.getByTestId('jobs-table')).toBeVisible()
 })
 
@@ -114,10 +114,10 @@ test('the functions views have no accessibility violations', async ({ page, sign
     await page.getByRole('button', { name: 'Run a function' }).click()
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
     await page.keyboard.press('Escape')
-    await page.getByRole('link', { name: 'History' }).click()
+    await page.getByRole('link', { name: 'History', exact: true }).click()
     await expect(page.getByTestId('history-table')).toBeVisible()
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
-    await page.getByRole('link', { name: 'Jobs' }).click()
+    await page.getByRole('link', { name: 'Jobs', exact: true }).click()
     await expect(page.getByTestId('jobs-table')).toBeVisible()
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
   }
@@ -155,7 +155,7 @@ test('a running job shows the steps it reported, and a cancel closes the current
   await expect(page.getByTestId(`progress-${jobId}`).getByTestId('step-2')).toContainText('cancelled')
 
   // The attempt's record keeps the steps next to its logs.
-  await page.getByRole('link', { name: 'History' }).click()
+  await page.getByRole('link', { name: 'History', exact: true }).click()
   await page.getByRole('textbox', { name: 'Function' }).fill('main/slow')
   await expect(async () => {
     await page.getByRole('button', { name: 'Filter' }).click()
@@ -190,7 +190,7 @@ test('a running job is cancelled, and a finished one re-run', async ({ page, sig
   await expect(row.getByRole('button', { name: /^Cancel/ })).toHaveCount(0)
 
   // The worker stops the run: its attempt is recorded as cancelled, long before the function would have ended.
-  await page.getByRole('link', { name: 'History' }).click()
+  await page.getByRole('link', { name: 'History', exact: true }).click()
   await page.getByRole('textbox', { name: 'Function' }).fill('main/slow')
   await expect(async () => {
     await page.getByRole('button', { name: 'Filter' }).click()
@@ -198,7 +198,7 @@ test('a running job is cancelled, and a finished one re-run', async ({ page, sig
   }).toPass({ timeout: 20_000 })
 
   // Re-run a finished job (the cancelled one itself): a new job that links back.
-  await page.getByRole('link', { name: 'Jobs' }).click()
+  await page.getByRole('link', { name: 'Jobs', exact: true }).click()
   await page.getByRole('textbox', { name: 'Function' }).fill('main/slow')
   await page.getByRole('button', { name: 'Filter' }).click()
   await page.getByRole('button', { name: `Re-run ${jobId}` }).click()
@@ -221,7 +221,7 @@ test('a read-only administrator sees jobs and schedules with no way to cancel, r
   await go(page, 'Functions')
   await expect(page.getByTestId('fn-main-nightly')).toContainText('0 3 * * *')
   await expect(page.getByRole('button', { name: /^(Pause|Resume)$/ })).toHaveCount(0)
-  await page.getByRole('link', { name: 'Jobs' }).click()
+  await page.getByRole('link', { name: 'Jobs', exact: true }).click()
   await expect(page.getByTestId('jobs-table')).toBeVisible()
   await expect(page.getByRole('button', { name: /^(Cancel|Re-run)/ })).toHaveCount(0)
 })

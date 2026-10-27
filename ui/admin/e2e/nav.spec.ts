@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from './fixtures'
-import { navLabels } from './nav'
+import { go, navLabels } from './nav'
 import { REALM, users } from './users'
 
 const main = (page: import('@playwright/test').Page) => page.getByRole('navigation', { name: 'Main' })
@@ -79,6 +79,31 @@ test('the realm menu shows the realm and leads to the page that opens another', 
   await realm.click()
   await page.getByRole('link', { name: 'Open another realm' }).click()
   await expect(page.getByRole('heading', { name: 'Choose a realm' })).toBeVisible()
+})
+
+test('the breadcrumb says where you are and every part with a page leads there', async ({ page, signIn }) => {
+  await signIn('admin', { keep: true })
+  const crumbs = page.getByRole('navigation', { name: 'Breadcrumb' })
+  await expect(crumbs).toHaveText(new RegExp(`${REALM}\\s*Identity\\s*Overview`))
+  await page.goto(`/_ui/r/${REALM}/data/main/notes`)
+  await expect(crumbs.getByRole('listitem')).toHaveText([REALM, 'Data', 'Data', 'main', 'notes'])
+  await expect(crumbs.getByText('notes')).toHaveAttribute('aria-current', 'page')
+  await expect(page).toHaveTitle('notes · backd admin')
+  await crumbs.getByRole('link', { name: 'Data', exact: true }).last().click()
+  await expect(page).toHaveURL(new RegExp(`/_ui/r/${REALM}/data$`))
+  // The group leads to its first page, the realm to the overview.
+  await crumbs.getByRole('link', { name: 'Data', exact: true }).first().click()
+  await expect(page).toHaveURL(new RegExp(`/_ui/r/${REALM}/data$`))
+  await crumbs.getByRole('link', { name: REALM }).click()
+  await expect(page).toHaveURL(new RegExp(`/_ui/r/${REALM}$`))
+})
+
+test('a user and an organization are named in the breadcrumb', async ({ page, signIn }) => {
+  await signIn('admin')
+  await go(page, 'Users')
+  await page.getByRole('link', { name: users.viewer }).click()
+  await expect(page.getByRole('navigation', { name: 'Breadcrumb' }).getByText(users.viewer)).toHaveAttribute('aria-current', 'page')
+  await expect(page).toHaveTitle(`${users.viewer} · backd admin`)
 })
 
 test.describe('a narrow screen', () => {

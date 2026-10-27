@@ -231,12 +231,6 @@ const actor = (v?: string | null) => v || '—'
 </script>
 
 <template>
-  <nav class="text-sm" aria-label="Breadcrumb">
-    <RouterLink :to="{ name: 'data', params: { realm } }" class="underline">{{ t('nav.data') }}</RouterLink>
-    <span aria-hidden="true"> / </span><span class="font-mono">{{ database }}</span>
-    <span aria-hidden="true"> / </span>
-    <RouterLink :to="{ name: 'data-collection', params: { realm, database, collection } }" class="font-mono underline">{{ collection }}</RouterLink>
-  </nav>
   <h1 class="mt-2 text-2xl font-semibold" data-testid="doc-title">{{ isNew ? t('data.doc.new', { collection }) : t('data.doc.edit', { id: id ?? '' }) }}</h1>
 
   <AppAlert v-if="loadError" kind="error" class="mt-4">{{ loadError }}</AppAlert>

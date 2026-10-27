@@ -47,6 +47,9 @@
     "label": "Idioma",
     "auto": "Automático"
   },
+  "breadcrumb": {
+    "label": "Ruta de navegación"
+  },
   "account": {
     "label": "Cuenta"
   },

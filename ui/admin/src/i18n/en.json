@@ -47,6 +47,9 @@
     "label": "Language",
     "auto": "Automatic"
   },
+  "breadcrumb": {
+    "label": "Breadcrumb"
+  },
   "account": {
     "label": "Account"
   },

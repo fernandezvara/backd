@@ -13,6 +13,7 @@ import { useAdmin } from '@/lib/admin'
 import { errorText, formatDate } from '@/lib/format'
 import { useProof } from '@/lib/proof'
 import { useRealmConfig } from '@/stores/config'
+import { useCrumbNames } from '@/stores/crumbs'
 import { useSession } from '@/stores/session'
 import { useToasts } from '@/stores/toasts'
 
@@ -21,6 +22,7 @@ const { t } = useI18n()
 const admin = useAdmin()
 const router = useRouter()
 const session = useSession()
+const crumbNames = useCrumbNames()
 const toasts = useToasts()
 const realmConfig = useRealmConfig()
 const proof = useProof()
@@ -34,6 +36,7 @@ async function load() {
   loadError.value = ''
   try {
     user.value = await admin.users.get(props.id)
+    crumbNames.set('user', props.id, user.value.email)
   } catch (e) {
     loadError.value = errorText(e, t('user.loadFailed'))
   }

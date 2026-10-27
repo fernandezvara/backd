@@ -215,10 +215,6 @@ const showStatus = computed(() => (total.value !== undefined ? t('data.collectio
 </script>
 
 <template>
-  <nav class="text-sm" aria-label="Breadcrumb">
-    <RouterLink :to="{ name: 'data', params: { realm } }" class="underline">{{ t('nav.data') }}</RouterLink>
-    <span aria-hidden="true"> / </span><span class="font-mono">{{ database }}</span>
-  </nav>
   <div class="mt-2 flex flex-wrap items-end justify-between gap-4">
     <h1 class="font-mono text-2xl font-semibold">{{ collection }}</h1>
     <div class="flex flex-wrap items-center gap-2">

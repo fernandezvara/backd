@@ -12,6 +12,7 @@ import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
 import { errorText, formatDate, parseList } from '@/lib/format'
 import { useRealmConfig } from '@/stores/config'
+import { useCrumbNames } from '@/stores/crumbs'
 import { useSession } from '@/stores/session'
 import { useToasts } from '@/stores/toasts'
 
@@ -19,6 +20,7 @@ const props = defineProps<{ realm: string; id: string }>()
 const { t } = useI18n()
 const admin = useAdmin()
 const session = useSession()
+const crumbNames = useCrumbNames()
 const toasts = useToasts()
 const realmConfig = useRealmConfig()
 
@@ -54,6 +56,7 @@ async function load() {
   loadError.value = ''
   try {
     org.value = await admin.orgs.get(props.id)
+    crumbNames.set('org', props.id, org.value.name)
     claims.value = JSON.parse(JSON.stringify(org.value.claims))
     if (org.value.status === 'deleted') {
       members.value = []
