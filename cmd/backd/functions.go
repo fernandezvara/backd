@@ -55,7 +55,7 @@ func functionTarget(c *kli.CommandContext) (t *target, database, name string, er
 	if err != nil {
 		return nil, "", "", usageErr(err)
 	}
-	t, err = newTarget(str(c, "url"), realm, c.Getenv, false)
+	t, err = targetFor(c, realm, false)
 	return t, database, name, err
 }
 
@@ -86,7 +86,7 @@ func functionsInvoke(c *kli.CommandContext) error {
 		body = json.RawMessage(data)
 	}
 
-	t, err := newTarget(str(c, "url"), realm, c.Getenv, false)
+	t, err := targetFor(c, realm, false)
 	if err != nil {
 		return err
 	}
@@ -316,7 +316,7 @@ func functionsJobs(c *kli.CommandContext) error {
 	if flag(c, "scheduled") {
 		q.Set("scheduled", "true")
 	}
-	t, err := newTarget(str(c, "url"), realm, c.Getenv, false)
+	t, err := targetFor(c, realm, false)
 	if err != nil {
 		return err
 	}
@@ -366,7 +366,7 @@ func functionsJobDetail(c *kli.CommandContext, id string) error {
 	if str(c, "function") != "" || str(c, "realm") == "" {
 		return usageErr(errors.New("--job needs --realm (the job's id is unique within it) and no --function"))
 	}
-	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}
@@ -424,7 +424,7 @@ func functionsRerun(c *kli.CommandContext) error { return jobControl(c, "rerun",
 
 // jobControl posts to _admin/jobs/{id}/{op} and prints the job the answer names.
 func jobControl(c *kli.CommandContext, op, verb string) error {
-	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}
@@ -452,7 +452,7 @@ type scheduleRecord struct {
 
 // functionsSchedules handles `backd functions schedules`.
 func functionsSchedules(c *kli.CommandContext) error {
-	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}

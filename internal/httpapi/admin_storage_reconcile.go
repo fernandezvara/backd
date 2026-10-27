@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -40,9 +39,7 @@ func (a *adminAPI) reconcileStorage(w http.ResponseWriter, r *http.Request) {
 		Delete bool `json:"delete"`
 	}
 	if data, _ := io.ReadAll(http.MaxBytesReader(w, r.Body, 4<<10)); len(data) > 0 {
-		dec := json.NewDecoder(strings.NewReader(string(data)))
-		dec.DisallowUnknownFields()
-		if err := dec.Decode(&in); err != nil {
+		if err := strictDecode(data, &in); err != nil {
 			writeError(w, r, http.StatusBadRequest, codeValidation, `the body must be {"delete": true|false}`)
 			return
 		}

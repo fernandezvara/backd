@@ -62,7 +62,7 @@ type triggerGap struct {
 
 // triggersStatus handles `backd triggers status`.
 func triggersStatus(c *kli.CommandContext) error {
-	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}
@@ -115,7 +115,7 @@ func triggersStatus(c *kli.CommandContext) error {
 
 // triggersGaps handles `backd triggers gaps`.
 func triggersGaps(c *kli.CommandContext) error {
-	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}
@@ -148,7 +148,7 @@ func triggersGaps(c *kli.CommandContext) error {
 
 // triggersResolve handles `backd triggers resolve`.
 func triggersResolve(c *kli.CommandContext) error {
-	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}

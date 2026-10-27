@@ -18,7 +18,7 @@ type consentNotice struct {
 // consentsNotify handles `backd consents notify`: ask the users who hold an older version
 // of a consent to review the current one, by email.
 func consentsNotify(c *kli.CommandContext) error {
-	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}
@@ -40,7 +40,7 @@ func consentsNotify(c *kli.CommandContext) error {
 // consentsRecord handles `backd consents record`: an administrator records a consent a
 // person gave, or withdrew, outside the app, with the evidence for it.
 func consentsRecord(c *kli.CommandContext) error {
-	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}

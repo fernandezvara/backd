@@ -144,9 +144,8 @@ func (d *documents) transfer(w http.ResponseWriter, r *http.Request) {
 	if team != "" && !d.targetTeam(w, r, c, org, team) {
 		return
 	}
-	cond, err := parseIfMatch(r.Header.Values("If-Match"))
-	if err != nil {
-		writeError(w, r, http.StatusBadRequest, codeInvalidHeader, err.Error())
+	cond, ok := ifMatchFrom(w, r)
+	if !ok {
 		return
 	}
 	_, repo := d.collection(r)

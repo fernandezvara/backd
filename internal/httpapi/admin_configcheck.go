@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -81,7 +82,7 @@ func (a *adminAPI) checkConfig(w http.ResponseWriter, r *http.Request) {
 	case checkSlots <- struct{}{}:
 		defer func() { <-checkSlots }()
 	default:
-		w.Header().Set("Retry-After", "2")
+		retryAfter(w, 2*time.Second)
 		writeError(w, r, http.StatusTooManyRequests, codeTooManyRequests, "other configuration checks are running; retry in a moment")
 		return
 	}

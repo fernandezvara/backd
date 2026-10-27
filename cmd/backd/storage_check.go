@@ -36,7 +36,7 @@ type storageCheckReport struct {
 // realm's storage (it holds the access keys) and the report is printed. Exits 1
 // when a step failed.
 func storageCheck(c *kli.CommandContext) error {
-	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}

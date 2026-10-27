@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -135,15 +134,11 @@ func (a *adminAPI) appConfigHistory(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	limit := appconfig.HistoryVersions
-	if s := r.URL.Query().Get("limit"); s != "" {
-		n, err := strconv.Atoi(s)
-		if err != nil || n < 1 {
-			writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "limit must be a positive number")
-			return
-		}
-		limit = min(n, limit)
+	limit, ok := parsePositiveLimit(w, r, appconfig.HistoryVersions)
+	if !ok {
+		return
 	}
+	limit = min(limit, appconfig.HistoryVersions)
 	hist, err := svc.History(r.Context(), limit)
 	if err != nil {
 		adminError(w, r, err)

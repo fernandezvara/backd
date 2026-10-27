@@ -191,9 +191,8 @@ func (d *documents) uploadFile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	cond, err := parseIfMatch(r.Header.Values("If-Match"))
-	if err != nil {
-		writeError(w, r, http.StatusBadRequest, codeInvalidHeader, err.Error())
+	cond, ok := ifMatchFrom(w, r)
+	if !ok {
 		return
 	}
 	a := d.accessFor(r)
@@ -371,9 +370,8 @@ func (d *documents) removeFiles(w http.ResponseWriter, r *http.Request, fileID s
 	if _, ok := d.objectsFor(w, r, c.Realm); !ok {
 		return
 	}
-	cond, err := parseIfMatch(r.Header.Values("If-Match"))
-	if err != nil {
-		writeError(w, r, http.StatusBadRequest, codeInvalidHeader, err.Error())
+	cond, ok := ifMatchFrom(w, r)
+	if !ok {
 		return
 	}
 	a := d.accessFor(r)

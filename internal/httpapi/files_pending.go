@@ -137,7 +137,7 @@ func (d *documents) uploadGate(w http.ResponseWriter, r *http.Request, svc *auth
 	callerKey := uploadCallerKey(r)
 	if err := svc.RateLimit(r.Context(), "pending:"+callerKey, pendingRateLimit, pendingRateWindow); err != nil {
 		if te, ok := errors.AsType[*auth.ThrottledError](err); ok {
-			w.Header().Set("Retry-After", strconv.Itoa(max(int((te.RetryAfter+time.Second-1)/time.Second), 1)))
+			retryAfter(w, te.RetryAfter)
 			writeError(w, r, http.StatusTooManyRequests, codeTooManyRequests, "too many uploads started; retry later")
 			return "", false
 		}
@@ -150,7 +150,7 @@ func (d *documents) uploadGate(w http.ResponseWriter, r *http.Request, svc *auth
 		return "", false
 	}
 	if open >= auth.MaxOpenPendingUploads {
-		w.Header().Set("Retry-After", "60")
+		retryAfter(w, time.Minute)
 		writeError(w, r, http.StatusTooManyRequests, codeTooManyRequests, "this caller already holds "+strconv.Itoa(auth.MaxOpenPendingUploads)+" unused uploads: use or let them expire first")
 		return "", false
 	}

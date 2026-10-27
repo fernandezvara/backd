@@ -1,8 +1,6 @@
 package httpapi
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -140,9 +138,7 @@ func (a *adminAPI) testPush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in pushTestInput
-	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.DisallowUnknownFields()
-	if err != nil || dec.Decode(&in) != nil {
+	if err != nil || strictDecode(body, &in) != nil {
 		writeError(w, r, http.StatusBadRequest, codeInvalidJSON, "the body must be a JSON object: user or email, and kind or title and body")
 		return
 	}

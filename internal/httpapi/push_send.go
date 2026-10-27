@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -78,9 +77,7 @@ func (f *functions) pushSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in pushSendInput
-	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.DisallowUnknownFields()
-	if err != nil || dec.Decode(&in) != nil {
+	if err != nil || strictDecode(body, &in) != nil {
 		writeError(w, r, http.StatusBadRequest, codeInvalidJSON, "the body must be a JSON object: user, users or audience, and kind or title and body")
 		return
 	}
@@ -236,9 +233,7 @@ func parseAudience(raw json.RawMessage) (*auth.PushAudience, error) {
 		CreatedAfter  string   `json:"created_after"`
 		Consent       string   `json:"consent"`
 	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&d); err != nil {
+	if err := strictDecode(raw, &d); err != nil {
 		return nil, errors.New("an object with roles, email_verified, locale, consent, created_before and created_after (anything else is refused)")
 	}
 	a := &auth.PushAudience{Roles: d.Roles, EmailVerified: d.EmailVerified, Locale: d.Locale, Consent: d.Consent}

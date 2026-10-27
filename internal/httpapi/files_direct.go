@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -75,9 +74,7 @@ func readDirectStart(w http.ResponseWriter, r *http.Request, f *registry.FileFie
 		tooLarge(w, r, maxMultipartStartBody)
 		return in, false
 	}
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err != nil || dec.Decode(&in) != nil {
+	if err != nil || strictDecode(data, &in) != nil {
 		writeError(w, r, http.StatusBadRequest, codeInvalidJSON, `the body must be a JSON object: {"name", "size", "type", "sha256"} ("part_sha256" instead of "sha256" above the multipart limit)`)
 		return in, false
 	}
@@ -171,9 +168,8 @@ func (d *documents) startDirectForDocument(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	cond, err := parseIfMatch(r.Header.Values("If-Match"))
-	if err != nil {
-		writeError(w, r, http.StatusBadRequest, codeInvalidHeader, err.Error())
+	cond, ok := ifMatchFrom(w, r)
+	if !ok {
 		return
 	}
 	a := d.accessFor(r)

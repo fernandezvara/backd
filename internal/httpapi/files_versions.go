@@ -113,9 +113,7 @@ func (d *documents) makeVersion(w http.ResponseWriter, r *http.Request) {
 		}
 		if len(keys) > 0 {
 			var pd imageParamsDoc
-			dec := json.NewDecoder(strings.NewReader(string(raw)))
-			dec.DisallowUnknownFields()
-			if err := dec.Decode(&pd); err != nil {
+			if err := strictDecode(raw, &pd); err != nil {
 				writeError(w, r, http.StatusBadRequest, codeValidation, "the parameters are not valid: "+err.Error())
 				return
 			}

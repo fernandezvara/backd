@@ -149,7 +149,12 @@ func newTarget(flagURL, realm string, getenv func(string) string, sessionOnly bo
 // targetOf resolves the server, realm and credential of an API command
 // from its --realm and --url flags.
 func targetOf(c *kli.CommandContext, sessionOnly bool) (*target, error) {
-	return newTarget(str(c, "url"), str(c, "realm"), c.Getenv, sessionOnly)
+	return targetFor(c, str(c, "realm"), sessionOnly)
+}
+
+// targetFor is targetOf for a realm resolved apart from the --realm flag.
+func targetFor(c *kli.CommandContext, realm string, sessionOnly bool) (*target, error) {
+	return newTarget(str(c, "url"), realm, c.Getenv, sessionOnly)
 }
 
 // httpClient trusts the system's CAs, plus BACKD_CA_CERT (a PEM file) if
