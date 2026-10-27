@@ -1,6 +1,6 @@
 import { expect, test } from './fixtures'
 import { users } from './users'
-import { go, navLabels } from './nav'
+import { go, navLabels, setTheme } from './nav'
 
 test('definitions show each function with its schedule, mode and limits', async ({ page, signIn }) => {
   await signIn('admin')
@@ -107,7 +107,7 @@ test('the functions views have no accessibility violations', async ({ page, sign
   const { default: AxeBuilder } = await import('@axe-core/playwright')
   await signIn('admin')
   for (const theme of ['Light', 'Dark']) {
-    await page.getByLabel('Theme').selectOption({ label: theme })
+    await setTheme(page, theme)
     await go(page, 'Functions')
     await expect(page.getByTestId('fn-main-greet')).toBeVisible()
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])

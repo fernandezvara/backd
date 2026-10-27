@@ -39,7 +39,7 @@ The overview page lists the level (full, read-only or custom) and the areas the 
 
 ## Navigation
 
-The pages are in five menus along the top: **Identity** (Overview, Users, Organizations, Invitations), **Access** (API keys, Secrets), **Data** (Data, Storage), **Compute** (Functions, Push, Jobs and history) and **Platform** (Audit, Configuration). A menu opens with a click or with Enter on its button, shows what each page is for, and closes with Escape; the page you are on is marked. The menus show only the pages the account may read: a group with nothing to show is not there, and neither are Organizations, Storage or Push in a realm that has not switched them on. On a narrow screen the groups stack under one menu button.
+The pages are in five menus along the top: **Identity** (Overview, Users, Organizations, Invitations), **Access** (API keys, Secrets), **Data** (Data, Storage), **Compute** (Functions, Push, Jobs and history) and **Platform** (Audit, Configuration). A menu opens with a click or with Enter on its button, shows what each page is for, and closes with Escape; the page you are on is marked. The menus show only the pages the account may read: a group with nothing to show is not there, and neither are Organizations, Storage or Push in a realm that has not switched them on. On the right, the **account menu** (the button with your initial) shows who is signed in, the language and theme choices and **Sign out**; the realm's name at the left opens a small menu that leads to the page where another realm is chosen (an administrator works in one realm at a time, so it does not switch without signing in). On a narrow screen the groups and the account controls stack under one menu button.
 
 ## Users and invitations
 

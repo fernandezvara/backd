@@ -1,7 +1,7 @@
 import { createClient } from 'backd-js'
 import { expect, test } from './fixtures'
 import { PASSWORD, REALM, users } from './users'
-import { go, navLabels } from './nav'
+import { go, navLabels, setTheme } from './nav'
 
 const base = process.env.E2E_URL ?? 'http://localhost:8080'
 const stamp = Date.now().toString(36)
@@ -274,7 +274,7 @@ test('the data views have no accessibility violations', async ({ page, signIn })
   const made = await (await adminClient()).admin.data('main', 'products').create({ name: unique(), tags: ['a'], dims: { width: 1 } })
   await signIn('admin', { keep: true })
   for (const theme of ['Light', 'Dark']) {
-    await page.getByLabel('Theme').selectOption({ label: theme })
+    await setTheme(page, theme)
     await go(page, 'Data')
     await expect(page.getByTestId('open-main-products')).toBeVisible()
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])

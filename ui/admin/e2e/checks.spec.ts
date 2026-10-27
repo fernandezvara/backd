@@ -1,5 +1,6 @@
 import { expect, test } from './fixtures'
 import { REALM } from './users'
+import { setTheme } from './nav'
 
 // scripts/ui-e2e.sh puts one document in `labels` that no longer matches its
 // schema (its name is a number): the check must find it, and only it.
@@ -58,7 +59,7 @@ test('the schema check views have no accessibility violations', async ({ page, s
   const { default: AxeBuilder } = await import('@axe-core/playwright')
   await signIn('admin', { keep: true })
   for (const theme of ['Light', 'Dark']) {
-    await page.getByLabel('Theme').selectOption({ label: theme })
+    await setTheme(page, theme)
     await page.goto(`/_ui/r/${REALM}/data/checks`)
     await expect(page.getByTestId('checks-table')).toBeVisible()
     await page.getByTestId('report-main-labels').locator('summary').click()

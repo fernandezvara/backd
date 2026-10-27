@@ -47,7 +47,12 @@
     "label": "Language",
     "auto": "Automatic"
   },
+  "account": {
+    "label": "Account"
+  },
   "realm": {
+    "menuHelp": "You are signed in to this realm only.",
+    "another": "Open another realm",
     "label": "Realm",
     "current": "Realm {name}",
     "choose": "Choose a realm",

@@ -47,7 +47,12 @@
     "label": "Idioma",
     "auto": "Automático"
   },
+  "account": {
+    "label": "Cuenta"
+  },
   "realm": {
+    "menuHelp": "Has iniciado sesión solo en este realm.",
+    "another": "Abrir otro realm",
     "label": "Realm",
     "current": "Realm: {name}",
     "choose": "Elige un realm",

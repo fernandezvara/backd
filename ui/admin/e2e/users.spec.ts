@@ -1,6 +1,6 @@
 import { expect, test } from './fixtures'
 import { PASSWORD, REALM, users } from './users'
-import { go, navLabels } from './nav'
+import { go, navLabels, setTheme } from './nav'
 
 const stamp = Date.now()
 let n = 0
@@ -164,7 +164,7 @@ test('the users and invitations views have no accessibility violations', async (
   const { default: AxeBuilder } = await import('@axe-core/playwright')
   await signIn('admin')
   for (const theme of ['Light', 'Dark']) {
-    await page.getByLabel('Theme').selectOption({ label: theme })
+    await setTheme(page, theme)
     await go(page, 'Users')
     await expect(page.getByTestId('users-table')).toContainText(users.admin)
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])

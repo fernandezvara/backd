@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from './fixtures'
 import { navLabels } from './nav'
-import { REALM } from './users'
+import { REALM, users } from './users'
 
 const main = (page: import('@playwright/test').Page) => page.getByRole('navigation', { name: 'Main' })
 
@@ -56,6 +56,29 @@ test('a level without an area does not see its pages, and an empty group is gone
   expect(labels).not.toContain('Storage')
   const groups = await main(page).getByRole('button').allTextContents()
   expect(groups).not.toContain('Platform')
+})
+
+test('the account menu holds who is signed in, language, theme and the way out', async ({ page, signIn }) => {
+  await signIn('admin')
+  const account = page.getByTestId('account-menu')
+  await account.click()
+  const menu = page.getByRole('dialog', { name: 'Account' })
+  await expect(menu.getByText(users.admin)).toBeVisible()
+  await expect(menu.getByLabel('Language')).toBeVisible()
+  await expect(menu.getByLabel('Theme')).toBeVisible()
+  await expect(menu.getByRole('button', { name: 'Sign out' })).toBeVisible()
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+})
+
+test('the realm menu shows the realm and leads to the page that opens another', async ({ page, signIn }) => {
+  await signIn('admin')
+  const realm = page.getByTestId('realm-badge')
+  await expect(realm).toContainText(`Realm ${REALM}`)
+  await realm.click()
+  await page.getByRole('link', { name: 'Open another realm' }).click()
+  await expect(page.getByRole('heading', { name: 'Choose a realm' })).toBeVisible()
 })
 
 test.describe('a narrow screen', () => {

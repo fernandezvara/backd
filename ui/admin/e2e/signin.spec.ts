@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from './fixtures'
 import { REALM, users } from './users'
+import { setTheme, signOut } from './nav'
 
 test('a deep link to a protected page asks to sign in, then comes back', async ({ page, signIn }) => {
   await page.goto(`/_ui/r/${REALM}`)
@@ -81,7 +82,7 @@ test('signing out revokes the session on the server', async ({ page, signIn, req
   })
   await signIn('admin')
   await expect(page.getByTestId('level')).toBeVisible()
-  await page.getByRole('button', { name: 'Sign out' }).click()
+  await signOut(page)
   await expect(page).toHaveURL(/signin/)
   const token = tokens.at(-1)!
   const res = await request.get(`/v1/${REALM}/_admin/whoami`, { headers: { Authorization: `Bearer ${token}` } })
@@ -115,7 +116,7 @@ test('the theme switch applies and the page has no accessibility violations', as
   await signIn('admin')
   await expect(page.getByTestId('level')).toBeVisible()
   for (const theme of ['Light', 'Dark']) {
-    await page.getByLabel('Theme').selectOption({ label: theme })
+    await setTheme(page, theme)
     await expect(page.locator('html')).toHaveClass(theme === 'Dark' ? /dark/ : /^(?!.*dark).*$/)
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
   }

@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { expect, test } from './fixtures'
 import { REALM } from './users'
+import { setTheme } from './nav'
 
 // The pictures of the documentation's Admin UI guide, in the light theme.
 // Not part of the usual run: `E2E_SCREENSHOTS=1 make ui-e2e` regenerates
@@ -15,11 +16,11 @@ const out = (name: string) => {
 
 test('screenshots of the main views', async ({ page, signIn }) => {
   await page.goto(`/_ui/r/${REALM}/signin`)
-  await page.getByLabel('Theme').selectOption({ label: 'Light' })
+  await setTheme(page, 'Light')
   await page.screenshot({ path: out('signin') })
 
   await signIn('admin', { keep: true })
-  await page.getByLabel('Theme').selectOption({ label: 'Light' })
+  await setTheme(page, 'Light')
   await expect(page.getByTestId('level')).toBeVisible()
   await page.screenshot({ path: out('overview') })
 
