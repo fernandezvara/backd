@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppCard from '@/components/AppCard.vue'
 import type { AdminUser, Identity, OwnedReport, UserSession } from 'backd-js'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -378,7 +379,7 @@ onMounted(async () => {
       <section class="mt-8" aria-labelledby="identities-h">
         <h2 id="identities-h" class="text-lg font-semibold">{{ t('user.identities.title') }}</h2>
         <AppAlert v-if="identitiesError" kind="error" class="mt-2">{{ identitiesError }}</AppAlert>
-        <div v-else class="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+        <AppCard v-else flush class="mt-2">
           <table class="w-full text-left text-sm" data-testid="user-identities">
             <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
               <tr>
@@ -401,7 +402,7 @@ onMounted(async () => {
               </tr>
             </tbody>
           </table>
-        </div>
+        </AppCard>
       </section>
 
       <section class="mt-8" aria-labelledby="mfa-h">
@@ -419,7 +420,7 @@ onMounted(async () => {
         <h2 id="sessions-h" class="text-lg font-semibold">{{ t('user.sessions.title') }}</h2>
         <AppAlert v-if="sessionsError" kind="error" class="mt-2">{{ sessionsError }}</AppAlert>
         <p v-else-if="!sessions.length" class="mt-2 text-sm text-slate-600 dark:text-slate-400">{{ t('user.sessions.none') }}</p>
-        <div v-else class="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+        <AppCard v-else flush class="mt-2">
           <table class="w-full text-left text-sm" data-testid="user-sessions">
             <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
               <tr>
@@ -440,13 +441,13 @@ onMounted(async () => {
               </tr>
             </tbody>
           </table>
-        </div>
+        </AppCard>
       </section>
       <section v-if="pushConfigured" class="mt-8" aria-labelledby="devices-h">
         <h2 id="devices-h" class="text-lg font-semibold">{{ t('user.devices.title') }}</h2>
         <AppAlert v-if="devicesError" kind="error" class="mt-2">{{ devicesError }}</AppAlert>
         <p v-else-if="!devices.length" class="mt-2 text-sm text-slate-600 dark:text-slate-400" data-testid="user-devices-none">{{ t('user.devices.none') }}</p>
-        <div v-else class="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+        <AppCard v-else flush class="mt-2">
           <table class="w-full text-left text-sm" data-testid="user-devices">
             <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
               <tr>
@@ -467,7 +468,7 @@ onMounted(async () => {
               </tr>
             </tbody>
           </table>
-        </div>
+        </AppCard>
       </section>
     </template>
 
