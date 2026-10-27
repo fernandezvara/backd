@@ -129,7 +129,30 @@
     "config": "Configuration",
     "data": "Data",
     "storage": "Storage",
-    "push": "Push"
+    "push": "Push",
+    "jobs": "Jobs and history",
+    "groups": {
+      "identity": "Identity",
+      "access": "Access",
+      "data": "Data",
+      "compute": "Compute",
+      "platform": "Platform"
+    },
+    "desc": {
+      "overview": "Realm health and where to start",
+      "users": "Accounts, sessions and sign-in",
+      "orgs": "Organizations, members and sign-in",
+      "invitations": "Pending and past invitations",
+      "apikeys": "Keys for programs and what they can do",
+      "secrets": "Values that functions and providers use",
+      "data": "Browse and edit documents, check them against schemas",
+      "storage": "Files, buckets and usage",
+      "functions": "Server-side code and its versions",
+      "push": "Devices, topics and deliveries",
+      "jobs": "Scheduled jobs and past invocations",
+      "audit": "Who did what, and when",
+      "config": "Settings, collections and templates"
+    }
   },
   "push": {
     "title": "Push notifications",

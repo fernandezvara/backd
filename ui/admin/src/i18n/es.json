@@ -129,7 +129,30 @@
     "config": "Configuración",
     "data": "Datos",
     "storage": "Almacenamiento",
-    "push": "Push"
+    "push": "Push",
+    "jobs": "Trabajos e historial",
+    "groups": {
+      "identity": "Identidad",
+      "access": "Acceso",
+      "data": "Datos",
+      "compute": "Cómputo",
+      "platform": "Plataforma"
+    },
+    "desc": {
+      "overview": "Estado del realm y por dónde empezar",
+      "users": "Cuentas, sesiones e inicio de sesión",
+      "orgs": "Organizaciones, miembros e inicio de sesión",
+      "invitations": "Invitaciones pendientes y pasadas",
+      "apikeys": "Claves para programas y lo que pueden hacer",
+      "secrets": "Valores que usan las funciones y los proveedores",
+      "data": "Explorar y editar documentos, comprobarlos con los esquemas",
+      "storage": "Archivos, buckets y uso",
+      "functions": "Código del servidor y sus versiones",
+      "push": "Dispositivos, temas y envíos",
+      "jobs": "Trabajos programados e invocaciones pasadas",
+      "audit": "Quién hizo qué, y cuándo",
+      "config": "Ajustes, colecciones y plantillas"
+    }
   },
   "push": {
     "title": "Notificaciones push",

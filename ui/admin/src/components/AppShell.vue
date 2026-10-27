@@ -2,6 +2,7 @@
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { visibleNav } from '@/lib/nav'
 import { useRealmConfig } from '@/stores/config'
 import { useSession } from '@/stores/session'
 import AppButton from './AppButton.vue'
@@ -18,20 +19,12 @@ onMounted(() => void cfg.load())
 // offered the page and the server decides.
 const orgsEnabled = computed(() => (cfg.config ? !!cfg.config.settings.organizations : !session.canRead('config')))
 
-const links = computed(() => [
-  { name: 'home', label: t('nav.overview'), show: true },
-  { name: 'users', label: t('nav.users'), show: session.canRead('users') },
-  { name: 'orgs', label: t('nav.orgs'), show: session.canRead('users') && orgsEnabled.value },
-  { name: 'invitations', label: t('nav.invitations'), show: session.canRead('invitations') },
-  { name: 'apikeys', label: t('nav.apikeys'), show: session.canRead('apikeys') },
-  { name: 'data', label: t('nav.data'), show: session.canRead('data') },
-  { name: 'storage', label: t('nav.storage'), show: session.canRead('config') && !!cfg.config?.settings.storage },
-  { name: 'functions', label: t('nav.functions'), show: session.canRead('functions') },
-  { name: 'push', label: t('nav.push'), show: session.canRead('functions') && !!cfg.config?.settings.push },
-  { name: 'secrets', label: t('nav.secrets'), show: session.canRead('secrets') },
-  { name: 'audit', label: t('nav.audit'), show: session.canRead('audit') },
-  { name: 'config', label: t('nav.config'), show: session.canRead('config') },
-].filter((l) => l.show))
+// The flat bar shows one link per page; the Jobs and history item has its own tab under Functions.
+const links = computed(() =>
+  visibleNav({ canRead: session.canRead, orgs: orgsEnabled.value, storage: !!cfg.config?.settings.storage, push: !!cfg.config?.settings.push })
+    .flatMap((g) => g.items)
+    .filter((i) => i.route !== 'functions-jobs'),
+)
 
 async function signOut() {
   const realm = session.realm
@@ -58,14 +51,14 @@ async function signOut() {
   </header>
   <nav :aria-label="t('nav.label')" class="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
     <ul class="mx-auto flex max-w-6xl gap-1 px-4">
-      <li v-for="link in links" :key="link.name">
+      <li v-for="link in links" :key="link.route">
         <RouterLink
-          :to="{ name: link.name, params: { realm: session.realm } }"
+          :to="{ name: link.route, params: { realm: session.realm } }"
           class="block border-b-2 border-transparent px-3 py-2 text-sm"
-          :active-class="link.name === 'home' ? '' : 'border-brand-700 font-semibold'"
+          :active-class="link.route === 'home' ? '' : 'border-brand-700 font-semibold'"
           exact-active-class="border-brand-700 font-semibold"
         >
-          {{ link.label }}
+          {{ t(link.label) }}
         </RouterLink>
       </li>
     </ul>
