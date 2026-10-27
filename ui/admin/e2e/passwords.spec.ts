@@ -1,5 +1,6 @@
 import { expect, test } from './fixtures'
 import { PASSWORD, REALM } from './users'
+import { go } from './nav'
 
 const stamp = Date.now()
 const email = `e2e-pw-${stamp}@adminui.example`
@@ -9,7 +10,7 @@ const email = `e2e-pw-${stamp}@adminui.example`
 
 test('an administrator expires one password, and a new one makes the account usable again', async ({ page, signIn, request }) => {
   await signIn('admin')
-  await page.getByRole('link', { name: 'Users' }).click()
+  await go(page, 'Users')
   await page.getByRole('button', { name: 'Create user' }).click()
   const create = page.getByRole('dialog')
   await create.getByLabel('Email').fill(email)
@@ -57,7 +58,7 @@ test('an administrator expires one password, and a new one makes the account usa
 
 test('the actions for a leak ask for the number of accounts and the realm name', async ({ page, signIn }) => {
   await signIn('admin')
-  await page.getByRole('link', { name: 'Users' }).click()
+  await go(page, 'Users')
   const panel = page.getByTestId('passwords-panel')
   await expect(panel).toBeVisible()
   await expect(page.getByTestId('passwords-status')).toContainText('accounts have a password')
@@ -83,7 +84,7 @@ test('the actions for a leak ask for the number of accounts and the realm name',
 
 test('only a full administrator sees the actions', async ({ page, signIn }) => {
   await signIn('support')
-  await page.getByRole('link', { name: 'Users' }).click()
+  await go(page, 'Users')
   await expect(page.getByTestId('users-table')).toBeVisible()
   await expect(page.getByTestId('passwords-panel')).toHaveCount(0)
 })

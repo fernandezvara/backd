@@ -1,6 +1,7 @@
 import { createClient } from 'backd-js'
 import { expect, test } from './fixtures'
 import { PASSWORD, REALM, users } from './users'
+import { go, navLabels } from './nav'
 
 const base = process.env.E2E_URL ?? 'http://localhost:8080'
 const stamp = Date.now().toString(36)
@@ -16,7 +17,7 @@ async function adminClient() {
 
 test('databases and collections are listed and open', async ({ page, signIn }) => {
   await signIn('admin', { keep: true })
-  await page.getByRole('link', { name: 'Data' }).click()
+  await go(page, 'Data')
   await expect(page.getByTestId('open-main-products')).toContainText('keeps a trash')
   await expect(page.getByTestId('open-main-notes')).toBeVisible()
   await page.getByTestId('open-main-products').click()
@@ -253,7 +254,7 @@ test('a collection without a trash deletes for good', async ({ page, signIn }) =
 
 test('a read-only administrator browses with no way to change anything', async ({ page, signIn }) => {
   await signIn('viewer', { keep: true })
-  await page.getByRole('link', { name: 'Data' }).click()
+  await go(page, 'Data')
   await page.getByTestId('open-main-products').click()
   await expect(page.getByTestId('docs-table')).toContainText('Seed Widget')
   await expect(page.getByRole('link', { name: 'New document' })).toHaveCount(0)
@@ -265,7 +266,7 @@ test('a read-only administrator browses with no way to change anything', async (
 
 test('a custom level without the data area has no way in', async ({ page, signIn }) => {
   await signIn('support', { keep: true })
-  await expect(page.getByRole('link', { name: 'Data' })).toHaveCount(0)
+  expect(await navLabels(page)).not.toContain('Data')
 })
 
 test('the data views have no accessibility violations', async ({ page, signIn }) => {
@@ -274,7 +275,7 @@ test('the data views have no accessibility violations', async ({ page, signIn })
   await signIn('admin', { keep: true })
   for (const theme of ['Light', 'Dark']) {
     await page.getByLabel('Theme').selectOption({ label: theme })
-    await page.getByRole('link', { name: 'Data' }).click()
+    await go(page, 'Data')
     await expect(page.getByTestId('open-main-products')).toBeVisible()
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
     await page.getByTestId('open-main-products').click()

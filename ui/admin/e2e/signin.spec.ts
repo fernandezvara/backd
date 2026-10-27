@@ -21,7 +21,7 @@ test('the full administrator sees what whoami grants', async ({ page, signIn }) 
   await expect(page.getByTestId('level')).toHaveText('Full administrator')
   await expect(page.getByTestId('can-write')).toContainText('Users')
   await expect(page.getByTestId('can-write')).toContainText('Configuration')
-  await expect(page.getByText(users.admin, { exact: true }).first()).toBeVisible()
+  await expect(page.getByText(`Signed in as ${users.admin}`)).toBeVisible()
 })
 
 test('the read-only administrator can change nothing', async ({ page, signIn }) => {

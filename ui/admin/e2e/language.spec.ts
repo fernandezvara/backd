@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from './fixtures'
 import { PASSWORD, REALM, users } from './users'
+import { go, navLabels } from './nav'
 
 test.describe('a Spanish browser', () => {
   test.use({ locale: 'es-ES' })
@@ -13,7 +14,7 @@ test.describe('a Spanish browser', () => {
     await page.getByLabel('Contraseña').fill(PASSWORD)
     await page.getByRole('button', { name: 'Iniciar sesión' }).click()
     await expect(page.getByRole('button', { name: 'Cerrar sesión' })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Usuarios' })).toBeVisible()
+    expect(await navLabels(page)).toContain('Usuarios')
     await expect(page.getByTestId('level')).toHaveText('Administrador completo')
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
   })
@@ -21,18 +22,18 @@ test.describe('a Spanish browser', () => {
 
 test('the language can be chosen, and the choice is kept', async ({ page, signIn }) => {
   await signIn('admin', { keep: true })
-  await expect(page.getByRole('link', { name: 'Users', exact: true })).toBeVisible()
+  expect(await navLabels(page)).toContain('Users')
   await expect(page.locator('html')).toHaveAttribute('lang', 'en')
 
   await page.getByTestId('language-switch').selectOption('es')
-  await expect(page.getByRole('link', { name: 'Usuarios', exact: true })).toBeVisible()
+  expect(await navLabels(page)).toContain('Usuarios')
   await expect(page.getByRole('button', { name: 'Cerrar sesión' })).toBeVisible()
   await expect(page.locator('html')).toHaveAttribute('lang', 'es')
   // The choices are written in their own language.
   await expect(page.getByTestId('language-switch').locator('option')).toHaveText(['Automático', 'English', 'Español'])
 
   // Pages, and the dates on them, follow.
-  await page.getByRole('link', { name: 'Usuarios', exact: true }).click()
+  await go(page, 'Usuarios')
   await expect(page.getByRole('heading', { name: 'Usuarios' })).toBeVisible()
   await expect(page.getByTestId('users-table')).toContainText(users.admin)
   expect(await page.getByTestId('users-table').innerText()).toMatch(/\b(ene|feb|mar|abr|may|jun|jul|ago|sept?|oct|nov|dic)\b/)
@@ -51,7 +52,7 @@ test('the language can be chosen, and the choice is kept', async ({ page, signIn
 test('typed confirmations are typed in the language shown', async ({ page, signIn }) => {
   await signIn('admin')
   await page.getByTestId('language-switch').selectOption('es')
-  await page.getByRole('link', { name: 'Invitaciones' }).click()
+  await go(page, 'Invitaciones')
   await page.getByRole('button', { name: 'Crear invitación' }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Crear', exact: true }).click()
   await expect(page.getByTestId('invitation-token')).toHaveValue(/^bdi_/)

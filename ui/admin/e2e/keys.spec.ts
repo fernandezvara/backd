@@ -1,12 +1,13 @@
 import { expect, test } from './fixtures'
 import { PASSWORD, REALM } from './users'
+import { go } from './nav'
 
 const stamp = Date.now().toString(36)
 
 test('API keys: create shows the key once, revoke asks for the name', async ({ page, signIn }) => {
   const name = `e2e-${stamp}`
   await signIn('admin')
-  await page.getByRole('link', { name: 'API keys' }).click()
+  await go(page, 'API keys')
   await page.getByRole('button', { name: 'Create API key' }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel('Name').fill(name)
@@ -42,7 +43,7 @@ test('secrets: set is write-only, delete asks for the name', async ({ page, sign
   const name = `E2E_${stamp.toUpperCase()}`
   const value = `s3cret-${stamp}`
   await signIn('admin')
-  await page.getByRole('link', { name: 'Secrets' }).click()
+  await go(page, 'Secrets')
   await page.getByRole('button', { name: 'Set a secret' }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel('Name').fill(name)
@@ -64,7 +65,7 @@ test('secrets: set is write-only, delete asks for the name', async ({ page, sign
 
 test('audit: filters, details as text and paging', async ({ page, signIn }) => {
   await signIn('admin')
-  await page.getByRole('link', { name: 'Audit' }).click()
+  await go(page, 'Audit')
   await expect(page.getByTestId('audit-table')).toContainText('admin.login')
 
   await page.getByLabel('Action').fill('admin.login')
@@ -88,7 +89,7 @@ test('audit details are text, never markup', async ({ page, signIn, request }) =
   const payload = '<img src=x onerror=window.__pwned=1>@adminui.example'
   await request.post(`/v1/${REALM}/_auth/login`, { data: { email: payload, password: 'nope' } })
   await signIn('admin')
-  await page.getByRole('link', { name: 'Audit' }).click()
+  await go(page, 'Audit')
   await expect(page.getByTestId('audit-table')).toBeVisible()
   expect(await page.evaluate(() => (window as unknown as { __pwned?: number }).__pwned)).toBeUndefined()
   await expect(page.locator('img[src="x"]')).toHaveCount(0)
@@ -97,12 +98,12 @@ test('audit details are text, never markup', async ({ page, signIn, request }) =
 test('a read-only administrator reads keys, secrets and audit with no controls', async ({ page, signIn }) => {
   await signIn('viewer')
   for (const [link, table] of [['API keys', 'apikeys-table'], ['Secrets', 'secrets-table'], ['Audit', 'audit-table']] as const) {
-    await page.getByRole('link', { name: link, exact: true }).click()
+    await go(page, link)
     await expect(page.getByTestId(table)).toBeVisible()
   }
-  await page.getByRole('link', { name: 'API keys' }).click()
+  await go(page, 'API keys')
   await expect(page.getByRole('button', { name: /^(Create API key|Revoke)/ })).toHaveCount(0)
-  await page.getByRole('link', { name: 'Secrets' }).click()
+  await go(page, 'Secrets')
   await expect(page.getByRole('button', { name: /^(Set a secret|Delete)/ })).toHaveCount(0)
 })
 
@@ -119,11 +120,11 @@ test('the keys, secrets and audit views have no accessibility violations', async
   for (const theme of ['Light', 'Dark']) {
     await page.getByLabel('Theme').selectOption({ label: theme })
     for (const [link, table] of [['API keys', 'apikeys-table'], ['Secrets', 'secrets-table'], ['Audit', 'audit-table']] as const) {
-      await page.getByRole('link', { name: link, exact: true }).click()
+      await go(page, link)
       await expect(page.getByTestId(table)).toBeVisible()
       expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
     }
-    await page.getByRole('link', { name: 'API keys' }).click()
+    await go(page, 'API keys')
     await page.getByRole('button', { name: 'Create API key' }).click()
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
     await page.keyboard.press('Escape')

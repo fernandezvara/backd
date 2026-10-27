@@ -118,6 +118,8 @@
   },
   "nav": {
     "label": "Main",
+    "menu": "Menu",
+    "close": "Close the menu",
     "overview": "Overview",
     "users": "Users",
     "orgs": "Organizations",

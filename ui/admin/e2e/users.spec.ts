@@ -1,5 +1,6 @@
 import { expect, test } from './fixtures'
 import { PASSWORD, REALM, users } from './users'
+import { go, navLabels } from './nav'
 
 const stamp = Date.now()
 let n = 0
@@ -17,7 +18,7 @@ async function createUser(page: import('@playwright/test').Page, email: string, 
 test('a full administrator creates, finds and manages a user', async ({ page, signIn }) => {
   const email = fresh()
   await signIn('admin')
-  await page.getByRole('link', { name: 'Users' }).click()
+  await go(page, 'Users')
   await expect(page.getByTestId('users-table')).toContainText(users.admin)
 
   await createUser(page, email)
@@ -56,7 +57,7 @@ test('a full administrator creates, finds and manages a user', async ({ page, si
 test('the ways to sign in are listed, and the last one stays', async ({ page, signIn }) => {
   const email = fresh()
   await signIn('admin')
-  await page.getByRole('link', { name: 'Users' }).click()
+  await go(page, 'Users')
   await createUser(page, email)
   const table = page.getByTestId('user-identities')
   await expect(table.getByRole('row')).toHaveCount(2) // header + the password
@@ -74,7 +75,7 @@ test('the ways to sign in are listed, and the last one stays', async ({ page, si
 test('sessions are listed and revoked', async ({ page, signIn, request }) => {
   const email = fresh()
   await signIn('admin')
-  await page.getByRole('link', { name: 'Users' }).click()
+  await go(page, 'Users')
   await createUser(page, email)
   // Only an administrator signs in at the realm's own login (people sign in to an organization), so this user gets an administrator role.
   await page.getByLabel('Role', { exact: true }).selectOption('viewer')
@@ -87,7 +88,7 @@ test('sessions are listed and revoked', async ({ page, signIn, request }) => {
   await page.reload() // the admin's session is in memory: reloading signs out, so sign in again
   await expect(page).toHaveURL(/signin/)
   await signIn('admin')
-  await page.getByRole('link', { name: 'Users' }).click()
+  await go(page, 'Users')
   await page.getByLabel('Search by email').fill(email)
   await page.getByRole('link', { name: email }).click()
   await expect(page.getByTestId('user-sessions').getByRole('row')).toHaveCount(2)
@@ -99,7 +100,7 @@ test('sessions are listed and revoked', async ({ page, signIn, request }) => {
 test('erasing shows what the user owns and asks for the email', async ({ page, signIn }) => {
   const email = fresh()
   await signIn('admin')
-  await page.getByRole('link', { name: 'Users' }).click()
+  await go(page, 'Users')
   await createUser(page, email)
   await page.getByRole('button', { name: 'Delete user' }).click()
   const dialog = page.getByRole('dialog')
@@ -120,7 +121,7 @@ test('erasing shows what the user owns and asks for the email', async ({ page, s
 test('invitations: create shows the token once, revoke needs the word', async ({ page, signIn }) => {
   const email = fresh()
   await signIn('admin')
-  await page.getByRole('link', { name: 'Invitations' }).click()
+  await go(page, 'Invitations')
   await expect(page.getByRole('button', { name: 'Email an invitation' })).toHaveCount(0) // no email in this realm
   await page.getByRole('button', { name: 'Create invitation' }).click()
   await page.getByRole('dialog').getByLabel('Email').fill(email)
@@ -138,8 +139,8 @@ test('invitations: create shows the token once, revoke needs the word', async ({
 
 test('a read-only administrator sees users with no control that changes anything', async ({ page, signIn }) => {
   await signIn('viewer')
-  await expect(page.getByRole('link', { name: 'Users' })).toBeVisible()
-  await page.getByRole('link', { name: 'Users' }).click()
+  expect(await navLabels(page)).toContain('Users')
+  await go(page, 'Users')
   await expect(page.getByTestId('users-table')).toContainText(users.admin)
   await expect(page.getByRole('button', { name: 'Create user' })).toHaveCount(0)
   await page.getByRole('link', { name: users.admin }).click()
@@ -150,10 +151,10 @@ test('a read-only administrator sees users with no control that changes anything
 
 test('a custom level reaches only its areas', async ({ page, signIn }) => {
   await signIn('support')
-  await expect(page.getByRole('link', { name: 'Users' })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Invitations' })).toBeVisible()
+  expect(await navLabels(page)).toContain('Users')
+  expect(await navLabels(page)).toContain('Invitations')
   // Roles can still be added, by name: the configuration isn't readable at this level.
-  await page.getByRole('link', { name: 'Users' }).click()
+  await go(page, 'Users')
   await page.getByRole('link', { name: users.viewer }).click()
   await expect(page.getByLabel('Role', { exact: true })).toBeVisible()
   await expect(page.getByTestId('user-roles')).not.toContainText('only in the database')
@@ -164,7 +165,7 @@ test('the users and invitations views have no accessibility violations', async (
   await signIn('admin')
   for (const theme of ['Light', 'Dark']) {
     await page.getByLabel('Theme').selectOption({ label: theme })
-    await page.getByRole('link', { name: 'Users' }).click()
+    await go(page, 'Users')
     await expect(page.getByTestId('users-table')).toContainText(users.admin)
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
     await page.getByRole('link', { name: users.viewer }).click()
@@ -174,7 +175,7 @@ test('the users and invitations views have no accessibility violations', async (
     await expect(page.getByTestId('owned-report')).toBeVisible()
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
     await page.keyboard.press('Escape')
-    await page.getByRole('link', { name: 'Invitations' }).click()
+    await go(page, 'Invitations')
     await expect(page.getByTestId('invitations-table')).toBeVisible()
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
   }
@@ -183,7 +184,7 @@ test('the users and invitations views have no accessibility violations', async (
 test('the second factor of a user is shown, and not offered to reset when there is none', async ({ page, signIn }) => {
   const email = fresh()
   await signIn('admin')
-  await page.getByRole('link', { name: 'Users' }).click()
+  await go(page, 'Users')
   await createUser(page, email)
   await expect(page.getByTestId('user-mfa-state')).toHaveText('Off.')
   await expect(page.getByRole('button', { name: 'Reset second factor' })).toHaveCount(0)

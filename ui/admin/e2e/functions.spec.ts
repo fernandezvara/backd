@@ -1,9 +1,10 @@
 import { expect, test } from './fixtures'
 import { users } from './users'
+import { go, navLabels } from './nav'
 
 test('definitions show each function with its schedule, mode and limits', async ({ page, signIn }) => {
   await signIn('admin')
-  await page.getByRole('link', { name: 'Functions' }).click()
+  await go(page, 'Functions')
   const greet = page.getByTestId('fn-main-greet')
   await expect(greet).toContainText('sync')
   await expect(greet).toContainText('Internal')
@@ -15,7 +16,7 @@ test('definitions show each function with its schedule, mode and limits', async 
 
 test('a schedule can be paused and resumed, and the state is kept', async ({ page, signIn }) => {
   await signIn('admin', { keep: true }) // the token must outlive the reload below
-  await page.getByRole('link', { name: 'Functions' }).click()
+  await go(page, 'Functions')
   const nightly = page.getByTestId('fn-main-nightly')
   // The state is the server's, so a retry may find the schedule paused: start running.
   const resume = nightly.getByRole('button', { name: 'Resume' })
@@ -40,7 +41,7 @@ test('a schedule can be paused and resumed, and the state is kept', async ({ pag
 
 test('running by hand: a sync function answers, an async one queues a job, and both are recorded', async ({ page, signIn }) => {
   await signIn('admin')
-  await page.getByRole('link', { name: 'Functions' }).click()
+  await go(page, 'Functions')
 
   // Bad JSON is refused before anything is sent.
   await page.getByRole('button', { name: 'Run a function' }).click()
@@ -87,7 +88,7 @@ test('running by hand: a sync function answers, an async one queues a job, and b
 
 test('a read-only administrator reads everything and runs nothing', async ({ page, signIn }) => {
   await signIn('viewer')
-  await page.getByRole('link', { name: 'Functions' }).click()
+  await go(page, 'Functions')
   await expect(page.getByTestId('fn-main-greet')).toBeVisible()
   await expect(page.getByRole('button', { name: /^Run/ })).toHaveCount(0)
   await page.getByRole('link', { name: 'History' }).click()
@@ -98,8 +99,8 @@ test('a read-only administrator reads everything and runs nothing', async ({ pag
 
 test('a custom level without the functions area has no way in', async ({ page, signIn }) => {
   await signIn('support')
-  await expect(page.getByRole('link', { name: 'Users' })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Functions' })).toHaveCount(0)
+  expect(await navLabels(page)).toContain('Users')
+  expect(await navLabels(page)).not.toContain('Functions')
 })
 
 test('the functions views have no accessibility violations', async ({ page, signIn }) => {
@@ -107,7 +108,7 @@ test('the functions views have no accessibility violations', async ({ page, sign
   await signIn('admin')
   for (const theme of ['Light', 'Dark']) {
     await page.getByLabel('Theme').selectOption({ label: theme })
-    await page.getByRole('link', { name: 'Functions' }).click()
+    await go(page, 'Functions')
     await expect(page.getByTestId('fn-main-greet')).toBeVisible()
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
     await page.getByRole('button', { name: 'Run a function' }).click()
@@ -124,7 +125,7 @@ test('the functions views have no accessibility violations', async ({ page, sign
 
 test('a running job shows the steps it reported, and a cancel closes the current one', async ({ page, signIn }) => {
   await signIn('admin', { keep: true })
-  await page.getByRole('link', { name: 'Functions' }).click()
+  await go(page, 'Functions')
   await page.getByTestId('fn-main-slow').getByRole('button', { name: 'Run' }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Run', exact: true }).click()
   await page.getByRole('link', { name: 'See the job' }).click()
@@ -165,7 +166,7 @@ test('a running job shows the steps it reported, and a cancel closes the current
 
 test('a running job is cancelled, and a finished one re-run', async ({ page, signIn }) => {
   await signIn('admin', { keep: true })
-  await page.getByRole('link', { name: 'Functions' }).click()
+  await go(page, 'Functions')
 
   // Start a slow job by hand and wait until a worker is running it.
   await page.getByTestId('fn-main-slow').getByRole('button', { name: 'Run' }).click()
@@ -217,7 +218,7 @@ test('a running job is cancelled, and a finished one re-run', async ({ page, sig
 
 test('a read-only administrator sees jobs and schedules with no way to cancel, re-run or pause', async ({ page, signIn }) => {
   await signIn('viewer', { keep: true })
-  await page.getByRole('link', { name: 'Functions' }).click()
+  await go(page, 'Functions')
   await expect(page.getByTestId('fn-main-nightly')).toContainText('0 3 * * *')
   await expect(page.getByRole('button', { name: /^(Pause|Resume)$/ })).toHaveCount(0)
   await page.getByRole('link', { name: 'Jobs' }).click()

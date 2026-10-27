@@ -1,6 +1,7 @@
 import { createClient } from 'backd-js'
 import { expect, test } from './fixtures'
 import { PASSWORD, REALM, users } from './users'
+import { go } from './nav'
 
 const url = process.env.E2E_URL ?? 'http://localhost:8080'
 
@@ -17,7 +18,7 @@ test('an administrator sees a user\'s devices and removes one', async ({ page, s
   const label = `E2E phone ${Date.now()}`
   await registerDevice(label)
   await signIn('admin')
-  await page.getByRole('link', { name: 'Users' }).click()
+  await go(page, 'Users')
   await page.getByRole('link', { name: users.support }).click()
   const row = page.getByTestId('user-devices').getByRole('row').filter({ hasText: label })
   await expect(row).toBeVisible()
@@ -30,7 +31,7 @@ test('an administrator sees a user\'s devices and removes one', async ({ page, s
 test('the Push view shows the configuration, sends a test and lists the send', async ({ page, signIn }) => {
   await registerDevice(`E2E phone ${Date.now()}`)
   await signIn('admin')
-  await page.getByRole('link', { name: 'Push', exact: true }).click()
+  await go(page, 'Push')
   await expect(page.getByRole('heading', { name: 'Push notifications' })).toBeVisible()
   await expect(page.getByTestId('push-config')).toContainText('android')
   await expect(page.getByTestId('push-config')).toContainText('capture')
@@ -55,7 +56,7 @@ test('the Push view shows the configuration, sends a test and lists the send', a
 
 test('a read-only administrator reads the Push view but can not send', async ({ page, signIn }) => {
   await signIn('viewer')
-  await page.getByRole('link', { name: 'Push', exact: true }).click()
+  await go(page, 'Push')
   await expect(page.getByRole('heading', { name: 'Push notifications' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Send a test' })).toHaveCount(0)
 })
