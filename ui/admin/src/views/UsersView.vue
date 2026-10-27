@@ -4,7 +4,9 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import AppAlert from '@/components/AppAlert.vue'
+import AppBadge from '@/components/AppBadge.vue'
 import AppButton from '@/components/AppButton.vue'
+import AppCard from '@/components/AppCard.vue'
 import FormDialog from '@/components/FormDialog.vue'
 import PasswordsPanel from '@/components/PasswordsPanel.vue'
 import TextField from '@/components/TextField.vue'
@@ -107,7 +109,7 @@ async function create() {
     <button type="button" class="ml-2 underline" @click="load()">{{ t('common.retry') }}</button>
   </AppAlert>
 
-  <div class="mt-4 overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+  <AppCard flush class="mt-4">
     <table class="w-full text-left text-sm" data-testid="users-table">
       <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
         <tr>
@@ -122,7 +124,7 @@ async function create() {
           <td class="px-3 py-2">
             <RouterLink :to="{ name: 'user', params: { realm, id: u.id } }" class="font-medium underline">{{ u.email }}</RouterLink>
           </td>
-          <td class="px-3 py-2">{{ statusOf(u) }}<span v-if="!u.email_verified && !u.erased_at"> · {{ t('users.unverified') }}</span><span v-if="u.password_expired_at && !u.erased_at" data-testid="password-expired-tag"> · {{ t('users.passwordExpired') }}</span></td>
+          <td class="px-3 py-2"><AppBadge :kind="u.erased_at ? 'neutral' : u.disabled ? 'error' : 'ok'">{{ statusOf(u) }}</AppBadge><span v-if="!u.email_verified && !u.erased_at"> · {{ t('users.unverified') }}</span><span v-if="u.password_expired_at && !u.erased_at" data-testid="password-expired-tag"> · {{ t('users.passwordExpired') }}</span></td>
           <td class="px-3 py-2">{{ u.roles.length ? u.roles.join(', ') : t('users.noRoles') }}</td>
           <td class="px-3 py-2">{{ formatDate(u.created_at) }}</td>
         </tr>
@@ -131,7 +133,7 @@ async function create() {
         </tr>
       </tbody>
     </table>
-  </div>
+  </AppCard>
   <p v-if="loading" class="mt-3 text-sm text-slate-600 dark:text-slate-400" role="status">{{ t('common.loading') }}</p>
   <div v-if="hasMore" class="mt-3">
     <AppButton variant="secondary" :busy="loading" @click="load(true)">{{ t('common.loadMore') }}</AppButton>

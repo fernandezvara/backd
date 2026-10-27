@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { PhMagnifyingGlass } from '@phosphor-icons/vue'
 import { useId } from 'vue'
 
 defineOptions({ inheritAttrs: false })
@@ -10,17 +11,21 @@ const id = useId()
 <template>
   <div class="space-y-1">
     <label :for="id" class="block text-sm font-medium">{{ label }}</label>
-    <input
-      :id="id"
-      v-model="model"
-      :type="type ?? 'text'"
-      :autocomplete="autocomplete"
-      :required="required"
-      v-bind="$attrs"
-      :aria-invalid="error ? true : undefined"
-      :aria-describedby="error ? `${id}-error` : help ? `${id}-help` : undefined"
-      class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900"
-    />
+    <div class="relative">
+      <PhMagnifyingGlass v-if="type === 'search'" aria-hidden="true" class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-slate-500" :size="16" />
+      <input
+        :id="id"
+        v-model="model"
+        :type="type ?? 'text'"
+        :autocomplete="autocomplete"
+        :required="required"
+        v-bind="$attrs"
+        :aria-invalid="error ? true : undefined"
+        :aria-describedby="error ? `${id}-error` : help ? `${id}-help` : undefined"
+        class="block w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
+        :class="{ 'pl-9': type === 'search' }"
+      />
+    </div>
     <p v-if="help && !error" :id="`${id}-help`" class="text-xs text-slate-600 dark:text-slate-400">{{ help }}</p>
     <p v-if="error" :id="`${id}-error`" class="text-xs text-red-700 dark:text-red-400">{{ error }}</p>
   </div>
