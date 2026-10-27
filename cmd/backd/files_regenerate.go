@@ -16,7 +16,7 @@ func filesRegenerate(c *kli.CommandContext) error {
 	if err != nil || interval <= 0 {
 		return usageErr(errors.New("--interval must be a duration such as 2s"))
 	}
-	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}

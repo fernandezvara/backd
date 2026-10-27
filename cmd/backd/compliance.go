@@ -31,7 +31,7 @@ type complianceScope struct {
 // complianceScopeCmd handles `backd compliance scope`: what a user's data
 // export takes from each collection, and why anything is left out.
 func complianceScopeCmd(c *kli.CommandContext) error {
-	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}

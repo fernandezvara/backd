@@ -53,7 +53,7 @@ func dataCheck(c *kli.CommandContext) error {
 	if err != nil || interval <= 0 {
 		return usageErr(errors.New("--interval must be a duration such as 2s"))
 	}
-	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}
@@ -205,7 +205,7 @@ func dataChecks(c *kli.CommandContext) error {
 	if collection != "" && database == "" {
 		return usageErr(errors.New("--collection needs --database"))
 	}
-	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}

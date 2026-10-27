@@ -53,7 +53,7 @@ type storageStatus struct {
 // storageUsage handles `backd storage usage`: what the realm's storage is, whether it
 // works, what the documents hold in it and what waits to be cleaned up.
 func storageUsage(c *kli.CommandContext) error {
-	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}
@@ -147,7 +147,7 @@ type reconcileReport struct {
 // storageReconcile handles `backd storage reconcile`: the running backd lists the realm's
 // objects and reports (or, with --delete, removes) the ones no document references.
 func storageReconcile(c *kli.CommandContext) error {
-	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}

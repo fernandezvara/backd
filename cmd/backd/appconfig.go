@@ -68,7 +68,7 @@ func showValue(v any) string {
 
 // appConfigGet handles `backd app-config get`: every key with its value, or one key.
 func appConfigGet(c *kli.CommandContext) error {
-	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}
@@ -161,7 +161,7 @@ func parseConfigValue(s string) any {
 
 // appConfigSet handles `backd app-config set`: one key with --key and --value, or several with --values.
 func appConfigSet(c *kli.CommandContext) error {
-	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}
@@ -185,7 +185,7 @@ func appConfigSet(c *kli.CommandContext) error {
 
 // appConfigReset handles `backd app-config reset --keys a,b`.
 func appConfigReset(c *kli.CommandContext) error {
-	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}
@@ -215,7 +215,7 @@ func patchAppConfig(c *kli.CommandContext, t *target, body map[string]any) error
 
 // appConfigHistory handles `backd app-config history`.
 func appConfigHistory(c *kli.CommandContext) error {
-	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}
@@ -248,7 +248,7 @@ func appConfigHistory(c *kli.CommandContext) error {
 
 // appConfigRollback handles `backd app-config rollback --version c2`.
 func appConfigRollback(c *kli.CommandContext) error {
-	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}

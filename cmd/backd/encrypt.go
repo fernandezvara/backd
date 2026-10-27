@@ -76,7 +76,7 @@ func encryptStatus(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}
@@ -135,7 +135,7 @@ func encryptStatus(c *kli.CommandContext) error {
 
 // encryptRekey starts a new generation of an encrypted field's data key.
 func encryptRekey(c *kli.CommandContext) error {
-	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}
@@ -162,7 +162,7 @@ func encryptMigrate(c *kli.CommandContext) error {
 	if err != nil || interval <= 0 {
 		return usageErr(errors.New("--interval must be a duration such as 2s"))
 	}
-	t, err := newTarget(str(c, "url"), str(c, "realm"), c.Getenv, false)
+	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}
