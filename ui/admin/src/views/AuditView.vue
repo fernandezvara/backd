@@ -4,6 +4,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import PagerBar from '@/components/PagerBar.vue'
 import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
@@ -68,8 +69,7 @@ const detailsText = (r: AuditRecord) => (Object.keys(r.details ?? {}).length ? J
 </script>
 
 <template>
-  <h1 class="text-2xl font-semibold">{{ t('audit.title') }}</h1>
-  <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">{{ t('audit.help') }}</p>
+  <PageHeader :title="t('audit.title')" :description="t('audit.help')" />
 
   <form class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5" role="search" @submit.prevent="apply">
     <TextField v-model="filters.action" :label="t('audit.action')" autocomplete="off" />

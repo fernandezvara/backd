@@ -10,11 +10,11 @@ const session = useSession()
 
 <template>
   <nav :aria-label="label" class="mb-4">
-    <ul class="flex flex-wrap gap-4 border-b border-slate-200 dark:border-slate-800">
+    <ul class="flex flex-wrap gap-1 border-b border-slate-200 dark:border-slate-800">
       <li v-for="tab in tabs" :key="tab.name">
         <RouterLink
           :to="{ name: tab.name, params: { realm: session.realm } }"
-          class="-mb-px block border-b-2 border-transparent px-1 py-2 text-sm"
+          class="-mb-px block border-b-2 border-transparent px-3 py-2 text-sm"
           exact-active-class="border-brand-700 font-semibold"
         >
           {{ t(tab.label) }}

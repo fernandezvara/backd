@@ -4,6 +4,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FormDialog from '@/components/FormDialog.vue'
 import ProofField from '@/components/ProofField.vue'
@@ -105,10 +106,9 @@ async function revoke() {
 </script>
 
 <template>
-  <div class="flex flex-wrap items-end justify-between gap-4">
-    <h1 class="text-2xl font-semibold">{{ t('apikeys.title') }}</h1>
+  <PageHeader :title="t('apikeys.title')" :description="t('nav.desc.apikeys')">
     <AppButton v-if="canWrite" @click="openCreate">{{ t('apikeys.create.open') }}</AppButton>
-  </div>
+  </PageHeader>
 
   <AppAlert v-if="error" kind="error" class="mt-4">{{ error }}</AppAlert>
   <p v-if="loading" class="mt-4 text-sm" role="status">{{ t('common.loading') }}</p>

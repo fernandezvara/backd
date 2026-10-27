@@ -8,6 +8,7 @@ import AppBadge from '@/components/AppBadge.vue'
 import AppButton from '@/components/AppButton.vue'
 import AppCard from '@/components/AppCard.vue'
 import FormDialog from '@/components/FormDialog.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import PasswordsPanel from '@/components/PasswordsPanel.vue'
 import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
@@ -93,10 +94,9 @@ async function create() {
 </script>
 
 <template>
-  <div class="flex flex-wrap items-end justify-between gap-4">
-    <h1 class="text-2xl font-semibold">{{ t('users.title') }}</h1>
+  <PageHeader :title="t('users.title')" :description="t('nav.desc.users')">
     <AppButton v-if="canWrite" @click="openCreate">{{ t('users.create.open') }}</AppButton>
-  </div>
+  </PageHeader>
 
   <PasswordsPanel v-if="canWrite && isFull" :realm="realm" />
 

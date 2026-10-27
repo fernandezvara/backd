@@ -4,6 +4,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import FormDialog from '@/components/FormDialog.vue'
 import FunctionsTabs from '@/components/FunctionsTabs.vue'
 import TextField from '@/components/TextField.vue'
@@ -147,15 +148,12 @@ async function run() {
 </script>
 
 <template>
-  <div class="flex flex-wrap items-end justify-between gap-4">
-    <h1 class="text-2xl font-semibold">{{ t('functions.title') }}</h1>
-    <div class="flex flex-wrap gap-2">
-      <AppButton v-if="canConfig" variant="secondary" :busy="downloading" data-testid="download-openapi-client" :title="t('functions.openapi.clientHelp')" @click="downloadOpenAPI(true)">{{ t('functions.openapi.client') }}</AppButton>
-      <AppButton v-if="canConfig" variant="secondary" :busy="downloading" data-testid="download-openapi-admin" :title="t('functions.openapi.adminHelp')" @click="downloadOpenAPI(false)">{{ t('functions.openapi.admin') }}</AppButton>
-      <AppButton v-if="canInvoke" @click="show()">{{ t('functions.invoke.open') }}</AppButton>
-    </div>
-  </div>
-  <div class="mt-4"><FunctionsTabs /></div>
+  <PageHeader :title="t('functions.title')" :description="t('nav.desc.functions')">
+    <AppButton v-if="canConfig" variant="secondary" :busy="downloading" data-testid="download-openapi-client" :title="t('functions.openapi.clientHelp')" @click="downloadOpenAPI(true)">{{ t('functions.openapi.client') }}</AppButton>
+    <AppButton v-if="canConfig" variant="secondary" :busy="downloading" data-testid="download-openapi-admin" :title="t('functions.openapi.adminHelp')" @click="downloadOpenAPI(false)">{{ t('functions.openapi.admin') }}</AppButton>
+    <AppButton v-if="canInvoke" @click="show()">{{ t('functions.invoke.open') }}</AppButton>
+  </PageHeader>
+  <FunctionsTabs />
 
   <AppAlert v-if="last" class="mb-4" data-testid="last-run">
     <p class="font-medium">{{ t('functions.invoke.outputTitle', { function: last.function }) }}</p>
