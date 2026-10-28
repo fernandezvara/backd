@@ -35,6 +35,8 @@ type realmObjects struct {
 
 	// access and secret, when set, replace the realm's secrets as the storage credentials.
 	access, secret string
+	// publicAccess and publicSecret do the same for the public storage.
+	publicAccess, publicSecret string
 
 	mu    sync.Mutex
 	cache map[objectsKey]*cachedObjects
@@ -59,6 +61,14 @@ func newRealmObjects(reg *registry.Registry, users func(string) *auth.Users) *re
 func (s *realmObjects) withKeys(access, secret string) *realmObjects {
 	if access != "" && secret != "" {
 		s.access, s.secret = access, secret
+	}
+	return s
+}
+
+// withPublicKeys is withKeys for the public storage.
+func (s *realmObjects) withPublicKeys(access, secret string) *realmObjects {
+	if access != "" && secret != "" {
+		s.publicAccess, s.publicSecret = access, secret
 	}
 	return s
 }
@@ -103,8 +113,12 @@ func (s *realmObjects) For(ctx context.Context, realm string, public bool) (*sto
 	if svc == nil {
 		return nil, errNoStorage
 	}
-	values := map[string]string{"realm." + st.AccessKey: s.access, "realm." + st.SecretKey: s.secret}
-	if s.access == "" || public {
+	access, secret := s.access, s.secret
+	if public {
+		access, secret = s.publicAccess, s.publicSecret
+	}
+	values := map[string]string{"realm." + st.AccessKey: access, "realm." + st.SecretKey: secret}
+	if access == "" {
 		refs := []registry.SecretRef{{Realm: true, Name: st.AccessKey}, {Realm: true, Name: st.SecretKey}}
 		var missing []string
 		var err error

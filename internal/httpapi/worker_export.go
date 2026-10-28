@@ -56,6 +56,16 @@ func (w *Worker) runExport(ctx context.Context, log *slog.Logger, realm string, 
 		w.retryExport(ctx, log, svc, job, rec, nil, err)
 		return
 	}
+	// The user's public files are in the public storage, when the realm has one.
+	var publicObj packageObjects
+	if rl.Settings.PublicStorage != nil {
+		po, err := d.objects.For(ctx, realm, true)
+		if err != nil {
+			w.retryExport(ctx, log, svc, job, rec, nil, err)
+			return
+		}
+		publicObj = po
+	}
 	now := svc.Clock()
 	rec.Status, rec.StartedAt, rec.Error = auth.ExportRunning, now, ""
 	rec.Key = exportObjectKey(rl.Settings.Storage.Prefix, realm, rec.UserID, rec.ID)
@@ -90,7 +100,7 @@ func (w *Worker) runExport(ctx context.Context, log *slog.Logger, realm string, 
 	go func() {
 		report, err := d.buildPersonalExport(build, personalExportParams{
 			Realm: realm, Svc: svc, UserID: rec.UserID, Operator: exportOperator(rec),
-			Retention: rl.Settings.Compliance.ExportKeep(), Objects: obj, Version: w.version, Fingerprint: w.fingerprint,
+			Retention: rl.Settings.Compliance.ExportKeep(), Objects: obj, PublicObjects: publicObj, Version: w.version, Fingerprint: w.fingerprint,
 			Progress: progress,
 		}, pw)
 		_ = pw.CloseWithError(err) // ends the upload: cleanly after the last byte, or with the error

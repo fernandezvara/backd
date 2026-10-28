@@ -34,7 +34,7 @@ func newExportFixture(t *testing.T) *exportFixture {
 	f.svc.Cache = auth.NewSecretCache()
 	st := f.reg.Realms["acme"].Settings.Storage
 	st.Endpoint, st.Bucket, st.HTTP = s3.URL, "files", true
-	for _, n := range []string{"STORAGE_ACCESS_KEY", "STORAGE_SECRET_KEY"} {
+	for _, n := range []string{"STORAGE_ACCESS_KEY", "STORAGE_SECRET_KEY", "PUBLIC_ACCESS_KEY", "PUBLIC_SECRET_KEY"} {
 		if err := f.svc.SetSecret(context.Background(), "", n, "v-"+n, "key:test"); err != nil {
 			t.Fatal(err)
 		}

@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"maps"
 	"mime"
 	"path"
@@ -169,4 +170,25 @@ func (d *documents) publicTag(c *registry.Collection, docs ...map[string]any) []
 		}
 	}
 	return nil
+}
+
+// locByID finds where a file is from the document that records it (a document of the collection
+// that holds a file with this id in a file field, soft-deleted ones included); the file is
+// assumed private, as one that no document records is.
+func (d *documents) locByID(ctx context.Context, c *registry.Collection, fileID string) (fileLoc, error) {
+	repo := d.store.Repository(c)
+	for _, field := range sortedKeys(c.Files) {
+		page, err := repo.List(ctx, storage.Query{Filter: storage.Condition{Field: field + ".id", Op: storage.OpEq, Value: fileID}, Limit: 1})
+		if err != nil {
+			return fileLoc{}, err
+		}
+		for _, doc := range page.Items {
+			for _, file := range filesOf(c.Files[field], doc) {
+				if file["id"] == fileID {
+					return locOf(file), nil
+				}
+			}
+		}
+	}
+	return fileLoc{id: fileID}, nil
 }

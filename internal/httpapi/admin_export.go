@@ -571,10 +571,17 @@ func (a *adminAPI) exportFile(w http.ResponseWriter, r *http.Request, realm, fil
 		writeError(w, r, http.StatusNotFound, codeNotFound, "no such file in this package")
 		return
 	}
-	obj, err := a.fns.docs.objects.For(r.Context(), realm, false)
+	// A file is read from the storage it is in, which the document that records it says.
+	c := rl.Databases[parts[0]].Collections[parts[1]]
+	loc, err := a.fns.docs.locByID(r.Context(), c, parts[2])
+	if err != nil {
+		adminError(w, r, err)
+		return
+	}
+	obj, err := a.fns.docs.objects.For(r.Context(), realm, loc.public)
 	switch {
 	case errors.Is(err, errNoStorage):
-		writeError(w, r, http.StatusNotFound, codeNotFound, "this realm has no storage configured (storage: in realm.yaml)")
+		writeError(w, r, http.StatusNotFound, codeNotFound, "this realm has no storage configured ("+map[bool]string{false: "storage", true: "public_storage"}[loc.public]+": in realm.yaml)")
 		return
 	case errors.Is(err, errStorageUnavailable):
 		writeError(w, r, http.StatusServiceUnavailable, codeStorageUnavailable, err.Error())
@@ -583,7 +590,7 @@ func (a *adminAPI) exportFile(w http.ResponseWriter, r *http.Request, realm, fil
 		adminError(w, r, err)
 		return
 	}
-	body, info, err := obj.Get(r.Context(), obj.Key(realm, parts[0], parts[1], parts[2]), "")
+	body, info, err := obj.Get(r.Context(), a.fns.docs.fileKey(c, loc), "")
 	if errors.Is(err, storage.ErrObjectNotFound) {
 		writeError(w, r, http.StatusNotFound, codeNotFound, "the object of this file is not in the storage")
 		return

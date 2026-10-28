@@ -488,18 +488,38 @@ func (l *lineCounter) Write(p []byte) (int, error) {
 
 // fileIDsOf lists the ids of the files the documents of a part hold in the given file fields.
 func fileIDsOf(path string, fields []string) ([]string, error) {
+	refs, err := fileRefsOf(path, fields)
+	ids := make([]string, len(refs))
+	for i, r := range refs {
+		ids[i] = r.ID
+	}
+	return ids, err
+}
+
+// fileRef is a file a document holds, as far as a package needs to know: a public one is
+// imported into the target's public storage, under the name its address ends with.
+type fileRef struct {
+	ID      string
+	Public  bool
+	KeyName string
+}
+
+// fileRefsOf lists the files the documents of a part hold in the given file fields.
+func fileRefsOf(path string, fields []string) ([]fileRef, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
 	seen := map[string]bool{}
-	var ids []string
+	var ids []fileRef
 	add := func(v any) {
 		if m, ok := v.(map[string]any); ok {
 			if id, _ := m["id"].(string); id != "" && exportpkg.SafePart(id) && !seen[id] {
 				seen[id] = true
-				ids = append(ids, id)
+				public, _ := m["public"].(bool)
+				keyName, _ := m["key_name"].(string)
+				ids = append(ids, fileRef{ID: id, Public: public, KeyName: keyName})
 			}
 		}
 	}

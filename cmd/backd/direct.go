@@ -31,6 +31,8 @@ func directFlags(cc *kli.CommandConfig) {
 	optional(cc, "master-key", "with --direct: the secrets master key (env:<VAR> / file:<path>): needed for files kept with the realm's storage secrets and for authentication data sealed by the realm; default BACKD_SECRETS_KEY")
 	optional(cc, "storage-key", "with --direct: the storage access key (env:<VAR> / file:<path>) instead of the realm's secrets")
 	optional(cc, "storage-secret", "with --direct: the storage secret key (env:<VAR> / file:<path>) instead of the realm's secrets")
+	optional(cc, "public-storage-key", "with --direct: the public storage's access key (env:<VAR> / file:<path>) instead of the realm's secrets")
+	optional(cc, "public-storage-secret", "with --direct: the public storage's secret key (env:<VAR> / file:<path>) instead of the realm's secrets")
 	boolean(cc, "force", "with --direct import: write even while a backd instance serves the realm")
 }
 
@@ -40,7 +42,7 @@ func usesDirect(c *kli.CommandContext) (bool, error) {
 	if flag(c, "direct") {
 		return true, nil
 	}
-	for _, f := range []string{"mongo-uri", "master-key", "storage-key", "storage-secret"} {
+	for _, f := range []string{"mongo-uri", "master-key", "storage-key", "storage-secret", "public-storage-key", "public-storage-secret"} {
 		if str(c, f) != "" {
 			return false, usageErr(fmt.Errorf("--%s needs --direct", f))
 		}
@@ -102,6 +104,17 @@ func openDirect(c *kli.CommandContext) (*direct, error) {
 	if (storageKey == "") != (storageSecret == "") {
 		return nil, usageErr(errors.New("--storage-key and --storage-secret go together"))
 	}
+	publicKey, err := valueOrSource(c, "public-storage-key")
+	if err != nil {
+		return nil, err
+	}
+	publicSecret, err := valueOrSource(c, "public-storage-secret")
+	if err != nil {
+		return nil, err
+	}
+	if (publicKey == "") != (publicSecret == "") {
+		return nil, usageErr(errors.New("--public-storage-key and --public-storage-secret go together"))
+	}
 	env := func(k string) string {
 		switch k {
 		case "MONGO_URI":
@@ -148,6 +161,7 @@ func openDirect(c *kli.CommandContext) (*direct, error) {
 	hc := a.handlerConfig()
 	hc.Offline = true
 	hc.StorageAccessKey, hc.StorageSecretKey = storageKey, storageSecret
+	hc.PublicStorageAccessKey, hc.PublicStorageSecretKey = publicKey, publicSecret
 	h := httpapi.NewHandler(hc)
 	return &direct{app: a, t: &target{url: "http://backd.offline", realm: realm, fromKey: true, http: &http.Client{Transport: inProcess{h}}}}, nil
 }

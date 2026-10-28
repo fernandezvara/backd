@@ -444,6 +444,7 @@ func (run *importRun) known(cache map[string]bool, id string, lookup func() bool
 // the collection, as the API would a document sent by a client: its id, its _meta, its fields
 // against the schema and its files against the file fields.
 func (a *adminAPI) checkImported(c *registry.Collection, doc map[string]any) []Detail {
+	dropFileURLs(c, doc)
 	var problems []Detail
 	id, _ := doc["id"].(string)
 	switch {
@@ -498,6 +499,7 @@ func (a *adminAPI) checkImported(c *registry.Collection, doc map[string]any) []D
 			}
 		}
 	}
+	problems = append(problems, a.checkImportedPublic(c, doc)...)
 	return problems
 }
 
@@ -629,6 +631,13 @@ func (a *adminAPI) importFile(w http.ResponseWriter, r *http.Request, realm, fil
 	}
 	if len(sum) != 64 {
 		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "X-Backd-Sha256", Reason: "is required: the hex SHA-256 of the file"})
+		return
+	}
+	if r.URL.Query().Get("public") == "true" {
+		if a.importPublicFile(w, r, realm, parts, r.URL.Query().Get("key_name"), sum, limit) {
+			a.exports.count(l, "", 0, 1, 0)
+			w.WriteHeader(http.StatusNoContent)
+		}
 		return
 	}
 	obj, err := a.fns.docs.objects.For(r.Context(), realm, false)

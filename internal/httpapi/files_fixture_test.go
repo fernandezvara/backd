@@ -34,6 +34,8 @@ const picturesConfig = `files:
   secret:
     max_size: 4KiB
     keep_metadata: true
+on_owner_delete:
+  action: delete
 `
 
 const filesSchema = `{

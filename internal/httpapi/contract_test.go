@@ -3010,7 +3010,7 @@ func TestContract(t *testing.T) {
 		f.svc.Realm = "acme"
 		f.svc.Cipher, _ = auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
 		f.svc.Cache = auth.NewSecretCache()
-		for _, n := range []string{"STORAGE_ACCESS_KEY", "STORAGE_SECRET_KEY"} {
+		for _, n := range []string{"STORAGE_ACCESS_KEY", "STORAGE_SECRET_KEY", "PUBLIC_ACCESS_KEY", "PUBLIC_SECRET_KEY"} {
 			if err := f.svc.SetSecret(context.Background(), "", n, "v-"+n, "key:test"); err != nil {
 				t.Fatal(err)
 			}

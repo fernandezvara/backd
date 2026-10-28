@@ -56,11 +56,16 @@ type builtExport struct {
 
 func buildExport(t *testing.T, f *rulesFixture, userID string, objects packageObjects, steps *[]string) builtExport {
 	t.Helper()
+	return buildExportWith(t, f, userID, objects, nil, steps)
+}
+
+func buildExportWith(t *testing.T, f *rulesFixture, userID string, objects, publicObjects packageObjects, steps *[]string) builtExport {
+	t.Helper()
 	d := &documents{reg: f.reg, store: f.store, now: func() time.Time { return time.Date(2026, 10, 1, 9, 30, 0, 0, time.UTC) }}
 	var buf bytes.Buffer
 	report, err := d.buildPersonalExport(context.Background(), personalExportParams{
 		Realm: "acme", Svc: f.svc, UserID: userID, Operator: "user:" + userID, Retention: 7 * 24 * time.Hour,
-		Objects: objects, Version: "test", Fingerprint: "fp",
+		Objects: objects, PublicObjects: publicObjects, Version: "test", Fingerprint: "fp",
 		Progress: func(s string) {
 			if steps != nil {
 				*steps = append(*steps, s)

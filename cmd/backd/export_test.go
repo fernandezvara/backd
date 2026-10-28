@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -269,5 +270,28 @@ func TestExportAnonymizeSendsTheOptionsInTheBody(t *testing.T) {
 	c.expect(0, "exported", "", dir()...)
 	if method != "GET" || body != "" {
 		t.Errorf("plain plan: %s %q", method, body)
+	}
+}
+
+// A package's documents say which of their files are public, so the import can send those to the
+// target's public storage under the name their address ends with.
+func TestFileRefsOfKnowsPublicFiles(t *testing.T) {
+	dir := t.TempDir()
+	part := filepath.Join(dir, "pics.jsonl")
+	lines := `{"id":"d1","_meta":{},"photo":{"id":"fl_pub","name":"Me.png","key_name":"Me.png","public":true},"secret":{"id":"fl_priv","name":"id.png"}}` + "\n" +
+		`{"id":"d2","_meta":{},"gallery":[{"id":"fl_g1","public":true,"key_name":"A.jpg"},{"id":"fl_g2"}]}` + "\n"
+	if err := os.WriteFile(part, []byte(lines), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	refs, err := fileRefsOf(part, []string{"photo", "secret", "gallery"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []fileRef{{ID: "fl_pub", Public: true, KeyName: "Me.png"}, {ID: "fl_priv"}, {ID: "fl_g1", Public: true, KeyName: "A.jpg"}, {ID: "fl_g2"}}
+	if !reflect.DeepEqual(refs, want) {
+		t.Errorf("refs = %+v, want %+v", refs, want)
+	}
+	if ids, _ := fileIDsOf(part, []string{"photo"}); !reflect.DeepEqual(ids, []string{"fl_pub"}) {
+		t.Errorf("ids = %v", ids)
 	}
 }
