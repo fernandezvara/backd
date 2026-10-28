@@ -48,6 +48,8 @@ docker compose run --rm functions-build
 # without the key, so it is created first, offline.
 docker compose run --rm --no-deps backd provision >/dev/null
 docker compose run --rm --no-deps backd secret create --direct --realm shelf --type key --generate --name SHELF_NOTES --skip-existing >/dev/null
+# The workshop's public gallery keeps its pictures in the stack's MinIO (a bucket anyone can read objects from).
+docker compose up -d --no-deps minio minio-setup minio-public-setup minio-public-policy
 docker compose up -d --no-deps backd executor egress nginx prometheus grafana
 
 ready() { curl -sf --cacert "$ca" "$origin/readyz" >/dev/null; }

@@ -352,6 +352,8 @@ import { connectionBody } from './orgs.js'
  * What `admin.storage.check()` found in the realm's object storage.
  * @typedef {object} StorageCheck
  * @property {boolean} ok                      False when a step failed.
+ * @property {'private' | 'public'} storage   Which of the realm's storages this is the report of.
+ * @property {string | null} sentinel_url      Public storage only: where the image the check left in the bucket should be readable (backd never connects to it).
  * @property {'aws' | 'minio' | 'r2' | 'digitalocean'} provider
  * @property {string} endpoint                 What backd connects to.
  * @property {string | null} public_endpoint   The address signed links use, when it differs.
@@ -398,6 +400,7 @@ import { connectionBody } from './orgs.js'
 /**
  * What `admin.storage.reconcile()` found.
  * @typedef {object} StorageReconcile
+ * @property {'private' | 'public'} storage   Which of the realm's storages was reconciled.
  * @property {boolean} delete
  * @property {number} scanned
  * @property {number} referenced
@@ -1301,11 +1304,14 @@ class AdminStorage {
    * them) with a few small objects it deletes again. Resolves with the report whatever it found
    * (`ok` is false when a step failed). Rejects with a `NotFoundError` when the realm has no
    * `storage:`, and with a `BackdError` with code `storage_unavailable` when its keys aren't set.
-   * @param {RequestOptions} [opts]
+   * With `storage: 'public'` it checks the realm's `public_storage:` instead: the bucket and keys,
+   * the headers public files are stored with, and a sentinel image it leaves in the bucket and
+   * names in `sentinel_url` (backd never connects to the public address: open it to test it).
+   * @param {{ storage?: 'private' | 'public' } & RequestOptions} [opts]
    * @returns {Promise<StorageCheck>}
    */
-  async check(opts) {
-    return (await this.admin._request({ method: 'POST', path: ['storage', 'check'], ...opts })).data
+  async check({ storage, ...opts } = {}) {
+    return (await this.admin._request({ method: 'POST', path: ['storage', 'check'], query: storage ? { storage } : undefined, ...opts })).data
   }
 
   /**
@@ -1324,11 +1330,12 @@ class AdminStorage {
    * restoring a backup or removing a file field); with `delete: true` removes exactly those. It
    * skips anything younger than 24 hours or with an upload record still open. Needs write access
    * to the `config` area.
-   * @param {{ delete?: boolean } & RequestOptions} [opts]
+   * `storage: 'public'` reconciles the realm's `public_storage:` instead.
+   * @param {{ delete?: boolean, storage?: 'private' | 'public' } & RequestOptions} [opts]
    * @returns {Promise<StorageReconcile>}
    */
-  async reconcile({ delete: remove = false, ...opts } = {}) {
-    return (await this.admin._request({ method: 'POST', path: ['storage', 'reconcile'], body: { delete: remove }, ...opts })).data
+  async reconcile({ delete: remove = false, storage, ...opts } = {}) {
+    return (await this.admin._request({ method: 'POST', path: ['storage', 'reconcile'], body: storage === 'public' ? { delete: remove, storage } : { delete: remove }, ...opts })).data
   }
 
   /**

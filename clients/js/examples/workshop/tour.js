@@ -14,7 +14,8 @@
 // new orders on every run, so it can run again and again. Exits 0 when every
 // check passes, 1 otherwise.
 import { createHmac } from 'node:crypto'
-import { createClient, AuthenticationError, ForbiddenError, NotFoundError } from '../../src/index.js'
+import { deflateSync } from 'node:zlib'
+import { createClient, AuthenticationError, BackdError, ForbiddenError, NotFoundError } from '../../src/index.js'
 
 const url = process.env.BACKD_URL ?? 'https://localhost:8443'
 const PASSWORD = 'dev-p4ssw0rd!'
@@ -211,6 +212,69 @@ heading('6. Email verification, password reset, email change and invitations (em
   await createClient({ url, realm: 'workshop' }).auth.acceptInvitation({ token: tokenOf(await waitMail('invitation', invited)), password: PASSWORD })
   check('accepting creates a verified account', (await createClient({ url, realm: 'workshop' }).auth.login({ email: invited, password: PASSWORD })).user.email_verified === true)
 }
+
+
+heading('A public gallery (panel 7, docs: Files -> Public fields)')
+// The keys of the public bucket are realm secrets, set once (the local seed does it too).
+const havePublicKeys = (await operator.admin.secrets.list()).filter((x) => !x.database && x.name.startsWith('PUBLIC_STORAGE_')).length === 2
+if (!havePublicKeys) {
+  await operator.admin.secrets.set('PUBLIC_STORAGE_ACCESS_KEY', 'backd-dev')
+  await operator.admin.secrets.set('PUBLIC_STORAGE_SECRET_KEY', PASSWORD)
+}
+let publicCheck = await operator.admin.storage.check({ storage: 'public' }).catch((e) => e)
+for (let i = 0; i < 70 && publicCheck instanceof Error; i++) { // the bucket is made by the compose files' setup job, and a new secret may take a moment
+  await new Promise((r) => setTimeout(r, 1000))
+  publicCheck = await operator.admin.storage.check({ storage: 'public' }).catch((e) => e)
+}
+check('backd storage check passes for the public storage', !(publicCheck instanceof Error) && publicCheck.ok, JSON.stringify(publicCheck))
+const sentinel = await fetch(/** @type {string} */ (publicCheck.sentinel_url))
+check('backd never connects to the public address, so the check names one to open: readable without credentials', sentinel.status === 200)
+
+const gallery = main(staff).collection('gallery')
+await refused('a customer may not add to the gallery', () => main(ada).collection('gallery').create({ title: 'mine' }), ForbiddenError, '')
+const picture = png(64, 48)
+const sunset = await gallery.create({ title: 'Sunset' })
+const placed = await gallery.uploadFile(sunset.id, 'photo', new File([await bytesOf(picture)], 'Sunset over the bay.png', { type: 'image/png' }))
+const photo = placed.photo
+check('the file is public, its name is kept in the address', photo.public === true && photo.key_name === 'Sunset over the bay.png' && photo.url.endsWith('/Sunset%20over%20the%20bay.png'), JSON.stringify(photo))
+const direct = await fetch(photo.url)
+check('anyone reads it straight from the bucket, with a year of caching', direct.status === 200 && direct.headers.get('cache-control') === 'public, max-age=31536000, immutable' && Buffer.compare(Buffer.from(await direct.arrayBuffer()), await bytesOf(picture)) === 0)
+check('the bucket cannot be listed', (await fetch(`${new URL(photo.url).origin}/${new URL(photo.url).pathname.split('/')[1]}/?list-type=2`)).status === 403)
+await refused('a picture named for another type is refused, never renamed', async () => gallery.uploadFile(sunset.id, 'photo', new File([await bytesOf(picture)], 'sunset.jpg', { type: 'image/png' })), BackdError, 'file_extension_mismatch')
+await refused('only JPEG and PNG are published', () => gallery.uploadFile(sunset.id, 'photo', new File(['<svg xmlns="http://www.w3.org/2000/svg"/>'], 'x.svg', { type: 'image/svg+xml' })), BackdError, 'unsupported_file_type')
+
+// Anyone can list the gallery and put the pictures in the page; the thumbnail is made by a worker.
+const visitor = createClient({ url, realm: 'workshop' }).db('main').collection('gallery')
+const seen = (await visitor.list()).items.find((d) => d.id === sunset.id)
+check('a visitor lists the gallery and gets each picture\'s address', seen?.photo?.url === photo.url)
+/** @type {any} */ let thumb
+for (let i = 0; i < 40 && !thumb; i++) {
+  const d = (await visitor.list()).items.find((x) => x.id === sunset.id)
+  if (d?.photo?.versions?.thumb?.status === 'ready') thumb = d.photo.versions.thumb
+  else await new Promise((r) => setTimeout(r, 500))
+}
+check('the thumbnail gets its own address once it is ready', Boolean(thumb?.url?.includes('/thumb/')) && (await fetch(thumb.url)).status === 200, JSON.stringify(thumb))
+await gallery.delete(sunset.id)
+
+/** A small valid PNG: a w×h gradient. */
+function png(/** @type {number} */ w, /** @type {number} */ h) {
+  const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0 })
+  const crc = (/** @type {Buffer} */ b) => { let c = 0xffffffff; for (const x of b) c = crcTable[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0 }
+  const chunk = (/** @type {string} */ type, /** @type {Buffer} */ data) => {
+    const body = Buffer.concat([Buffer.from(type), data])
+    const out = Buffer.alloc(8 + data.length + 4)
+    out.writeUInt32BE(data.length, 0)
+    body.copy(out, 4)
+    out.writeUInt32BE(crc(body), 8 + data.length)
+    return out
+  }
+  const raw = Buffer.alloc((1 + w * 3) * h)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const o = y * (1 + w * 3) + 1 + x * 3; raw[o] = (x * 255) / w; raw[o + 1] = (y * 255) / h; raw[o + 2] = 128 }
+  const head = Buffer.alloc(13)
+  head.writeUInt32BE(w, 0); head.writeUInt32BE(h, 4); head[8] = 8; head[9] = 2
+  return new Blob([Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', head), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))])], { type: 'image/png' })
+}
+const bytesOf = async (/** @type {Blob} */ b) => Buffer.from(await b.arrayBuffer())
 
 console.log(failed === 0 ? '\nThe whole tour works.' : `\n${failed} check(s) failed.`)
 process.exit(failed === 0 ? 0 : 1)

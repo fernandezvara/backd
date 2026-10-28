@@ -1,0 +1,17 @@
+rules:
+  # Everyone may look at the gallery (the pictures themselves need no rule: they are
+  # public); only staff add and remove pictures.
+  read: "true"
+  create: user != nil && hasRole(user, 'staff')
+  update: user != nil && hasRole(user, 'staff')
+  delete: user != nil && hasRole(user, 'staff')
+
+files:
+  # A public field: JPEG and PNG, kept in the realm's public_storage and read at
+  # the `url` the document carries. Its metadata (the GPS position of a photograph)
+  # is always removed before a picture is published.
+  photo:
+    public: true
+    max_size: 512KiB
+    versions:
+      thumb: {max_width: 160, max_height: 160, fit: cover, format: jpeg, quality: 80}

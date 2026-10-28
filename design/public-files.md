@@ -197,3 +197,16 @@ No migration in this release. A file records where it is (`public`); the field's
 ## 12. Not in this release
 
 GIF/WebP/AVIF/SVG or any non-image; direct uploads to the public storage; per-file visibility; moving files between storages; purging a CDN; verifying that the bucket is public.
+
+## 13. As built (2026-10-28)
+
+What changed between the design and the code, so the design stays true:
+
+- `backd storage check` and `reconcile` take **`--storage private|public`** (default: every storage the realm has), not `--public`. `POST /_admin/storage/check?storage=` and `storage` in the reconcile body say the same.
+- **No storage metrics exist** in backd today, so there was nothing to label; if they are added they carry a `storage` label.
+- `public_storage` rejects `download`, `presigned_ttl`, `public_endpoint` and `quota`; it **may stand alone** (a realm with only public fields) and needs secrets other than `storage`'s.
+- `backd storage check` for the public storage writes (with the public headers), reads, lists and **leaves** a sentinel image `<prefix>/<realm>/_check/backd-check.png`, printing its address; the next check replaces it.
+- An import refuses a public picture whose stripped bytes differ from what its document records (the file must already be clean), as well as a wrong extension or name; a package's `url` is dropped.
+- The JavaScript `fileUrl(..., {file})` and Dart `fileUrl(file:)` answer a public file without a request; `?link=json` on a public file answers the address with `expires_at: null`.
+- The `@backd/functions-testing` fake does not model public fields.
+- The workshop example's gallery needs MinIO in its CI stack (`scripts/example-ci.sh` starts it and the public bucket).
