@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import AppCard from '@/components/AppCard.vue'
 import type { InvocationRecord } from 'backd-js'
 import { onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import FunctionsTabs from '@/components/FunctionsTabs.vue'
 import StepsList from '@/components/StepsList.vue'
 import PagerBar from '@/components/PagerBar.vue'
@@ -65,8 +67,8 @@ const statusClass = (s: string) => (s === 'ok' ? '' : 'font-semibold text-red-80
 </script>
 
 <template>
-  <h1 class="text-2xl font-semibold">{{ t('history.title') }}</h1>
-  <div class="mt-4"><FunctionsTabs /></div>
+  <PageHeader :title="t('history.title')" :description="t('nav.desc.jobs')" />
+  <FunctionsTabs />
   <AppAlert class="mb-4">{{ t('history.warning') }}</AppAlert>
 
   <form class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" role="search" @submit.prevent="apply">
@@ -82,7 +84,7 @@ const statusClass = (s: string) => (s === 'ok' ? '' : 'font-semibold text-red-80
 
   <AppAlert v-if="error" kind="error" class="mt-4">{{ error }}</AppAlert>
 
-  <div class="mt-4 overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+  <AppCard flush class="mt-4">
     <table class="w-full text-left text-sm" data-testid="history-table">
       <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
         <tr>
@@ -128,7 +130,7 @@ const statusClass = (s: string) => (s === 'ok' ? '' : 'font-semibold text-red-80
         </tr>
       </tbody>
     </table>
-  </div>
+  </AppCard>
 
   <PagerBar :skip="skip" :count="records.length" :has-more="hasMore" :loading="loading" @page="page" />
 </template>

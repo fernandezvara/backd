@@ -1,6 +1,7 @@
 import { createClient } from 'backd-js'
 import { expect, test } from './fixtures'
 import { PASSWORD, REALM, users } from './users'
+import { go } from './nav'
 
 // The storage page reads the realm's usage totals and quotas (storage.quota in the realm's realm.yaml).
 const storage = 'http://localhost:9000'
@@ -23,7 +24,7 @@ test('the storage page shows what is in use against the quotas, and who holds it
   await cover.getByTestId('upload-cover').setInputFiles({ name: 'dot.png', mimeType: 'image/png', buffer: PNG })
   await expect(cover.getByTestId('file-name')).toHaveText('dot.png')
 
-  await page.getByRole('link', { name: 'Storage' }).click()
+  await go(page, 'Storage')
   await expect(page.getByRole('heading', { name: 'Storage', level: 1 })).toBeVisible()
   await expect(page.getByTestId('storage-where')).toContainText('access keys: ok')
 
@@ -37,6 +38,6 @@ test('the storage page shows what is in use against the quotas, and who holds it
 
 test('a read-only administrator sees the storage too', async ({ page, signIn }) => {
   await signIn('viewer', { keep: true })
-  await page.getByRole('link', { name: 'Storage' }).click()
+  await go(page, 'Storage')
   await expect(page.getByTestId('storage-usage')).toBeVisible()
 })

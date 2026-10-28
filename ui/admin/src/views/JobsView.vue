@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import AppCard from '@/components/AppCard.vue'
 import type { JobSummary, Step } from 'backd-js'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import FunctionsTabs from '@/components/FunctionsTabs.vue'
 import PagerBar from '@/components/PagerBar.vue'
 import StepsList from '@/components/StepsList.vue'
@@ -151,8 +153,8 @@ const resultText = (j: JobSummary) => (j.result ? `${j.result.status}${j.result.
 </script>
 
 <template>
-  <h1 class="text-2xl font-semibold">{{ t('jobs.title') }}</h1>
-  <div class="mt-4"><FunctionsTabs /></div>
+  <PageHeader :title="t('jobs.title')" :description="t('nav.desc.jobs')" />
+  <FunctionsTabs />
 
   <form class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" role="search" @submit.prevent="apply">
     <TextField v-model="filters.function" :label="t('jobs.function')" autocomplete="off" />
@@ -175,7 +177,7 @@ const resultText = (j: JobSummary) => (j.result ? `${j.result.status}${j.result.
 
   <AppAlert v-if="error" kind="error" class="mt-4">{{ error }}</AppAlert>
 
-  <div class="mt-4 overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+  <AppCard flush class="mt-4">
     <table class="w-full text-left text-sm" data-testid="jobs-table">
       <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
         <tr>
@@ -221,7 +223,7 @@ const resultText = (j: JobSummary) => (j.result ? `${j.result.status}${j.result.
         </tr>
       </tbody>
     </table>
-  </div>
+  </AppCard>
 
   <FormDialog v-model:open="dialogOpen" :title="asking === 'cancel' ? t('jobs.cancel.title') : t('jobs.rerun.title')" :description="asking === 'cancel' ? t('jobs.cancel.body') : t('jobs.rerun.body')" :submit="asking === 'cancel' ? t('jobs.cancel.action') : t('jobs.rerun.action')" :busy="acting" @submit="act">
     <p v-if="target" class="font-mono text-xs break-all">{{ target.function }} · {{ target.id }}</p>

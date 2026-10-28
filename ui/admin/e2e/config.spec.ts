@@ -1,9 +1,10 @@
 import { expect, test } from './fixtures'
 import { REALM, users } from './users'
+import { go, navLabels, setTheme } from './nav'
 
 test('the overview shows the realm, its fingerprint and the startup warnings', async ({ page, signIn }) => {
   await signIn('admin')
-  await page.getByRole('link', { name: 'Configuration' }).click()
+  await go(page, 'Configuration')
   await expect(page.getByTestId('config-realm')).toHaveText(REALM)
   await expect(page.getByTestId('config-fingerprint')).toHaveText(/^[0-9a-f]{64}$/)
   await expect(page.getByTestId('config-warnings')).toContainText('admin_networks_open')
@@ -12,7 +13,7 @@ test('the overview shows the realm, its fingerprint and the startup warnings', a
 
 test('settings and roles are listed, with the seeded users', async ({ page, signIn }) => {
   await signIn('admin')
-  await page.getByRole('link', { name: 'Configuration' }).click()
+  await go(page, 'Configuration')
   await page.getByRole('link', { name: 'Settings' }).click()
   const settings = page.getByTestId('settings-table')
   await expect(settings.getByRole('row', { name: /^signup open/ })).toBeVisible()
@@ -25,7 +26,7 @@ test('settings and roles are listed, with the seeded users', async ({ page, sign
 
 test('collections show schema, indexes, rules and policy with their files', async ({ page, signIn }) => {
   await signIn('admin')
-  await page.getByRole('link', { name: 'Configuration' }).click()
+  await go(page, 'Configuration')
   await page.getByRole('link', { name: 'Collections' }).click()
   const notes = page.getByTestId('col-main-notes')
   await notes.getByText('notes', { exact: true }).click()
@@ -40,7 +41,7 @@ test('collections show schema, indexes, rules and policy with their files', asyn
 
 test('templates say so when there are none', async ({ page, signIn }) => {
   await signIn('admin')
-  await page.getByRole('link', { name: 'Configuration' }).click()
+  await go(page, 'Configuration')
   await page.getByRole('link', { name: 'Templates' }).click()
   await expect(page.getByText('No email templates.')).toBeVisible()
   await expect(page.getByText('No hosted pages.')).toBeVisible()
@@ -48,7 +49,7 @@ test('templates say so when there are none', async ({ page, signIn }) => {
 
 test('a read-only administrator reads the configuration', async ({ page, signIn }) => {
   await signIn('viewer')
-  await page.getByRole('link', { name: 'Configuration' }).click()
+  await go(page, 'Configuration')
   await expect(page.getByTestId('config-realm')).toHaveText(REALM)
   await page.getByRole('link', { name: 'Collections' }).click()
   await expect(page.getByTestId('col-main-notes')).toBeVisible()
@@ -57,16 +58,16 @@ test('a read-only administrator reads the configuration', async ({ page, signIn 
 
 test('a custom level without the config area has no way in', async ({ page, signIn }) => {
   await signIn('support')
-  await expect(page.getByRole('link', { name: 'Users' })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Configuration' })).toHaveCount(0)
+  expect(await navLabels(page)).toContain('Users')
+  expect(await navLabels(page)).not.toContain('Configuration')
 })
 
 test('the configuration views have no accessibility violations', async ({ page, signIn }) => {
   const { default: AxeBuilder } = await import('@axe-core/playwright')
   await signIn('admin')
   for (const theme of ['Light', 'Dark']) {
-    await page.getByLabel('Theme').selectOption({ label: theme })
-    await page.getByRole('link', { name: 'Configuration' }).click()
+    await setTheme(page, theme)
+    await go(page, 'Configuration')
     await expect(page.getByTestId('config-realm')).toBeVisible()
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
     for (const tab of ['Settings', 'Collections', 'Templates']) {
@@ -80,7 +81,7 @@ test('the configuration views have no accessibility violations', async ({ page, 
 
 test('a change to a schema or to rules is checked against the whole realm and prepared as a file to download', async ({ page, signIn }) => {
   await signIn('admin')
-  await page.getByRole('link', { name: 'Configuration' }).click()
+  await go(page, 'Configuration')
   await page.getByRole('link', { name: 'Collections' }).click()
   const notes = page.getByTestId('col-main-notes')
   await notes.getByText('notes', { exact: true }).click()

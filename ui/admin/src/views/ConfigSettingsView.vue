@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppCard from '@/components/AppCard.vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ConfigFrame from '@/components/ConfigFrame.vue'
@@ -31,7 +32,7 @@ const rows = computed(() => {
 
       <section class="mt-4" aria-labelledby="settings-h">
         <h2 id="settings-h" class="text-lg font-semibold">{{ t('config.settings.title') }}</h2>
-        <div class="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+        <AppCard flush class="mt-2">
           <table class="w-full text-left text-sm" data-testid="settings-table">
             <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
               <tr>
@@ -46,14 +47,14 @@ const rows = computed(() => {
               </tr>
             </tbody>
           </table>
-        </div>
+        </AppCard>
         <p class="mt-2 text-xs text-slate-600 dark:text-slate-400">{{ t('config.settings.secretNote') }}</p>
       </section>
 
       <section class="mt-8" aria-labelledby="roles-h">
         <h2 id="roles-h" class="text-lg font-semibold">{{ t('config.roles.title') }}</h2>
         <p v-if="!roles.length" class="mt-2 text-sm text-slate-600 dark:text-slate-400">{{ t('config.roles.none') }}</p>
-        <div v-else class="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+        <AppCard v-else flush class="mt-2">
           <table class="w-full text-left text-sm" data-testid="roles-table">
             <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
               <tr>
@@ -72,7 +73,7 @@ const rows = computed(() => {
               </tr>
             </tbody>
           </table>
-        </div>
+        </AppCard>
       </section>
     </template>
   </ConfigFrame>

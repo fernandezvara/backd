@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "backd admin",
+    "name": "back(d) admin",
     "skip": "Skip to content"
   },
   "common": {
@@ -47,29 +47,46 @@
     "label": "Language",
     "auto": "Automatic"
   },
+  "breadcrumb": {
+    "label": "Breadcrumb"
+  },
+  "account": {
+    "label": "Account"
+  },
   "realm": {
     "label": "Realm",
-    "current": "Realm {name}",
-    "choose": "Choose a realm",
-    "chooseHelp": "Every administrator signs in to one realm at a time. Enter the realm's name.",
-    "open": "Continue",
     "invalid": "A realm name has lowercase letters, digits, - and _ only."
   },
   "signIn": {
+    "expired": {
+      "intro": "This password has expired. Choose a new one: enter the current password and the new one twice.",
+      "emailed": "We also emailed you a link to choose one.",
+      "current": "Current password",
+      "new": "New password",
+      "repeat": "New password again",
+      "mismatch": "The two new passwords are not the same.",
+      "wrong": "The current password is not right.",
+      "realmWide": "Every password in this realm expired. Choose a new one with the link in the email, or ask an administrator.",
+      "codeNeeded": "This account uses two-step verification: enter a code too.",
+      "method": "Code from",
+      "totp": "Authenticator app",
+      "recovery": "Recovery code",
+      "submit": "Change password",
+      "changed": "Password changed. Sign in with the new one."
+    },
     "codeFailed": "That code is not right. Try the next one, or a recovery code.",
     "cancel": "Cancel",
     "code": {"intro": "Enter the code of your authenticator app, or a recovery code.", "label": "Code", "submit": "Verify"},
     "enroll": {"intro": "This account must use two-step verification. Set up an authenticator app to continue.", "start": "Set up an authenticator app", "qrAlt": "QR code to scan with your authenticator app", "secret": "Or type this secret:", "label": "Code shown by the app", "submit": "Turn it on and sign in"},
     "consent": {"intro": "Please read and accept to continue.", "accept": "I accept the {name}", "submit": "Accept and sign in", "failed": "The consents could not be accepted. Try signing in again."},
     "recovery": {"title": "Recovery codes", "body": "Each works once and they are shown only now. Save them somewhere safe, not on the phone with the app.", "continue": "I saved them, continue"},
-    "title": "Sign in to {realm}",
+    "title": "Sign in",
     "email": "Email",
     "password": "Password",
     "keep": "Keep me signed in in this tab",
     "keepHelp": "Stores the session in this tab until it closes. Leave it off on shared computers.",
     "submit": "Sign in",
     "submitting": "Signing in...",
-    "otherRealm": "Another realm",
     "failed": "The email or password is wrong, or sign-in is temporarily blocked.",
     "notAdmin": "This account is not an administrator of this realm.",
     "unreachable": "The server could not be reached.",
@@ -91,11 +108,7 @@
     "canRead": "Can read",
     "canWrite": "Can change",
     "nothing": "Nothing",
-    "key": "an API key ({name})",
-    "links": {
-      "users": "Manage users",
-      "invitations": "Manage invitations"
-    }
+    "key": "an API key ({name})"
   },
   "areas": {
     "users": "Users",
@@ -118,6 +131,8 @@
   },
   "nav": {
     "label": "Main",
+    "menu": "Menu",
+    "close": "Close the menu",
     "overview": "Overview",
     "users": "Users",
     "orgs": "Organizations",
@@ -129,7 +144,30 @@
     "config": "Configuration",
     "data": "Data",
     "storage": "Storage",
-    "push": "Push"
+    "push": "Push",
+    "jobs": "Jobs and history",
+    "groups": {
+      "identity": "Identity",
+      "access": "Access",
+      "data": "Data",
+      "compute": "Compute",
+      "platform": "Platform"
+    },
+    "desc": {
+      "overview": "Realm health and where to start",
+      "users": "Accounts, sessions and sign-in",
+      "orgs": "Organizations, members and sign-in",
+      "invitations": "Pending and past invitations",
+      "apikeys": "Keys for programs and what they can do",
+      "secrets": "Values that functions and providers use",
+      "data": "Browse and edit documents, check them against schemas",
+      "storage": "Files, buckets and usage",
+      "functions": "Server-side code and its versions",
+      "push": "Devices, topics and deliveries",
+      "jobs": "Scheduled jobs and past invocations",
+      "audit": "Who did what, and when",
+      "config": "Settings, collections and templates"
+    }
   },
   "push": {
     "title": "Push notifications",
@@ -172,6 +210,7 @@
       "delivering": "Delivering"
     },
     "test": {
+      "queued": "Test push queued.",
       "open": "Send a test",
       "title": "Send a test push",
       "help": "Goes to one user's devices through the same limits as any push, and counts toward theirs. It is audited.",
@@ -219,6 +258,8 @@
     "reconcileNote": "After restoring a backup, or removing a file field, run backd storage reconcile to find objects no document references."
   },
   "users": {
+    "passwordsShow": "Show the leak actions",
+    "passwordsHide": "Hide the leak actions",
     "title": "Users",
     "search": "Search by email",
     "searchHelp": "Finds emails containing the text.",
@@ -544,6 +585,7 @@
       "jobs": "Jobs"
     },
     "openapi": {
+      "done": "OpenAPI document downloaded.",
       "client": "Download OpenAPI (client apps)",
       "clientHelp": "Only what applications can reach: no admin routes.",
       "admin": "Download OpenAPI (with admin)",
@@ -628,6 +670,8 @@
     "loadFailed": "The invocation history could not be loaded."
   },
   "checks": {
+    "show": "Show the schema check",
+    "hide": "Hide the schema check",
     "title": "Schema checks",
     "help": "Finds the stored documents that no longer match their collection's schema, for example after the schema changed. A check reads every document and never changes one.",
     "panel": "Schema check",
@@ -645,6 +689,7 @@
     "showReport": "Show the report",
     "empty": "This realm has no collections.",
     "loadFailed": "The schema checks could not be loaded.",
+    "finished": "Schema check finished.",
     "started": "Schema check started.",
     "cancelled": "Schema check cancelled.",
     "cancel": "Cancel the check",
@@ -843,6 +888,7 @@
     "collection": {
       "assign": {"open": "Assign an organization", "title": "Assign an organization", "help": "Gives the documents that have none this organization, in a job. Documents that already belong to one never move.", "action": "Assign", "matched": "{n} documents have no organization.", "done": "The assignment was queued: follow it under Functions, Jobs."},
       "new": "New document",
+      "in": "A collection of the {database} database.",
       "trash": "Trash",
       "live": "Documents",
       "view": "Show",

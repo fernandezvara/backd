@@ -171,6 +171,7 @@ await backd.auth.resendVerification(email);                    // 202 whatever t
 await backd.auth.verifyEmail(token);                           // the token of the verification link
 await backd.auth.requestPasswordReset(email, redirectTo: …);   // 202 whatever the address is
 await backd.auth.resetPassword(token, password);               // ends every session, verifies the address
+await backd.auth.updatePassword(email, password, newPassword, code: …); // signed out, with the current one; ends every session
 await backd.auth.requestEmailChange(newEmail);                 // signed in; needs a fresh proof (reauth)
 await backd.auth.confirmEmailChange(token);                    // the link sent to the new address
 await backd.auth.revertEmailChange(token);                     // the link sent to the old one

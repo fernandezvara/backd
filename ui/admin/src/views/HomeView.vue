@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AppCard from '@/components/AppCard.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSession } from '@/stores/session'
@@ -15,20 +17,19 @@ const areaName = (a: string) => t(`areas.${a}`)
 </script>
 
 <template>
-  <h1 class="text-2xl font-semibold">{{ t('home.title') }}</h1>
-  <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">{{ t('home.signedInAs', { who }) }}</p>
-  <dl class="mt-6 grid gap-4 sm:grid-cols-3">
-    <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+  <PageHeader :title="t('home.title')" :description="t('home.signedInAs', { who })" />
+  <dl class="grid gap-4 sm:grid-cols-3">
+    <AppCard>
       <dt class="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-400">{{ t('home.level') }}</dt>
       <dd class="mt-1 font-medium" data-testid="level">{{ t(`home.levels.${session.access?.level ?? 'read'}`) }}</dd>
-    </div>
-    <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+    </AppCard>
+    <AppCard>
       <dt class="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-400">{{ t('home.canRead') }}</dt>
       <dd class="mt-1" data-testid="can-read">{{ readable.length ? readable.map(areaName).join(', ') : t('home.nothing') }}</dd>
-    </div>
-    <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+    </AppCard>
+    <AppCard>
       <dt class="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-400">{{ t('home.canWrite') }}</dt>
       <dd class="mt-1" data-testid="can-write">{{ writable.length ? writable.map(areaName).join(', ') : t('home.nothing') }}</dd>
-    </div>
+    </AppCard>
   </dl>
 </template>

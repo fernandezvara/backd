@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import AppAlert from '@/components/AppAlert.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import AppButton from '@/components/AppButton.vue'
 import TextField from '@/components/TextField.vue'
 import { useRealmConfig } from '@/stores/config'
@@ -40,9 +41,9 @@ function open() {
 </script>
 
 <template>
-  <h1 class="text-2xl font-semibold">{{ t('data.title') }}</h1>
-  <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">{{ t('data.help') }}</p>
-  <p class="mt-2 text-sm"><RouterLink :to="{ name: 'data-checks', params: { realm } }" class="underline" data-testid="open-checks">{{ t('checks.title') }}</RouterLink></p>
+  <PageHeader :title="t('data.title')" :description="t('data.help')">
+    <RouterLink :to="{ name: 'data-checks', params: { realm } }" class="text-sm underline" data-testid="open-checks">{{ t('checks.title') }}</RouterLink>
+  </PageHeader>
 
   <template v-if="knows">
     <AppAlert v-if="cfg.error" kind="error" class="mt-4">{{ cfg.error }}</AppAlert>

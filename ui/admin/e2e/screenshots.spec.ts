@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { expect, test } from './fixtures'
 import { REALM } from './users'
+import { setTheme } from './nav'
 
 // The pictures of the documentation's Admin UI guide, in the light theme.
 // Not part of the usual run: `E2E_SCREENSHOTS=1 make ui-e2e` regenerates
@@ -15,11 +16,12 @@ const out = (name: string) => {
 
 test('screenshots of the main views', async ({ page, signIn }) => {
   await page.goto(`/_ui/r/${REALM}/signin`)
+  // The sign-in page has no shell: its theme choice is on the page.
   await page.getByLabel('Theme').selectOption({ label: 'Light' })
   await page.screenshot({ path: out('signin') })
 
   await signIn('admin', { keep: true })
-  await page.getByLabel('Theme').selectOption({ label: 'Light' })
+  await setTheme(page, 'Light')
   await expect(page.getByTestId('level')).toBeVisible()
   await page.screenshot({ path: out('overview') })
 
@@ -29,6 +31,11 @@ test('screenshots of the main views', async ({ page, signIn }) => {
     await page.screenshot({ path: out(name) })
   }
   await shoot('users', 'users-table', 'users')
+  // A menu open, with the breadcrumb under the bar.
+  await page.getByTestId('nav-group-compute').click()
+  await expect(page.getByRole('link', { name: 'Jobs and history' })).toBeVisible()
+  await page.screenshot({ path: out('menu') })
+  await page.keyboard.press('Escape')
   await shoot('orgs', 'orgs-table', 'orgs')
   await shoot('apikeys', 'apikeys-table', 'apikeys')
   await shoot('audit', 'audit-table', 'audit')

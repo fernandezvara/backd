@@ -46,7 +46,7 @@ export const test = base.extend<{ allowedOrigins: string[]; guard: void; signIn:
       if (opts?.keep) await page.getByLabel('Keep me signed in in this tab').check()
       await page.getByRole('button', { name: 'Sign in' }).click()
       // Signed in once the shell is there: a full page load before this would drop the session.
-      await page.getByRole('button', { name: 'Sign out' }).waitFor()
+      await page.getByRole('navigation', { name: /^(Main|Principal)$/ }).waitFor()
     })
   },
 })

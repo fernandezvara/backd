@@ -1,5 +1,6 @@
 import { expect, test } from './fixtures'
 import { PASSWORD, REALM } from './users'
+import { go, signOut } from './nav'
 
 const stamp = Date.now()
 const email = `e2e-pw-${stamp}@adminui.example`
@@ -9,7 +10,7 @@ const email = `e2e-pw-${stamp}@adminui.example`
 
 test('an administrator expires one password, and a new one makes the account usable again', async ({ page, signIn, request }) => {
   await signIn('admin')
-  await page.getByRole('link', { name: 'Users' }).click()
+  await go(page, 'Users')
   await page.getByRole('button', { name: 'Create user' }).click()
   const create = page.getByRole('dialog')
   await create.getByLabel('Email').fill(email)
@@ -55,10 +56,51 @@ test('an administrator expires one password, and a new one makes the account usa
   await expect(page.getByTestId('reset-link')).toHaveCount(0)
 })
 
+test('a user whose password expired replaces it on the sign-in page with the current one', async ({ page, signIn }) => {
+  await signIn('admin')
+  await go(page, 'Users')
+  await page.getByLabel('Search by email').fill(email)
+  await page.getByRole('link', { name: email }).click()
+  await page.getByTestId('expire-password').click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Expire password' }).click()
+  await expect(page.getByTestId('user-status')).toHaveText('Active · Password expired')
+  await signOut(page)
+
+  await page.getByLabel('Email').fill(email)
+  await page.getByLabel('Password').fill('another-p4ssw0rd!')
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  const form = page.getByTestId('expired-step')
+  await expect(form).toContainText('This password has expired')
+  expect((await new (await import('@axe-core/playwright')).default({ page }).analyze()).violations).toEqual([])
+
+  await form.getByLabel('Current password').fill('not-the-p4ssw0rd!')
+  await form.getByLabel('New password', { exact: true }).fill('renewed-p4ssw0rd!')
+  await form.getByLabel('New password again').fill('renewed-p4ssw0rd!')
+  await form.getByRole('button', { name: 'Change password' }).click()
+  await expect(page.getByText('The current password is not right.')).toBeVisible()
+
+  await form.getByLabel('Current password').fill('another-p4ssw0rd!')
+  await form.getByLabel('New password again').fill('different-p4ssw0rd!')
+  await form.getByRole('button', { name: 'Change password' }).click()
+  await expect(form.getByText('The two new passwords are not the same.')).toBeVisible()
+
+  await form.getByLabel('New password again').fill('renewed-p4ssw0rd!')
+  await form.getByRole('button', { name: 'Change password' }).click()
+  await expect(page.getByTestId('password-changed')).toBeVisible()
+
+  // The new password signs in.
+  await page.getByLabel('Email').fill(email)
+  await page.getByLabel('Password').fill('renewed-p4ssw0rd!')
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  await page.getByRole('navigation', { name: 'Main' }).waitFor()
+})
+
 test('the actions for a leak ask for the number of accounts and the realm name', async ({ page, signIn }) => {
   await signIn('admin')
-  await page.getByRole('link', { name: 'Users' }).click()
+  await go(page, 'Users')
   const panel = page.getByTestId('passwords-panel')
+  await expect(panel).toHaveCount(0) // folded until asked for
+  await page.getByTestId('passwords-toggle').click()
   await expect(panel).toBeVisible()
   await expect(page.getByTestId('passwords-status')).toContainText('accounts have a password')
 
@@ -83,7 +125,8 @@ test('the actions for a leak ask for the number of accounts and the realm name',
 
 test('only a full administrator sees the actions', async ({ page, signIn }) => {
   await signIn('support')
-  await page.getByRole('link', { name: 'Users' }).click()
+  await go(page, 'Users')
   await expect(page.getByTestId('users-table')).toBeVisible()
   await expect(page.getByTestId('passwords-panel')).toHaveCount(0)
+  await expect(page.getByTestId('passwords-toggle')).toHaveCount(0)
 })

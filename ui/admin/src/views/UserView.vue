@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppCard from '@/components/AppCard.vue'
 import type { AdminUser, Identity, OwnedReport, UserSession } from 'backd-js'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -7,12 +8,14 @@ import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FormDialog from '@/components/FormDialog.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import ProofField from '@/components/ProofField.vue'
 import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
 import { errorText, formatDate } from '@/lib/format'
 import { useProof } from '@/lib/proof'
 import { useRealmConfig } from '@/stores/config'
+import { useCrumbNames } from '@/stores/crumbs'
 import { useSession } from '@/stores/session'
 import { useToasts } from '@/stores/toasts'
 
@@ -21,6 +24,7 @@ const { t } = useI18n()
 const admin = useAdmin()
 const router = useRouter()
 const session = useSession()
+const crumbNames = useCrumbNames()
 const toasts = useToasts()
 const realmConfig = useRealmConfig()
 const proof = useProof()
@@ -34,6 +38,7 @@ async function load() {
   loadError.value = ''
   try {
     user.value = await admin.users.get(props.id)
+    crumbNames.set('user', props.id, user.value.email)
   } catch (e) {
     loadError.value = errorText(e, t('user.loadFailed'))
   }
@@ -304,7 +309,7 @@ onMounted(async () => {
   <AppAlert v-if="loadError" kind="error" class="mt-4">{{ loadError }}</AppAlert>
 
   <template v-if="user">
-    <h1 class="mt-2 text-2xl font-semibold" data-testid="user-email">{{ user.email }}</h1>
+    <PageHeader :title="user.email" testid="user-email" />
 
     <dl class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
@@ -374,7 +379,7 @@ onMounted(async () => {
       <section class="mt-8" aria-labelledby="identities-h">
         <h2 id="identities-h" class="text-lg font-semibold">{{ t('user.identities.title') }}</h2>
         <AppAlert v-if="identitiesError" kind="error" class="mt-2">{{ identitiesError }}</AppAlert>
-        <div v-else class="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+        <AppCard v-else flush class="mt-2">
           <table class="w-full text-left text-sm" data-testid="user-identities">
             <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
               <tr>
@@ -397,7 +402,7 @@ onMounted(async () => {
               </tr>
             </tbody>
           </table>
-        </div>
+        </AppCard>
       </section>
 
       <section class="mt-8" aria-labelledby="mfa-h">
@@ -415,7 +420,7 @@ onMounted(async () => {
         <h2 id="sessions-h" class="text-lg font-semibold">{{ t('user.sessions.title') }}</h2>
         <AppAlert v-if="sessionsError" kind="error" class="mt-2">{{ sessionsError }}</AppAlert>
         <p v-else-if="!sessions.length" class="mt-2 text-sm text-slate-600 dark:text-slate-400">{{ t('user.sessions.none') }}</p>
-        <div v-else class="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+        <AppCard v-else flush class="mt-2">
           <table class="w-full text-left text-sm" data-testid="user-sessions">
             <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
               <tr>
@@ -436,13 +441,13 @@ onMounted(async () => {
               </tr>
             </tbody>
           </table>
-        </div>
+        </AppCard>
       </section>
       <section v-if="pushConfigured" class="mt-8" aria-labelledby="devices-h">
         <h2 id="devices-h" class="text-lg font-semibold">{{ t('user.devices.title') }}</h2>
         <AppAlert v-if="devicesError" kind="error" class="mt-2">{{ devicesError }}</AppAlert>
         <p v-else-if="!devices.length" class="mt-2 text-sm text-slate-600 dark:text-slate-400" data-testid="user-devices-none">{{ t('user.devices.none') }}</p>
-        <div v-else class="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+        <AppCard v-else flush class="mt-2">
           <table class="w-full text-left text-sm" data-testid="user-devices">
             <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
               <tr>
@@ -463,7 +468,7 @@ onMounted(async () => {
               </tr>
             </tbody>
           </table>
-        </div>
+        </AppCard>
       </section>
     </template>
 

@@ -1,13 +1,14 @@
 import { createClient } from 'backd-js'
 import { expect, test } from './fixtures'
 import { PASSWORD, REALM, users } from './users'
+import { go } from './nav'
 
 const stamp = Date.now()
 
 test('an administrator manages an organization: members, claims, invitations and deletion', async ({ page, signIn }) => {
   const name = `Acme ${stamp}`
   await signIn('admin')
-  await page.getByRole('link', { name: 'Organizations' }).click()
+  await go(page, 'Organizations')
 
   // Create it for a user of the realm, who becomes its owner.
   await page.getByRole('button', { name: 'Create organization' }).click()
@@ -71,14 +72,14 @@ test('an administrator manages an organization: members, claims, invitations and
 
 test('a read-only administrator sees organizations and has no controls', async ({ page, signIn }) => {
   await signIn('viewer')
-  await page.getByRole('link', { name: 'Organizations' }).click()
+  await go(page, 'Organizations')
   await expect(page.getByRole('button', { name: 'Create organization' })).toHaveCount(0)
 })
 
 test('an administrator gives and takes away a team role, with a window', async ({ page, signIn }) => {
   const name = `Departments ${stamp}`
   await signIn('admin', { keep: true })
-  await page.getByRole('link', { name: 'Organizations' }).click()
+  await go(page, 'Organizations')
   await page.getByRole('button', { name: 'Create organization' }).click()
   const create = page.getByRole('dialog')
   await create.getByLabel('Name').fill(name)
@@ -126,7 +127,7 @@ test('an administrator gives and takes away a team role, with a window', async (
 
 test('a read-only administrator sees team roles and has no controls for them', async ({ page, signIn }) => {
   await signIn('viewer')
-  await page.getByRole('link', { name: 'Organizations' }).click()
+  await go(page, 'Organizations')
   await expect(page.getByRole('button', { name: 'Give a team role' })).toHaveCount(0)
 })
 
@@ -134,7 +135,7 @@ test('an administrator connects an organization to its own Google Workspace and 
   const name = `Sign-in ${stamp}`
   const secret = `never-shown-${stamp}`
   await signIn('admin', { keep: true })
-  await page.getByRole('link', { name: 'Organizations' }).click()
+  await go(page, 'Organizations')
   await page.getByRole('button', { name: 'Create organization' }).click()
   const create = page.getByRole('dialog')
   await create.getByLabel('Name').fill(name)

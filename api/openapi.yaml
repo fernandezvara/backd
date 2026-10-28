@@ -863,6 +863,49 @@ paths:
         "410": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_auth/password/update:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Change the password signed out, with the current one
+      description: |
+        For someone who knows their password but can't use it to sign in: it
+        [expired for them alone](#tag/admin) (`password_expired`), or they just
+        want another and have no session. The proof is the current password,
+        and **a second factor's code when the account has one** (`code`, a TOTP
+        code, or a recovery code with `method: recovery`; without it `400
+        validation_error` naming `code`). The new password must meet the policy
+        and differ from the current one. On success **every session of the user
+        ends**, none is issued (the user signs in again, second factor
+        included) and `password-changed` is sent. Wrong proofs count against the
+        same limits as signing in.
+
+        A password expired for the **whole realm** (a leak) is not accepted
+        here: it may be in the leak. It answers `401 password_expired` like a
+        sign-in and queues the reset email; the user resets it from there.
+      operationId: updatePassword
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email, password, new_password]
+              properties:
+                email: { type: string }
+                password: { type: string, description: "The current password." }
+                new_password: { type: string, minLength: 8, maxLength: 128 }
+                code: { type: string, description: "The second factor's code, for an account that has one." }
+                method: { type: string, enum: [totp, recovery], default: totp }
+      responses:
+        "204": { description: Password changed. }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_auth/password:
     parameters: [{ $ref: "#/components/parameters/realm" }]
     post:
