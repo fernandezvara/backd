@@ -492,8 +492,9 @@ func TestDataCheck(t *testing.T) {
 
 func TestStorageCheck(t *testing.T) {
 	fake := storagetest.New(t, "files")
+	pub := storagetest.New(t, "public")
 	root := writeConfig(t, map[string]string{
-		"acme/realm.yaml":            "roles:\n  ops:\n    admin: true\nstorage:\n  provider: minio\n  endpoint: " + fake.URL + "\n  bucket: files\n  prefix: cli\n  access_key: secret:STORAGE_ACCESS_KEY\n  secret_key: secret:STORAGE_SECRET_KEY\n",
+		"acme/realm.yaml":            "roles:\n  ops:\n    admin: true\nstorage:\n  provider: minio\n  endpoint: " + fake.URL + "\n  bucket: files\n  prefix: cli\n  access_key: secret:STORAGE_ACCESS_KEY\n  secret_key: secret:STORAGE_SECRET_KEY\npublic_storage:\n  provider: minio\n  endpoint: " + pub.URL + "\n  bucket: public\n  prefix: cli\n  access_key: secret:PUBLIC_ACCESS_KEY\n  secret_key: secret:PUBLIC_SECRET_KEY\n  url: https://cdn.example.com\n",
 		"acme/app/notes/schema.json": `{"type": "object"}`,
 		"bare/realm.yaml":            "roles:\n  ops:\n    admin: true\n",
 		"bare/app/notes/schema.json": `{"type": "object"}`,
@@ -540,7 +541,22 @@ func TestStorageCheck(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// The public storage's keys are not set yet: checking everything fails on it, checking the private one does not.
+	c.expect(1, "storage_unavailable", "", "storage", "check", "--realm", "acme", "--url", srv.URL)
+	c.expect(0, "signed SHA-256: verified", "", "storage", "check", "--realm", "acme", "--storage", "private", "--url", srv.URL)
+	for _, n := range []string{"PUBLIC_ACCESS_KEY", "PUBLIC_SECRET_KEY"} {
+		if err := acme.SetSecret(ctx, "", n, "value", "key:test"); err != nil {
+			t.Fatal(err)
+		}
+	}
 	out := c.expect(0, "ok", "", "storage", "check", "--realm", "acme", "--url", srv.URL)
+	for _, want := range []string{"[private] minio", "[public] minio", "bucket public", "open this address to test the public setup: https://cdn.example.com/cli/acme/_check/backd-check.png", "Cache-Control and Content-Disposition are stored"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the report lacks %q:\n%s", want, out)
+		}
+	}
+	c.expect(2, "must be private or public", "", "storage", "check", "--realm", "acme", "--storage", "both", "--url", srv.URL)
+	out = c.expect(0, "ok", "", "storage", "check", "--realm", "acme", "--url", srv.URL)
 	for _, want := range []string{"minio", "bucket files", "prefix cli", "the credentials reach it", "a wrong SHA-256 is rejected", "signed SHA-256: verified", "doesn't expose the bucket's CORS"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the report lacks %q:\n%s", want, out)

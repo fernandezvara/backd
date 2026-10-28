@@ -34,21 +34,21 @@ func TestRealmStorageConnection(t *testing.T) {
 
 	// No storage: the realm says so.
 	f.reg.Realms["acme"].Settings.Storage = nil
-	if _, err := objects.For(ctx, "acme"); !errors.Is(err, errNoStorage) {
+	if _, err := objects.For(ctx, "acme", false); !errors.Is(err, errNoStorage) {
 		t.Fatalf("no storage: %v", err)
 	}
 	f.withStorage(t, fake.URL)
 	// Storage, but its keys aren't set: unavailable, naming them.
-	_, err := objects.For(ctx, "acme")
+	_, err := objects.For(ctx, "acme", false)
 	if !errors.Is(err, errStorageUnavailable) || !strings.Contains(err.Error(), "realm.STORAGE_ACCESS_KEY") {
 		t.Fatalf("missing keys: %v", err)
 	}
-	if missing, _ := objects.missingSecrets(ctx, "acme"); len(missing) != 2 {
+	if missing, _ := objects.missingSecrets(ctx, "acme", false); len(missing) != 2 {
 		t.Errorf("missing: %v", missing)
 	}
 	// Without a secrets key on the instance they can't be read either.
 	f.svc.Cipher = nil
-	if _, err := objects.For(ctx, "acme"); !errors.Is(err, errStorageUnavailable) {
+	if _, err := objects.For(ctx, "acme", false); !errors.Is(err, errStorageUnavailable) {
 		t.Errorf("no cipher: %v", err)
 	}
 	f.svc.Cipher, _ = auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
@@ -58,12 +58,12 @@ func TestRealmStorageConnection(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	a, err := objects.For(ctx, "acme")
+	a, err := objects.For(ctx, "acme", false)
 	if err != nil || a.Config().AccessKey != "v1-STORAGE_ACCESS_KEY" || a.Config().PublicEndpoint != "http://localhost:9000" {
 		t.Fatalf("connection: %+v %v", a, err)
 	}
 	// The same keys: the same connection, not a new one.
-	if b, _ := objects.For(ctx, "acme"); b != a || connects != 1 {
+	if b, _ := objects.For(ctx, "acme", false); b != a || connects != 1 {
 		t.Errorf("reconnected: %d", connects)
 	}
 	// A rotated key makes a new connection (once the secret cache lets go of the old one).
@@ -71,7 +71,7 @@ func TestRealmStorageConnection(t *testing.T) {
 	if err := f.svc.SetSecret(ctx, "", "STORAGE_SECRET_KEY", "v2", "key:test"); err != nil {
 		t.Fatal(err)
 	}
-	if c, err := objects.For(ctx, "acme"); err != nil || c == a || c.Config().SecretKey != "v2" || connects != 2 {
+	if c, err := objects.For(ctx, "acme", false); err != nil || c == a || c.Config().SecretKey != "v2" || connects != 2 {
 		t.Errorf("after a rotation: %v %d", err, connects)
 	}
 }
@@ -114,5 +114,51 @@ func TestStorageCheckIsAuditedAndNeedsConfigRead(t *testing.T) {
 	f.bobHolds(t, "keeper") // admin: [apikeys, secrets]
 	if rec, _ := f.doH(t, "POST", admin+"/storage/check", "", bearer(f.bob)); rec.Code != http.StatusForbidden {
 		t.Errorf("a level without config: %d", rec.Code)
+	}
+}
+
+func (f *rulesFixture) withPublicStorage(t *testing.T, endpoint string) {
+	t.Helper()
+	f.reg.Realms["acme"].Settings.PublicStorage = &registry.StorageSettings{Provider: "minio", Endpoint: endpoint, Region: "us-east-1", Bucket: "public", Prefix: "t", Public: true,
+		AccessKey: "PUBLIC_ACCESS_KEY", SecretKey: "PUBLIC_SECRET_KEY", URL: "https://cdn.example.com", Download: registry.DownloadProxy, PresignedTTL: registry.DefaultPresignedTTL, PendingTTL: registry.DefaultPendingTTL}
+}
+
+func TestPublicStorageCheckAndConnection(t *testing.T) {
+	f := newRulesFixture(t)
+	private, public := storagetest.New(t, "files"), storagetest.New(t, "public")
+	f.withStorage(t, private.URL)
+	ctx := context.Background()
+	for _, n := range []string{"STORAGE_ACCESS_KEY", "STORAGE_SECRET_KEY", "PUBLIC_ACCESS_KEY", "PUBLIC_SECRET_KEY"} {
+		_ = f.svc.SetSecret(ctx, "", n, "v-"+n, "key:test")
+	}
+	_, adminKey, _ := f.svc.CreateAPIKey(ctx, "chk", auth.KeyOptions{Role: auth.KeyRoleAdmin})
+	// No public storage yet: the check says so, the private one is untouched.
+	if rec, _ := f.doH(t, "POST", admin+"/storage/check?storage=public", "", bearer(adminKey)); rec.Code != http.StatusNotFound {
+		t.Errorf("no public storage: %d", rec.Code)
+	}
+	f.withPublicStorage(t, public.URL)
+	if rec, _ := f.doH(t, "POST", admin+"/storage/check?storage=sideways", "", bearer(adminKey)); rec.Code != http.StatusBadRequest {
+		t.Errorf("bad kind: %d", rec.Code)
+	}
+	rec, out := f.doH(t, "POST", admin+"/storage/check?storage=public", "", bearer(adminKey))
+	if rec.Code != http.StatusOK || out["ok"] != true || out["storage"] != "public" || out["bucket"] != "public" || out["sentinel_url"] != "https://cdn.example.com/t/acme/_check/backd-check.png" {
+		t.Fatalf("public check: %d %v", rec.Code, out)
+	}
+	if keys := private.Keys(); len(keys) != 0 {
+		t.Errorf("the private bucket was touched: %v", keys)
+	}
+	rec, out = f.doH(t, "POST", admin+"/storage/check", "", bearer(adminKey))
+	if rec.Code != http.StatusOK || out["storage"] != "private" || out["sentinel_url"] != nil {
+		t.Fatalf("private check: %d %v", rec.Code, out)
+	}
+	if keys := public.Keys(); len(keys) != 1 {
+		t.Errorf("public keys: %v", keys)
+	}
+	// The two storages are two connections.
+	objects := newRealmObjects(f.reg, func(string) *auth.Users { return f.svc })
+	a, err1 := objects.For(ctx, "acme", false)
+	b, err2 := objects.For(ctx, "acme", true)
+	if err1 != nil || err2 != nil || a == b || a.Config().Bucket != "files" || b.Config().Bucket != "public" {
+		t.Errorf("connections: %v %v", err1, err2)
 	}
 }

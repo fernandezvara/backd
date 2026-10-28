@@ -44,7 +44,7 @@ func (a *adminAPI) reconcileStorage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	obj, err := a.fns.docs.objects.For(r.Context(), realm)
+	obj, err := a.fns.docs.objects.For(r.Context(), realm, false)
 	switch {
 	case errors.Is(err, errNoStorage):
 		writeError(w, r, http.StatusNotFound, codeNotFound, "this realm has no storage configured (storage: in realm.yaml)")
@@ -232,7 +232,7 @@ func (a *adminAPI) storageStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	// Whether it works: the keys are set, and the bucket answers.
 	var keys, reach map[string]any
-	obj, err := a.fns.docs.objects.For(r.Context(), realm)
+	obj, err := a.fns.docs.objects.For(r.Context(), realm, false)
 	switch {
 	case errors.Is(err, errStorageUnavailable):
 		keys = map[string]any{"ok": false, "error": err.Error()}

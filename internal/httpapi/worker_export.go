@@ -51,7 +51,7 @@ func (w *Worker) runExport(ctx context.Context, log *slog.Logger, realm string, 
 		return
 	}
 	d := w.fns.docs
-	obj, err := d.objects.For(ctx, realm)
+	obj, err := d.objects.For(ctx, realm, false)
 	if err != nil {
 		w.retryExport(ctx, log, svc, job, rec, nil, err)
 		return

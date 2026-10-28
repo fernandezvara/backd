@@ -976,7 +976,12 @@ func reservedRealmSecret(settings RealmSettings, name string) bool {
 	if name == FilesLinkKeySecret || name == ConsentPseudonymSecret {
 		return true
 	}
-	return settings.Storage != nil && slices.Contains(settings.Storage.SecretNames(), name)
+	for _, st := range []*StorageSettings{settings.Storage, settings.PublicStorage} {
+		if st != nil && slices.Contains(st.SecretNames(), name) {
+			return true
+		}
+	}
+	return false
 }
 
 // definePattern finds the name a function gives defineFunction("<database>/<name>", …).

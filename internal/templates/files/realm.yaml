@@ -165,6 +165,25 @@ auth: enabled
 #                                      the bucket goes in `bucket:`, never in the endpoint)
 # digitalocean: provider: digitalocean region: nyc3        (endpoint derived: https://<region>.digitaloceanspaces.com)
 
+# Public files. A file field with `public: true` (collection.yaml) is stored in a
+# second, independent bucket and read straight from it, or from a CDN in front of
+# it, at a permanent address that the document carries (`url`): no signed links, no
+# rule check on the bytes. Only JPEG and PNG, uploaded through backd, which strips
+# their metadata. backd writes to `endpoint` and never connects to `url`: making the
+# bucket readable by everyone (and its listing off) is yours to do and to test before
+# production. It must be another bucket than `storage`, with other secrets. Anyone
+# with a file's address can read it: use it for what is not private.
+#
+# public_storage:
+#   provider: aws                    # any provider, not necessarily the one of `storage` (r2 behind
+#   region: eu-west-1                # a CDN is a common one: see the examples above)
+#   bucket: acme-public
+#   prefix: prod                     # required, unique per backd instance sharing the bucket
+#   access_key: secret:PUBLIC_STORAGE_ACCESS_KEY
+#   secret_key: secret:PUBLIC_STORAGE_SECRET_KEY
+#   url: https://cdn.acme.example    # where browsers read: <url>/<prefix>/<realm>/<db>/<collection>/<file id>/<name>
+#   pending_ttl: 1h                  # lifetime of uploads nobody attached to a document
+
 # Sign-in with Google, Microsoft or Apple. Every provider needs an application
 # registered in its console, and the callback address to register there is
 #     {BACKD_URL}/v1/<realm>/_auth/oauth/<provider>/callback

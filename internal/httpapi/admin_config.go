@@ -185,6 +185,13 @@ func realmConfig(s registry.RealmSettings, seesUsers bool) map[string]any {
 			"quota": map[string]any{"realm": nilIfZero(st.QuotaRealm), "user": nilIfZero(st.QuotaUser)},
 		}
 	}
+	if ps := s.PublicStorage; ps != nil {
+		out["public_storage"] = map[string]any{
+			"provider": ps.Provider, "endpoint": ps.Endpoint, "region": ps.Region, "bucket": ps.Bucket, "prefix": ps.Prefix,
+			"access_key": "secret:" + ps.AccessKey, "secret_key": "secret:" + ps.SecretKey,
+			"url": ps.URL, "pending_ttl": dur(ps.PendingTTL),
+		}
+	}
 	return out
 }
 

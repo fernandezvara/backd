@@ -1,8 +1,11 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"text/tabwriter"
 
 	"github.com/fernandezvara/kli"
@@ -29,7 +32,9 @@ type storageCheckReport struct {
 		Methods []string `json:"methods"`
 		Headers []string `json:"headers"`
 	} `json:"cors"`
-	LinkHost string `json:"link_host"`
+	LinkHost    string  `json:"link_host"`
+	Storage     string  `json:"storage"`
+	SentinelURL *string `json:"sentinel_url"`
 }
 
 // storageCheck handles `backd storage check`: the running backd verifies the
@@ -40,25 +45,56 @@ func storageCheck(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	var rep storageCheckReport
-	if err := t.call("POST", "_admin/storage/check", nil, nil, &rep); err != nil {
-		return err
+	kinds := []string{"private", "public"}
+	which := str(c, "storage")
+	switch which {
+	case "":
+	case "private", "public":
+		kinds = []string{which}
+	default:
+		return usageErr(errors.New("--storage must be private or public"))
+	}
+	var reps []storageCheckReport
+	var missing error
+	for _, kind := range kinds {
+		var rep storageCheckReport
+		if err := t.call("POST", "_admin/storage/check", url.Values{"storage": {kind}}, nil, &rep); err != nil {
+			// Checking every storage skips the one the realm doesn't have.
+			if ae, ok := errors.AsType[*apiError](err); ok && ae.Status == http.StatusNotFound && which == "" {
+				if missing == nil {
+					missing = err
+				}
+				continue
+			}
+			return err
+		}
+		reps = append(reps, rep)
+	}
+	if len(reps) == 0 {
+		return missing
 	}
 	if flag(c, "json") {
-		if err := encodeJSONLines(c.Stdout(), []storageCheckReport{rep}); err != nil {
+		if err := encodeJSONLines(c.Stdout(), reps); err != nil {
 			return err
 		}
 	} else {
-		printStorageReport(c.Stdout(), rep)
+		for i, rep := range reps {
+			if i > 0 {
+				fmt.Fprintln(c.Stdout())
+			}
+			printStorageReport(c.Stdout(), rep)
+		}
 	}
-	if !rep.OK {
-		return kli.Exit(1, fmt.Errorf("the storage check failed: fix the steps marked fail"))
+	for _, rep := range reps {
+		if !rep.OK {
+			return kli.Exit(1, fmt.Errorf("the %s storage check failed: fix the steps marked fail", rep.Storage))
+		}
 	}
 	return nil
 }
 
 func printStorageReport(w io.Writer, rep storageCheckReport) {
-	fmt.Fprintf(w, "%s  bucket %s  prefix %s  endpoint %s", rep.Provider, rep.Bucket, rep.Prefix, rep.Endpoint)
+	fmt.Fprintf(w, "[%s] %s  bucket %s  prefix %s  endpoint %s", rep.Storage, rep.Provider, rep.Bucket, rep.Prefix, rep.Endpoint)
 	if rep.PublicEndpoint != nil {
 		fmt.Fprintf(w, "  (links for %s)", *rep.PublicEndpoint)
 	}
@@ -68,7 +104,11 @@ func printStorageReport(w io.Writer, rep storageCheckReport) {
 		fmt.Fprintf(tw, "%s\t%s\t%s\n", s.Level, s.Name, s.Detail)
 	}
 	tw.Flush()
-	fmt.Fprintf(w, "signed SHA-256: %s; default encryption: %s; link host: %s\n", rep.ChecksumSHA256, rep.Encryption, rep.LinkHost)
+	if rep.SentinelURL != nil {
+		fmt.Fprintf(w, "default encryption: %s\nopen this address to test the public setup: %s\n", rep.Encryption, *rep.SentinelURL)
+	} else {
+		fmt.Fprintf(w, "signed SHA-256: %s; default encryption: %s; link host: %s\n", rep.ChecksumSHA256, rep.Encryption, rep.LinkHost)
+	}
 	for _, r := range rep.CORS {
 		fmt.Fprintf(w, "CORS: origins %v, methods %v\n", r.Origins, r.Methods)
 	}

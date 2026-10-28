@@ -312,3 +312,67 @@ func TestDirectUploadsAboveOnePut(t *testing.T) {
 		t.Errorf("digitalocean and 5GiB: %v", err)
 	}
 }
+
+const publicRealm = "roles:\n  staff: {}\n" + storageBase + publicBase
+
+func publicTree(t *testing.T, realm, collectionYAML string) (*Registry, error) {
+	t.Helper()
+	return Load(writeTree(t, map[string]string{
+		"shop/realm.yaml":                realm,
+		"shop/app/notes/schema.json":     `{"type": "object", "properties": {"title": {"type": "string"}}}`,
+		"shop/app/notes/collection.yaml": collectionYAML,
+	}))
+}
+
+func TestPublicFileFields(t *testing.T) {
+	reg, err := publicTree(t, publicRealm, "files:\n  photo: {public: true, max_size: 5MiB}\n  png: {public: true, max_size: 1MiB, types: [image/png]}\n  scan: {max_size: 1MiB}\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := reg.Realms["shop"].Databases["app"].Collections["notes"].Files
+	if p := files["photo"]; !p.Public || strings.Join(p.Types, ",") != "image/jpeg,image/png" || p.Upload != UploadProxy {
+		t.Errorf("photo = %+v", p)
+	}
+	if p := files["png"]; !p.Public || strings.Join(p.Types, ",") != "image/png" {
+		t.Errorf("png = %+v", p)
+	}
+	if files["scan"].Public {
+		t.Error("scan became public")
+	}
+	// A realm with only a public storage can have public fields.
+	if _, err := publicTree(t, "roles:\n  staff: {}\n"+publicBase, "files:\n  photo: {public: true, max_size: 5MiB}\n"); err != nil {
+		t.Errorf("public storage alone: %v", err)
+	}
+}
+
+func TestPublicFileFieldErrors(t *testing.T) {
+	cases := []struct{ name, realm, yaml, want string }{
+		{"no public storage", filesRealm, "files:\n  a: {public: true, max_size: 1MB}\n", "public: true needs `public_storage:`"},
+		{"private field without storage", "roles:\n  staff: {}\n" + publicBase, "files:\n  a: {max_size: 1MB}\n", "needs `storage:`"},
+		{"gif", publicRealm, "files:\n  a: {public: true, max_size: 1MB, types: [image/gif]}\n", "can't be public"},
+		{"family", publicRealm, "files:\n  a: {public: true, max_size: 1MB, types: [image/*]}\n", "can't be public"},
+		{"svg", publicRealm, "files:\n  a: {public: true, max_size: 1MB, types: [image/svg+xml]}\n", "can't be public"},
+		{"direct", publicRealm, "files:\n  a: {public: true, max_size: 1MB, upload: direct}\n", "upload: direct isn't available for a public field"},
+		{"keep metadata", publicRealm, "files:\n  a: {public: true, max_size: 1MB, keep_metadata: true}\n", "a public file is always cleaned of metadata"},
+		{"download", publicRealm, "files:\n  a: {public: true, max_size: 1MB, download: proxy}\n", "don't apply to a public field"},
+	}
+	for _, c := range cases {
+		_, err := publicTree(t, c.realm, c.yaml)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: error %v, want %q", c.name, err, c.want)
+		}
+	}
+}
+
+func TestFunctionsCantDeclareThePublicStorageSecrets(t *testing.T) {
+	for _, name := range []string{"realm.PUBLIC_ACCESS_KEY", "realm.PUBLIC_SECRET_KEY"} {
+		_, err := Load(writeTree(t, map[string]string{
+			"shop/realm.yaml":                     "auth: enabled\n" + publicBase,
+			"shop/app/_functions/f/function.yaml": "secrets: [" + name + "]\n",
+			"shop/app/_functions/f/index.ts":      "export default () => 1\n",
+		}))
+		if err == nil || !strings.Contains(err.Error(), "a secret backd keeps for itself") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}

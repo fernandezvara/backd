@@ -133,6 +133,10 @@ type RealmSettings struct {
 	// Storage is where the realm's files live (storage in realm.yaml); nil
 	// when it has none, and then it can't declare file fields.
 	Storage *StorageSettings
+	// PublicStorage is where the realm's public files live (public_storage in realm.yaml):
+	// another bucket, possibly another provider, that browsers read from PublicStorage.URL.
+	// nil when the realm has none, and then no file field can be public.
+	PublicStorage *StorageSettings
 	// Account is how the realm's accounts behave (account in realm.yaml).
 	Account AccountSettings
 	// Providers are the external identity providers (providers in realm.yaml),
@@ -374,8 +378,9 @@ type realmDoc struct {
 	Pages *struct {
 		DataHook string `yaml:"data_hook"`
 	} `yaml:"pages"`
-	Push    *pushDoc    `yaml:"push"`
-	Storage *storageDoc `yaml:"storage"`
+	Push          *pushDoc    `yaml:"push"`
+	Storage       *storageDoc `yaml:"storage"`
+	PublicStorage *storageDoc `yaml:"public_storage"`
 	// Providers are the external identity providers users may sign in with, and
 	// SignIn the settings that go with signing in.
 	Providers map[string]*providerDoc `yaml:"providers"`
@@ -823,8 +828,25 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 			errs = append(errs, errors.New("storage: only applies when auth is enabled (its access keys are secrets of the realm's system database)"))
 		} else {
 			var es []error
-			s.Storage, es = parseStorage(st)
+			s.Storage, es = parseStorage(st, false)
 			errs = append(errs, es...)
+		}
+	}
+	if st := doc.PublicStorage; st != nil {
+		if !s.AuthEnabled {
+			errs = append(errs, errors.New("public_storage: only applies when auth is enabled (its access keys are secrets of the realm's system database)"))
+		} else {
+			var es []error
+			s.PublicStorage, es = parseStorage(st, true)
+			errs = append(errs, es...)
+			if ps := s.PublicStorage; ps != nil && len(es) == 0 {
+				switch {
+				case SameBucket(s.Storage, ps):
+					errs = append(errs, errors.New("public_storage: is the same bucket as storage: everything in it is public, so it must be another bucket (the private files would be published)"))
+				case s.Storage != nil && (s.Storage.AccessKey == ps.AccessKey || s.Storage.SecretKey == ps.SecretKey || s.Storage.AccessKey == ps.SecretKey || s.Storage.SecretKey == ps.AccessKey):
+					errs = append(errs, errors.New("public_storage: use other secrets than storage's for access_key and secret_key: the key of the public bucket must not reach the private one"))
+				}
+			}
 		}
 	}
 
@@ -1342,4 +1364,13 @@ func (s RealmSettings) AppConfigTTL() time.Duration {
 		return s.AppConfigCacheTTL
 	}
 	return DefaultAppConfigCacheTTL
+}
+
+// StorageFor returns the settings of the realm's private (public false) or public storage; nil
+// when the realm has none of that kind.
+func (s RealmSettings) StorageFor(public bool) *StorageSettings {
+	if public {
+		return s.PublicStorage
+	}
+	return s.Storage
 }

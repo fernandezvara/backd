@@ -30,7 +30,7 @@ Let a file field be **public**: the document stores the file and carries its per
 | Exports/imports | public files are included everywhere private ones are (account export, realm export/import, anonymize rules); import re-checks and re-strips them before publishing (§8) |
 | Erasure | `on_owner_delete` and deletion work exactly as for private files, on the storage the file is in |
 | CDN | not ours: copies in a CDN outlive the object; documented as the operator's concern |
-| Verification | none by backd; `backd storage check` writes, reads and deletes an object, and prints a URL to open |
+| Verification | none by backd; `backd storage check` writes (with the public headers), reads and lists, and leaves one sentinel image whose public address it prints for the operator to open |
 
 ## 3. Configuration
 
@@ -66,7 +66,8 @@ Startup (and `config check`) rejects:
 - `public_storage` on the same `endpoint` + `bucket` as `storage` (the one mistake that would expose everything).
 - `url` that is not `https://...` (http only with `BACKD_DEV=true`); a path is allowed, query and fragment are not; a trailing slash is trimmed.
 - `types` on a public field other than `image/jpeg` / `image/png` (default for a public field: those two). `upload: direct` on a public field. `keep_metadata: true` on a public field (a public file is always stripped).
-- `public_storage` has its own `public_endpoint` (the existing meaning: the address a browser uses to reach a MinIO that backd reaches at another address); the new `url` is a different thing, which is why it has a different name.
+- `public_storage` takes `provider`, `endpoint`, `region`, `bucket`, `prefix`, the two keys, `url` and `pending_ttl`. It rejects `download`, `presigned_ttl`, `quota` (set in `storage:`, where it counts public and private files together) and `public_endpoint` (signed links are never made for it, because uploads go through backd; the new `url` is a different thing, which is why it has a different name).
+- `public_storage` may be configured without `storage:` (a realm with only public fields); it needs its own secrets, other than `storage`'s, so the public bucket's key never reaches the private one.
 
 The provider table, the transport rules (only the declared endpoint, resolved by backd, no redirects, no proxy), `prefix` uniqueness per instance and encryption at rest apply to `public_storage` exactly as to `storage`. The provider capability checks that make sense are kept (single PUT limit, proxy upload); direct-upload capabilities are not required.
 

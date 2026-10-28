@@ -6756,6 +6756,10 @@ paths:
   /v1/{realm}/_admin/storage/check:
     parameters:
       - { $ref: "#/components/parameters/realm" }
+      - name: storage
+        in: query
+        description: "`private` (default) checks `storage:`; `public` checks `public_storage:`."
+        schema: { type: string, enum: [private, public] }
     post:
       tags: [admin]
       summary: Check the realm's object storage
@@ -6767,6 +6771,11 @@ paths:
         reach), and, where the provider exposes them, the bucket's CORS rules and
         default encryption. It stores a few small objects under
         `<prefix>/<realm>/_check/` and deletes them again; it touches nothing else.
+        With `?storage=public` it checks the realm's `public_storage:` instead: the bucket and
+        credentials, that the headers public files are stored with (`Cache-Control`,
+        `Content-Disposition`) are kept and returned, a read and a listing. backd never connects
+        to the public `url`, so it leaves one small image under `<prefix>/<realm>/_check/` and
+        reports where it should be readable (`sentinel_url`) for the operator to open.
         Answers `200` with the report whatever it found: `ok` is false when a step
         failed (`level: fail`); `warn` steps are worth reading but don't fail it.
         Audited as `storage.check`. Needs the `config` area (read is enough).
@@ -6783,7 +6792,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404":
-          description: The realm has no `storage:` in `realm.yaml`.
+          description: The realm has no `storage:` (or, with `?storage=public`, no `public_storage:`) in `realm.yaml`.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -11125,9 +11134,11 @@ components:
     StorageCheck:
       type: object
       additionalProperties: false
-      required: [ok, provider, endpoint, public_endpoint, bucket, prefix, steps, checksum_sha256, encryption, cors, link_host]
+      required: [ok, storage, provider, endpoint, public_endpoint, bucket, prefix, steps, checksum_sha256, encryption, cors, link_host, sentinel_url]
       properties:
         ok: { type: boolean, description: "False when a step failed." }
+        storage: { type: string, enum: [private, public], description: Which of the realm's storages this is the report of. }
+        sentinel_url: { type: [string, "null"], description: "Public storage only: where the image the check left in the bucket should be readable." }
         provider: { type: string, enum: [aws, minio, r2, digitalocean] }
         endpoint: { type: string, description: What backd connects to. }
         public_endpoint: { type: [string, "null"], description: "The address signed links use, when it differs (never connected to)." }
@@ -11140,7 +11151,7 @@ components:
             additionalProperties: false
             required: [name, level, detail]
             properties:
-              name: { type: string, description: "`bucket`, `write`, `head`, `read`, `range`, `list`, `checksum`, `stored checksum`, `download link`, `upload link`, `cors` or `encryption`." }
+              name: { type: string, description: "`bucket`, `write`, `head`, `headers`, `read`, `range`, `list`, `public`, `checksum`, `stored checksum`, `download link`, `upload link`, `cors` or `encryption`." }
               level: { type: string, enum: [ok, warn, fail, skipped] }
               detail: { type: string }
         checksum_sha256: { type: string, enum: [verified, ignored, not tested], description: "What the storage does with a signed `x-amz-checksum-sha256`: `verified` rejects content that differs." }

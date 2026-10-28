@@ -548,9 +548,10 @@ func registerRemote(cfg *kli.Config) {
 
 	st := cfg.Command("storage").ShortHelp("check, inspect and clean up a realm's object storage")
 	st.SubCommand("check").ShortHelp("verify the realm's storage the way files would use it").
-		LongHelp("Asks the running backd, which holds the realm's access keys, to check its storage:\nthe bucket and credentials, put, head, get, a range request and a listing on the realm's\nprefix, the signed SHA-256 (a wrong one must be rejected), signed download and upload\nlinks, and, where the provider exposes them, the bucket's CORS rules and default\nencryption. It stores a few small objects under <prefix>/<realm>/_check/ and deletes them\nagain. Exits 1 when a step failed (warnings don't fail it). Audited as storage.check. " + adminAPINote).
+		LongHelp("Asks the running backd, which holds the realm's access keys, to check its storage:\nthe bucket and credentials, put, head, get, a range request and a listing on the realm's\nprefix, the signed SHA-256 (a wrong one must be rejected), signed download and upload\nlinks, and, where the provider exposes them, the bucket's CORS rules and default\nencryption. It stores a few small objects under <prefix>/<realm>/_check/ and deletes them\nagain. A realm with a public_storage has that one checked too (or only that with --storage public): the\nheaders public files are stored with, and a small image it leaves in the bucket and gives the address of,\nbecause backd never connects to the public url; open it to test the bucket or CDN. Exits 1 when a step failed (warnings don't fail it). Audited as storage.check. " + adminAPINote).
 		Func(act("storage check", storageCheck)).Config(func(cc *kli.CommandConfig) {
 		required(cc, "realm", "the realm whose storage to check")
+		optional(cc, "storage", "private or public (default: every storage the realm has)")
 		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
 		boolean(cc, "json", "print the report as JSON")
 	})

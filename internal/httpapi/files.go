@@ -106,7 +106,7 @@ func (d *documents) fileFieldInfo(w http.ResponseWriter, r *http.Request) {
 // objectsFor returns the realm's storage connection or answers for it: 503
 // storage_unavailable when the keys can't be used.
 func (d *documents) objectsFor(w http.ResponseWriter, r *http.Request, realm string) (*storage.Objects, bool) {
-	obj, err := d.objects.For(r.Context(), realm)
+	obj, err := d.objects.For(r.Context(), realm, false)
 	switch {
 	case err == nil:
 		return obj, true
@@ -876,7 +876,7 @@ func (d *documents) addFileLinks(w http.ResponseWriter, r *http.Request, c *regi
 	if r.URL.Query().Get("file_links") != "true" || len(c.Files) == 0 {
 		return true
 	}
-	obj, err := d.objects.For(r.Context(), c.Realm)
+	obj, err := d.objects.For(r.Context(), c.Realm, false)
 	if err != nil {
 		logger(r.Context()).Warn("file links left out: the realm's storage is not available", "realm", c.Realm, "error", err)
 		return true

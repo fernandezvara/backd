@@ -13,15 +13,28 @@ import (
 // checkStorage answers POST /v1/{realm}/_admin/storage/check: it verifies the
 // realm's storage the way a file would use it (credentials, every operation on
 // the prefix, the signed SHA-256, signed links, CORS and encryption where the
-// provider exposes them) with a few small objects it deletes again. 200 with the
-// report, whatever it found (`ok` says whether anything failed); 404 when the
-// realm has no storage; 503 storage_unavailable when its access keys can't be read.
+// provider exposes them) with a few small objects it deletes again. With
+// ?storage=public it checks the realm's public storage instead (the headers public
+// files are stored with, and a sentinel image it leaves for the operator to open:
+// backd never connects to the public url). 200 with the report, whatever it found
+// (`ok` says whether anything failed); 404 when the realm has no such storage; 503
+// storage_unavailable when its access keys can't be read.
 func (a *adminAPI) checkStorage(w http.ResponseWriter, r *http.Request) {
 	realm := chi.URLParam(r, "realm")
-	obj, err := a.fns.docs.objects.For(r.Context(), realm)
+	kind := r.URL.Query().Get("storage")
+	if kind != "" && kind != "private" && kind != "public" {
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "storage", Reason: "must be private or public"})
+		return
+	}
+	public := kind == "public"
+	obj, err := a.fns.docs.objects.For(r.Context(), realm, public)
 	switch {
 	case errors.Is(err, errNoStorage):
-		writeError(w, r, http.StatusNotFound, codeNotFound, "this realm has no storage configured (storage: in realm.yaml)")
+		section := "storage"
+		if public {
+			section = "public_storage"
+		}
+		writeError(w, r, http.StatusNotFound, codeNotFound, "this realm has no "+section+" configured ("+section+": in realm.yaml)")
 		return
 	case errors.Is(err, errStorageUnavailable):
 		writeError(w, r, http.StatusServiceUnavailable, codeStorageUnavailable, err.Error())
@@ -30,9 +43,21 @@ func (a *adminAPI) checkStorage(w http.ResponseWriter, r *http.Request) {
 		adminError(w, r, err)
 		return
 	}
-	rep := obj.Check(r.Context(), realm)
-	usersOf(r).Audit(r.Context(), auth.AuditStorageCheck, "storage", map[string]any{"ok": rep.OK(), "provider": rep.Provider, "bucket": rep.Bucket})
-	writeJSON(w, http.StatusOK, checkReportJSON(rep))
+	var rep storage.CheckReport
+	if public {
+		rep = obj.CheckPublic(r.Context(), realm, a.reg.Realms[realm].Settings.PublicStorage.URL, storage.PublicOriginalHeaders)
+	} else {
+		rep = obj.Check(r.Context(), realm)
+	}
+	usersOf(r).Audit(r.Context(), auth.AuditStorageCheck, "storage", map[string]any{"ok": rep.OK(), "provider": rep.Provider, "bucket": rep.Bucket, "public": public})
+	out := checkReportJSON(rep)
+	out["storage"] = map[bool]string{false: "private", true: "public"}[public]
+	if public {
+		out["sentinel_url"] = rep.SentinelURL
+	} else {
+		out["sentinel_url"] = nil
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func checkReportJSON(rep storage.CheckReport) map[string]any {

@@ -571,7 +571,7 @@ func (a *adminAPI) exportFile(w http.ResponseWriter, r *http.Request, realm, fil
 		writeError(w, r, http.StatusNotFound, codeNotFound, "no such file in this package")
 		return
 	}
-	obj, err := a.fns.docs.objects.For(r.Context(), realm)
+	obj, err := a.fns.docs.objects.For(r.Context(), realm, false)
 	switch {
 	case errors.Is(err, errNoStorage):
 		writeError(w, r, http.StatusNotFound, codeNotFound, "this realm has no storage configured (storage: in realm.yaml)")

@@ -204,7 +204,7 @@ type fileOutcome struct {
 // recorded (the copy it had stays) and only reported.
 func (w *Worker) makeFile(ctx context.Context, svc *auth.Users, c *registry.Collection, f *registry.FileField, e *auth.ImageJob, targets []imageTarget, keep bool) fileOutcome {
 	out := fileOutcome{states: map[string]map[string]any{}, summary: map[string]int{}}
-	obj, err := w.fns.docs.objects.For(ctx, c.Realm)
+	obj, err := w.fns.docs.objects.For(ctx, c.Realm, false)
 	if err != nil {
 		out.transient, out.err = "storage", err
 		return out
@@ -354,7 +354,7 @@ func (w *Worker) storeVersion(ctx context.Context, svc *auth.Users, c *registry.
 	if err := svc.JournalUpload(ctx, entry); err != nil {
 		return err
 	}
-	obj, err := w.fns.docs.objects.For(ctx, c.Realm)
+	obj, err := w.fns.docs.objects.For(ctx, c.Realm, false)
 	if err == nil {
 		err = obj.PutStream(ctx, m.key, bytes.NewReader(m.result.Data), m.result.Type)
 	}

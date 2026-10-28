@@ -6,7 +6,7 @@ weight: 576
 toc: true
 ---
 
-A collection says which fields of its documents carry files under `files:` in its [`collection.yaml`](../../configuration/config-dir/#collectionyaml). The realm needs a [`storage:`](../../../operate/providers/storage/) section.
+A collection says which fields of its documents carry files under `files:` in its [`collection.yaml`](../../configuration/config-dir/#collectionyaml). The realm needs a [`storage:`](../../../operate/providers/storage/) section (or, for `public: true` fields, a [`public_storage:`](../../../operate/providers/storage/#public-storage)).
 
 ```yaml
 files:
@@ -35,6 +35,7 @@ files:
 | `presigned_ttl` | the realm's | How long this field's links last (at most 7 days) |
 | `cache` | none | With `download: proxy`: how long shared caches may keep the file, only when anyone may read the document |
 | `keep_metadata` | `false` | By default the metadata of JPEG and PNG pictures is [removed](#metadata-and-the-gps-risk) when they are stored. `true` stores them exactly as sent |
+| `public` | `false` | `true` stores the field's files in the realm's [`public_storage:`](../../../operate/providers/storage/#public-storage) to be read straight from the bucket or a CDN. Only JPEG and PNG (the default `types`), uploaded through backd (`upload: direct`, `download`, `presigned_ttl`, `cache` and `keep_metadata` don't apply). Not implemented yet beyond the configuration: uploads to public fields arrive in the next steps of the public files milestone |
 | `max_pixels` | the instance's | For images: the most pixels (width × height) the field gets [versions](#image-versions) for. It can only lower `BACKD_IMAGE_MAX_PIXELS`; a higher value stops startup |
 | `versions` | none | Resized copies of an image, declared by name: see [Image versions](#image-versions) |
 

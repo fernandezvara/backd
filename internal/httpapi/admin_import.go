@@ -631,7 +631,7 @@ func (a *adminAPI) importFile(w http.ResponseWriter, r *http.Request, realm, fil
 		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "X-Backd-Sha256", Reason: "is required: the hex SHA-256 of the file"})
 		return
 	}
-	obj, err := a.fns.docs.objects.For(r.Context(), realm)
+	obj, err := a.fns.docs.objects.For(r.Context(), realm, false)
 	switch {
 	case errors.Is(err, errNoStorage):
 		writeError(w, r, http.StatusNotFound, codeNotFound, "the target realm has no storage configured (storage: in realm.yaml)")

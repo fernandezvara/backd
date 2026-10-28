@@ -106,3 +106,78 @@ func TestRealmTemplateStorageExampleLoads(t *testing.T) {
 		t.Fatalf("the template's example doesn't load: %v\n%s", errs, strings.Join(block, "\n"))
 	}
 }
+
+const publicBase = "public_storage:\n  provider: r2\n  endpoint: https://be24f8b836589be5638e95d6579afa46.r2.cloudflarestorage.com\n  bucket: acme-public\n  prefix: prod\n  access_key: secret:PUBLIC_ACCESS_KEY\n  secret_key: secret:PUBLIC_SECRET_KEY\n  url: https://cdn.acme.example/\n"
+
+func TestPublicStorageSettings(t *testing.T) {
+	s, errs := parseRealmSettings([]byte(storageBase + publicBase + "  pending_ttl: 30m\n"))
+	if len(errs) != 0 {
+		t.Fatal(errs)
+	}
+	ps := s.PublicStorage
+	if ps == nil || !ps.Public || ps.URL != "https://cdn.acme.example" || ps.Bucket != "acme-public" || ps.Region != "auto" || ps.PendingTTL != 30*time.Minute || ps.HTTP {
+		t.Errorf("public storage = %+v", ps)
+	}
+	if s.Storage == nil || s.Storage.Public || s.StorageFor(true) != ps || s.StorageFor(false) != s.Storage || ps.Label() != "public_storage" || s.Storage.Label() != "storage" {
+		t.Errorf("StorageFor: %+v", s)
+	}
+	// Alone, with a path and over http (development).
+	s, errs = parseRealmSettings([]byte("public_storage:\n  provider: minio\n  endpoint: http://minio:9000\n  bucket: acme-public\n  prefix: prod\n  access_key: secret:K\n  secret_key: secret:S\n  url: http://localhost:9000/acme-public\n"))
+	if len(errs) != 0 || s.Storage != nil || s.PublicStorage.URL != "http://localhost:9000/acme-public" || !s.PublicStorage.HTTP {
+		t.Errorf("alone: %+v %v", s.PublicStorage, errs)
+	}
+}
+
+func TestPublicStorageErrors(t *testing.T) {
+	cases := []struct{ name, yaml, want string }{
+		{"no url", strings.Replace(publicBase, "  url: https://cdn.acme.example/\n", "", 1), "public_storage.url: is required"},
+		{"url with a query", storageBase + strings.Replace(publicBase, "example/", "example/?a=1", 1), "no credentials, query or fragment"},
+		{"url with credentials", storageBase + strings.Replace(publicBase, "url: https://", "url: https://u:p@", 1), "no credentials, query or fragment"},
+		{"url scheme", storageBase + strings.Replace(publicBase, "https://cdn", "ftp://cdn", 1), "public_storage.url:"},
+		{"url on storage", storageBase + "  url: https://x.example\n", "storage.url: only applies to `public_storage:`"},
+		{"download", storageBase + publicBase + "  download: proxy\n", "public_storage.download: doesn't apply"},
+		{"presigned ttl", storageBase + publicBase + "  presigned_ttl: 5m\n", "public_storage.presigned_ttl: doesn't apply"},
+		{"quota", storageBase + publicBase + "  quota: {realm: 1GiB}\n", "public_storage.quota: is set in `storage:`"},
+		{"same bucket", storageBase + strings.NewReplacer("r2", "minio", "https://be24f8b836589be5638e95d6579afa46.r2.cloudflarestorage.com", "http://minio:9000", "acme-public", "acme-files").Replace(publicBase), "is the same bucket as storage"},
+		{"same secrets", storageBase + strings.Replace(publicBase, "PUBLIC_ACCESS_KEY", "STORAGE_ACCESS_KEY", 1), "use other secrets than storage's"},
+		{"auth disabled", "auth: disabled\n" + publicBase, "public_storage: only applies when auth is enabled"},
+	}
+	for _, c := range cases {
+		_, errs := parseRealmSettings([]byte(c.yaml))
+		var all []string
+		for _, e := range errs {
+			all = append(all, e.Error())
+		}
+		if !strings.Contains(strings.Join(all, "\n"), c.want) {
+			t.Errorf("%s: errors %v, want %q", c.name, all, c.want)
+		}
+	}
+}
+
+func TestRealmTemplatePublicStorageExampleLoads(t *testing.T) {
+	data, err := os.ReadFile("../templates/files/realm.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(data), "\n")
+	var block []string
+	for i := range lines {
+		if lines[i] != "# public_storage:" {
+			continue
+		}
+		for _, l := range lines[i:] {
+			if l == "#" || l == "" {
+				break
+			}
+			block = append(block, strings.TrimPrefix(strings.TrimPrefix(l, "# "), "#"))
+		}
+		break
+	}
+	if len(block) < 8 {
+		t.Fatalf("the template has no public storage example: %q", block)
+	}
+	s, errs := parseRealmSettings([]byte(strings.Join(block, "\n")))
+	if len(errs) != 0 || s.PublicStorage == nil {
+		t.Fatalf("the template's example doesn't load: %v\n%s", errs, strings.Join(block, "\n"))
+	}
+}

@@ -685,7 +685,7 @@ func (w *Worker) FilesDue(ctx context.Context) {
 		if len(due) == 0 {
 			continue
 		}
-		obj, err := w.fns.docs.objects.For(ctx, realm)
+		obj, err := w.fns.docs.objects.For(ctx, realm, false)
 		if err != nil {
 			// The keys aren't usable now: the claims lapse and the deletions come back later.
 			w.log.Warn("file storage is not available; deletions wait", "realm", realm, "error", err)
@@ -708,7 +708,7 @@ func (w *Worker) FilesDue(ctx context.Context) {
 // abortMultipart aborts the multipart upload an abandoned entry started. It reports false
 // when that couldn't be done now, to try again on the next run.
 func (w *Worker) abortMultipart(ctx context.Context, realm string, e auth.FileJournalEntry) bool {
-	obj, err := w.fns.docs.objects.For(ctx, realm)
+	obj, err := w.fns.docs.objects.For(ctx, realm, false)
 	if err == nil {
 		err = obj.AbortMultipart(ctx, e.Key, e.MultipartID)
 	}
