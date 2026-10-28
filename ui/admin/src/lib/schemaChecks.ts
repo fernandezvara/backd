@@ -36,7 +36,10 @@ export function useSchemaChecks(onFinished?: () => void) {
     } catch (e) {
       error.value = errorText(e, t('checks.loadFailed'))
     }
-    if (wasRunning && running.value === null) onFinished?.()
+    if (wasRunning && running.value === null) {
+      toasts.push(t('checks.finished'))
+      onFinished?.()
+    }
     clearTimeout(timer)
     if (!stopped && running.value !== null) timer = setTimeout(refresh, POLL_MS)
   }
@@ -48,6 +51,11 @@ export function useSchemaChecks(onFinished?: () => void) {
       lastStarted.value = await admin.dataChecks.start(scope)
       toasts.push(t('checks.started'))
       await refresh()
+      // A small collection can be done before the first answer: the report is there to read.
+      if (running.value === null) {
+        toasts.push(t('checks.finished'))
+        onFinished?.()
+      }
       return true
     } catch (e) {
       toasts.push(errorText(e, t('common.unexpected')), 'error')

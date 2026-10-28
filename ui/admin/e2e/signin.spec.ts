@@ -1,15 +1,15 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from './fixtures'
-import { REALM, users } from './users'
+import { PASSWORD, REALM, users } from './users'
 import { setTheme, signOut } from './nav'
 
 test('a deep link to a protected page asks to sign in, then comes back', async ({ page, signIn }) => {
   await page.goto(`/_ui/r/${REALM}`)
   await expect(page).toHaveURL(new RegExp(`/_ui/r/${REALM}/signin`))
-  await expect(page.getByTestId('realm-badge')).toContainText(REALM)
+  await expect(page.getByLabel('Realm')).toHaveValue(REALM)
   await signIn('admin')
   await expect(page).toHaveURL(new RegExp(`/_ui/r/${REALM}$`))
-  await expect(page.getByTestId('realm-badge')).toContainText(`Realm ${REALM}`)
+  await expect(page.getByTestId('realm-crumb')).toHaveText(`Realm: ${REALM}`)
 })
 
 test('unknown /_ui/ paths fall back to the app, and the realm is validated', async ({ page }) => {
@@ -69,7 +69,7 @@ test('the token stays in memory unless the tab opts in', async ({ page, signIn }
 test('opting in keeps the session across a reload, in this tab only', async ({ page, signIn }) => {
   await signIn('admin', { keep: true })
   await expect(page.getByTestId('level')).toBeVisible()
-  expect(await page.evaluate(() => Object.keys(localStorage).filter((k) => k !== 'backd-admin:theme'))).toEqual([])
+  expect(await page.evaluate(() => Object.keys(localStorage).filter((k) => k !== 'backd-admin:theme' && k !== 'backd-admin-realm'))).toEqual([])
   await page.reload()
   await expect(page.getByTestId('level')).toBeVisible()
 })
@@ -120,4 +120,21 @@ test('the theme switch applies and the page has no accessibility violations', as
     await expect(page.locator('html')).toHaveClass(theme === 'Dark' ? /dark/ : /^(?!.*dark).*$/)
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
   }
+})
+
+test('one form signs in with the email, the realm and the password, and the realm is remembered', async ({ page }) => {
+  await page.goto('/_ui/')
+  await expect(page.getByLabel('Realm')).toHaveValue('')
+  await page.getByLabel('Email').fill(users.admin)
+  await page.getByLabel('Realm').fill('Bad Realm!')
+  await page.getByLabel('Password').fill(PASSWORD)
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  await expect(page.getByText('A realm name has lowercase letters')).toBeVisible()
+  await page.getByLabel('Realm').fill(REALM)
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible()
+  await expect(page).toHaveURL(new RegExp(`/_ui/r/${REALM}$`))
+  await signOut(page)
+  await page.goto('/_ui/')
+  await expect(page.getByLabel('Realm')).toHaveValue(REALM)
 })

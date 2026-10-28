@@ -92,6 +92,7 @@ async function submitTest() {
       email: t0.email.trim(),
       ...(t0.kind.trim() ? { kind: t0.kind.trim() } : { title: t0.title, body: t0.body }),
     })
+    toasts.push(t('push.test.queued'))
     await loadSends()
   } catch (e) {
     testError.value = errorText(e, t('common.unexpected'))

@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "backd admin",
+    "name": "back(d) admin",
     "skip": "Skip to content"
   },
   "common": {
@@ -54,13 +54,7 @@
     "label": "Account"
   },
   "realm": {
-    "menuHelp": "You are signed in to this realm only.",
-    "another": "Open another realm",
     "label": "Realm",
-    "current": "Realm {name}",
-    "choose": "Choose a realm",
-    "chooseHelp": "Every administrator signs in to one realm at a time. Enter the realm's name.",
-    "open": "Continue",
     "invalid": "A realm name has lowercase letters, digits, - and _ only."
   },
   "signIn": {
@@ -70,14 +64,13 @@
     "enroll": {"intro": "This account must use two-step verification. Set up an authenticator app to continue.", "start": "Set up an authenticator app", "qrAlt": "QR code to scan with your authenticator app", "secret": "Or type this secret:", "label": "Code shown by the app", "submit": "Turn it on and sign in"},
     "consent": {"intro": "Please read and accept to continue.", "accept": "I accept the {name}", "submit": "Accept and sign in", "failed": "The consents could not be accepted. Try signing in again."},
     "recovery": {"title": "Recovery codes", "body": "Each works once and they are shown only now. Save them somewhere safe, not on the phone with the app.", "continue": "I saved them, continue"},
-    "title": "Sign in to {realm}",
+    "title": "Sign in",
     "email": "Email",
     "password": "Password",
     "keep": "Keep me signed in in this tab",
     "keepHelp": "Stores the session in this tab until it closes. Leave it off on shared computers.",
     "submit": "Sign in",
     "submitting": "Signing in...",
-    "otherRealm": "Another realm",
     "failed": "The email or password is wrong, or sign-in is temporarily blocked.",
     "notAdmin": "This account is not an administrator of this realm.",
     "unreachable": "The server could not be reached.",
@@ -201,6 +194,7 @@
       "delivering": "Delivering"
     },
     "test": {
+      "queued": "Test push queued.",
       "open": "Send a test",
       "title": "Send a test push",
       "help": "Goes to one user's devices through the same limits as any push, and counts toward theirs. It is audited.",
@@ -575,6 +569,7 @@
       "jobs": "Jobs"
     },
     "openapi": {
+      "done": "OpenAPI document downloaded.",
       "client": "Download OpenAPI (client apps)",
       "clientHelp": "Only what applications can reach: no admin routes.",
       "admin": "Download OpenAPI (with admin)",
@@ -678,6 +673,7 @@
     "showReport": "Show the report",
     "empty": "This realm has no collections.",
     "loadFailed": "The schema checks could not be loaded.",
+    "finished": "Schema check finished.",
     "started": "Schema check started.",
     "cancelled": "Schema check cancelled.",
     "cancel": "Cancel the check",

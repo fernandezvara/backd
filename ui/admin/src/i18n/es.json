@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "backd admin",
+    "name": "back(d) admin",
     "skip": "Saltar al contenido"
   },
   "common": {
@@ -54,13 +54,7 @@
     "label": "Cuenta"
   },
   "realm": {
-    "menuHelp": "Has iniciado sesión solo en este realm.",
-    "another": "Abrir otro realm",
     "label": "Realm",
-    "current": "Realm: {name}",
-    "choose": "Elige un realm",
-    "chooseHelp": "Sólo se puede estar en un realm a la vez. Escribe el nombre del realm.",
-    "open": "Continuar",
     "invalid": "El nombre de un realm solo tiene letras minúsculas, dígitos, - y _."
   },
   "signIn": {
@@ -70,14 +64,13 @@
     "enroll": {"intro": "Esta cuenta debe usar verificación en dos pasos. Configura una aplicación de autenticación para continuar.", "start": "Configurar una aplicación de autenticación", "qrAlt": "Código QR para escanear con tu aplicación de autenticación", "secret": "O escribe este secreto:", "label": "Código que muestra la aplicación", "submit": "Activarla y entrar"},
     "consent": {"intro": "Lee y acepta para continuar.", "accept": "Acepto {name}", "submit": "Aceptar e iniciar sesión", "failed": "No se pudieron aceptar los consentimientos. Vuelve a iniciar sesión."},
     "recovery": {"title": "Códigos de recuperación", "body": "Cada uno sirve una vez y solo se muestran ahora. Guárdalos en un lugar seguro, no en el teléfono con la aplicación.", "continue": "Los guardé, continuar"},
-    "title": "Inicia sesión en {realm}",
+    "title": "Inicia sesión",
     "email": "Correo electrónico",
     "password": "Contraseña",
     "keep": "Mantener la sesión iniciada en esta pestaña",
     "keepHelp": "Guarda la sesión en esta pestaña hasta que se cierre. Déjalo desactivado en ordenadores compartidos.",
     "submit": "Iniciar sesión",
     "submitting": "Iniciando sesión...",
-    "otherRealm": "Cambiar realm",
     "failed": "El correo o la contraseña no son correctos, o el inicio de sesión está bloqueado temporalmente.",
     "notAdmin": "Esta cuenta no es administradora de este realm.",
     "unreachable": "No se ha podido conectar con el servidor.",
@@ -201,6 +194,7 @@
       "delivering": "Entregando"
     },
     "test": {
+      "queued": "Notificación de prueba encolada.",
       "open": "Enviar una prueba",
       "title": "Enviar un push de prueba",
       "help": "Llega a los dispositivos de un usuario con los mismos límites que cualquier push, y cuenta para los suyos. Queda auditado.",
@@ -575,6 +569,7 @@
       "jobs": "Trabajos"
     },
     "openapi": {
+      "done": "Documento OpenAPI descargado.",
       "client": "Descargar OpenAPI (aplicaciones)",
       "clientHelp": "Solo lo que las aplicaciones pueden alcanzar: sin rutas de administración.",
       "admin": "Descargar OpenAPI (con administración)",
@@ -678,6 +673,7 @@
     "showReport": "Ver el informe",
     "empty": "Este realm no tiene colecciones.",
     "loadFailed": "No se pudieron cargar las comprobaciones.",
+    "finished": "Comprobación terminada.",
     "started": "Comprobación iniciada.",
     "cancelled": "Comprobación cancelada.",
     "cancel": "Cancelar la comprobación",

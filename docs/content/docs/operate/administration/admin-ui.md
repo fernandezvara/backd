@@ -12,7 +12,7 @@ The interface is bundled in the `backd` binary and the release images. Nothing i
 
 ## Switching it on
 
-{{< screenshot src="admin-ui/signin.png" alt="The sign-in page: the realm is always shown, with the email, password and the opt-in to keep the session in this tab" >}}
+{{< screenshot src="admin-ui/signin.png" alt="The sign-in page: the email, the realm and the password and the opt-in to keep the session in this tab" >}}
 
 It is off by default. Set `BACKD_ADMIN_UI=true` on the instance that should serve it:
 
@@ -20,7 +20,7 @@ It is off by default. Set `BACKD_ADMIN_UI=true` on the instance that should serv
 docker run -e BACKD_ADMIN_UI=true … ghcr.io/fernandezvara/backd:vX.Y.Z serve
 ```
 
-Open `https://<your backd>/_ui/`, enter the realm's name and sign in with an administrator's email and password. The address carries the realm, `/_ui/r/<realm>/…`, so a link opens the same realm for whoever follows it; the realm is always shown at the top of the page, because an administrator works in one realm at a time.
+Open `https://<your backd>/_ui/`, one form takes the administrator's email, the realm's name and the password. The address carries the realm, `/_ui/r/<realm>/…`, so a link opens the same realm for whoever follows it and fills the field; at `/_ui/` the field starts with the realm of the last sign-in. An administrator works in one realm at a time, so to change realm you sign out and sign in again.
 
 The UI needs the admin API on the same instance: `BACKD_ADMIN_UI=true` with `BACKD_ADMIN_API=false` is a startup error. A binary built from source without the UI (`go build` without running `make ui` first) starts, logs a warning, and answers `404` at `/_ui/`.
 
@@ -53,9 +53,9 @@ The pages are in five menus along the top:
 
 A menu opens with a click, or with Enter or Space on its button; it lists its pages with a line saying what each is for, puts the focus on the first, and closes with Escape or a click elsewhere. The page you are on is marked, and so is its menu. The menus show only the pages the account may read: a group with nothing to show is not there, and neither are Organizations, Storage or Push in a realm that has not switched them on.
 
-Under the bar, the **breadcrumb** shows where you are, from the realm to the page (for example `adminui › Data › main › notes › a document`). Every part that has a page of its own leads there; a database has none, so it is plain text. The tab of the browser carries the name of the page too.
+Under the bar, the **breadcrumb** shows where you are, from the realm, in the accent colour, to the page (for example `Realm: adminui › Data › main › notes › a document`). Every part that has a page of its own leads there; a database has none, so it is plain text. The tab of the browser carries the name of the page too.
 
-On the right, the **account menu** (the button with your initial) shows who is signed in, the language and theme choices and **Sign out**. The realm's name at the left opens a small menu that leads to the page where another realm is chosen: an administrator works in one realm at a time, so it does not switch without signing in. On a narrow screen the five menus and the account controls stack under one **Menu** button.
+On the right, the **account menu** (the button with your initial) shows who is signed in, the language and theme choices and **Sign out**. What an action did is confirmed by a message under the bar (an error stays until it is dismissed). On a narrow screen the five menus and the account controls stack under one **Menu** button.
 
 ## Users and invitations
 

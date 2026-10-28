@@ -20,7 +20,7 @@ async function signOut() {
 </script>
 
 <template>
-  <div class="space-y-3">
+  <div class="flex flex-col items-end gap-3">
     <p v-if="session.email" class="text-sm break-all">{{ session.email }}</p>
     <LocaleSwitch />
     <ThemeSwitch />

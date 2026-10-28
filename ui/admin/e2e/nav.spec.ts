@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from './fixtures'
-import { go, navLabels } from './nav'
+import { go, inAccount, navLabels } from './nav'
 import { REALM, users } from './users'
 
 const main = (page: import('@playwright/test').Page) => page.getByRole('navigation', { name: 'Main' })
@@ -72,30 +72,28 @@ test('the account menu holds who is signed in, language, theme and the way out',
   await expect(menu).toHaveCount(0)
 })
 
-test('the realm menu shows the realm and leads to the page that opens another', async ({ page, signIn }) => {
+test('the realm is the first part of the breadcrumb, and there is no menu to change it', async ({ page, signIn }) => {
   await signIn('admin')
-  const realm = page.getByTestId('realm-badge')
-  await expect(realm).toContainText(`Realm ${REALM}`)
-  await realm.click()
-  await page.getByRole('link', { name: 'Open another realm' }).click()
-  await expect(page.getByRole('heading', { name: 'Choose a realm' })).toBeVisible()
+  await expect(page.getByTestId('realm-crumb')).toHaveText(`Realm: ${REALM}`)
+  await expect(page.getByTestId('realm-badge')).toHaveCount(0)
+  await inAccount(page, () => expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible())
 })
 
 test('the breadcrumb says where you are and every part with a page leads there', async ({ page, signIn }) => {
   await signIn('admin', { keep: true })
   const crumbs = page.getByRole('navigation', { name: 'Breadcrumb' })
-  await expect(crumbs).toHaveText(new RegExp(`${REALM}\\s*Identity\\s*Overview`))
+  await expect(crumbs).toHaveText(new RegExp(`Realm: ${REALM}\\s*Identity\\s*Overview`))
   await page.goto(`/_ui/r/${REALM}/data/main/notes`)
-  await expect(crumbs.getByRole('listitem')).toHaveText([REALM, 'Data', 'main', 'notes'])
+  await expect(crumbs.getByRole('listitem')).toHaveText([`Realm: ${REALM}`, 'Data', 'main', 'notes'])
   await expect(crumbs.getByText('notes')).toHaveAttribute('aria-current', 'page')
-  await expect(page).toHaveTitle('notes · backd admin')
+  await expect(page).toHaveTitle('notes · back(d) admin')
   await crumbs.getByRole('link', { name: 'Data', exact: true }).click()
   await expect(page).toHaveURL(new RegExp(`/_ui/r/${REALM}/data$`))
   // A group with another name leads to its first page; the realm to the overview.
   await page.goto(`/_ui/r/${REALM}/audit`)
   await crumbs.getByRole('link', { name: 'Platform' }).click()
   await expect(page).toHaveURL(new RegExp(`/_ui/r/${REALM}/audit$`))
-  await crumbs.getByRole('link', { name: REALM }).click()
+  await crumbs.getByRole('link', { name: `Realm: ${REALM}` }).click()
   await expect(page).toHaveURL(new RegExp(`/_ui/r/${REALM}$`))
 })
 
@@ -104,7 +102,7 @@ test('a user and an organization are named in the breadcrumb', async ({ page, si
   await go(page, 'Users')
   await page.getByRole('link', { name: users.viewer }).click()
   await expect(page.getByRole('navigation', { name: 'Breadcrumb' }).getByText(users.viewer)).toHaveAttribute('aria-current', 'page')
-  await expect(page).toHaveTitle(`${users.viewer} · backd admin`)
+  await expect(page).toHaveTitle(`${users.viewer} · back(d) admin`)
 })
 
 test.describe('a narrow screen', () => {

@@ -74,8 +74,9 @@ async function downloadOpenAPI(client: boolean) {
   try {
     const doc = client ? await admin.clientOpenapi() : await admin.openapi()
     downloadText(`${props.realm}-openapi${client ? '-client' : '-admin'}.json`, JSON.stringify(doc, null, 2), 'application/json')
+    toasts.push(t('functions.openapi.done'))
   } catch (e) {
-    toasts.push(errorText(e, t('common.unexpected')))
+    toasts.push(errorText(e, t('common.unexpected')), 'error')
   } finally {
     downloading.value = false
   }
@@ -87,7 +88,7 @@ async function togglePause(name: string) {
     paused.value = { ...paused.value, [name]: s.paused }
     toasts.push(t(s.paused ? 'functions.pause.done' : 'functions.resume.done', { function: name }))
   } catch (e) {
-    toasts.push(errorText(e, t('common.unexpected')))
+    toasts.push(errorText(e, t('common.unexpected')), 'error')
   } finally {
     pausing.value = ''
   }

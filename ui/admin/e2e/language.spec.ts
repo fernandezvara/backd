@@ -8,7 +8,7 @@ test.describe('a Spanish browser', () => {
 
   test('gets the interface in Spanish with no choice made', async ({ page }) => {
     await page.goto(`/_ui/r/${REALM}/signin`)
-    await expect(page.getByRole('heading', { name: `Inicia sesión en ${REALM}` })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Inicia sesión' })).toBeVisible()
     await expect(page.locator('html')).toHaveAttribute('lang', 'es')
     await page.getByLabel('Correo electrónico').fill(users.admin)
     await page.getByLabel('Contraseña').fill(PASSWORD)

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { AuthenticationError, NetworkError } from 'backd-js'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import AppAlert from '@/components/AppAlert.vue'
@@ -8,16 +8,21 @@ import AppButton from '@/components/AppButton.vue'
 import TextField from '@/components/TextField.vue'
 import LocaleSwitch from '@/components/LocaleSwitch.vue'
 import ThemeSwitch from '@/components/ThemeSwitch.vue'
+import { lastRealm, rememberRealm, validRealm } from '@/lib/realm'
 import { safeNext } from '@/lib/redirect'
 import { NotAdminError, useSession } from '@/stores/session'
 
-const props = defineProps<{ realm: string }>()
+// The realm comes from the address when it names one, else from the last sign-in; it is a field.
+const props = defineProps<{ realm?: string }>()
 const { t } = useI18n()
 const session = useSession()
 const router = useRouter()
 const route = useRoute()
 
 const email = ref('')
+const realm = ref(props.realm ?? lastRealm())
+const realmInvalid = ref(false)
+watch(() => props.realm, (r) => { if (r) realm.value = r })
 const password = ref('')
 const keep = ref(false)
 const busy = ref(false)
@@ -31,13 +36,17 @@ const ticked = ref<Record<string, boolean>>({})
 const allTicked = () => (session.step?.consents ?? []).every((c) => ticked.value[c.name])
 
 // Only the realm's own pages are followed after signing in.
-const next = () => safeNext(route.query.next, props.realm)
+const next = () => safeNext(route.query.next, realm.value)
 
 async function submit() {
+  realm.value = realm.value.trim().toLowerCase()
+  realmInvalid.value = !validRealm(realm.value)
+  if (realmInvalid.value) return
   busy.value = true
   error.value = ''
   try {
-    const result = await session.signIn(props.realm, email.value.trim(), password.value, keep.value)
+    rememberRealm(realm.value)
+    const result = await session.signIn(realm.value, email.value.trim(), password.value, keep.value)
     password.value = ''
     ticked.value = {}
     if (result === 'done') await router.replace(next())
@@ -127,11 +136,7 @@ function cancel() {
         <ThemeSwitch />
       </div>
     </div>
-    <div class="rounded-md bg-brand-50 px-3 py-2 text-brand-800 dark:bg-brand-800 dark:text-brand-50" data-testid="realm-badge">
-      <span class="text-xs uppercase tracking-wide">{{ t('realm.label') }}</span>
-      <p class="text-lg font-semibold">{{ realm }}</p>
-    </div>
-    <h1 class="text-xl font-semibold">{{ t('signIn.title', { realm }) }}</h1>
+    <h1 class="text-xl font-semibold">{{ t('signIn.title') }}</h1>
     <AppAlert v-if="session.ended">{{ t(`signIn.ended.${session.ended}`) }}</AppAlert>
     <AppAlert v-if="error" kind="error">{{ error }}</AppAlert>
     <section v-if="recovery.length" class="space-y-3" aria-labelledby="recovery-h">
@@ -178,6 +183,7 @@ function cancel() {
     </section>
     <form v-else class="space-y-4" @submit.prevent="submit">
       <TextField v-model="email" type="email" :label="t('signIn.email')" autocomplete="username" required />
+      <TextField v-model="realm" :label="t('realm.label')" autocomplete="organization" required :error="realmInvalid ? t('realm.invalid') : undefined" data-testid="realm-field" />
       <TextField v-model="password" type="password" :label="t('signIn.password')" autocomplete="current-password" required />
       <div>
         <label class="flex items-center gap-2 text-sm">
@@ -186,8 +192,9 @@ function cancel() {
         </label>
         <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">{{ t('signIn.keepHelp') }}</p>
       </div>
-      <AppButton type="submit" :busy="busy">{{ busy ? t('signIn.submitting') : t('signIn.submit') }}</AppButton>
+      <div class="flex justify-end">
+        <AppButton type="submit" :busy="busy">{{ busy ? t('signIn.submitting') : t('signIn.submit') }}</AppButton>
+      </div>
     </form>
-    <RouterLink :to="{ name: 'realm' }" class="text-sm underline">{{ t('signIn.otherRealm') }}</RouterLink>
   </main>
 </template>

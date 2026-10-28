@@ -11,7 +11,6 @@ import AccountControls from './AccountControls.vue'
 import AccountMenu from './AccountMenu.vue'
 import AppBreadcrumb from './AppBreadcrumb.vue'
 import AppNav from './AppNav.vue'
-import RealmMenu from './RealmMenu.vue'
 
 const { t } = useI18n()
 const session = useSession()
@@ -50,7 +49,6 @@ watchEffect(() => {
         </template>
       </AppNav>
       <span class="shrink-0 font-semibold">{{ t('app.name') }}</span>
-      <RealmMenu />
       <div class="order-4 ml-auto hidden items-center min-[900px]:flex">
         <AccountMenu />
       </div>
