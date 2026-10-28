@@ -30,6 +30,7 @@ const picturesConfig = `files:
     max_size: 64KiB
     versions:
       thumb: {max_width: 10, max_height: 10, format: png}
+      mark: {writable: true}
   secret:
     max_size: 4KiB
     keep_metadata: true
