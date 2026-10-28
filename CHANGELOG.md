@@ -4,6 +4,26 @@ All notable changes to `backd` and to its JavaScript client `backd-js`, which ar
 
 Until a stable release is declared, a minor release may have breaking changes; they are listed first.
 
+## 0.9.4
+
+### Added
+
+- **Change the password signed out (new):** `POST /_auth/password/update` with `{email, password, new_password}` sets a new password for someone who gives the current one but has no session, for a password that [expired for them alone](https://fernandezvara.github.io/backd/docs/build/auth/users/#expiring-a-password) or one they want to replace. An account with a second factor also sends `code` (a recovery code with `method: "recovery"`). The new password must meet the policy and differ from the current one; wrong proofs are throttled like a sign-in; every session of the user ends and none starts, `password-changed` is sent and the change is audited as `user.password_change`. A password expired for the **whole realm** (`expire-passwords`, the first step after a leak) is refused with `password_expired`, because it may be in the leak. `backd-js` has `auth.updatePassword` and `package:backd` `auth.updatePassword`.
+- **A new admin panel:** a top bar with five grouped menus (Identity, Access, Data, Compute, Platform) that opens on click and collapses into one menu on a narrow screen, a breadcrumb that starts at `Realm: <name>` and leads to every part, the account menu with language, theme and sign-out, and pages on one frame (description left, actions right; the visible titles became hidden headings for screen readers). Every page of the old interface is still there, and Jobs and history got its own menu entry.
+- **One sign-in form in the admin UI:** email, realm and password in a single step (the realm comes from the address, else from the last sign-in), and when the password expired for the user the form offers to choose a new one with the current one, the new one twice and a code for an account with a second factor.
+- **Clearer confirmations in the admin UI:** messages appear under the bar with an icon, an error stays until dismissed, and a test push, an OpenAPI download and a finished schema check now say so.
+
+### Changed
+
+- **A new password clears the user's own expiry:** `password_expired_at` of `GET /_admin/users` goes back to `null` once the user has a new password (set by an administrator, changed, reset or updated signed out), so the list stops marking it as expired. The realm's epoch is not affected.
+- **Admin UI:** the leak actions on Users and the schema check of a collection start folded behind a show/hide button; the realm menu and the "choose a realm" page are gone (a session is for one realm: sign out and sign in again); the monospace font stack includes DejaVu Sans Mono and Ubuntu Mono; the title reads `back(d) admin`.
+- **Deno 2.9.8:** the executor image and the function bundles are pinned to Deno 2.9.8 (a binary that finds another Deno says so). Go libraries and the admin UI's packages were upgraded.
+- **Internal:** shared helpers for the HTTP handlers, the document code and the MongoDB store; no change in behavior.
+
+### Fixed
+
+- **A schema check that finished before its first poll** in the admin UI never loaded its report.
+
 ## 0.9.3
 
 ### Breaking

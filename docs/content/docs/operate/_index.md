@@ -157,6 +157,16 @@ blog__main.posts
 shop__orders.items
 ```
 
+### Upgrading to v0.9.4
+
+v0.9.4 changes nothing in the configuration, the data or the provisioned indexes: run `backd provision` as usual, there is nothing new for it. What changes:
+
+1. **The admin UI has a new look.** Same pages and the same rights, with a top bar of grouped menus and a breadcrumb; the sign-in is one form with the realm as a field (links to `/_ui/r/<realm>/…` still open the same realm). See [the admin UI](administration/admin-ui/).
+2. **A user whose password was expired for them alone can choose a new one signed out** with `POST /_auth/password/update` (and the admin UI's sign-in form offers it): the current password, and a code if the account has a second factor. A password expired for the **whole realm** (`expire-passwords`) cannot: it stays reset-by-email only, on purpose. See [Change the password signed out](../build/auth/sessions/#change-the-password-signed-out).
+3. **`password_expired_at` goes back to `null` when the user gets a new password.** A script that reads it to find who is still expired now finds only those who are.
+4. **The images carry Deno 2.9.8.** Running `backd` outside the images, install that Deno: a binary that finds another one says so.
+5. **Move the clients with the server.** `backd-js` and `package:backd` are released on the same version: `0.9.4` (for Dart, `backd: ^0.9.4`).
+
 ### Upgrading to v0.9.3
 
 v0.9.3 adds [organization sign-in](organization-sign-in/) (a company's own Google Workspace or Microsoft tenant) and scopes every session to one organization in a realm that has organizations (see [scoped sessions](../build/organizations/api/#signing-in-to-an-organization)). A realm without organizations changes nothing. Do these in order:

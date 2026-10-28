@@ -36,6 +36,6 @@ Realms with `auth: disabled` are open to anyone who can reach `backd`: never exp
 
 ## Versions
 
-The current version is **v0.9.3**. What each release added and what breaks is in the [release notes](https://github.com/fernandezvara/backd/releases) and the [changelog](https://github.com/fernandezvara/backd/blob/main/CHANGELOG.md); how to move a running deployment to a newer one is in the *Upgrading to* sections of [Operate](operate/).
+The current version is **v0.9.4**. What each release added and what breaks is in the [release notes](https://github.com/fernandezvara/backd/releases) and the [changelog](https://github.com/fernandezvara/backd/blob/main/CHANGELOG.md); how to move a running deployment to a newer one is in the *Upgrading to* sections of [Operate](operate/).
 
 `backd` has no installed base yet: until a stable release is declared, breaking changes are allowed and are listed in the release notes.
