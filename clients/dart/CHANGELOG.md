@@ -1,3 +1,7 @@
+## 0.9.5
+
+- **Public files:** `publicUrl(file, version)` gives the permanent address of a file in a field with `public: true` (and of a ready version), and `fileUrl(..., file:)` answers it without a request to the server for such a file. `FileLink.expiresAt` is now nullable: a public file's link never expires, so code that reads it must handle `null`. The generated types gain `public`, `key_name` and the version `url`. Needs a backd server with public files (0.9.5).
+
 ## 0.9.4
 
 - **`auth.updatePassword(email, password, newPassword, {code, method})`:** changes the password signed out with the current one (a password that expired for the user alone, or one the user wants to replace). An account with a second factor also gives `code`; every session of the user ends and none starts. A password expired for the whole realm is refused with `password_expired`. Needs a backd server with `POST /_auth/password/update`.

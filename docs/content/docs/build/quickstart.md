@@ -18,7 +18,7 @@ Each tagged version is published automatically:
 `backd version` prints what you got — from the binary, or from the image, whose entrypoint *is* `backd`:
 
 ```sh
-docker run --rm ghcr.io/fernandezvara/backd:v0.9.4 version
+docker run --rm ghcr.io/fernandezvara/backd:v0.9.5 version
 ```
 
 Checksums, SBOMs and signature verification are an operations concern: [Deploying config → Verifying a release](../../operate/deploying/#verifying-a-release).

@@ -36,7 +36,7 @@ my-backd-config/
 The `Dockerfile` starts from a released `backd` image and adds the config. `backd config check` runs during the image build, so an invalid config never becomes an image:
 
 ```dockerfile
-FROM ghcr.io/fernandezvara/backd:v0.9.4
+FROM ghcr.io/fernandezvara/backd:v0.9.5
 COPY config /config
 ENV CONFIG_DIR=/config
 RUN ["/backd", "config", "check"]
@@ -51,7 +51,7 @@ Pinning a version isn't trusting one. Each tagged release is published automatic
 - the image is signed with [cosign](https://docs.sigstore.dev/) using GitHub's identity — no keys to manage:
 
 ```sh
-cosign verify ghcr.io/fernandezvara/backd:v0.9.4 \
+cosign verify ghcr.io/fernandezvara/backd:v0.9.5 \
   --certificate-identity-regexp '^https://github.com/fernandezvara/backd/\.github/workflows/release\.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
@@ -103,7 +103,7 @@ on:
     branches: [main]
     tags: ["v*"]
 env:
-  BACKD_VERSION: 0.9.4
+  BACKD_VERSION: 0.9.5
   IMAGE: ghcr.io/my-org/backd-config
 jobs:
   build:
@@ -151,7 +151,7 @@ Instances in `PROVISION_MODE=verify` compare their config's fingerprint with the
 
 ```
 backd serve: the config differs from the one last provisioned: this instance's config is 7c1e…, but
-  realm shop: provisioned 4a90… (at 2026-09-28T10:00:00Z by backd v0.9.4)
+  realm shop: provisioned 4a90… (at 2026-09-28T10:00:00Z by backd v0.9.5)
 provision this config (`backd provision`) or deploy the config that was provisioned
 ```
 
