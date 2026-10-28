@@ -160,7 +160,7 @@ func (d *documents) startDirectForDocument(w http.ResponseWriter, r *http.Reques
 		notFound(w, r)
 		return
 	}
-	obj, ok := d.objectsFor(w, r, c.Realm)
+	obj, ok := d.objectsFor(w, r, c.Realm, false)
 	if !ok {
 		return
 	}
@@ -196,7 +196,7 @@ func (d *documents) startDirectForDocument(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	token, hash := auth.NewUploadToken()
-	ttl := d.pendingTTL(c)
+	ttl := d.pendingTTL(c, false)
 	caller, _ := callerOf(r)
 	entry := auth.FileJournalEntry{ID: id, Database: c.Database, Collection: c.Name, Field: f.Name, DocumentID: docID, Key: obj.Key(c.Realm, c.Database, c.Name, id),
 		Caller: caller.Subject(), Size: *in.Size, TokenHash: hash, CallerKey: callerKey, Owner: ownerOf(r), Name: sanitizeFileName(in.Name), Type: in.Type, SHA256: in.SHA256}
@@ -268,7 +268,7 @@ func (d *documents) startDirectPending(w http.ResponseWriter, r *http.Request, c
 		return
 	}
 	token, hash := auth.NewUploadToken()
-	ttl := d.pendingTTL(c)
+	ttl := d.pendingTTL(c, false)
 	caller, _ := callerOf(r)
 	entry := auth.FileJournalEntry{ID: id, Database: c.Database, Collection: c.Name, Field: f.Name, Key: obj.Key(c.Realm, c.Database, c.Name, id),
 		Caller: caller.Subject(), Size: *in.Size, Pending: true, TokenHash: hash, CallerKey: callerKey, Owner: ownerOf(r), Name: sanitizeFileName(in.Name), Type: in.Type, SHA256: in.SHA256}
@@ -301,7 +301,7 @@ func (d *documents) completeDirect(w http.ResponseWriter, r *http.Request) {
 		notFound(w, r)
 		return
 	}
-	obj, ok := d.objectsFor(w, r, c.Realm)
+	obj, ok := d.objectsFor(w, r, c.Realm, false) // direct uploads are never public
 	if !ok {
 		return
 	}
@@ -359,7 +359,7 @@ func (d *documents) completeDirect(w http.ResponseWriter, r *http.Request) {
 			_ = obj.AbortMultipart(ctx, key, claimed.MultipartID) // no-op once it is completed
 		}
 		if err := obj.Delete(ctx, key); err != nil {
-			_ = svc.QueueFileDeletion(ctx, key, "rejected")
+			_ = svc.QueueFileDeletion(ctx, key, "rejected", false)
 		}
 		writeError(w, r, status, code, message)
 	}
@@ -465,7 +465,7 @@ func (d *documents) completeDirect(w http.ResponseWriter, r *http.Request) {
 	}
 	abandon := func() {
 		_ = svc.SetUploadStatus(ctx, id, auth.JournalFailed, "")
-		_ = svc.QueueFileDeletion(ctx, key, "abandoned")
+		_ = svc.QueueFileDeletion(ctx, key, "abandoned", false)
 	}
 	d.attachFile(w, r, attachJob{c: c, f: f, repo: repo, svc: svc, obj: obj, docID: docID, cond: cond, meta: meta, check: check, abandon: abandon, ctx: ctx,
 		location: fileURL(r, docID, f.Name, id)})

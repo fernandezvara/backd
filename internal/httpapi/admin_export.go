@@ -313,7 +313,7 @@ func (a *adminAPI) exportPlan(w http.ResponseWriter, r *http.Request, realm stri
 			}
 		}
 	}
-	hasStorage := rl.Settings.Storage != nil
+	hasStorage := rl.Settings.Storage != nil || rl.Settings.PublicStorage != nil
 	m := &exportpkg.Manifest{
 		Format: exportpkg.FormatVersion, BackdVersion: a.version, Realm: realm, CreatedAt: time.Now().UTC(),
 		Operator: caller.Actor(), Fingerprint: a.fingerprint,

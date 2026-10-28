@@ -32,22 +32,30 @@ type reconcileOrphan struct {
 // ones no declared file field of any document references. With delete it removes exactly
 // those. It always leaves alone objects younger than 24 hours, objects with a journal
 // entry that isn't failed (uploads in flight, unexpired pending uploads, files a document
-// holds) and anything outside <prefix>/<realm>/<database>/<collection>/.
+// holds) and anything outside <prefix>/<realm>/<database>/<collection>/. With
+// {"storage": "public"} it does the same in the realm's public storage, where an object's
+// key ends with the file's name (<file id>/<name>, and <file id>/<version>/<name>).
 func (a *adminAPI) reconcileStorage(w http.ResponseWriter, r *http.Request) {
 	realm := chi.URLParam(r, "realm")
 	var in struct {
-		Delete bool `json:"delete"`
+		Delete  bool   `json:"delete"`
+		Storage string `json:"storage"`
 	}
 	if data, _ := io.ReadAll(http.MaxBytesReader(w, r.Body, 4<<10)); len(data) > 0 {
-		if err := strictDecode(data, &in); err != nil {
-			writeError(w, r, http.StatusBadRequest, codeValidation, `the body must be {"delete": true|false}`)
+		if err := strictDecode(data, &in); err != nil || (in.Storage != "" && in.Storage != "private" && in.Storage != "public") {
+			writeError(w, r, http.StatusBadRequest, codeValidation, `the body must be {"delete": true|false, "storage": "private"|"public"}`)
 			return
 		}
 	}
-	obj, err := a.fns.docs.objects.For(r.Context(), realm, false)
+	public := in.Storage == "public"
+	obj, err := a.fns.docs.objects.For(r.Context(), realm, public)
 	switch {
 	case errors.Is(err, errNoStorage):
-		writeError(w, r, http.StatusNotFound, codeNotFound, "this realm has no storage configured (storage: in realm.yaml)")
+		section := "storage"
+		if public {
+			section = "public_storage"
+		}
+		writeError(w, r, http.StatusNotFound, codeNotFound, "this realm has no "+section+" configured ("+section+": in realm.yaml)")
 		return
 	case errors.Is(err, errStorageUnavailable):
 		writeError(w, r, http.StatusServiceUnavailable, codeStorageUnavailable, err.Error())
@@ -57,8 +65,14 @@ func (a *adminAPI) reconcileStorage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	svc := usersOf(r)
-	st := a.reg.Realms[realm].Settings.Storage
+	st := a.reg.Realms[realm].Settings.StorageFor(public)
 	docs := a.fns.docs
+	// A private key is <db>/<collection>/<file id>[/<version>]; a public one has the file's name
+	// at the end: <db>/<collection>/<file id>/<name> and <file id>/<version>/<name>.
+	tail := 0
+	if public {
+		tail = 1
+	}
 
 	var rep struct {
 		scanned, referenced, tooNew, inJournal, ignored, deleted int
@@ -76,13 +90,13 @@ func (a *adminAPI) reconcileStorage(w http.ResponseWriter, r *http.Request) {
 		rep.scanned++
 		// Only what backd names a file (<db>/<collection>/fl_…), or a version of one
 		// (…/fl_…/<name>), is ever a candidate.
-		if (len(segs) != 3 && len(segs) != 4) || !strings.HasPrefix(segs[2], "fl_") {
+		if (len(segs) != 3+tail && len(segs) != 4+tail) || !strings.HasPrefix(segs[2], "fl_") || (public && segs[len(segs)-1] == "") {
 			rep.ignored++
 			return true
 		}
 		database, collection, fileID := segs[0], segs[1], segs[2]
 		versionName := ""
-		if len(segs) == 4 {
+		if len(segs) == 4+tail {
 			versionName = segs[3]
 		}
 		if o.LastModified.After(cutoff) {
@@ -90,7 +104,13 @@ func (a *adminAPI) reconcileStorage(w http.ResponseWriter, r *http.Request) {
 			return true
 		}
 		if versionName != "" { // a version is kept while its file's details record it
-			held, err := docs.versionHeld(r.Context(), realm, database, collection, fileID, versionName)
+			var held bool
+			var err error
+			if public {
+				held, err = docs.publicHeld(r.Context(), realm, database, collection, fileID, versionName, o.Key)
+			} else {
+				held, err = docs.versionHeld(r.Context(), realm, database, collection, fileID, versionName)
+			}
 			if err != nil {
 				walkErr = err
 				return false
@@ -111,7 +131,12 @@ func (a *adminAPI) reconcileStorage(w http.ResponseWriter, r *http.Request) {
 			walkErr = err
 			return false
 		}
-		referenced, err := docs.fileReferenced(r.Context(), realm, database, collection, fileID)
+		var referenced bool
+		if public {
+			referenced, err = docs.publicHeld(r.Context(), realm, database, collection, fileID, "", o.Key)
+		} else {
+			referenced, err = docs.fileReferenced(r.Context(), realm, database, collection, fileID)
+		}
 		if err != nil {
 			walkErr = err
 			return false
@@ -141,7 +166,7 @@ func (a *adminAPI) reconcileStorage(w http.ResponseWriter, r *http.Request) {
 			rep.deleted++
 		}
 	}
-	svc.Audit(r.Context(), auth.AuditStorageReconcile, "storage", map[string]any{"delete": in.Delete, "orphans": len(rep.orphans), "deleted": rep.deleted})
+	svc.Audit(r.Context(), auth.AuditStorageReconcile, "storage", map[string]any{"delete": in.Delete, "orphans": len(rep.orphans), "deleted": rep.deleted, "public": public})
 	orphans := rep.orphans
 	if orphans == nil {
 		orphans = []reconcileOrphan{}
@@ -151,7 +176,7 @@ func (a *adminAPI) reconcileStorage(w http.ResponseWriter, r *http.Request) {
 		bytes += o.Size
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"delete": in.Delete, "scanned": rep.scanned, "referenced": rep.referenced, "skipped_recent": rep.tooNew, "skipped_in_journal": rep.inJournal,
+		"storage": map[bool]string{false: "private", true: "public"}[public], "delete": in.Delete, "scanned": rep.scanned, "referenced": rep.referenced, "skipped_recent": rep.tooNew, "skipped_in_journal": rep.inJournal,
 		"ignored": rep.ignored, "orphans": orphans, "orphan_bytes": bytes, "deleted": rep.deleted, "failed": orFailed(rep.failed),
 	})
 }
@@ -210,15 +235,52 @@ func (d *documents) versionHeld(ctx context.Context, realm, database, collection
 	return false, nil
 }
 
+// publicHeld reports whether a document records the file (or its made version) with exactly this
+// object key: a public key ends with the file's name, so the id alone doesn't say whether an
+// object is the one a document points at.
+func (d *documents) publicHeld(ctx context.Context, realm, database, collection, fileID, version, key string) (bool, error) {
+	c, ok := d.reg.Collection(realm, database, collection)
+	if !ok || len(c.Files) == 0 {
+		return false, nil
+	}
+	repo := d.store.Repository(c)
+	for _, field := range sortedKeys(c.Files) {
+		page, err := repo.List(ctx, storage.Query{Filter: storage.Condition{Field: field + ".id", Op: storage.OpEq, Value: fileID}, Limit: 1})
+		if err != nil {
+			return false, err
+		}
+		for _, doc := range page.Items {
+			for _, f := range filesOf(c.Files[field], doc) {
+				if f["id"] != fileID {
+					continue
+				}
+				loc := locOf(f)
+				if !loc.public {
+					return false, nil
+				}
+				if version == "" {
+					return d.fileKey(c, loc) == key, nil
+				}
+				v := mapOf(mapOf(f["versions"])[version])
+				return v != nil && v["status"] == versionReady && d.versionKey(c, loc, version, v) == key, nil
+			}
+		}
+	}
+	return false, nil
+}
+
 // storageStatus answers GET /v1/{realm}/_admin/storage: how the realm's storage is
 // configured (never its keys), whether it can be reached, what it holds (running totals
 // for the realm and the users holding the most), and what waits to be cleaned up.
 func (a *adminAPI) storageStatus(w http.ResponseWriter, r *http.Request) {
 	realm := chi.URLParam(r, "realm")
 	svc := usersOf(r)
-	st := a.reg.Realms[realm].Settings.Storage
+	settings := a.reg.Realms[realm].Settings
+	st := settings.Storage
 	if st == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"configured": false})
+		out := map[string]any{"configured": false}
+		a.addPublicStatus(r, realm, out)
+		writeJSON(w, http.StatusOK, out)
 		return
 	}
 	var public any
@@ -288,5 +350,31 @@ func (a *adminAPI) storageStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out["stale_uploads"] = len(stale)
+	a.addPublicStatus(r, realm, out)
 	writeJSON(w, http.StatusOK, out)
+}
+
+// addPublicStatus adds the realm's public storage to a storage status: how it is configured
+// (never the keys), whether they work and the bucket answers.
+func (a *adminAPI) addPublicStatus(r *http.Request, realm string, out map[string]any) {
+	ps := a.reg.Realms[realm].Settings.PublicStorage
+	if ps == nil {
+		return
+	}
+	keys, reach := map[string]any{"ok": true}, map[string]any{"ok": true}
+	obj, err := a.fns.docs.objects.For(r.Context(), realm, true)
+	if err != nil {
+		keys = map[string]any{"ok": false, "error": err.Error()}
+		reach = map[string]any{"ok": false, "error": "not tried: the access keys aren't usable"}
+	} else {
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		if err := obj.HeadBucket(ctx); err != nil {
+			reach = map[string]any{"ok": false, "error": err.Error()}
+		}
+	}
+	out["public_storage"] = map[string]any{
+		"provider": ps.Provider, "endpoint": ps.Endpoint, "region": ps.Region, "bucket": ps.Bucket, "prefix": ps.Prefix, "url": ps.URL,
+		"access_key": "secret:" + ps.AccessKey, "secret_key": "secret:" + ps.SecretKey, "keys": keys, "reachable": reach,
+	}
 }

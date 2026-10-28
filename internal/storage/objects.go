@@ -113,6 +113,20 @@ func ObjectKey(prefix, realm, database, collection, fileID string) string {
 	return strings.Join([]string{prefix, realm, database, collection, fileID}, "/")
 }
 
+// PublicObjectKey is the key of a public file's object: the private key and the file's name
+// (the sanitized one, stored on the file), which a browser reads as the last part of the address.
+func PublicObjectKey(prefix, realm, database, collection, fileID, keyName string) string {
+	return ObjectKey(prefix, realm, database, collection, fileID) + "/" + keyName
+}
+
+// PublicVersionKey is the key of a made version of a public file: <file key without the name>/<version>/<name>.
+func PublicVersionKey(prefix, realm, database, collection, fileID, version, keyName string) string {
+	return ObjectKey(prefix, realm, database, collection, fileID) + "/" + version + "/" + keyName
+}
+
+// EscapeKey percent-encodes each segment of an object key for use in a URL path.
+func EscapeKey(key string) string { return escapeKey(key) }
+
 // ObjectInfo describes a stored object.
 type ObjectInfo struct {
 	Key         string

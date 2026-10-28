@@ -7390,6 +7390,7 @@ paths:
               additionalProperties: false
               properties:
                 delete: { type: boolean, default: false }
+                storage: { type: string, enum: [private, public], default: private, description: "`public` reconciles the realm's `public_storage:`, where a key ends with the file's name (`<file id>/<name>`, versions `<file id>/<version>/<name>`)." }
       responses:
         "200":
           description: The report.
@@ -7402,7 +7403,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404":
-          description: The realm has no `storage:` in `realm.yaml`.
+          description: "The realm has no `storage:` (or, with `storage: public`, no `public_storage:`) in `realm.yaml`."
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -11842,6 +11843,31 @@ components:
         download: { type: string }
         presigned_ttl: { type: string }
         pending_ttl: { type: string }
+        public_storage:
+          description: "The realm's `public_storage:` when it has one (the secrets by name, whether its keys work and the bucket answers)."
+          type: object
+          required: [provider, endpoint, region, bucket, prefix, url, access_key, secret_key, keys, reachable]
+          properties:
+            provider: { type: string }
+            endpoint: { type: string }
+            region: { type: string }
+            bucket: { type: string }
+            prefix: { type: string }
+            url: { type: string, description: Where browsers read the files from (never connected to). }
+            access_key: { type: string }
+            secret_key: { type: string }
+            keys:
+              type: object
+              required: [ok]
+              properties:
+                ok: { type: boolean }
+                error: { type: string }
+            reachable:
+              type: object
+              required: [ok]
+              properties:
+                ok: { type: boolean }
+                error: { type: string }
         keys:
           type: object
           required: [ok]
@@ -11888,8 +11914,9 @@ components:
     StorageReconcile:
       type: object
       additionalProperties: false
-      required: [delete, scanned, referenced, skipped_recent, skipped_in_journal, ignored, orphans, orphan_bytes, deleted, failed]
+      required: [storage, delete, scanned, referenced, skipped_recent, skipped_in_journal, ignored, orphans, orphan_bytes, deleted, failed]
       properties:
+        storage: { type: string, enum: [private, public], description: Which of the realm's storages was reconciled. }
         delete: { type: boolean }
         scanned: { type: integer }
         referenced: { type: integer }

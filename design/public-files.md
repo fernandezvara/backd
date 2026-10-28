@@ -130,7 +130,7 @@ Call sites to review one by one (the list is a starting point, must be reviewed 
 | Upload journal, deletion queue and retries | `worker.go` (journal/queue records) | **yes**: records say which storage |
 | Erasure (`on_owner_delete`), document delete | `mongodb/erase.go`, `worker.go` | **yes** |
 | Usage totals, quotas | `files_quota.go`, usage in `documents` | **yes**: public files count in the same totals |
-| Reconcile | `admin_storage_reconcile.go`, CLI | **yes**: runs per storage; `--public` flag selects, default both |
+| Reconcile | `admin_storage_reconcile.go`, CLI | **yes**: runs per storage; `--storage` flag selects, default both |
 | Storage check | `admin_storage.go`, CLI | **yes**: checks each configured storage |
 | Config view and checks | `admin_config.go`, `cmd/backd/main.go` (3 places), `registry/storage.go`, `registry/files.go` | **yes** |
 | Functions `files(id, field)` | `files_functions_test.go`, functions API | **yes**: same rules; `link()` returns `url` |
@@ -181,7 +181,7 @@ No migration in this release. A file records where it is (`public`); the field's
 
 - **Integration stack:** a second MinIO bucket with anonymous download, and tests that read `url` **without credentials** (the one thing the usual tests never do), plus a check that the private bucket is not readable the same way.
 - **Provider smoke tests** (`go test ./internal/storage -run ...`, before each release, like R2's checksum test): `Cache-Control` and `Content-Disposition` accepted on PUT and returned on GET, for each provider that can be a public storage.
-- **Metrics** ([metrics.md](./metrics.md)): the storage operation and byte series get a `storage` label (`private`/`public`) so the numbers do not mix.
+- **Metrics** ([metrics.md](./metrics.md)): backd has no storage series today, so there is nothing to label; if storage metrics are added later they carry a `storage` label (`private`/`public`).
 - **Realm layout** ([realm-layout.md](./realm-layout.md)): `public_storage:` lives wherever `storage:` does, and its secrets next to the private ones; the issue confirms the exact place.
 
 ## 11. Order of work (one commit each, to be turned into issues)
@@ -192,7 +192,7 @@ No migration in this release. A file records where it is (`public`); the field's
 4. Versions in the public storage, version `url` when ready.
 5. Erasure, reconcile, usage; account export, realm export/import and anonymize for public files (§7.1).
 6. Clients (JS, Dart), generated types, admin UI, functions `link()`.
-7. Dev compose and integration stack (anonymous public bucket), provider smoke tests, metrics label, example realm, tutorial/docs pages, security docs and review.
+7. Dev compose and integration stack (anonymous public bucket), provider smoke tests, example realm, tutorial/docs pages, security docs and review.
 
 ## 12. Not in this release
 

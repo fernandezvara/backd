@@ -563,9 +563,10 @@ func registerRemote(cfg *kli.Config) {
 		boolean(cc, "json", "print it as JSON")
 	})
 	st.SubCommand("reconcile").ShortHelp("find (and with --delete remove) objects no document references").
-		LongHelp("Lists the realm's file objects (the only time backd lists the bucket) and reports the ones no declared file\nfield of any document references. Use it after restoring a database backup or removing a file field. It always\nskips objects younger than 24 hours, objects whose upload record is still open (uploads in flight, pending\nuploads not yet expired, files a document holds) and anything that isn't <prefix>/<realm>/<database>/<collection>/<file id>.\nWithout --delete it only reports; with it, it removes exactly the objects the report lists. Needs the config\narea with write access. Audited as storage.reconcile. " + adminAPINote).
+		LongHelp("Lists the realm's file objects (the only time backd lists the bucket) and reports the ones no declared file\nfield of any document references. Use it after restoring a database backup or removing a file field. It always\nskips objects younger than 24 hours, objects whose upload record is still open (uploads in flight, pending\nuploads not yet expired, files a document holds) and anything that isn't <prefix>/<realm>/<database>/<collection>/<file id>.\nA realm with a public_storage has both storages reconciled (--storage picks one). Without --delete it only reports; with it, it removes exactly the objects the report lists. Needs the config\narea with write access. Audited as storage.reconcile. " + adminAPINote).
 		Func(act("storage reconcile", storageReconcile)).Config(func(cc *kli.CommandConfig) {
 		required(cc, "realm", "the realm whose storage to reconcile")
+		optional(cc, "storage", "private or public (default: every storage the realm has)")
 		optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
 		boolean(cc, "delete", "remove the unreferenced objects instead of only reporting them")
 		boolean(cc, "json", "print the report as JSON")

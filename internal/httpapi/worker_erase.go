@@ -209,7 +209,8 @@ func (w *Worker) eraseFailed(ctx context.Context, log *slog.Logger, svc *auth.Us
 func (w *Worker) eraseFiles(ctx context.Context, svc *auth.Users, c *registry.Collection, userID string, files []storage.ErasedFile) {
 	d := w.fns.docs
 	for _, f := range files {
-		if err := svc.QueueFileDeletion(ctx, d.objectKey(c, f.ID), "erased"); err != nil {
+		loc := erasedLoc(f)
+		if err := svc.QueueFileDeletion(ctx, d.fileKey(c, loc), "erased", loc.public); err != nil {
 			w.log.Error("queue an erased file's object for deletion", "realm", svc.Realm, "file", f.ID, "error", err)
 			continue
 		}
@@ -217,7 +218,7 @@ func (w *Worker) eraseFiles(ctx context.Context, svc *auth.Users, c *registry.Co
 			w.log.Error("count an erased file out of the storage usage", "realm", svc.Realm, "error", err)
 		}
 		for _, name := range slices.Sorted(maps.Keys(f.Versions)) {
-			if err := svc.QueueFileDeletion(ctx, d.objectKey(c, f.ID)+"/"+name, "erased"); err != nil {
+			if err := svc.QueueFileDeletion(ctx, d.versionKey(c, loc, name, map[string]any{"type": f.VersionTypes[name]}), "erased", loc.public); err != nil {
 				w.log.Error("queue an erased file's version for deletion", "realm", svc.Realm, "file", f.ID, "version", name, "error", err)
 				continue
 			}

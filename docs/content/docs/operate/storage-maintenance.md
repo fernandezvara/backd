@@ -48,6 +48,8 @@ It lists the realm's objects (`<prefix>/<realm>/<database>/<collection>/<file id
 - objects with an **upload record that isn't `failed`**: uploads in flight, pending uploads not yet expired, and files a document holds, so objects of a restored backup that backd uploaded in the last 90 days are kept even if their document is not there;
 - anything that isn't named like a file, and the areas that aren't files (`_check/`, `_logs/`).
 
+A realm with a [`public_storage:`](../providers/storage/#public-storage) has both storages reconciled (`--storage private` or `--storage public` picks one), each report headed `[private]` or `[public]`. Objects of the public storage are recognized by their keys, which end with the file's name; an object under a file's id that isn't the one the document records (the key it should have) is reported too.
+
 Removing a field from `files:` makes its objects unreferenced, and reconcile removes them the same way. The key needs list access on the realm's prefix (see your provider's page), and the [config area with write access](../administration/admin/); it is audited as `storage.reconcile`.
 
 {{< hint style="warning" >}}

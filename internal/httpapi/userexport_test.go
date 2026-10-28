@@ -126,8 +126,8 @@ func TestPersonalExportHoldsWhatTheErasureModelFinds(t *testing.T) {
 	d := &documents{reg: f.reg}
 	lib, _ := f.reg.Collection("acme", "app", "library")
 	objects := fakeObjects{
-		d.objectKey(lib, "file-present"): []byte("PNGBYTES"),
-		d.objectKey(lib, "file-bobs"):    []byte("BOB"),
+		d.fileKey(lib, fileLoc{id: "file-present"}): []byte("PNGBYTES"),
+		d.fileKey(lib, fileLoc{id: "file-bobs"}):    []byte("BOB"),
 	}
 
 	var steps []string

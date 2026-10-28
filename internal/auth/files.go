@@ -39,12 +39,15 @@ type FileJournalEntry struct {
 	Field      string
 	DocumentID string // "" for an upload no document references yet
 	Key        string // the object's key
-	Caller     string // who uploaded it, for display (user:<id>, key:<name>, func:…)
-	Size       int64
-	Status     string
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	ExpiresAt  time.Time
+	// Public is true when the object is in the realm's public storage (a public field): where a
+	// file is stored is decided when it is uploaded and never changes.
+	Public    bool
+	Caller    string // who uploaded it, for display (user:<id>, key:<name>, func:…)
+	Size      int64
+	Status    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	ExpiresAt time.Time
 
 	// A pending upload is one made before the document that will hold it exists
 	// (or without the document being touched): it is attached by naming it, with
@@ -74,6 +77,7 @@ type FileJournalEntry struct {
 // FileDeletion is an object to delete from the bucket.
 type FileDeletion struct {
 	Key       string
+	Public    bool   // the object is in the realm's public storage
 	Reason    string // replaced, cleared, removed, abandoned…
 	Attempts  int
 	NotBefore time.Time // not claimed before this
@@ -182,11 +186,11 @@ func (s *Users) OpenPendingUploads(ctx context.Context, callerKey string) (int, 
 	return s.Store.CountOpenPendingUploads(ctx, callerKey, s.now())
 }
 
-// QueueFileDeletion queues an object for deletion; queueing the same key twice
-// is one deletion.
-func (s *Users) QueueFileDeletion(ctx context.Context, key, reason string) error {
+// QueueFileDeletion queues an object for deletion, in the realm's public storage when public;
+// queueing the same key twice is one deletion.
+func (s *Users) QueueFileDeletion(ctx context.Context, key, reason string, public bool) error {
 	now := s.now()
-	return s.Store.QueueFileDeletion(ctx, FileDeletion{Key: key, Reason: reason, NotBefore: now, CreatedAt: now})
+	return s.Store.QueueFileDeletion(ctx, FileDeletion{Key: key, Public: public, Reason: reason, NotBefore: now, CreatedAt: now})
 }
 
 // AbandonedUploads returns uploads left writing, stored or attaching for longer

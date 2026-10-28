@@ -132,6 +132,7 @@ func TestPublicStorageCheckAndConnection(t *testing.T) {
 		_ = f.svc.SetSecret(ctx, "", n, "v-"+n, "key:test")
 	}
 	_, adminKey, _ := f.svc.CreateAPIKey(ctx, "chk", auth.KeyOptions{Role: auth.KeyRoleAdmin})
+	f.reg.Realms["acme"].Settings.PublicStorage = nil
 	// No public storage yet: the check says so, the private one is untouched.
 	if rec, _ := f.doH(t, "POST", admin+"/storage/check?storage=public", "", bearer(adminKey)); rec.Code != http.StatusNotFound {
 		t.Errorf("no public storage: %d", rec.Code)

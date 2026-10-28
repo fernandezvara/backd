@@ -101,12 +101,12 @@ func (w *Worker) runExport(ctx context.Context, log *slog.Logger, realm string, 
 	res := <-done
 	if !held {
 		log.Info("the export was cancelled or taken over; stopping")
-		_ = svc.QueueFileDeletion(context.WithoutCancel(ctx), rec.Key, "export_abandoned")
+		_ = svc.QueueFileDeletion(context.WithoutCancel(ctx), rec.Key, "export_abandoned", false)
 		return
 	}
 	if err := errors.Join(res.err, putErr); err != nil {
 		tr.finish(ctx, auth.StepFailed)
-		_ = svc.QueueFileDeletion(context.WithoutCancel(ctx), rec.Key, "export_failed") // whatever was stored of it
+		_ = svc.QueueFileDeletion(context.WithoutCancel(ctx), rec.Key, "export_failed", false) // whatever was stored of it
 		w.retryExport(ctx, log, svc, job, rec, tr, err)
 		return
 	}
@@ -225,7 +225,7 @@ func (w *Worker) ExportsDue(ctx context.Context) {
 			continue
 		}
 		for _, rec := range due {
-			if err := svc.QueueFileDeletion(ctx, rec.Key, "export_expired"); err != nil {
+			if err := svc.QueueFileDeletion(ctx, rec.Key, "export_expired", false); err != nil {
 				w.log.Error("queue an expired export's package for deletion", "realm", realm, "export", rec.ID, "error", err)
 				continue
 			}

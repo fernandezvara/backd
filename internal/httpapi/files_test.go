@@ -23,7 +23,8 @@ import (
 // server, and its two keys set.
 type filesFixture struct {
 	*rulesFixture
-	s3 *storagetest.Server
+	s3  *storagetest.Server // the private storage
+	pub *storagetest.Server // the public storage
 }
 
 func newFilesFixture(t *testing.T) *filesFixture {
@@ -40,7 +41,16 @@ func newFilesFixture(t *testing.T) *filesFixture {
 			t.Fatal(err)
 		}
 	}
-	return &filesFixture{rulesFixture: f, s3: s3}
+	// The public storage is another fake server, with its own keys.
+	pub := storagetest.New(t, "public")
+	ps := f.reg.Realms["acme"].Settings.PublicStorage
+	ps.Endpoint, ps.Bucket, ps.HTTP = pub.URL, "public", true
+	for _, n := range []string{"PUBLIC_ACCESS_KEY", "PUBLIC_SECRET_KEY"} {
+		if err := f.svc.SetSecret(context.Background(), "", n, "v-"+n, "key:test"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return &filesFixture{rulesFixture: f, s3: s3, pub: pub}
 }
 
 // pngBytes is a tiny file that is a PNG to a byte sniffer.
@@ -621,7 +631,7 @@ func TestAnAbandonedUploadIsCleanedUp(t *testing.T) {
 	// A deletion that fails is retried later, not lost.
 	k2 := "t/acme/app/library/fl_retry"
 	f.s3.Put(k2, []byte("x"))
-	_ = f.svc.QueueFileDeletion(ctx, k2, "replaced")
+	_ = f.svc.QueueFileDeletion(ctx, k2, "replaced", false)
 	f.s3.FailDeletes(true)
 	w.FilesDue(ctx)
 	if len(f.deletions()) != 1 || f.deletions()[0].Attempts != 1 || len(f.s3.Keys()) != 1 {

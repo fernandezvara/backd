@@ -37,6 +37,7 @@ type madeVersion struct {
 	name   string
 	id     string // fv_…
 	key    string
+	public bool // the object is in the realm's public storage
 	result *imaging.Result
 	params map[string]any
 }
@@ -168,7 +169,7 @@ func (w *Worker) runImage(ctx context.Context, log *slog.Logger, realm string, s
 		}
 	}
 
-	out := w.makeFile(ctx, svc, c, f, e, targets, asked)
+	out := w.makeFile(ctx, svc, c, f, e, locOf(file), targets, asked)
 	switch {
 	case ctx.Err() != nil: // the worker is stopping: the lease lapses and the job comes back
 		return
@@ -202,14 +203,14 @@ type fileOutcome struct {
 // once, makes every target, stores each beside the source under <file key>/<name> and
 // records the details in the document. With keep set, a failure to make a target is not
 // recorded (the copy it had stays) and only reported.
-func (w *Worker) makeFile(ctx context.Context, svc *auth.Users, c *registry.Collection, f *registry.FileField, e *auth.ImageJob, targets []imageTarget, keep bool) fileOutcome {
+func (w *Worker) makeFile(ctx context.Context, svc *auth.Users, c *registry.Collection, f *registry.FileField, e *auth.ImageJob, loc fileLoc, targets []imageTarget, keep bool) fileOutcome {
 	out := fileOutcome{states: map[string]map[string]any{}, summary: map[string]int{}}
-	obj, err := w.fns.docs.objects.For(ctx, c.Realm, false)
+	obj, err := w.fns.docs.objects.For(ctx, c.Realm, loc.public)
 	if err != nil {
 		out.transient, out.err = "storage", err
 		return out
 	}
-	src, cleanup, err := w.fetchSource(ctx, obj, w.fns.docs.objectKey(c, e.FileID), f.MaxSize)
+	src, cleanup, err := w.fetchSource(ctx, obj, w.fns.docs.fileKey(c, loc), f.MaxSize)
 	switch {
 	case errors.Is(err, storage.ErrObjectNotFound):
 		out.gone = true // nothing to make copies of
@@ -242,7 +243,6 @@ func (w *Worker) makeFile(ctx context.Context, svc *auth.Users, c *registry.Coll
 			out.summary[status]++
 		}
 	} else {
-		fileKey := w.fns.docs.objectKey(c, e.FileID)
 		for i, t := range targets {
 			o := outcomes[i]
 			if o.Err != nil {
@@ -251,7 +251,7 @@ func (w *Worker) makeFile(ctx context.Context, svc *auth.Users, c *registry.Coll
 				out.summary[versionFailed]++
 				continue
 			}
-			m := madeVersion{name: t.name, id: "fv_" + xid.New().String(), key: fileKey + "/" + t.name, result: o.Result, params: versionParams(t.params, o.Result)}
+			m := madeVersion{name: t.name, id: "fv_" + xid.New().String(), key: w.fns.docs.versionKey(c, loc, t.name, map[string]any{"type": o.Result.Type}), public: loc.public, result: o.Result, params: versionParams(t.params, o.Result)}
 			if err := w.storeVersion(ctx, svc, c, e, m); err != nil {
 				w.discard(ctx, svc, made)
 				out.transient, out.err = "storage", err
@@ -350,17 +350,21 @@ func (w *Worker) fetchSource(ctx context.Context, obj *storage.Objects, key stri
 // storeVersion writes a made version to the storage, journaled like an upload so that a
 // crash leaves nothing a worker won't clean up.
 func (w *Worker) storeVersion(ctx context.Context, svc *auth.Users, c *registry.Collection, e *auth.ImageJob, m madeVersion) error {
-	entry := auth.FileJournalEntry{ID: m.id, Database: c.Database, Collection: c.Name, Field: e.Field, DocumentID: e.DocumentID, Key: m.key, Caller: "system", Size: int64(len(m.result.Data))}
+	entry := auth.FileJournalEntry{ID: m.id, Database: c.Database, Collection: c.Name, Field: e.Field, DocumentID: e.DocumentID, Key: m.key, Public: m.public, Caller: "system", Size: int64(len(m.result.Data))}
 	if err := svc.JournalUpload(ctx, entry); err != nil {
 		return err
 	}
-	obj, err := w.fns.docs.objects.For(ctx, c.Realm, false)
+	obj, err := w.fns.docs.objects.For(ctx, c.Realm, m.public)
 	if err == nil {
-		err = obj.PutStream(ctx, m.key, bytes.NewReader(m.result.Data), m.result.Type)
+		var headers storage.Headers
+		if m.public {
+			headers = storage.PublicVersionHeaders // rewritten in place when regenerated: a day, not a year
+		}
+		err = obj.PutStreamWith(ctx, m.key, bytes.NewReader(m.result.Data), m.result.Type, headers)
 	}
 	if err != nil {
 		_ = svc.SetUploadStatus(ctx, m.id, auth.JournalFailed, "")
-		_ = svc.QueueFileDeletion(ctx, m.key, "abandoned")
+		_ = svc.QueueFileDeletion(ctx, m.key, "abandoned", m.public)
 		return err
 	}
 	return svc.SetUploadStatus(ctx, m.id, auth.JournalStored, "")
@@ -370,7 +374,7 @@ func (w *Worker) storeVersion(ctx context.Context, svc *auth.Users, c *registry.
 func (w *Worker) discard(ctx context.Context, svc *auth.Users, made []madeVersion) {
 	for _, m := range made {
 		_ = svc.SetUploadStatus(ctx, m.id, auth.JournalFailed, "")
-		_ = svc.QueueFileDeletion(ctx, m.key, "abandoned")
+		_ = svc.QueueFileDeletion(ctx, m.key, "abandoned", m.public)
 	}
 }
 

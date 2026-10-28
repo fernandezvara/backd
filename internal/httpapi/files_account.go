@@ -6,22 +6,12 @@ import (
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/registry"
-	"github.com/fernandezvara/backd/internal/storage"
 )
 
 // What a document holding files costs the realm's storage, and what is queued when
 // it stops holding them. A file counts in the realm's usage (and its owner's) once a
 // document references it, and stops counting the moment none does: its object is then
 // queued for deletion, which a worker carries out.
-
-// objectKey is the key of a file's object, which needs no connection to the storage.
-func (d *documents) objectKey(c *registry.Collection, fileID string) string {
-	prefix := ""
-	if st := d.reg.Realms[c.Realm].Settings.Storage; st != nil {
-		prefix = st.Prefix
-	}
-	return storage.ObjectKey(prefix, c.Realm, c.Database, c.Name, fileID)
-}
 
 // docOwner is the user a stored document belongs to, "" for none.
 func docOwner(doc map[string]any) string {
@@ -101,7 +91,8 @@ func (d *documents) filesGone(ctx context.Context, c *registry.Collection, owner
 		if id == "" {
 			continue
 		}
-		if err := svc.QueueFileDeletion(ctx, d.objectKey(c, id), reason); err != nil {
+		ref := locOf(f)
+		if err := svc.QueueFileDeletion(ctx, d.fileKey(c, ref), reason, ref.public); err != nil {
 			logger(ctx).Error("queue a file's object for deletion", "realm", c.Realm, "file", id, "error", err)
 			continue
 		}
@@ -111,7 +102,7 @@ func (d *documents) filesGone(ctx context.Context, c *registry.Collection, owner
 		// The copies made of an image go with it.
 		for _, name := range readyVersions(f) {
 			v, _ := f["versions"].(map[string]any)[name].(map[string]any)
-			if err := svc.QueueFileDeletion(ctx, d.objectKey(c, id)+"/"+name, reason); err != nil {
+			if err := svc.QueueFileDeletion(ctx, d.versionKey(c, ref, name, v), reason, ref.public); err != nil {
 				logger(ctx).Error("queue a file's version for deletion", "realm", c.Realm, "file", id, "version", name, "error", err)
 				continue
 			}

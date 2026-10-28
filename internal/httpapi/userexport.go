@@ -208,7 +208,7 @@ func (d *documents) buildPersonalExport(ctx context.Context, p personalExportPar
 			continue
 		}
 		step("file " + path)
-		body, _, err := p.Objects.Get(ctx, d.objectKey(ref.collection, ref.id), "")
+		body, _, err := p.Objects.Get(ctx, d.fileKey(ref.collection, fileLoc{id: ref.id}), "")
 		if errors.Is(err, storage.ErrObjectNotFound) {
 			report.Exclusions = append(report.Exclusions, exportpkg.Exclusion{What: path, Reason: "the file is no longer in the storage"})
 			continue

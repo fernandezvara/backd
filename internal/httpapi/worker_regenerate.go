@@ -152,7 +152,7 @@ func (w *Worker) runRegenerate(ctx context.Context, log *slog.Logger, realm stri
 				fileID, _ := file["id"].(string)
 				one := &auth.ImageJob{Collection: e.Collection, Field: e.Field, DocumentID: after, FileID: fileID}
 				started := time.Now()
-				out := w.makeFile(ctx, svc, c, f, one, targets, false)
+				out := w.makeFile(ctx, svc, c, f, one, locOf(file), targets, false)
 				if ctx.Err() != nil {
 					return
 				}
@@ -210,7 +210,7 @@ func (w *Worker) CheckImageDeclarations(ctx context.Context) {
 	for _, realm := range w.reg.RealmNames() {
 		rl := w.reg.Realms[realm]
 		svc := w.fns.docs.users(realm)
-		if rl == nil || rl.Settings.Storage == nil || svc == nil {
+		if rl == nil || (rl.Settings.Storage == nil && rl.Settings.PublicStorage == nil) || svc == nil {
 			continue
 		}
 		known, err := svc.ImageDeclarations(ctx)

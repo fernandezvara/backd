@@ -45,10 +45,8 @@ func (b *builder) adminRoute(route string) bool {
 	switch first {
 	case "push":
 		return s.Push != nil
-	case "storage":
-		return s.Storage != nil
-	case "files":
-		return s.Storage != nil
+	case "storage", "files":
+		return s.Storage != nil || s.PublicStorage != nil
 	case "consents":
 		return len(s.Consents) > 0
 	case "compliance":

@@ -53,7 +53,7 @@ func (d *documents) versionRequestOf(w http.ResponseWriter, r *http.Request) (ve
 		notFound(w, r)
 		return versionRequest{}, false
 	}
-	if _, ok := d.objectsFor(w, r, c.Realm); !ok {
+	if _, ok := d.objectsFor(w, r, c.Realm, f.Public); !ok {
 		return versionRequest{}, false
 	}
 	a := d.accessFor(r)
@@ -257,7 +257,8 @@ func (d *documents) deleteVersion(w http.ResponseWriter, r *http.Request) {
 	}
 	// A version made again lands on the same object, so only one nobody remakes is deleted.
 	if was["status"] == versionReady && !q.version.HasParams() {
-		if err := q.svc.QueueFileDeletion(r.Context(), d.objectKey(q.c, e.FileID)+"/"+name, "removed"); err != nil {
+		loc := locOf(q.file)
+		if err := q.svc.QueueFileDeletion(r.Context(), d.versionKey(q.c, loc, name, was), "removed", loc.public); err != nil {
 			logger(r.Context()).Error("queue a version's object for deletion", "realm", q.c.Realm, "file", e.FileID, "version", name, "error", err)
 		}
 	}

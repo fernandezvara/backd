@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"text/tabwriter"
 
 	"github.com/fernandezvara/kli"
@@ -128,12 +130,13 @@ func humanBytes(n int64) string {
 }
 
 type reconcileReport struct {
-	Delete           bool `json:"delete"`
-	Scanned          int  `json:"scanned"`
-	Referenced       int  `json:"referenced"`
-	SkippedRecent    int  `json:"skipped_recent"`
-	SkippedInJournal int  `json:"skipped_in_journal"`
-	Ignored          int  `json:"ignored"`
+	Storage          string `json:"storage"`
+	Delete           bool   `json:"delete"`
+	Scanned          int    `json:"scanned"`
+	Referenced       int    `json:"referenced"`
+	SkippedRecent    int    `json:"skipped_recent"`
+	SkippedInJournal int    `json:"skipped_in_journal"`
+	Ignored          int    `json:"ignored"`
 	Orphans          []struct {
 		Key          string `json:"key"`
 		Size         int64  `json:"size"`
@@ -145,40 +148,76 @@ type reconcileReport struct {
 }
 
 // storageReconcile handles `backd storage reconcile`: the running backd lists the realm's
-// objects and reports (or, with --delete, removes) the ones no document references.
+// objects and reports (or, with --delete, removes) the ones no document references. It does
+// each storage the realm has (--storage private|public picks one).
 func storageReconcile(c *kli.CommandContext) error {
 	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}
-	var rep reconcileReport
-	if err := t.call("POST", "_admin/storage/reconcile", nil, map[string]any{"delete": flag(c, "delete")}, &rep); err != nil {
-		return err
+	kinds := []string{"private", "public"}
+	which := str(c, "storage")
+	switch which {
+	case "":
+	case "private", "public":
+		kinds = []string{which}
+	default:
+		return usageErr(errors.New("--storage must be private or public"))
 	}
-	if flag(c, "json") {
-		if err := encodeJSONLines(c.Stdout(), []reconcileReport{rep}); err != nil {
+	var reps []reconcileReport
+	var missing error
+	for _, kind := range kinds {
+		var rep reconcileReport
+		if err := t.call("POST", "_admin/storage/reconcile", nil, map[string]any{"delete": flag(c, "delete"), "storage": kind}, &rep); err != nil {
+			// Doing every storage skips the one the realm doesn't have.
+			if ae, ok := errors.AsType[*apiError](err); ok && ae.Status == http.StatusNotFound && which == "" {
+				if missing == nil {
+					missing = err
+				}
+				continue
+			}
 			return err
 		}
-	} else {
-		w := c.Stdout()
-		fmt.Fprintf(w, "looked at %d objects: %d referenced by a document, %d younger than 24 hours, %d with an upload record still open, %d not shaped like files\n",
-			rep.Scanned, rep.Referenced, rep.SkippedRecent, rep.SkippedInJournal, rep.Ignored)
-		for _, o := range rep.Orphans {
-			fmt.Fprintf(w, "orphan  %s  %s  %s\n", o.Key, humanBytes(o.Size), o.LastModified)
-		}
-		switch {
-		case len(rep.Orphans) == 0:
-			fmt.Fprintln(w, "no object is unreferenced")
-		case rep.Delete:
-			fmt.Fprintf(w, "deleted %d of %d unreferenced objects (%s)\n", rep.Deleted, len(rep.Orphans), humanBytes(rep.OrphanBytes))
-		default:
-			fmt.Fprintf(w, "%d unreferenced objects (%s): run again with --delete to remove exactly these\n", len(rep.Orphans), humanBytes(rep.OrphanBytes))
+		reps = append(reps, rep)
+	}
+	if len(reps) == 0 {
+		return missing
+	}
+	if flag(c, "json") {
+		if err := encodeJSONLines(c.Stdout(), reps); err != nil {
+			return err
 		}
 	}
-	if len(rep.Failed) > 0 {
-		return kli.Exit(1, fmt.Errorf("%d objects could not be deleted: run it again", len(rep.Failed)))
+	failed := 0
+	for _, rep := range reps {
+		failed += len(rep.Failed)
+		if !flag(c, "json") {
+			printReconcile(c.Stdout(), rep, len(reps) > 1)
+		}
+	}
+	if failed > 0 {
+		return kli.Exit(1, fmt.Errorf("%d objects could not be deleted: run it again", failed))
 	}
 	return nil
+}
+
+func printReconcile(w io.Writer, rep reconcileReport, labelled bool) {
+	if labelled {
+		fmt.Fprintf(w, "[%s]\n", rep.Storage)
+	}
+	fmt.Fprintf(w, "looked at %d objects: %d referenced by a document, %d younger than 24 hours, %d with an upload record still open, %d not shaped like files\n",
+		rep.Scanned, rep.Referenced, rep.SkippedRecent, rep.SkippedInJournal, rep.Ignored)
+	for _, o := range rep.Orphans {
+		fmt.Fprintf(w, "orphan  %s  %s  %s\n", o.Key, humanBytes(o.Size), o.LastModified)
+	}
+	switch {
+	case len(rep.Orphans) == 0:
+		fmt.Fprintln(w, "no object is unreferenced")
+	case rep.Delete:
+		fmt.Fprintf(w, "deleted %d of %d unreferenced objects (%s)\n", rep.Deleted, len(rep.Orphans), humanBytes(rep.OrphanBytes))
+	default:
+		fmt.Fprintf(w, "%d unreferenced objects (%s): run again with --delete to remove exactly these\n", len(rep.Orphans), humanBytes(rep.OrphanBytes))
+	}
 }
 
 func percent(used, limit int64) string {
