@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/fernandezvara/backd/internal/imaging"
@@ -88,7 +89,7 @@ func (a *adminAPI) importPublicFile(w http.ResponseWriter, r *http.Request, real
 		return false
 	}
 	contentType := detectContentType(head, "")
-	if !slicesContain(registry.PublicTypes, contentType) {
+	if !slices.Contains(registry.PublicTypes, contentType) {
 		writeError(w, r, http.StatusUnsupportedMediaType, codeUnsupportedFile, "a public file can only be "+strings.Join(registry.PublicTypes, " or ")+", and this is "+contentType+" (detected from the file's content)")
 		return false
 	}
@@ -138,13 +139,4 @@ func (a *adminAPI) importPublicFile(w http.ResponseWriter, r *http.Request, real
 		return false
 	}
 	return true
-}
-
-func slicesContain(list []string, v string) bool {
-	for _, e := range list {
-		if e == v {
-			return true
-		}
-	}
-	return false
 }
