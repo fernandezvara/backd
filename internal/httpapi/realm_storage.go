@@ -16,7 +16,7 @@ const codeStorageUnavailable = "storage_unavailable"
 
 // Why a realm's storage can't be used.
 var (
-	// errNoStorage: the realm has no storage: in realm.yaml.
+	// errNoStorage: the realm has no storage: (or public_storage:) in realm.yaml.
 	errNoStorage = errors.New("this realm has no storage configured")
 	// errStorageUnavailable: it has, but its access keys aren't usable (a secret
 	// is not set, or the instance has no secrets key). File endpoints answer
@@ -35,9 +35,17 @@ type realmObjects struct {
 
 	// access and secret, when set, replace the realm's secrets as the storage credentials.
 	access, secret string
+	// publicAccess and publicSecret do the same for the public storage.
+	publicAccess, publicSecret string
 
 	mu    sync.Mutex
-	cache map[string]*cachedObjects
+	cache map[objectsKey]*cachedObjects
+}
+
+// objectsKey identifies one of a realm's two storages.
+type objectsKey struct {
+	realm  string
+	public bool
 }
 
 type cachedObjects struct {
@@ -46,7 +54,7 @@ type cachedObjects struct {
 }
 
 func newRealmObjects(reg *registry.Registry, users func(string) *auth.Users) *realmObjects {
-	return &realmObjects{reg: reg, users: users, connect: storage.NewObjects, cache: map[string]*cachedObjects{}}
+	return &realmObjects{reg: reg, users: users, connect: storage.NewObjects, cache: map[objectsKey]*cachedObjects{}}
 }
 
 // withKeys makes every realm use these credentials, when both are given.
@@ -57,18 +65,27 @@ func (s *realmObjects) withKeys(access, secret string) *realmObjects {
 	return s
 }
 
-// settings returns the realm's storage settings, or errNoStorage.
-func (s *realmObjects) settings(realm string) (*registry.StorageSettings, error) {
+// withPublicKeys is withKeys for the public storage.
+func (s *realmObjects) withPublicKeys(access, secret string) *realmObjects {
+	if access != "" && secret != "" {
+		s.publicAccess, s.publicSecret = access, secret
+	}
+	return s
+}
+
+// settings returns the settings of the realm's private (public false) or public storage, or
+// errNoStorage. It is the one place that picks between them.
+func (s *realmObjects) settings(realm string, public bool) (*registry.StorageSettings, error) {
 	rl := s.reg.Realms[realm]
-	if rl == nil || rl.Settings.Storage == nil {
+	if rl == nil || rl.Settings.StorageFor(public) == nil {
 		return nil, errNoStorage
 	}
-	return rl.Settings.Storage, nil
+	return rl.Settings.StorageFor(public), nil
 }
 
 // missingSecrets lists the secrets of the realm's storage that are not set.
-func (s *realmObjects) missingSecrets(ctx context.Context, realm string) ([]string, error) {
-	st, err := s.settings(realm)
+func (s *realmObjects) missingSecrets(ctx context.Context, realm string, public bool) ([]string, error) {
+	st, err := s.settings(realm, public)
 	if err != nil {
 		return nil, err
 	}
@@ -84,10 +101,11 @@ func (s *realmObjects) missingSecrets(ctx context.Context, realm string) ([]stri
 	return missing, err
 }
 
-// For returns the realm's connection to its storage: errNoStorage, an error
-// wrapping errStorageUnavailable (naming what is missing) or the storage error.
-func (s *realmObjects) For(ctx context.Context, realm string) (*storage.Objects, error) {
-	st, err := s.settings(realm)
+// For returns the realm's connection to its private (public false) or public storage:
+// errNoStorage, an error wrapping errStorageUnavailable (naming what is missing) or the
+// storage error.
+func (s *realmObjects) For(ctx context.Context, realm string, public bool) (*storage.Objects, error) {
+	st, err := s.settings(realm, public)
 	if err != nil {
 		return nil, err
 	}
@@ -95,8 +113,12 @@ func (s *realmObjects) For(ctx context.Context, realm string) (*storage.Objects,
 	if svc == nil {
 		return nil, errNoStorage
 	}
-	values := map[string]string{"realm." + st.AccessKey: s.access, "realm." + st.SecretKey: s.secret}
-	if s.access == "" {
+	access, secret := s.access, s.secret
+	if public {
+		access, secret = s.publicAccess, s.publicSecret
+	}
+	values := map[string]string{"realm." + st.AccessKey: access, "realm." + st.SecretKey: secret}
+	if access == "" {
 		refs := []registry.SecretRef{{Realm: true, Name: st.AccessKey}, {Realm: true, Name: st.SecretKey}}
 		var missing []string
 		var err error
@@ -114,13 +136,14 @@ func (s *realmObjects) For(ctx context.Context, realm string) (*storage.Objects,
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if c := s.cache[realm]; c != nil && c.cfg == cfg {
+	key := objectsKey{realm, public}
+	if c := s.cache[key]; c != nil && c.cfg == cfg {
 		return c.obj, nil
 	}
 	obj, err := s.connect(cfg)
 	if err != nil {
 		return nil, err
 	}
-	s.cache[realm] = &cachedObjects{cfg: cfg, obj: obj}
+	s.cache[key] = &cachedObjects{cfg: cfg, obj: obj}
 	return obj, nil
 }

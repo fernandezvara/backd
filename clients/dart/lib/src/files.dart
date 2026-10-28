@@ -51,6 +51,21 @@ final class VersionStatus {
   bool get ready => status == 'ready';
 }
 
+/// The permanent address of a public file, or of one of its made versions:
+/// where anyone reads it without credentials, to show as soon as the document
+/// arrives. Null for a file that is not public, and for a version that isn't
+/// ready yet (show a placeholder; [versionStatus] tells why). Nothing is
+/// requested: the address is in the details the document came with.
+String? publicUrl(Map<String, Object?>? file, {String? version}) {
+  if (file == null || file['public'] != true) return null;
+  if (version == null) return file['url'] as String?;
+  final versions = file['versions'];
+  final v = versions is Map && versions[version] is Map
+      ? versions[version] as Map
+      : null;
+  return v != null && v['status'] == 'ready' ? v['url'] as String? : null;
+}
+
 /// What a document says about a made version of one of its files.
 VersionStatus versionStatus(Map<String, Object?> file, String name) {
   final versions = file['versions'];
@@ -67,17 +82,18 @@ VersionStatus versionStatus(Map<String, Object?> file, String name) {
 
 /// A link to a file that works without credentials until it expires.
 final class FileLink {
-  const FileLink({required this.url, required this.expiresAt});
+  const FileLink({required this.url, this.expiresAt});
 
   factory FileLink.fromJson(Map<String, Object?> json) => FileLink(
         url: json['url'] as String? ?? '',
-        expiresAt: json['expires_at'] as String? ?? '',
+        expiresAt: json['expires_at'] as String?,
       );
 
   final String url;
 
-  /// RFC3339 timestamp.
-  final String expiresAt;
+  /// RFC3339 timestamp; null for the address of a public file, which never
+  /// expires.
+  final String? expiresAt;
 }
 
 /// A downloaded file: the answer of [Files.get], already read.
@@ -737,7 +753,9 @@ Future<PreparedUpload> prepareUpload(
 /// [version] it is a link to that made version of an image, or null while
 /// the version isn't ready (pending, skipped, failed, or not made by a
 /// worker yet): show a placeholder, and read the document ([versionStatus])
-/// to tell why.
+/// to tell why. Pass the file's details as [file] and the address of a public
+/// file is answered without a request (its `expiresAt` is null: it never
+/// expires); [publicUrl] is the same, synchronous.
 Future<FileLink?> fileUrl(
   BackdClient<Object?> client,
   List<String> collectionPath,
@@ -745,8 +763,13 @@ Future<FileLink?> fileUrl(
   String field,
   String fileId, {
   String? version,
+  Map<String, Object?>? file,
   RequestOptions? options,
 }) async {
+  if (file != null && file['public'] == true) {
+    final url = publicUrl(file, version: version);
+    return url == null ? null : FileLink(url: url);
+  }
   try {
     return await Files(client, collectionPath, id, field)
         .link(fileId: fileId, version: version, options: options);

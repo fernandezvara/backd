@@ -169,7 +169,7 @@ func (d *documents) batch(w http.ResponseWriter, r *http.Request) {
 			reveals[ops[i].collection] = rv
 		}
 		shown, _ := rv.view(doc)
-		rendered[i] = render(shown)
+		rendered[i] = d.renderIn(ops[i].collection, shown)
 		k, _ := d.storedView(ops[i].collection, doc)
 		kept[i] = render(k)
 		id, _ := doc["id"].(string)

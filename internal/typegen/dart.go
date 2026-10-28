@@ -878,6 +878,8 @@ final class FileDetails {
     this.height,
     this.url,
     this.expiresAt,
+    this.public,
+    this.keyName,
     this.versions,
   });
 
@@ -894,6 +896,8 @@ final class FileDetails {
         expiresAt: json['expires_at'] == null
             ? null
             : DateTimeString(json['expires_at'] as String),
+        public: json['public'] as bool?,
+        keyName: json['key_name'] as String?,
         versions: json['versions'] == null
             ? null
             : {
@@ -913,6 +917,12 @@ final class FileDetails {
   final int? height;
   final String? url;
   final DateTimeString? expiresAt;
+
+  /// True for a file in the realm's public storage; [url] is then its permanent address.
+  final bool? public;
+
+  /// A public file's name as its address ends with it.
+  final String? keyName;
   final Map<String, FileVersionDetails>? versions;
 
   Map<String, Object?> toJson() => {
@@ -926,6 +936,8 @@ final class FileDetails {
         if (height != null) 'height': height,
         if (url != null) 'url': url,
         if (expiresAt != null) 'expires_at': expiresAt!.value,
+        if (public != null) 'public': public,
+        if (keyName != null) 'key_name': keyName,
       };
 }
 
@@ -960,6 +972,7 @@ final class FileVersionReady extends FileVersionDetails {
     this.width,
     this.height,
     this.params,
+    this.url,
   }) : super._();
 
   factory FileVersionReady.fromJson(Map<String, Object?> json) =>
@@ -974,6 +987,7 @@ final class FileVersionReady extends FileVersionDetails {
         params: json['params'] == null
             ? null
             : Map<String, Object?>.from(json['params'] as Map),
+        url: json['url'] as String?,
       );
 
   final String id;
@@ -984,6 +998,9 @@ final class FileVersionReady extends FileVersionDetails {
   final int? width;
   final int? height;
   final Map<String, Object?>? params;
+
+  /// The copy's permanent address, on a public file.
+  final String? url;
 }
 
 final class FileVersionEmpty extends FileVersionDetails {

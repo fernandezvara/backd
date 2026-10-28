@@ -85,6 +85,8 @@ type Config struct {
 	// StorageAccessKey and StorageSecretKey, when set, are the storage credentials every realm
 	// uses instead of its secrets (direct mode without a master key).
 	StorageAccessKey, StorageSecretKey string
+	// PublicStorageAccessKey and PublicStorageSecretKey are the same for the realms' public storage.
+	PublicStorageAccessKey, PublicStorageSecretKey string
 	// ReloadErrors returns what stopped the last live reload of the config (BACKD_DEV), for
 	// the admin configuration view's warnings; nil when nothing reloads.
 	ReloadErrors func() []string
@@ -187,7 +189,7 @@ func NewHandler(cfg Config) http.Handler {
 	}
 	authRoutes := &authAPI{users: users, reg: cfg.Registry, actions: hostedActions(), opTimeout: opTimeout, oauth: cfg.oauthService(), baseURL: cfg.BackdURL}
 	authRoutes.routes(r)
-	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users, callbackKey: cfg.CallbackKey, objects: newRealmObjects(cfg.Registry, users).withKeys(cfg.StorageAccessKey, cfg.StorageSecretKey), baseURL: cfg.BackdURL, maxUpload: maxUploadOf(cfg), imageMaxPixels: cfg.ImageMaxPixels, expand: cfg.Expand.OrDefault(), aggregateLim: cfg.Aggregate.OrDefault(), metrics: cfg.Metrics, hub: cfg.Realtime, realtimeLimits: cfg.RealtimeLimits}
+	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users, callbackKey: cfg.CallbackKey, objects: newRealmObjects(cfg.Registry, users).withKeys(cfg.StorageAccessKey, cfg.StorageSecretKey).withPublicKeys(cfg.PublicStorageAccessKey, cfg.PublicStorageSecretKey), baseURL: cfg.BackdURL, maxUpload: maxUploadOf(cfg), imageMaxPixels: cfg.ImageMaxPixels, expand: cfg.Expand.OrDefault(), aggregateLim: cfg.Aggregate.OrDefault(), metrics: cfg.Metrics, hub: cfg.Realtime, realtimeLimits: cfg.RealtimeLimits}
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, executorToken: cfg.ExecutorToken, log: cfg.Log, dev: cfg.Dev, concurrency: limiterFor(cfg.Registry), metrics: cfg.Metrics}
 	authRoutes.fns = fns
 	spec := &openAPI{reg: cfg.Registry}

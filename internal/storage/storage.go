@@ -251,6 +251,12 @@ type ErasedFile struct {
 	Owner string
 	// Versions are the made copies of an image the file had, by version name, with their sizes.
 	Versions map[string]int64
+	// Public and KeyName say where the file's objects are: in the realm's public storage, under a
+	// key that ends with KeyName. VersionTypes are the content types of the made copies (a public
+	// copy's key ends with the extension of its type).
+	Public       bool
+	KeyName      string
+	VersionTypes map[string]string
 }
 
 // Eraser is what erasing a user needs of a collection's storage. Every method

@@ -8,7 +8,7 @@ toc: true
 
 This is the whole journey of moving an app, users included, from an instance you call *old* to one you call *new*.
 
-1. **Prepare the new instance.** Its `CONFIG_DIR` needs the same databases and collections as the old one (the schemas may differ: the import tells you what the new ones refuse). Provision it (`backd provision`, or start it) and make sure the realm has authentication enabled and, if documents hold files, a `storage:` section whose secrets are set.
+1. **Prepare the new instance.** Its `CONFIG_DIR` needs the same databases and collections as the old one (the schemas may differ: the import tells you what the new ones refuse). Provision it (`backd provision`, or start it) and make sure the realm has authentication enabled and, if documents hold files, a `storage:` section (and a `public_storage:` one if they hold [public files](../../../../build/files/file-fields/#public-fields)) whose secrets are set.
 2. **Export from the old instance**, keeping the one-time key apart from the package:
 
    ```
@@ -62,7 +62,7 @@ backd import --realm clinic --from ./clinic-2026-10-09.tar.gz --mode replace
 
 1. **The package is verified.** The manifest's format must be one this `backd` reads, and the SHA-256 of every file it lists must match. A package made with `--fields` (partial) and a CSV extract are refused.
 2. **Everything is validated against the target realm's own configuration**, which may differ from the source's: each collection must exist there, and every document is checked as the API would check one a client sent: its id (the collection's `custom_id` rules, or a generated id), its fields against `schema.json`, its files against the file fields (and their size limits), and its unique indexes against what the target holds. The result is a report: counts per outcome, and the first invalid or conflicting documents with their line and reasons. **`--dry-run` stops here.**
-3. **The files are uploaded**, through the target's storage, before the documents that reference them.
+3. **The files are uploaded**, through the target's storage, before the documents that reference them. A **public file** goes to the target's `public_storage` under the name its address ends with, and is **checked like an upload**, because it is about to be published: its content must be a JPEG or PNG whose name's extension agrees, and it must not carry metadata (files exported by `backd` never do; a hand-made package that includes some is refused with `422 invalid_image`). The target must have a `public_storage:` or the package's documents are invalid. The `url` in the exported documents means nothing in the target and is dropped: the target computes its own from its `public_storage.url`.
 4. **The documents are written** with their **ids and `_meta` kept** (creation and update times, version, owner, trash state), so references between documents, file links and ownership stay valid. Files are counted in the realm's storage usage and the image versions their fields declare are queued for the workers: versions are not in the package.
 
 | `--mode` | A document whose id exists in the target |

@@ -110,6 +110,6 @@ And chapter 2's `on_owner_delete: delete` already covers files: erasing a member
 - *My assets → New asset → kind: file* with a PNG saves a draft whose card shows the picture; the **⬇** button saves the file.
 - A 26 MiB file answers `413`, a renamed executable `415 unsupported_file_type`, and a replace with a stale version `412`.
 - A curator's upload to a member's published asset answers `403`.
-- `curl http://localhost:9000/backd-files/` is refused: the bucket is private, and only links `backd` signed work.
+- `curl http://localhost:9000/backd-files/` is refused: the bucket is private, and only links `backd` signed work. (A [public field](../../build/files/public-files/) is the one thing that goes in a separate, public bucket.)
 
 Next: chapter 14 — big files go straight to the bucket, and a worker makes thumbnails.

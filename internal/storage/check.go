@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"image"
+	"image/png"
 	"io"
 	"net/http"
 	"net/url"
@@ -48,6 +50,9 @@ type CheckReport struct {
 	CORS       []CORSRule
 	// LinkHost is the host a signed link is for (the public endpoint's when set).
 	LinkHost string
+	// SentinelURL is, for a public storage, the address the sentinel object the check leaves in
+	// the bucket should be readable at: the operator opens it to test the public setup.
+	SentinelURL string
 }
 
 // OK reports whether nothing failed.
@@ -386,4 +391,108 @@ func corsGaps(rules []CORSRule) []string {
 		gaps = append(gaps, "no PUT rule allows the x-amz-checksum-sha256 header")
 	}
 	return gaps
+}
+
+// publicSentinel is a 1x1 PNG: the object CheckPublic leaves for the operator to open.
+var publicSentinel = func() []byte {
+	var b bytes.Buffer
+	_ = png.Encode(&b, image.NewNRGBA(image.Rect(0, 0, 1, 1)))
+	return b.Bytes()
+}()
+
+// PublicSentinelKey is where CheckPublic leaves its object.
+func (o *Objects) PublicSentinelKey(realm string) string {
+	return o.checkPrefix(realm) + "backd-check.png"
+}
+
+// CheckPublic verifies a public storage: the bucket and the credentials, writing with the headers
+// public files are stored with (and that the bucket sends them back), reading, listing and the
+// bucket's default encryption. It never connects to the public url: it leaves one small image,
+// the sentinel, in <prefix>/<realm>/_check/ and reports where it should be readable, because
+// making the bucket readable by everyone (with its listing off) is the operator's to do and test.
+func (o *Objects) CheckPublic(ctx context.Context, realm, publicURL string, h Headers) CheckReport {
+	rep := CheckReport{Provider: o.cfg.Provider, Endpoint: o.cfg.Endpoint, Bucket: o.cfg.Bucket, Prefix: o.cfg.Prefix, ChecksumSHA256: "not tested", Encryption: "unknown"}
+	canList := false
+	if _, err := o.List(ctx, o.checkPrefix(realm), 1); err != nil {
+		switch {
+		case errors.Is(err, ErrAccessDenied):
+			rep.add("bucket", CheckWarn, fmt.Sprintf("%s: listing the prefix was refused (%v); only `backd storage reconcile` needs it, and the steps below show whether the key works", o.cfg.Bucket, err))
+		default:
+			rep.add("bucket", CheckFail, fmt.Sprintf("%s: %v", o.cfg.Bucket, describe(err)))
+			return rep
+		}
+	} else {
+		canList = true
+		rep.add("bucket", CheckOK, fmt.Sprintf("%s exists and the credentials reach it", o.cfg.Bucket))
+	}
+
+	key := o.PublicSentinelKey(realm)
+	if err := o.PutWith(ctx, key, bytes.NewReader(publicSentinel), int64(len(publicSentinel)), "image/png", "", h); err != nil {
+		rep.add("write", CheckFail, "put on the prefix: "+describe(err))
+		return rep
+	}
+	rep.add("write", CheckOK, "an image was stored at "+key+" (it stays there for you to open; it is replaced by the next check)")
+	rep.SentinelURL = strings.TrimRight(publicURL, "/") + "/" + escapeKey(key)
+
+	info, err := o.Head(ctx, key)
+	switch {
+	case err != nil:
+		rep.add("head", CheckFail, describe(err))
+	case info.Size != int64(len(publicSentinel)):
+		rep.add("head", CheckFail, fmt.Sprintf("the stored object has %d bytes, %d were sent", info.Size, len(publicSentinel)))
+	default:
+		rep.add("head", CheckOK, "size and details read back")
+		var missing []string
+		if h.CacheControl != "" && info.CacheControl != h.CacheControl {
+			missing = append(missing, fmt.Sprintf("Cache-Control is %q, want %q", info.CacheControl, h.CacheControl))
+		}
+		if h.ContentDisposition != "" && info.ContentDisposition != h.ContentDisposition {
+			missing = append(missing, fmt.Sprintf("Content-Disposition is %q, want %q", info.ContentDisposition, h.ContentDisposition))
+		}
+		if len(missing) > 0 {
+			rep.add("headers", CheckFail, "the storage doesn't keep the headers public files need: "+strings.Join(missing, "; "))
+		} else {
+			rep.add("headers", CheckOK, "Cache-Control and Content-Disposition are stored and returned")
+		}
+	}
+	if got, err := o.download(ctx, key, ""); err != nil {
+		rep.add("read", CheckFail, describe(err))
+	} else if !bytes.Equal(got, publicSentinel) {
+		rep.add("read", CheckFail, "the object read back differs from what was stored")
+	} else {
+		rep.add("read", CheckOK, "downloaded and identical")
+	}
+	switch {
+	case !canList:
+		rep.add("list", CheckWarn, "the prefix can't be listed: `backd storage reconcile` won't work with this key")
+	default:
+		rep.add("list", CheckOK, "the prefix can be listed (for reconcile)")
+	}
+	rep.add("public", CheckWarn, "backd never connects to the public url: open "+rep.SentinelURL+" in a browser to confirm the bucket (or CDN) serves it without credentials, and that listing the bucket is off, before production")
+	rep.add("cors", CheckSkip, "set the public bucket's CORS rules at the provider if pages fetch these files with scripts or draw them on a canvas (plain <img> needs none)")
+	if o.provider.ReadsEncryption {
+		alg, err := o.Encryption(ctx)
+		switch {
+		case err != nil:
+			rep.add("encryption", CheckWarn, "the bucket's default encryption couldn't be read: "+describe(err))
+		case alg == "":
+			rep.Encryption = "none"
+			rep.add("encryption", CheckWarn, "the bucket has no default encryption: files are stored unencrypted at rest (set it at the provider)")
+		default:
+			rep.Encryption = alg
+			rep.add("encryption", CheckOK, "default encryption: "+alg)
+		}
+	} else {
+		rep.add("encryption", CheckSkip, o.provider.Label+" doesn't expose the bucket's default encryption: confirm it at the provider")
+	}
+	return rep
+}
+
+// escapeKey percent-encodes each segment of an object key for use in a URL path.
+func escapeKey(key string) string {
+	parts := strings.Split(key, "/")
+	for i, p := range parts {
+		parts[i] = url.PathEscape(p)
+	}
+	return strings.Join(parts, "/")
 }

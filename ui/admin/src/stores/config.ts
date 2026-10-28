@@ -12,6 +12,8 @@ export interface FileFieldConfig {
   types: string[]
   upload: 'proxy' | 'direct'
   download: string | null
+  /** The field's files are kept in the realm's public storage and read at their own address. */
+  public?: boolean
 }
 
 /**

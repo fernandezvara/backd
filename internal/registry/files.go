@@ -27,6 +27,9 @@ import (
 // field holds (the file's details), injects its schema into the collection's
 // validators, and never lets a write set it.
 
+// PublicTypes are the only content types a public field takes (design/public-files.md).
+var PublicTypes = []string{"image/jpeg", "image/png"}
+
 // Upload modes.
 const (
 	UploadProxy  = "proxy"  // streamed through backd
@@ -46,6 +49,7 @@ const (
 // FileField is one file field of a collection, from collection.yaml.
 type FileField struct {
 	Name     string
+	Public   bool  // files are stored in the realm's public_storage and read at their url
 	Multiple bool  // an array of files; otherwise at most one
 	MaxFiles int   // for a multiple field
 	MaxSize  int64 // bytes, per file
@@ -165,6 +169,7 @@ type fileFieldDoc struct {
 	MaxPixels    *int64                 `yaml:"max_pixels"`
 	KeepMetadata bool                   `yaml:"keep_metadata"`
 	Versions     map[string]*versionDoc `yaml:"versions"`
+	Public       bool                   `yaml:"public"`
 }
 
 var (
@@ -219,8 +224,17 @@ func parseFiles(path string, data []byte, schema map[string]any, settings RealmS
 	add := func(name, format string, args ...any) {
 		errs = append(errs, fmt.Errorf("%s: files.%s: "+format, append([]any{path, name}, args...)...))
 	}
-	if settings.Storage == nil {
-		return nil, fmt.Errorf("%s: files: a collection with file fields needs `storage:` in the realm's realm.yaml (and `backd template realm` shows how)", path)
+	for name, d := range doc.Files {
+		public := d != nil && d.Public
+		switch {
+		case public && settings.PublicStorage == nil:
+			errs = append(errs, fmt.Errorf("%s: files.%s: public: true needs `public_storage:` in the realm's realm.yaml (and `backd template realm` shows how)", path, name))
+		case !public && settings.Storage == nil:
+			return nil, fmt.Errorf("%s: files: a collection with file fields needs `storage:` in the realm's realm.yaml (and `backd template realm` shows how)", path)
+		}
+	}
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
 	}
 	props, _ := schema["properties"].(map[string]any)
 	out := map[string]*FileField{}
@@ -229,7 +243,8 @@ func parseFiles(path string, data []byte, schema map[string]any, settings RealmS
 		if d == nil {
 			d = &fileFieldDoc{}
 		}
-		f := &FileField{Name: name, Multiple: d.Multiple, Upload: UploadProxy}
+		f := &FileField{Name: name, Multiple: d.Multiple, Upload: UploadProxy, Public: d.Public}
+		st := settings.StorageFor(d.Public) // not nil: checked above
 		switch {
 		case !fileFieldName.MatchString(name):
 			add(name, "the name must be lower-case letters, digits and underscores, starting with a letter")
@@ -270,13 +285,22 @@ func parseFiles(path string, data []byte, schema map[string]any, settings RealmS
 				add(name, "types[%d]: %q must be a content type such as image/png, or a family such as image/*", i, d.Types[i])
 				continue
 			}
+			if d.Public && !slices.Contains(PublicTypes, t) {
+				add(name, "types[%d]: %q can't be public: a public field takes only %s", i, t, strings.Join(PublicTypes, " and "))
+				continue
+			}
 			f.Types = append(f.Types, t)
+		}
+		if d.Public && len(d.Types) == 0 {
+			f.Types = slices.Clone(PublicTypes)
 		}
 
 		switch d.Upload {
 		case "", UploadProxy:
 		case UploadDirect:
 			switch {
+			case d.Public:
+				add(name, "upload: direct isn't available for a public field: its files are checked and cleaned of metadata as they pass through backd (use proxy)")
 			case !settings.Storage.ProviderEntry().SupportsDirectUploads():
 				add(name, "upload: direct needs a provider that verifies a signed SHA-256, which %s doesn't (use proxy)", settings.Storage.Provider)
 			case f.MaxSize > MaxMultipartFileSize:
@@ -290,6 +314,13 @@ func parseFiles(path string, data []byte, schema map[string]any, settings RealmS
 			add(name, "upload: must be %s or %s, got %q", UploadProxy, UploadDirect, d.Upload)
 		}
 
+		if d.Public && (d.Download != "" || d.PresignedTTL != "" || d.Cache != "") {
+			add(name, "download, presigned_ttl and cache: don't apply to a public field (its files are read at the public_storage url)")
+			d.Download, d.PresignedTTL, d.Cache = "", "", ""
+		}
+		if d.Public && d.KeepMetadata {
+			add(name, "keep_metadata: a public file is always cleaned of metadata (it is about to be published)")
+		}
 		switch d.Download {
 		case "":
 		case DownloadPresigned, DownloadProxy:
@@ -311,7 +342,7 @@ func parseFiles(path string, data []byte, schema map[string]any, settings RealmS
 				add(name, "cache: %v", err)
 			} else if v <= 0 {
 				add(name, "cache: must be a positive duration, such as 1h")
-			} else if eff := cmp.Or(f.Download, settings.Storage.Download); eff != DownloadProxy {
+			} else if eff := cmp.Or(f.Download, st.Download); eff != DownloadProxy {
 				add(name, "cache: only applies to proxied downloads (`download: proxy`, on the field or in the realm's storage)")
 			} else {
 				f.Cache = v
@@ -445,6 +476,9 @@ func fileDetailsSchema() map[string]any {
 			"type":        str(),
 			"sha256":      map[string]any{"type": "string", "pattern": "^[0-9a-f]{64}$"},
 			"uploaded_at": map[string]any{"type": "string", "format": "date-time"},
+			// A public file is in the realm's public storage, under a key that ends with key_name.
+			"public":   map[string]any{"type": "boolean"},
+			"key_name": str(),
 			// The pixel size of an image original, and the state of each declared version.
 			"width":    map[string]any{"type": "integer"},
 			"height":   map[string]any{"type": "integer"},
@@ -496,4 +530,14 @@ func withFileSchemas(schema map[string]any, files map[string]*FileField) map[str
 		}
 	}
 	return out
+}
+
+// HasPublicFiles reports whether any file field of the collection is public.
+func (c *Collection) HasPublicFiles() bool {
+	for _, f := range c.Files {
+		if f.Public {
+			return true
+		}
+	}
+	return false
 }

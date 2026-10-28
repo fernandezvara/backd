@@ -90,6 +90,8 @@ func erasedFiles(raw bson.Raw, fileFields []string) []storage.ErasedFile {
 			}
 		}
 		file := storage.ErasedFile{ID: id, Size: size, Owner: owner}
+		file.Public, _ = doc.Lookup("public").BooleanOK()
+		file.KeyName, _ = doc.Lookup("key_name").StringValueOK()
 		if vs, ok := doc.Lookup("versions").DocumentOK(); ok {
 			if elems, err := vs.Elements(); err == nil {
 				for _, e := range elems {
@@ -108,6 +110,12 @@ func erasedFiles(raw bson.Raw, fileFields []string) []storage.ErasedFile {
 						file.Versions = map[string]int64{}
 					}
 					file.Versions[e.Key()] = vsize
+					if ct, ok := v.Lookup("type").StringValueOK(); ok {
+						if file.VersionTypes == nil {
+							file.VersionTypes = map[string]string{}
+						}
+						file.VersionTypes[e.Key()] = ct
+					}
 				}
 			}
 		}

@@ -12,6 +12,32 @@ const filesStorage = `storage:
   secret_key: secret:STORAGE_SECRET_KEY
 `
 
+// The public storage of the same realm: another bucket, read at a CDN address.
+const filesPublicStorage = `public_storage:
+  provider: minio
+  endpoint: http://127.0.0.1:1
+  bucket: public
+  prefix: t
+  access_key: secret:PUBLIC_ACCESS_KEY
+  secret_key: secret:PUBLIC_SECRET_KEY
+  url: https://cdn.acme.example
+`
+
+// pictures has one public field (JPEG and PNG, a thumbnail version) and one private.
+const picturesConfig = `files:
+  photo:
+    public: true
+    max_size: 64KiB
+    versions:
+      thumb: {max_width: 10, max_height: 10, format: png}
+      mark: {writable: true}
+  secret:
+    max_size: 4KiB
+    keep_metadata: true
+on_owner_delete:
+  action: delete
+`
+
 const filesSchema = `{
   "type": "object",
   "properties": {"title": {"type": "string"}, "published": {"type": "boolean"}},

@@ -142,6 +142,10 @@ func provisionOneWith(t *testing.T, schema, config string) (*registry.Collection
 	if strings.Contains(config, "files:") {
 		realmYAML += "storage:\n  provider: minio\n  endpoint: http://minio:9000\n  bucket: test-bucket\n  prefix: p\n  access_key: secret:A\n  secret_key: secret:B\n"
 	}
+	if strings.Contains(config, "public: true") {
+		// A public field needs a public storage: another bucket, with keys of its own.
+		realmYAML += "public_storage:\n  provider: minio\n  endpoint: http://minio:9000\n  bucket: test-public\n  prefix: p\n  access_key: secret:PA\n  secret_key: secret:PB\n  url: http://localhost:9000/test-public\n"
+	}
 	if config != "" {
 		// A reference points at another collection; this realm holds only the one.
 		files["app/items/collection.yaml"] = withoutReferences(config)

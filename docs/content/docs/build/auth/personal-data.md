@@ -6,7 +6,7 @@ weight: 565
 toc: true
 ---
 
-A person can ask for a copy of the data you hold about them, and people who hold your support queue get formal requests for it. `backd` builds the **package** once: a zip with their documents, their files, the data about their account, a list of everything it leaves out and why, and a `README.html` in their language.
+A person can ask for a copy of the data you hold about them (their [public files](../../files/file-fields/#public-fields) included: public means anyone with the address can read them, not that they stop being theirs), and people who hold your support queue get formal requests for it. `backd` builds the **package** once: a zip with their documents, their files, the data about their account, a list of everything it leaves out and why, and a `README.html` in their language.
 
 {{< hint style="note" >}}
 `backd` provides the mechanism. How fast you must answer, who may ask for whom, and what is exempt from access are decisions for you and your lawyers; nothing here is legal advice. See [Compliance with backd](../../../operate/administration/compliance/).

@@ -17,11 +17,15 @@ export interface FileDetails {
   versions?: Record<string, FileVersion>;
   url?: string;
   expires_at?: DateTimeString;
+  /** True for a file in the realm's public storage; url is then its permanent address. */
+  public?: boolean;
+  /** A public file's name as its address ends with it. */
+  key_name?: string;
 }
 
 export type FileVersion =
   | { status: "pending" }
-  | { status: "ready"; id: string; size: number; type: string; width: number; height: number; params: Record<string, unknown>; fingerprint: string; generated_at: DateTimeString }
+  | { status: "ready"; id: string; size: number; type: string; width: number; height: number; params: Record<string, unknown>; fingerprint: string; generated_at: DateTimeString; url?: string }
   | { status: "empty" }
   | { status: "skipped"; reason: "not_an_image" | "unsupported_format" }
   | { status: "failed"; reason: "too_large" | "decode_error" };
@@ -69,7 +73,9 @@ export type MainDocsWhere = {
   "_meta.updated_by"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
   "cover.height"?: number | (Ops<number> & NullOps & RangeOps<number>);
   "cover.id"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "cover.key_name"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
   "cover.name"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "cover.public"?: boolean | (Ops<boolean> & NullOps);
   "cover.sha256"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
   "cover.size"?: number | (Ops<number> & NullOps & RangeOps<number>);
   "cover.type"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
@@ -77,7 +83,9 @@ export type MainDocsWhere = {
   "cover.width"?: number | (Ops<number> & NullOps & RangeOps<number>);
   "manuals.height"?: number | (Ops<number> & NullOps & RangeOps<number>);
   "manuals.id"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "manuals.key_name"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
   "manuals.name"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "manuals.public"?: boolean | (Ops<boolean> & NullOps);
   "manuals.sha256"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
   "manuals.size"?: number | (Ops<number> & NullOps & RangeOps<number>);
   "manuals.type"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
@@ -87,7 +95,7 @@ export type MainDocsWhere = {
   $or?: Array<MainDocsWhere>;
   $and?: Array<MainDocsWhere>;
 };
-export type MainDocsOrderByField = "id" | "-id" | "_meta.created_at" | "-_meta.created_at" | "_meta.updated_at" | "-_meta.updated_at" | "_meta.version" | "-_meta.version" | "_meta.owner" | "-_meta.owner" | "_meta.created_by" | "-_meta.created_by" | "_meta.updated_by" | "-_meta.updated_by" | "cover.height" | "-cover.height" | "cover.id" | "-cover.id" | "cover.name" | "-cover.name" | "cover.sha256" | "-cover.sha256" | "cover.size" | "-cover.size" | "cover.type" | "-cover.type" | "cover.uploaded_at" | "-cover.uploaded_at" | "cover.width" | "-cover.width" | "manuals.height" | "-manuals.height" | "manuals.id" | "-manuals.id" | "manuals.name" | "-manuals.name" | "manuals.sha256" | "-manuals.sha256" | "manuals.size" | "-manuals.size" | "manuals.type" | "-manuals.type" | "manuals.uploaded_at" | "-manuals.uploaded_at" | "manuals.width" | "-manuals.width" | "title" | "-title";
+export type MainDocsOrderByField = "id" | "-id" | "_meta.created_at" | "-_meta.created_at" | "_meta.updated_at" | "-_meta.updated_at" | "_meta.version" | "-_meta.version" | "_meta.owner" | "-_meta.owner" | "_meta.created_by" | "-_meta.created_by" | "_meta.updated_by" | "-_meta.updated_by" | "cover.height" | "-cover.height" | "cover.id" | "-cover.id" | "cover.key_name" | "-cover.key_name" | "cover.name" | "-cover.name" | "cover.public" | "-cover.public" | "cover.sha256" | "-cover.sha256" | "cover.size" | "-cover.size" | "cover.type" | "-cover.type" | "cover.uploaded_at" | "-cover.uploaded_at" | "cover.width" | "-cover.width" | "manuals.height" | "-manuals.height" | "manuals.id" | "-manuals.id" | "manuals.key_name" | "-manuals.key_name" | "manuals.name" | "-manuals.name" | "manuals.public" | "-manuals.public" | "manuals.sha256" | "-manuals.sha256" | "manuals.size" | "-manuals.size" | "manuals.type" | "-manuals.type" | "manuals.uploaded_at" | "-manuals.uploaded_at" | "manuals.width" | "-manuals.width" | "title" | "-title";
 export type MainDocsOrderBy = MainDocsOrderByField | `${MainDocsOrderByField},${string}`;
 /** main/labels */
 export type MainLabels = { id: string; _meta: Meta } & { name: string; [key: string]: unknown; };

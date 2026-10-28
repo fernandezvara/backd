@@ -13,7 +13,6 @@ import (
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/rules"
-	"github.com/fernandezvara/backd/internal/storage"
 )
 
 // Pending uploads: a file uploaded before the document that will hold it exists.
@@ -31,9 +30,10 @@ const (
 	uploadInvalid = "the upload doesn't exist, has expired, was already used, or isn't yours"
 )
 
-// pendingTTL is how long an unused pending upload of the collection's realm lives.
-func (d *documents) pendingTTL(c *registry.Collection) time.Duration {
-	if st := d.reg.Realms[c.Realm].Settings.Storage; st != nil && st.PendingTTL > 0 {
+// pendingTTL is how long an unused pending upload to the realm's private (public false) or
+// public storage lives.
+func (d *documents) pendingTTL(c *registry.Collection, public bool) time.Duration {
+	if st := d.storageFor(c, public); st != nil && st.PendingTTL > 0 {
 		return st.PendingTTL
 	}
 	return registry.DefaultPendingTTL
@@ -61,7 +61,7 @@ func (d *documents) uploadPending(w http.ResponseWriter, r *http.Request) {
 		notFound(w, r)
 		return
 	}
-	obj, ok := d.objectsFor(w, r, c.Realm)
+	obj, ok := d.objectsFor(w, r, c.Realm, f.Public)
 	if !ok {
 		return
 	}
@@ -97,7 +97,7 @@ func (d *documents) uploadPending(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer up.cancel()
-	expires := d.timestamp().Add(d.pendingTTL(c)).UTC()
+	expires := d.timestamp().Add(d.pendingTTL(c, f.Public)).UTC()
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"upload_id": plan.id, "upload_token": token, "expires_at": expires.Format(timeFormat),
@@ -224,7 +224,6 @@ func takeFileRefs(c *registry.Collection, body map[string]any) (map[string][]fil
 type pendingSet struct {
 	d        *documents
 	svc      *auth.Users
-	obj      *storage.Objects
 	files    map[string][]pendingFile // by field
 	replaced []map[string]any         // files a single field lost, set by apply
 	claimed  []string
@@ -246,11 +245,17 @@ func (d *documents) resolvePending(w http.ResponseWriter, r *http.Request, c *re
 		notFound(w, r)
 		return nil, false
 	}
-	obj, ok := d.objectsFor(w, r, c.Realm)
-	if !ok {
-		return nil, false
+	// Each field's files are in the storage its setting names; every one that is used must work.
+	checked := map[bool]bool{}
+	for _, name := range sortedKeys(refs) {
+		if public := c.Files[name].Public; !checked[public] {
+			checked[public] = true
+			if _, ok := d.objectsFor(w, r, c.Realm, public); !ok {
+				return nil, false
+			}
+		}
 	}
-	p := &pendingSet{d: d, svc: svc, obj: obj, files: map[string][]pendingFile{}}
+	p := &pendingSet{d: d, svc: svc, files: map[string][]pendingFile{}}
 	caller, _ := callerOf(r)
 	now := d.now()
 	var details []Detail
@@ -270,6 +275,9 @@ func (d *documents) resolvePending(w http.ResponseWriter, r *http.Request, c *re
 			}
 			meta := map[string]any{
 				"id": e.ID, "name": e.Name, "size": e.Size, "type": e.Type, "sha256": e.SHA256, "uploaded_at": e.UploadedAt.UTC().Format(timeFormat)}
+			if e.Public {
+				meta["public"], meta["key_name"] = true, e.KeyName
+			}
 			p.files[name] = append(p.files[name], pendingFile{ref: ref, meta: withImage(meta, e.Image)})
 		}
 	}

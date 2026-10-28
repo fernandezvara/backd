@@ -3,6 +3,7 @@ package registry
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -35,6 +36,8 @@ var (
 // storageDoc mirrors the storage section of realm.yaml. There is no path_style
 // (the provider decides) and no sse (encryption at rest is the bucket's default).
 type storageDoc struct {
+	// URL is only for public_storage: where browsers read the files from.
+	URL            string `yaml:"url"`
 	Provider       string `yaml:"provider"`
 	Endpoint       string `yaml:"endpoint"`
 	PublicEndpoint string `yaml:"public_endpoint"`
@@ -76,9 +79,23 @@ type StorageSettings struct {
 	// of the documents one user owns, may add up to; 0 is no limit. An upload that would pass
 	// either answers 413 quota_exceeded.
 	QuotaRealm, QuotaUser int64
-	// HTTP is true when Endpoint or PublicEndpoint is plain http, which startup
+	// HTTP is true when Endpoint, PublicEndpoint or URL is plain http, which startup
 	// allows only in development.
 	HTTP bool
+	// Public is true for the realm's public_storage: files in it are served straight from the
+	// bucket or a CDN at URL, where browsers read them; backd writes to Endpoint and never
+	// connects to URL (design/public-files.md).
+	Public bool
+	// URL is the root of a public file's address: <URL>/<object key>. No trailing slash.
+	URL string
+}
+
+// Label is how messages name the storage: the section of realm.yaml it is read from.
+func (s *StorageSettings) Label() string {
+	if s.Public {
+		return "public_storage"
+	}
+	return "storage"
 }
 
 // ProviderEntry returns the provider's capabilities.
@@ -90,12 +107,43 @@ func (s *StorageSettings) ProviderEntry() storage.Provider {
 // SecretNames are the realm secrets the storage needs.
 func (s *StorageSettings) SecretNames() []string { return []string{s.AccessKey, s.SecretKey} }
 
-func parseStorage(d *storageDoc) (*StorageSettings, []error) {
+// parseStorage reads `storage:` (public false) or `public_storage:` (public true). A public
+// storage serves its files from URL, uploads only through backd, and keeps the settings that
+// only make sense for signed links and quotas in `storage:`.
+func parseStorage(d *storageDoc, public bool) (*StorageSettings, []error) {
 	var errs []error
-	add := func(format string, args ...any) { errs = append(errs, fmt.Errorf("storage."+format, args...)) }
+	section := "storage"
+	if public {
+		section = "public_storage"
+	}
+	add := func(format string, args ...any) { errs = append(errs, fmt.Errorf(section+"."+format, args...)) }
 	st := &StorageSettings{
-		Provider: d.Provider, Bucket: d.Bucket, Prefix: d.Prefix,
+		Provider: d.Provider, Bucket: d.Bucket, Prefix: d.Prefix, Public: public,
 		Download: DownloadPresigned, PresignedTTL: DefaultPresignedTTL, PendingTTL: DefaultPendingTTL,
+	}
+	if public {
+		st.Download = DownloadProxy
+		for _, f := range []struct{ name, value string }{
+			{"download", d.Download}, {"presigned_ttl", d.PresignedTTL}, {"public_endpoint", d.PublicEndpoint},
+		} {
+			if f.value != "" {
+				add("%s: doesn't apply to a public storage (files are read at url, and uploads go through backd)", f.name)
+			}
+		}
+		if d.Quota != nil {
+			add("quota: is set in `storage:` and counts public and private files together")
+		}
+		switch u, err := parsePublicURL(d.URL); {
+		case d.URL == "":
+			add("url: is required: where browsers read the files from (a CDN or the bucket's public address), such as https://cdn.example.com")
+		case err != nil:
+			add("url: %v", err)
+		default:
+			st.URL = u
+			st.HTTP = strings.HasPrefix(u, "http://")
+		}
+	} else if d.URL != "" {
+		add("url: only applies to `public_storage:`")
 	}
 
 	p, ok := storage.LookupProvider(d.Provider)
@@ -107,11 +155,12 @@ func parseStorage(d *storageDoc) (*StorageSettings, []error) {
 	default:
 		r, err := p.Resolve(d.Endpoint, d.Region)
 		if err != nil {
-			errs = append(errs, errors.New("storage."+err.Error()))
+			errs = append(errs, errors.New(section+"."+err.Error()))
 		} else {
-			st.Endpoint, st.Region, st.HTTP = r.Endpoint, r.Region, r.HTTP
+			st.Endpoint, st.Region = r.Endpoint, r.Region
+			st.HTTP = st.HTTP || r.HTTP
 		}
-		if d.PublicEndpoint != "" {
+		if d.PublicEndpoint != "" && !public {
 			switch {
 			case !p.PublicEndpointAllowed:
 				add("public_endpoint: %s has one address for everyone; only a self-hosted provider (minio) can have a different address for browsers", d.Provider)
@@ -153,7 +202,7 @@ func parseStorage(d *storageDoc) (*StorageSettings, []error) {
 		add("secret_key: must be a different secret from access_key")
 	}
 
-	if d.Download != "" {
+	if d.Download != "" && !public {
 		if d.Download != DownloadPresigned && d.Download != DownloadProxy {
 			add("download: must be %s or %s, got %q", DownloadPresigned, DownloadProxy, d.Download)
 		} else {
@@ -168,7 +217,7 @@ func parseStorage(d *storageDoc) (*StorageSettings, []error) {
 		{"presigned_ttl", d.PresignedTTL, &st.PresignedTTL, minPresignedTTL, maxPresignedTTL},
 		{"pending_ttl", d.PendingTTL, &st.PendingTTL, minPendingTTL, maxPendingTTL},
 	} {
-		if t.value == "" {
+		if t.value == "" || (public && t.field == "presigned_ttl") {
 			continue
 		}
 		v, err := ParseDuration(t.value)
@@ -181,7 +230,7 @@ func parseStorage(d *storageDoc) (*StorageSettings, []error) {
 			*t.dst = v
 		}
 	}
-	if d.Quota != nil {
+	if d.Quota != nil && !public {
 		for _, q := range []struct {
 			field, value string
 			dst          *int64
@@ -204,4 +253,23 @@ func parseStorage(d *storageDoc) (*StorageSettings, []error) {
 		}
 	}
 	return st, errs
+}
+
+// parsePublicURL checks the address public files are read from: https (http for development),
+// a host, an optional path, no credentials, query or fragment. The trailing slash is dropped.
+func parsePublicURL(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	switch {
+	case err != nil || (u.Scheme != "https" && u.Scheme != "http"):
+		return "", fmt.Errorf("%q must be an address such as https://cdn.example.com (http only for development)", raw)
+	case u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || strings.Contains(raw, "?") || strings.Contains(raw, "#"):
+		return "", fmt.Errorf("%q must be a host with an optional path: no credentials, query or fragment", raw)
+	}
+	return strings.TrimRight(raw, "/"), nil
+}
+
+// SameBucket reports whether two storages are the same bucket on the same endpoint: a public
+// storage there would publish the private files.
+func SameBucket(a, b *StorageSettings) bool {
+	return a != nil && b != nil && a.Endpoint == b.Endpoint && a.Bucket == b.Bucket
 }

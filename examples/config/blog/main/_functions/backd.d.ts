@@ -17,11 +17,15 @@ export interface FileDetails {
   versions?: Record<string, FileVersion>;
   url?: string;
   expires_at?: DateTimeString;
+  /** True for a file in the realm's public storage; url is then its permanent address. */
+  public?: boolean;
+  /** A public file's name as its address ends with it. */
+  key_name?: string;
 }
 
 export type FileVersion =
   | { status: "pending" }
-  | { status: "ready"; id: string; size: number; type: string; width: number; height: number; params: Record<string, unknown>; fingerprint: string; generated_at: DateTimeString }
+  | { status: "ready"; id: string; size: number; type: string; width: number; height: number; params: Record<string, unknown>; fingerprint: string; generated_at: DateTimeString; url?: string }
   | { status: "empty" }
   | { status: "skipped"; reason: "not_an_image" | "unsupported_format" }
   | { status: "failed"; reason: "too_large" | "decode_error" };

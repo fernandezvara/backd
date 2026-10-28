@@ -194,9 +194,11 @@ final class TypedCollection<D, I, C> {
     String field,
     String fileId, {
     String? version,
+    Map<String, Object?>? file,
     RequestOptions? options,
   }) =>
-      raw.fileUrl(id, field, fileId, version: version, options: options);
+      raw.fileUrl(id, field, fileId,
+          version: version, file: file, options: options);
 
   Future<fileio.FileLink> downloadFile(
     String id,

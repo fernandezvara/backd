@@ -17,7 +17,7 @@ clinic-2026-10-09/
   manifest.json
   main/patients.jsonl              one file per collection
   main/visits.jsonl
-  main/_files/<file id>            the object of every file the documents reference
+  main/_files/<file id>            the object of every file the documents reference (private and public)
   _system/data_keys.jsonl          wrapped keys of encrypted fields (empty without any)
   _system/auth/users.jsonl         only with --include auth
   _system/auth/identities.jsonl    … orgs, org_members, org_teams, org_connections, mfa, devices

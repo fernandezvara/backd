@@ -623,7 +623,7 @@ const fileMaintenanceBatch = 50
 // take the same one.
 func (w *Worker) FilesDue(ctx context.Context) {
 	for realm, rl := range w.reg.Realms {
-		if rl.Settings.Storage == nil {
+		if rl.Settings.Storage == nil && rl.Settings.PublicStorage == nil {
 			continue
 		}
 		svc := w.fns.docs.users(realm)
@@ -669,7 +669,7 @@ func (w *Worker) FilesDue(ctx context.Context) {
 			if e.MultipartID != "" && !w.abortMultipart(ctx, realm, e) {
 				continue
 			}
-			if err := svc.QueueFileDeletion(ctx, e.Key, "abandoned"); err != nil {
+			if err := svc.QueueFileDeletion(ctx, e.Key, "abandoned", e.Public); err != nil {
 				w.log.Error("queue an abandoned upload's object", "realm", realm, "file", e.ID, "error", err)
 				continue
 			}
@@ -685,13 +685,24 @@ func (w *Worker) FilesDue(ctx context.Context) {
 		if len(due) == 0 {
 			continue
 		}
-		obj, err := w.fns.docs.objects.For(ctx, realm)
-		if err != nil {
-			// The keys aren't usable now: the claims lapse and the deletions come back later.
-			w.log.Warn("file storage is not available; deletions wait", "realm", realm, "error", err)
-			continue
-		}
+		// Each object is deleted from the storage it is in; one that can't be reached now keeps
+		// its claim until the lease lapses and comes back later.
+		conns := map[bool]*storage.Objects{}
+		unavailable := map[bool]bool{}
 		for _, d := range due {
+			obj, ok := conns[d.Public]
+			if !ok && !unavailable[d.Public] {
+				var err error
+				if obj, err = w.fns.docs.objects.For(ctx, realm, d.Public); err != nil {
+					w.log.Warn("file storage is not available; deletions wait", "realm", realm, "public", d.Public, "error", err)
+					unavailable[d.Public] = true
+				} else {
+					conns[d.Public] = obj
+				}
+			}
+			if unavailable[d.Public] {
+				continue
+			}
 			if err := obj.Delete(ctx, d.Key); err != nil {
 				wait := min(time.Minute<<min(d.Attempts, 6), time.Hour)
 				w.log.Warn("delete a file's object failed; it will be tried again", "realm", realm, "key", d.Key, "attempt", d.Attempts+1, "retry_in", wait.String(), "error", err)
@@ -708,7 +719,7 @@ func (w *Worker) FilesDue(ctx context.Context) {
 // abortMultipart aborts the multipart upload an abandoned entry started. It reports false
 // when that couldn't be done now, to try again on the next run.
 func (w *Worker) abortMultipart(ctx context.Context, realm string, e auth.FileJournalEntry) bool {
-	obj, err := w.fns.docs.objects.For(ctx, realm)
+	obj, err := w.fns.docs.objects.For(ctx, realm, e.Public)
 	if err == nil {
 		err = obj.AbortMultipart(ctx, e.Key, e.MultipartID)
 	}

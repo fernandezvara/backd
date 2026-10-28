@@ -45,9 +45,24 @@ storage:
   secret_key: secret:STORAGE_SECRET_KEY
 ```
 
+For [public files](../#public-storage) the stack also creates a `backd-public` bucket that anyone can read objects from without credentials, but not list (a policy with only `s3:GetObject`, in `docker/minio/read-only-backd-public.json`). A realm uses it as another storage whose `url` is the address a browser reads from; MinIO is path-style, so the bucket is in the address:
+
+```yaml
+public_storage:
+  provider: minio
+  endpoint: http://minio:9000
+  bucket: backd-public
+  prefix: dev
+  access_key: secret:PUBLIC_STORAGE_ACCESS_KEY
+  secret_key: secret:PUBLIC_STORAGE_SECRET_KEY
+  url: http://localhost:9000/backd-public
+```
+
 `public_endpoint` exists because signing is local and the signed host must be the one the browser uses; `backd` never connects to it. MinIO answers any origin's CORS by default; restrict it with `MINIO_API_CORS_ALLOW_ORIGIN`.
 
 ## Production
+
+For a public bucket, apply a policy like the development one to a bucket that holds nothing private: `mc anonymous set-json read-only.json prod/acme-public`, with a single `s3:GetObject` statement on `arn:aws:s3:::acme-public/*`. Do **not** use `mc anonymous set download`: it also allows listing the bucket. Put a CDN or a reverse proxy with TLS in front, and use its address as `url`.
 
 Run MinIO with TLS (a certificate your CA signs, in MinIO's `certs` folder), on a network only `backd` and its worker can reach, and give them the CA with `SSL_CERT_FILE` if it is a private one. The [production reference](../../../production/) does exactly this and tests it.
 

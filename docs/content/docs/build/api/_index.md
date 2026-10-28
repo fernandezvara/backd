@@ -100,6 +100,8 @@ Every error uses the same JSON envelope. Success responses are never wrapped.
 | 422 | `invalid_image` | A JPEG or PNG too damaged to be copied [without its metadata](../files/file-fields/#metadata-and-the-gps-risk) |
 | 413 | `quota_exceeded` | An upload would pass the realm's or the owner's [storage quota](../../operate/providers/storage/#quotas) |
 | 415 | `unsupported_file_type` | The type detected from an upload isn't one the field accepts |
+| 400 | `file_extension_mismatch` | A [public field](../files/file-fields/#public-fields) got a file whose name doesn't end with the extension of its content (`.jpg`/`.jpeg` for JPEG, `.png` for PNG) |
+| 400 | `invalid_file_name` | A [public field](../files/file-fields/#public-fields) got an upload with no usable name (none given, or only an extension) |
 | 416 | `range_not_satisfiable` | A `Range` outside the file |
 | 415 | `unsupported_media_type` | Wrong `Content-Type` for the method (a `webhook` function's body isn't required to be JSON at all) |
 | 422 | `upload_mismatch` | A direct upload's size or SHA-256 isn't the declared one: the object was deleted |

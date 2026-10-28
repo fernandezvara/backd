@@ -56,3 +56,36 @@ func TestR2SmokeTest(t *testing.T) {
 		t.Error("the r2 entry claims checksum support that R2 does not show")
 	}
 }
+
+// The public-files smoke test: R2 must accept Cache-Control and Content-Disposition when an
+// object is written and return them when it is read, because a public storage cannot add them
+// per request. Same variables and cost as TestR2SmokeTest; the sentinel image the check leaves
+// is deleted again here. (The AWS and DigitalOcean entries get the same test once they have a
+// smoke test of their own.)
+func TestR2PublicHeaders(t *testing.T) {
+	endpoint, bucket := os.Getenv("BACKD_TEST_R2_ENDPOINT"), os.Getenv("BACKD_TEST_R2_BUCKET")
+	access, secret := os.Getenv("BACKD_TEST_R2_ACCESS_KEY"), os.Getenv("BACKD_TEST_R2_SECRET_KEY")
+	if endpoint == "" || bucket == "" || access == "" || secret == "" {
+		t.Skip("the R2 smoke test needs BACKD_TEST_R2_ENDPOINT, _BUCKET, _ACCESS_KEY and _SECRET_KEY")
+	}
+	p, _ := LookupProvider("r2")
+	res, err := p.Resolve(endpoint, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o, err := NewObjects(ObjectsConfig{Provider: "r2", Endpoint: res.Endpoint, Region: res.Region, Bucket: bucket, Prefix: "backd-smoke", AccessKey: access, SecretKey: secret})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	t.Cleanup(func() { _ = o.Delete(ctx, o.PublicSentinelKey("smoke")) })
+	for _, h := range []Headers{PublicOriginalHeaders, PublicVersionHeaders} {
+		rep := o.CheckPublic(ctx, "smoke", "https://cdn.example.com", h)
+		for _, s := range rep.Steps {
+			t.Logf("%-10s %-8s %s", s.Name, s.Level, s.Detail)
+		}
+		if !rep.OK() {
+			t.Errorf("headers %+v: the check failed", h)
+		}
+	}
+}

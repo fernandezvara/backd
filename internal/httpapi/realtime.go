@@ -317,7 +317,7 @@ func (d *documents) subscription(r *http.Request, c *registry.Collection, s real
 	rv := d.revealerFor(r, c)
 	show := func(doc map[string]any) map[string]any {
 		shown, _ := rv.view(doc)
-		return render(shown)
+		return d.renderIn(c, shown)
 	}
 	return &builtSub{
 		c: c, where: where, filter: filter,

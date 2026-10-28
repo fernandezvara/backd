@@ -182,7 +182,7 @@ const inlineList = (v) => {
 const readRealmYaml = (text) => {
   const s = {
     auth: "enabled", signup: "closed", verifyEmail: false,
-    emailDb: "notifications", hasStorage: false, roles: {},
+    emailDb: "notifications", hasStorage: false, hasPublicStorage: false, roles: {},
   };
   let section = "", role = null, list = null;
   for (const raw of text.split("\n")) {
@@ -207,6 +207,7 @@ const readRealmYaml = (text) => {
       if (key === "auth") s.auth = scalar(val) || "enabled";
       else if (key === "signup") s.signup = scalar(val) || "closed";
       else if (key === "storage") s.hasStorage = true;
+      else if (key === "public_storage") s.hasPublicStorage = true;
       continue;
     }
     if (section === "account" && indent === 2 && key === "require_verified_email") {
@@ -345,15 +346,21 @@ const createAsAdmin = async (admin, email, pw) => {
   }
 };
 
-// The storage keys the local MinIO knows (the compose files' MinIO user).
-const secrets = {
+// The storage keys the local MinIO knows (the compose files' MinIO user), for the private
+// storage and for the public one.
+const storageSecrets = {
   STORAGE_ACCESS_KEY: "backd-dev",
   STORAGE_SECRET_KEY: devPassword,
+};
+const publicStorageSecrets = {
+  PUBLIC_STORAGE_ACCESS_KEY: "backd-dev",
+  PUBLIC_STORAGE_SECRET_KEY: devPassword,
 };
 
 const out = [];
 for (const [realm, s] of Object.entries(realms)) {
-  if (!s.accounts.length && !s.hasStorage) continue;
+  const needsKeys = s.hasStorage || s.hasPublicStorage;
+  if (!s.accounts.length && !needsKeys) continue;
   // The realm's administrator's session, for creating accounts where signup
   // isn't open and for setting the storage secrets: the first signed-in
   // account able to (a "users" admin), the first full one for the secrets.
@@ -400,8 +407,9 @@ for (const [realm, s] of Object.entries(realms)) {
         if ((a.admin === "full" || s.roles[a.role]?.adminAreas?.includes("users")) && !usersAdmin) {
           usersAdmin = client;
         }
-        if (s.hasStorage && !secretsDone && fullAdmin) {
-          for (const [k, v] of Object.entries(secrets)) {
+        if (needsKeys && !secretsDone && fullAdmin) {
+          const wanted = { ...(s.hasStorage ? storageSecrets : {}), ...(s.hasPublicStorage ? publicStorageSecrets : {}) };
+          for (const [k, v] of Object.entries(wanted)) {
             await fullAdmin.request({
               method: "PUT",
               path: ["_admin", "secrets", k],
@@ -418,7 +426,7 @@ for (const [realm, s] of Object.entries(realms)) {
     }
     out.push(account);
   }
-  if (s.hasStorage && !secretsDone) {
+  if (needsKeys && !secretsDone) {
     warn(`${realm}: storage keys not set — no full administrator's session`);
   }
 }

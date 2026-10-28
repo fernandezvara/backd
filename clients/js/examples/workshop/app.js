@@ -10,6 +10,7 @@
 import { createClient, localStorageStorage } from 'backd-js'
 import { createInspector } from './lib/inspector.js'
 import { exportPanel } from './panels/export.js'
+import { galleryPanel } from './panels/gallery.js'
 import { operatorPanel } from './panels/operator.js'
 import { ordersPanel } from './panels/orders.js'
 import { refundPanel } from './panels/refund.js'
@@ -34,6 +35,7 @@ const TOUR = [
   { n: 4, id: 'export', title: 'A report in the background', fn: 'export_orders', kind: 'async job' },
   { n: 5, id: 'operating', title: 'Operating it', fn: 'nightly_cleanup, daily_digest', kind: 'cron, history, secrets' },
   { n: 6, id: 'email', title: 'Email verification and password reset', fn: 'email-capture', kind: 'delivery through your own function' },
+  { n: 7, id: 'gallery', title: 'A public gallery', fn: 'public_storage', kind: 'public files, no function' },
 ]
 
 let rerender = () => {}
@@ -118,6 +120,7 @@ document.addEventListener('alpine:init', () => {
     ...exportPanel({ db, backd }),
     ...operatorPanel({ backd }),
     ...verifyPanel({ backd, fetch: inspector.fetch, realm: REALM }),
+    ...galleryPanel({ db }),
     known: loadKnown(),
     accounts: ACCOUNTS,
     tour: TOUR,
@@ -150,6 +153,8 @@ document.addEventListener('alpine:init', () => {
           // The stored session expired; onAuthChange handles it.
         }
       }
+      // The gallery is public: anyone sees it, signed in or not.
+      await this.loadGallery()
     },
 
     // Runs a step of the tour: labels the calls it makes in the inspector,

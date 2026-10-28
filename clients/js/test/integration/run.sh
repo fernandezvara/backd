@@ -37,8 +37,8 @@ BACKD_API_KEY=$(key itest)
 BACKD_INVITE_API_KEY=$(key invite)
 BACKD_MAIL_API_KEY=$(key mail)
 BACKD_FILES_API_KEY=$(key files)
-# The files realm's storage keys are secrets (MinIO's root user, dev-only).
-for pair in STORAGE_ACCESS_KEY=backd-js STORAGE_SECRET_KEY='dev-p4ssw0rd!'; do
+# The files realm's storage keys are secrets (MinIO's root user, dev-only), for the private and the public bucket.
+for pair in STORAGE_ACCESS_KEY=backd-js STORAGE_SECRET_KEY='dev-p4ssw0rd!' PUBLIC_STORAGE_ACCESS_KEY=backd-js PUBLIC_STORAGE_SECRET_KEY='dev-p4ssw0rd!'; do
   printf '%s\n' "${pair#*=}" | compose exec -T backd /backd secret set --realm files --name "${pair%%=*}" --url http://localhost:8080 >/dev/null
 done
 # The bucket is made by minio-setup, which may still be at it: wait until the storage works.

@@ -482,6 +482,19 @@ test('storage.status and storage.reconcile use the storage routes', async () => 
   assert.deepEqual(m.calls[1].body, { delete: true })
 })
 
+test('storage.check and storage.reconcile can name the public storage', async () => {
+  const m = mockFetch([{ body: { ok: true, storage: 'public', sentinel_url: 'https://cdn.test/p/acme/_check/backd-check.png', steps: [] } }, { body: { storage: 'public', orphans: [] } }, { body: { ok: true, storage: 'private', sentinel_url: null, steps: [] } }])
+  const a = createClient({ url: 'https://api.test', realm: 'acme', apiKey: 'bdk_x', fetch: m.fetch }).admin
+  const rep = await a.storage.check({ storage: 'public' })
+  assert.equal(rep.sentinel_url, 'https://cdn.test/p/acme/_check/backd-check.png')
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/storage/check')
+  assert.equal(m.calls[0].url.searchParams.get('storage'), 'public')
+  await a.storage.reconcile({ storage: 'public' })
+  assert.deepEqual(m.calls[1].body, { delete: false, storage: 'public' })
+  await a.storage.check()
+  assert.equal(m.calls[2].url.searchParams.has('storage'), false)
+})
+
 test('checkConfig posts the draft files and answers what was found', async () => {
   const m = mockFetch([{ body: { ok: false, realm: 'acme', checked: 12, changed: ['main/a/collection.yaml'], problems: [{ file: 'main/a/collection.yaml', message: 'main/a/collection.yaml: unknown field' }] } }])
   const a = createClient({ url: 'https://api.test', realm: 'acme', apiKey: 'bdk_x', fetch: m.fetch }).admin

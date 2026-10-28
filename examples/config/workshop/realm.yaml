@@ -51,3 +51,20 @@ roles:
     description: Refunds orders and reads the daily digests
     users:
       - staff@workshop.example
+
+# Public files (docs: Files -> Public fields). The gallery's pictures are meant for
+# everyone, so they live in a second, public bucket and are read straight from it, at
+# the address each document carries; the companion app shows them with a plain <img>.
+# In this local stack that is the MinIO of the compose files (backd writes to it at
+# http://minio:9000, browsers read http://localhost:9000/backd-public, a bucket anyone
+# can read objects from but not list). In production it would be a bucket behind a CDN,
+# and `url` would be the CDN's address. The keys are realm secrets (the local seed and
+# the tour set them): never write a key here.
+public_storage:
+  provider: minio
+  endpoint: http://minio:9000
+  bucket: backd-public
+  prefix: workshop
+  access_key: secret:PUBLIC_STORAGE_ACCESS_KEY
+  secret_key: secret:PUBLIC_STORAGE_SECRET_KEY
+  url: http://localhost:9000/backd-public

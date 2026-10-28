@@ -20,6 +20,8 @@ type fileJournalDoc struct {
 	Field      string    `bson:"field"`
 	DocumentID string    `bson:"document_id,omitempty"`
 	Key        string    `bson:"key"`
+	Public     bool      `bson:"public,omitempty"`
+	KeyName    string    `bson:"key_name,omitempty"`
 	Caller     string    `bson:"caller,omitempty"`
 	Size       int64     `bson:"size"`
 	Status     string    `bson:"status"`
@@ -45,6 +47,7 @@ type fileJournalDoc struct {
 
 type fileDeletionDoc struct {
 	Key       string    `bson:"_id"` // the object's key: one deletion per object
+	Public    bool      `bson:"public,omitempty"`
 	Reason    string    `bson:"reason"`
 	Attempts  int32     `bson:"attempts"`
 	NotBefore time.Time `bson:"not_before"`
@@ -57,7 +60,7 @@ func (s *AuthStore) fileDeletions() *mongo.Collection {
 }
 
 func (d fileJournalDoc) entry() auth.FileJournalEntry {
-	return auth.FileJournalEntry{ID: d.ID, Database: d.Database, Collection: d.Collection, Field: d.Field, DocumentID: d.DocumentID, Key: d.Key,
+	return auth.FileJournalEntry{ID: d.ID, Database: d.Database, Collection: d.Collection, Field: d.Field, DocumentID: d.DocumentID, Key: d.Key, Public: d.Public, KeyName: d.KeyName,
 		Caller: d.Caller, Size: d.Size, Status: d.Status, CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC(),
 		Pending: d.Pending, Direct: d.Direct, TokenHash: d.TokenHash, Owner: d.Owner, CallerKey: d.CallerKey, PendingUntil: d.PendingUntil.UTC(), Name: d.Name, Type: d.Type, SHA256: d.SHA256, UploadedAt: d.UploadedAt.UTC(), Image: d.Image,
 		MultipartID: d.MultipartID, PartSize: d.PartSize, PartSHA256: d.PartSHA256}
@@ -66,7 +69,7 @@ func (d fileJournalDoc) entry() auth.FileJournalEntry {
 // JournalFile records an upload.
 func (s *AuthStore) JournalFile(ctx context.Context, e auth.FileJournalEntry) error {
 	_, err := s.fileJournal().InsertOne(ctx, fileJournalDoc{ID: e.ID, Database: e.Database, Collection: e.Collection, Field: e.Field, DocumentID: e.DocumentID,
-		Key: e.Key, Caller: e.Caller, Size: e.Size, Status: e.Status, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt, ExpiresAt: e.ExpiresAt,
+		Key: e.Key, Public: e.Public, KeyName: e.KeyName, Caller: e.Caller, Size: e.Size, Status: e.Status, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt, ExpiresAt: e.ExpiresAt,
 		Pending: e.Pending, Direct: e.Direct, TokenHash: e.TokenHash, Owner: e.Owner, CallerKey: e.CallerKey, PendingUntil: e.PendingUntil,
 		Name: e.Name, Type: e.Type, SHA256: e.SHA256, UploadedAt: e.UploadedAt, Image: e.Image,
 		MultipartID: e.MultipartID, PartSize: e.PartSize, PartSHA256: e.PartSHA256})
@@ -111,7 +114,7 @@ func (s *AuthStore) StaleFileJournal(ctx context.Context, before, now time.Time,
 
 // QueueFileDeletion adds an object to delete; the same key twice is one.
 func (s *AuthStore) QueueFileDeletion(ctx context.Context, d auth.FileDeletion) error {
-	_, err := s.fileDeletions().UpdateByID(ctx, d.Key, bson.D{{Key: "$setOnInsert", Value: fileDeletionDoc{Key: d.Key, Reason: d.Reason, Attempts: int32(d.Attempts), NotBefore: d.NotBefore, CreatedAt: d.CreatedAt}}}, options.UpdateOne().SetUpsert(true))
+	_, err := s.fileDeletions().UpdateByID(ctx, d.Key, bson.D{{Key: "$setOnInsert", Value: fileDeletionDoc{Key: d.Key, Public: d.Public, Reason: d.Reason, Attempts: int32(d.Attempts), NotBefore: d.NotBefore, CreatedAt: d.CreatedAt}}}, options.UpdateOne().SetUpsert(true))
 	return err
 }
 
@@ -131,7 +134,7 @@ func (s *AuthStore) ClaimFileDeletions(ctx context.Context, now, lease time.Time
 		if err != nil {
 			return out, err
 		}
-		out = append(out, auth.FileDeletion{Key: d.Key, Reason: d.Reason, Attempts: int(d.Attempts), NotBefore: d.NotBefore.UTC(), CreatedAt: d.CreatedAt.UTC()})
+		out = append(out, auth.FileDeletion{Key: d.Key, Public: d.Public, Reason: d.Reason, Attempts: int(d.Attempts), NotBefore: d.NotBefore.UTC(), CreatedAt: d.CreatedAt.UTC()})
 	}
 	return out, nil
 }

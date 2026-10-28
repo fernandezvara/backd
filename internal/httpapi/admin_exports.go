@@ -167,7 +167,7 @@ func (a *adminAPI) downloadUserExport(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusGone, "gone", "this export has expired; make a new one")
 		return
 	}
-	obj, err := a.fns.docs.objects.For(r.Context(), chi.URLParam(r, "realm"))
+	obj, err := a.fns.docs.objects.For(r.Context(), chi.URLParam(r, "realm"), false)
 	if err != nil {
 		linkError(w, r, err)
 		return

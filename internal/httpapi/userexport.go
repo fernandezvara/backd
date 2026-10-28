@@ -41,8 +41,9 @@ type personalExportParams struct {
 	// Retention is how long the downloadable copy is kept, for the README; 0 for an export
 	// that is handed to an administrator instead.
 	Retention time.Duration
-	// Objects reads the files; nil when the realm has no storage.
-	Objects packageObjects
+	// Objects reads the files of the private storage, and PublicObjects those of the public one;
+	// nil when the realm has no such storage.
+	Objects, PublicObjects packageObjects
 	// Version and Fingerprint are backd's version and the realm's configuration fingerprint.
 	Version, Fingerprint string
 	// Progress hears each step as it starts, for the job that runs the export.
@@ -155,10 +156,10 @@ func (d *documents) buildPersonalExport(ctx context.Context, p personalExportPar
 			}
 			seen[id] = true
 			for _, f := range e.Files {
-				for _, ref := range fileRefsOf(doc[f]) {
-					path := exportpkg.FilePart(e.Database, ref)
+				for _, loc := range fileRefsOf(doc[f]) {
+					path := exportpkg.FilePart(e.Database, loc.id)
 					if _, dup := files[path]; !dup {
-						files[path] = exportFileRef{collection: c, id: ref}
+						files[path] = exportFileRef{collection: c, loc: loc}
 						fileOrder = append(fileOrder, path)
 					}
 				}
@@ -203,12 +204,16 @@ func (d *documents) buildPersonalExport(ctx context.Context, p personalExportPar
 	// storage that can't be read ends the export (it is tried again).
 	for _, path := range fileOrder {
 		ref := files[path]
-		if p.Objects == nil {
+		objects := p.Objects
+		if ref.loc.public {
+			objects = p.PublicObjects
+		}
+		if objects == nil {
 			report.Exclusions = append(report.Exclusions, exportpkg.Exclusion{What: path, Reason: "the realm's file storage is not available"})
 			continue
 		}
 		step("file " + path)
-		body, _, err := p.Objects.Get(ctx, d.objectKey(ref.collection, ref.id), "")
+		body, _, err := objects.Get(ctx, d.fileKey(ref.collection, ref.loc), "")
 		if errors.Is(err, storage.ErrObjectNotFound) {
 			report.Exclusions = append(report.Exclusions, exportpkg.Exclusion{What: path, Reason: "the file is no longer in the storage"})
 			continue
@@ -298,7 +303,7 @@ func (d *documents) buildPersonalExport(ctx context.Context, p personalExportPar
 // exportFileRef is a file a document holds, to be copied into the archive.
 type exportFileRef struct {
 	collection *registry.Collection
-	id         string
+	loc        fileLoc // where its object is: in the private or the public storage
 }
 
 // lazyPart is a file of the archive that is only created when its first line arrives, so a
@@ -363,29 +368,28 @@ func shapeExported(doc storage.Document, fields []string) map[string]any {
 }
 
 // fileRefsOf reads the ids of the files a file field holds: one file, or a list of them.
-func fileRefsOf(v any) []string {
-	one := func(x any) string {
+func fileRefsOf(v any) []fileLoc {
+	one := func(x any) fileLoc {
 		m, _ := x.(map[string]any)
-		id, _ := m["id"].(string)
-		return id
+		return locOf(m)
 	}
-	var out []string
+	var out []fileLoc
 	switch t := v.(type) {
 	case []any:
 		for _, x := range t {
-			if id := one(x); id != "" {
-				out = append(out, id)
+			if loc := one(x); loc.id != "" {
+				out = append(out, loc)
 			}
 		}
 	case []map[string]any:
 		for _, x := range t {
-			if id := one(x); id != "" {
-				out = append(out, id)
+			if loc := one(x); loc.id != "" {
+				out = append(out, loc)
 			}
 		}
 	default:
-		if id := one(v); id != "" {
-			out = append(out, id)
+		if loc := one(v); loc.id != "" {
+			out = append(out, loc)
 		}
 	}
 	return out

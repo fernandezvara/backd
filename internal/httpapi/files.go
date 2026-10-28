@@ -78,7 +78,7 @@ func (d *documents) fileFieldInfo(w http.ResponseWriter, r *http.Request) {
 	if f == nil {
 		return
 	}
-	st := d.reg.Realms[c.Realm].Settings.Storage
+	st := d.storageFor(c, f.Public)
 	if st == nil {
 		notFound(w, r)
 		return
@@ -105,8 +105,8 @@ func (d *documents) fileFieldInfo(w http.ResponseWriter, r *http.Request) {
 
 // objectsFor returns the realm's storage connection or answers for it: 503
 // storage_unavailable when the keys can't be used.
-func (d *documents) objectsFor(w http.ResponseWriter, r *http.Request, realm string) (*storage.Objects, bool) {
-	obj, err := d.objects.For(r.Context(), realm)
+func (d *documents) objectsFor(w http.ResponseWriter, r *http.Request, realm string, public bool) (*storage.Objects, bool) {
+	obj, err := d.objects.For(r.Context(), realm, public)
 	switch {
 	case err == nil:
 		return obj, true
@@ -187,7 +187,7 @@ func (d *documents) uploadFile(w http.ResponseWriter, r *http.Request) {
 		notFound(w, r)
 		return
 	}
-	obj, ok := d.objectsFor(w, r, c.Realm)
+	obj, ok := d.objectsFor(w, r, c.Realm, f.Public)
 	if !ok {
 		return
 	}
@@ -367,7 +367,7 @@ func (d *documents) removeFiles(w http.ResponseWriter, r *http.Request, fileID s
 		notFound(w, r)
 		return
 	}
-	if _, ok := d.objectsFor(w, r, c.Realm); !ok {
+	if _, ok := d.objectsFor(w, r, c.Realm, f.Public); !ok {
 		return
 	}
 	cond, ok := ifMatchFrom(w, r)
@@ -519,7 +519,7 @@ func (d *documents) publicBase(r *http.Request) string {
 // fileLink makes a link to download a file without credentials, that works until it
 // expires: a storage-signed link in presigned mode, a backd-signed one in proxy mode.
 func (d *documents) fileLink(ctx context.Context, r *http.Request, obj *storage.Objects, c *registry.Collection, f *registry.FileField, docID string, tg fileTarget) (link string, expires time.Time, err error) {
-	st := d.reg.Realms[c.Realm].Settings.Storage
+	st := d.storageFor(c, tg.public)
 	ttl := linkTTL(f, st)
 	if downloadMode(f, st) == registry.DownloadPresigned {
 		l, err := obj.PresignGet(ctx, tg.key, ttl, tg.name, tg.contentType)
@@ -547,6 +547,7 @@ type fileTarget struct {
 	fileID      string
 	version     string // "" for the original
 	key         string // the object's key
+	public      bool   // the object is in the realm's public storage
 	name        string // the name a download is saved under
 	contentType string
 	etag        string
@@ -568,7 +569,8 @@ func (d *documents) sourceTarget(c *registry.Collection, file map[string]any) fi
 	name, _ := file["name"].(string)
 	ct, _ := file["type"].(string)
 	sha, _ := file["sha256"].(string)
-	return fileTarget{fileID: fileID, key: d.objectKey(c, fileID), name: name, contentType: ct, etag: `"` + sha + `"`, size: fileSize(file)}
+	loc := locOf(file)
+	return fileTarget{fileID: fileID, key: d.fileKey(c, loc), public: loc.public, name: name, contentType: ct, etag: `"` + sha + `"`, size: fileSize(file)}
 }
 
 // versionTarget is a made version of a file, or false with the reason it can't be served.
@@ -591,7 +593,7 @@ func (d *documents) versionTarget(c *registry.Collection, f *registry.FileField,
 	id, _ := state["id"].(string)
 	ct, _ := state["type"].(string)
 	return fileTarget{
-		fileID: src.fileID, version: version, key: src.key + "/" + version, contentType: ct, etag: `"` + id + `"`, size: fileSize(state),
+		fileID: src.fileID, version: version, key: d.versionKey(c, locOf(file), version, state), public: src.public, contentType: ct, etag: `"` + id + `"`, size: fileSize(state),
 		name: versionFileName(src.name, version, ct),
 	}, nil, true
 }
@@ -634,11 +636,6 @@ func (d *documents) downloadFile(w http.ResponseWriter, r *http.Request) {
 	c, repo := d.collection(r)
 	f := fileField(w, r, c)
 	if f == nil {
-		return
-	}
-	st := d.reg.Realms[c.Realm].Settings.Storage
-	if st == nil {
-		notFound(w, r)
 		return
 	}
 	docID, fileID := chi.URLParam(r, "id"), chi.URLParam(r, "fileID")
@@ -696,6 +693,12 @@ func (d *documents) downloadFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusNotFound, codeNotFound, "file not found")
 		return
 	}
+	// The file is read from the storage it was uploaded to, whatever the field says now.
+	st := d.storageFor(c, locOf(file).public)
+	if st == nil {
+		notFound(w, r)
+		return
+	}
 	tg := d.sourceTarget(c, file)
 	if version != "" {
 		var why map[string]any
@@ -705,12 +708,18 @@ func (d *documents) downloadFile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	obj, ok := d.objectsFor(w, r, c.Realm)
+	obj, ok := d.objectsFor(w, r, c.Realm, tg.public)
 	if !ok {
 		return
 	}
 
 	if q.Get("link") == "json" && !signed {
+		// A public file is read at its own address, which never expires.
+		if tg.public {
+			w.Header().Set("Cache-Control", "private, no-store")
+			writeJSON(w, http.StatusOK, map[string]any{"url": d.publicURL(c, tg.key), "expires_at": nil})
+			return
+		}
 		l, exp, err := d.fileLink(r.Context(), r, obj, c, f, docID, tg)
 		if err != nil {
 			linkError(w, r, err)
@@ -876,7 +885,10 @@ func (d *documents) addFileLinks(w http.ResponseWriter, r *http.Request, c *regi
 	if r.URL.Query().Get("file_links") != "true" || len(c.Files) == 0 {
 		return true
 	}
-	obj, err := d.objects.For(r.Context(), c.Realm)
+	if d.storageFor(c, false) == nil {
+		return true // only public files, which carry their own address
+	}
+	obj, err := d.objects.For(r.Context(), c.Realm, false)
 	if err != nil {
 		logger(r.Context()).Warn("file links left out: the realm's storage is not available", "realm", c.Realm, "error", err)
 		return true
@@ -890,6 +902,10 @@ func (d *documents) addFileLinks(w http.ResponseWriter, r *http.Request, c *regi
 			}
 			linked := make([]map[string]any, len(files))
 			for i, file := range files {
+				if locOf(file).public { // read at its own address, which a signed link would replace
+					linked[i] = file
+					continue
+				}
 				cp := make(map[string]any, len(file)+2)
 				maps.Copy(cp, file)
 				l, exp, err := d.fileLink(r.Context(), r, obj, c, f, docID, d.sourceTarget(c, file))
@@ -962,6 +978,15 @@ func (d *documents) storeUpload(w http.ResponseWriter, r *http.Request, c *regis
 		tooLarge(w, r, limit)
 	}
 
+	// A public file's address ends with its name, which has to be usable before anything else.
+	public, keyName := f.Public, ""
+	if public {
+		var ok bool
+		if keyName, ok = publicNameFor(w, r, f, requestedFileName(r)); !ok {
+			return nil, false
+		}
+	}
+
 	// The first bytes decide the type, before anything is stored.
 	body := http.MaxBytesReader(w, r.Body, limit)
 	headSize := sniffBytes
@@ -981,19 +1006,25 @@ func (d *documents) storeUpload(w http.ResponseWriter, r *http.Request, c *regis
 		writeError(w, r, http.StatusUnsupportedMediaType, codeUnsupportedFile, "this field doesn't accept "+contentType+" (detected from the file's content)")
 		return nil, false
 	}
+	// A public file is never renamed: its name must say what its content is.
+	if public && !publicExtensionMatches(keyName, contentType) {
+		writeError(w, r, http.StatusBadRequest, codeFileExtensionMismatch, "the file's content is "+contentType+" but its name is \""+keyName+"\": a public file's name must end with "+strings.Join(publicExtensions[contentType], " or "))
+		return nil, false
+	}
 	var image map[string]any
 	if len(f.Versions) > 0 || strings.HasPrefix(contentType, "image/") {
 		image = imageDetails(f, head, d.imageMaxPixels)
 	}
 
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), uploadTimeout)
-	key := obj.Key(c.Realm, c.Database, c.Name, plan.id)
+	key := d.fileKey(c, fileLoc{id: plan.id, public: public, keyName: keyName})
 	caller, _ := callerOf(r)
 	entry := template
 	entry.ID, entry.Database, entry.Collection, entry.Field, entry.Key, entry.Caller, entry.Size = plan.id, c.Database, c.Name, f.Name, key, caller.Subject(), max(r.ContentLength, 0)
+	entry.Public, entry.KeyName = public, keyName
 	var err error
 	if entry.Pending {
-		err = svc.JournalPendingUpload(ctx, entry, d.pendingTTL(c))
+		err = svc.JournalPendingUpload(ctx, entry, d.pendingTTL(c, entry.Public))
 	} else {
 		err = svc.JournalUpload(ctx, entry)
 	}
@@ -1005,7 +1036,7 @@ func (d *documents) storeUpload(w http.ResponseWriter, r *http.Request, c *regis
 	// From here an object may exist: any failure queues it for deletion.
 	abandon := func() {
 		_ = svc.SetUploadStatus(ctx, plan.id, auth.JournalFailed, "")
-		_ = svc.QueueFileDeletion(ctx, key, "abandoned")
+		_ = svc.QueueFileDeletion(ctx, key, "abandoned", entry.Public)
 	}
 
 	// A JPEG or PNG is stored without its metadata (the GPS position of a photograph, the
@@ -1032,7 +1063,11 @@ func (d *documents) storeUpload(w http.ResponseWriter, r *http.Request, c *regis
 	hasher := sha256.New()
 	var size int64
 	stream := io.TeeReader(&countingReader{r: source, n: &size}, hasher)
-	if err := obj.PutStream(ctx, key, stream, contentType); err != nil {
+	var headers storage.Headers
+	if public {
+		headers = storage.PublicOriginalHeaders // an original's address never changes what it serves
+	}
+	if err := obj.PutStreamWith(ctx, key, stream, contentType, headers); err != nil {
 		abandon()
 		cancel()
 		if stripped != nil {
@@ -1077,6 +1112,9 @@ func (d *documents) storeUpload(w http.ResponseWriter, r *http.Request, c *regis
 	}
 
 	meta := map[string]any{"id": plan.id, "name": plan.name, "size": size, "type": contentType, "sha256": sum, "uploaded_at": uploadedAt.Format(timeFormat)}
+	if public {
+		meta["public"], meta["key_name"] = true, keyName
+	}
 	maps.Copy(meta, image)
 	return &storedUpload{ctx: ctx, cancel: cancel, key: key, meta: meta, abandon: abandon}, true
 }

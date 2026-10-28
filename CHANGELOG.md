@@ -4,6 +4,18 @@ All notable changes to `backd` and to its JavaScript client `backd-js`, which ar
 
 Until a stable release is declared, a minor release may have breaking changes; they are listed first.
 
+## Unreleased
+
+### Added
+
+- **Public files (new):** a file field with `public: true` keeps JPEG and PNG pictures in a second, independent `public_storage:` (its own provider, bucket, keys, prefix and the `url` browsers read from; `backd` never connects to it) and puts each file's permanent address in the document (`photo.url`, and `versions.<name>.url` once a version is ready), so a page can show it with no signed link and no request to `backd`. Names are cleaned and must end with the extension of the content (`400 file_extension_mismatch`, never renamed), the metadata is always removed, and an original is cached for a year, a version for a day. Public files are included in personal data exports, realm exports and imports (an import checks them like an upload before publishing them) and left out of anonymized copies. `backd storage check` and `reconcile` take `--storage private|public`; `--direct` takes `--public-storage-key` and `--public-storage-secret`. `backd-js` and `package:backd` have `publicUrl` and `fileUrl(file:)`; the generated types, the admin UI and the workshop example (a public gallery) know them. See [Public files](https://fernandezvara.github.io/backd/docs/build/files/public-files/).
+- **`?link=json` on a public file** answers its permanent address with `expires_at: null`; the `expires_at` of `FileLink` is nullable in the Dart client.
+- **`POST /_admin/storage/check?storage=public`**, `storage` in the body of `POST /_admin/storage/reconcile`, and `public_storage` in `GET /_admin/storage` and the configuration view.
+
+### Changed
+
+- **The storage is a property of the file:** a file's details say which storage it is in (`public`, `key_name`), and the upload journal and the deletion queue record it. Private behavior is unchanged. The generated types of every realm with files gain `public` and `key_name` (regenerate with `backd types`).
+
 ## 0.9.4
 
 ### Added

@@ -145,7 +145,8 @@ func (w *Worker) purge(ctx context.Context, realm string, svc *auth.Users, scope
 func (w *Worker) orgFiles(ctx context.Context, svc *auth.Users, c *registry.Collection, files []storage.ErasedFile, reason string) {
 	d := w.fns.docs
 	for _, f := range files {
-		if err := svc.QueueFileDeletion(ctx, d.objectKey(c, f.ID), reason); err != nil {
+		loc := erasedLoc(f)
+		if err := svc.QueueFileDeletion(ctx, d.fileKey(c, loc), reason, loc.public); err != nil {
 			w.log.Error("queue a deleted file's object for deletion", "realm", svc.Realm, "file", f.ID, "error", err)
 			continue
 		}
@@ -155,7 +156,7 @@ func (w *Worker) orgFiles(ctx context.Context, svc *auth.Users, c *registry.Coll
 			}
 		}
 		for _, name := range slices.Sorted(maps.Keys(f.Versions)) {
-			if err := svc.QueueFileDeletion(ctx, d.objectKey(c, f.ID)+"/"+name, reason); err != nil {
+			if err := svc.QueueFileDeletion(ctx, d.versionKey(c, loc, name, map[string]any{"type": f.VersionTypes[name]}), reason, loc.public); err != nil {
 				w.log.Error("queue a deleted file's version for deletion", "realm", svc.Realm, "file", f.ID, "version", name, "error", err)
 				continue
 			}

@@ -21,7 +21,7 @@ await photos.delete();                        // the field's files; delete(fileI
 |---|---|
 | `put(data, { name, type, ifMatch })` | Stores a file (a string, bytes, a `Blob` or a stream): it replaces a single field's file and is added to a `multiple` field's. Resolves with the document, which now holds the file's details. `type` is a hint: backd detects the real one from the content |
 | `get(fileId?)` | Downloads a file. Without `fileId`, the one a single field holds; a field with several needs one. The bytes come through backd, even where downloads are redirects for everyone else, because a function can't reach the bucket |
-| `link(fileId?)` | `{ url, expires_at }`, exactly like `?link=json`: for the app to open. A link of the storage is for the bucket; a [backd link](../transfers/#links-for-apps) needs `BACKD_URL`, so it can name backd's public address |
+| `link(fileId?)` | `{ url, expires_at }`, exactly like `?link=json`: for the app to open. A link of the storage is for the bucket; a [backd link](../transfers/#links-for-apps) needs `BACKD_URL`, so it can name backd's public address. For a file of a [public field](../file-fields/#public-fields) it is the file's permanent address and `expires_at` is `null` |
 | `delete(fileId?, { ifMatch })` | Removes one file, or every file of the field. Resolves with the document |
 
 ## As the caller, or as the function

@@ -22,10 +22,11 @@ import (
 )
 
 type object struct {
-	data        []byte
-	contentType string
-	sum         string // base64 SHA-256
-	modified    time.Time
+	data                      []byte
+	contentType               string
+	cacheControl, disposition string
+	sum                       string // base64 SHA-256
+	modified                  time.Time
 }
 
 // Server is the fake storage. Its Bucket exists; any other bucket is missing.
@@ -189,7 +190,7 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, key string) {
 		apiError(w, http.StatusBadRequest, "BadDigest", "The SHA-256 you specified did not match the calculated checksum.")
 		return
 	}
-	s.objects[key] = &object{data: body, contentType: r.Header.Get("Content-Type"), sum: got, modified: time.Now().UTC()}
+	s.objects[key] = &object{data: body, contentType: r.Header.Get("Content-Type"), cacheControl: r.Header.Get("Cache-Control"), disposition: r.Header.Get("Content-Disposition"), sum: got, modified: time.Now().UTC()}
 	w.Header().Set("ETag", `"fake"`)
 	w.WriteHeader(http.StatusOK)
 }
@@ -220,6 +221,12 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request, key string) {
 	}
 	if o.contentType != "" {
 		w.Header().Set("Content-Type", o.contentType)
+	}
+	if o.cacheControl != "" {
+		w.Header().Set("Cache-Control", o.cacheControl)
+	}
+	if o.disposition != "" {
+		w.Header().Set("Content-Disposition", o.disposition)
 	}
 	if d := r.URL.Query().Get("response-content-disposition"); d != "" {
 		w.Header().Set("Content-Disposition", d)

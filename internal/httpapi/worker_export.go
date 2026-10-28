@@ -51,10 +51,20 @@ func (w *Worker) runExport(ctx context.Context, log *slog.Logger, realm string, 
 		return
 	}
 	d := w.fns.docs
-	obj, err := d.objects.For(ctx, realm)
+	obj, err := d.objects.For(ctx, realm, false)
 	if err != nil {
 		w.retryExport(ctx, log, svc, job, rec, nil, err)
 		return
+	}
+	// The user's public files are in the public storage, when the realm has one.
+	var publicObj packageObjects
+	if rl.Settings.PublicStorage != nil {
+		po, err := d.objects.For(ctx, realm, true)
+		if err != nil {
+			w.retryExport(ctx, log, svc, job, rec, nil, err)
+			return
+		}
+		publicObj = po
 	}
 	now := svc.Clock()
 	rec.Status, rec.StartedAt, rec.Error = auth.ExportRunning, now, ""
@@ -90,7 +100,7 @@ func (w *Worker) runExport(ctx context.Context, log *slog.Logger, realm string, 
 	go func() {
 		report, err := d.buildPersonalExport(build, personalExportParams{
 			Realm: realm, Svc: svc, UserID: rec.UserID, Operator: exportOperator(rec),
-			Retention: rl.Settings.Compliance.ExportKeep(), Objects: obj, Version: w.version, Fingerprint: w.fingerprint,
+			Retention: rl.Settings.Compliance.ExportKeep(), Objects: obj, PublicObjects: publicObj, Version: w.version, Fingerprint: w.fingerprint,
 			Progress: progress,
 		}, pw)
 		_ = pw.CloseWithError(err) // ends the upload: cleanly after the last byte, or with the error
@@ -101,12 +111,12 @@ func (w *Worker) runExport(ctx context.Context, log *slog.Logger, realm string, 
 	res := <-done
 	if !held {
 		log.Info("the export was cancelled or taken over; stopping")
-		_ = svc.QueueFileDeletion(context.WithoutCancel(ctx), rec.Key, "export_abandoned")
+		_ = svc.QueueFileDeletion(context.WithoutCancel(ctx), rec.Key, "export_abandoned", false)
 		return
 	}
 	if err := errors.Join(res.err, putErr); err != nil {
 		tr.finish(ctx, auth.StepFailed)
-		_ = svc.QueueFileDeletion(context.WithoutCancel(ctx), rec.Key, "export_failed") // whatever was stored of it
+		_ = svc.QueueFileDeletion(context.WithoutCancel(ctx), rec.Key, "export_failed", false) // whatever was stored of it
 		w.retryExport(ctx, log, svc, job, rec, tr, err)
 		return
 	}
@@ -225,7 +235,7 @@ func (w *Worker) ExportsDue(ctx context.Context) {
 			continue
 		}
 		for _, rec := range due {
-			if err := svc.QueueFileDeletion(ctx, rec.Key, "export_expired"); err != nil {
+			if err := svc.QueueFileDeletion(ctx, rec.Key, "export_expired", false); err != nil {
 				w.log.Error("queue an expired export's package for deletion", "realm", realm, "export", rec.ID, "error", err)
 				continue
 			}

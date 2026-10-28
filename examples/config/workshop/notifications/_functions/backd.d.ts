@@ -17,11 +17,15 @@ export interface FileDetails {
   versions?: Record<string, FileVersion>;
   url?: string;
   expires_at?: DateTimeString;
+  /** True for a file in the realm's public storage; url is then its permanent address. */
+  public?: boolean;
+  /** A public file's name as its address ends with it. */
+  key_name?: string;
 }
 
 export type FileVersion =
   | { status: "pending" }
-  | { status: "ready"; id: string; size: number; type: string; width: number; height: number; params: Record<string, unknown>; fingerprint: string; generated_at: DateTimeString }
+  | { status: "ready"; id: string; size: number; type: string; width: number; height: number; params: Record<string, unknown>; fingerprint: string; generated_at: DateTimeString; url?: string }
   | { status: "empty" }
   | { status: "skipped"; reason: "not_an_image" | "unsupported_format" }
   | { status: "failed"; reason: "too_large" | "decode_error" };
@@ -95,6 +99,34 @@ export type MainEventsWhere = {
 };
 export type MainEventsOrderByField = "id" | "-id" | "_meta.created_at" | "-_meta.created_at" | "_meta.updated_at" | "-_meta.updated_at" | "_meta.version" | "-_meta.version" | "_meta.owner" | "-_meta.owner" | "_meta.created_by" | "-_meta.created_by" | "_meta.updated_by" | "-_meta.updated_by" | "event_id" | "-event_id" | "order_id" | "-order_id" | "type" | "-type";
 export type MainEventsOrderBy = MainEventsOrderByField | `${MainEventsOrderByField},${string}`;
+/** main/gallery */
+export type MainGallery = { id: string; _meta: Meta } & { photo?: FileDetails; title: string; };
+/** main/gallery */
+export type MainGalleryInput = { title: string; };
+export type MainGalleryWhere = {
+  id?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "_meta.created_at"?: DateTimeString | (Ops<DateTimeString> & NullOps & RangeOps<DateTimeString>);
+  "_meta.updated_at"?: DateTimeString | (Ops<DateTimeString> & NullOps & RangeOps<DateTimeString>);
+  "_meta.version"?: number | (Ops<number> & NullOps & RangeOps<number>);
+  "_meta.owner"?: (string | null) | (Ops<(string | null)> & NullOps & RangeOps<string> & TextOps);
+  "_meta.created_by"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "_meta.updated_by"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "photo.height"?: number | (Ops<number> & NullOps & RangeOps<number>);
+  "photo.id"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "photo.key_name"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "photo.name"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "photo.public"?: boolean | (Ops<boolean> & NullOps);
+  "photo.sha256"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "photo.size"?: number | (Ops<number> & NullOps & RangeOps<number>);
+  "photo.type"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "photo.uploaded_at"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "photo.width"?: number | (Ops<number> & NullOps & RangeOps<number>);
+  title?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  $or?: Array<MainGalleryWhere>;
+  $and?: Array<MainGalleryWhere>;
+};
+export type MainGalleryOrderByField = "id" | "-id" | "_meta.created_at" | "-_meta.created_at" | "_meta.updated_at" | "-_meta.updated_at" | "_meta.version" | "-_meta.version" | "_meta.owner" | "-_meta.owner" | "_meta.created_by" | "-_meta.created_by" | "_meta.updated_by" | "-_meta.updated_by" | "photo.height" | "-photo.height" | "photo.id" | "-photo.id" | "photo.key_name" | "-photo.key_name" | "photo.name" | "-photo.name" | "photo.public" | "-photo.public" | "photo.sha256" | "-photo.sha256" | "photo.size" | "-photo.size" | "photo.type" | "-photo.type" | "photo.uploaded_at" | "-photo.uploaded_at" | "photo.width" | "-photo.width" | "title" | "-title";
+export type MainGalleryOrderBy = MainGalleryOrderByField | `${MainGalleryOrderByField},${string}`;
 /** main/orders */
 export type MainOrders = { id: string; _meta: Meta } & { amount: number; item: string; quantity: number; status: "draft" | "paid" | "refunded"; };
 /** main/orders */
@@ -213,6 +245,7 @@ export interface Realm {
       collections: {
         digests: { doc: MainDigests; input: MainDigestsInput; create: MainDigestsInput; where: MainDigestsWhere; order_by: MainDigestsOrderBy; expand: {}; aggregate: never; trigger: never };
         events: { doc: MainEvents; input: MainEventsInput; create: MainEventsInput; where: MainEventsWhere; order_by: MainEventsOrderBy; expand: {}; aggregate: never; trigger: never };
+        gallery: { doc: MainGallery; input: MainGalleryInput; create: MainGalleryInput; where: MainGalleryWhere; order_by: MainGalleryOrderBy; expand: {}; aggregate: never; trigger: never };
         orders: { doc: MainOrders; input: MainOrdersInput; create: MainOrdersInput; where: MainOrdersWhere; order_by: MainOrdersOrderBy; expand: {}; aggregate: never; trigger: never };
         receipts: { doc: MainReceipts; input: MainReceiptsInput; create: MainReceiptsInput; where: MainReceiptsWhere; order_by: MainReceiptsOrderBy; expand: {}; aggregate: never; trigger: never };
         refunds: { doc: MainRefunds; input: MainRefundsInput; create: MainRefundsInput; where: MainRefundsWhere; order_by: MainRefundsOrderBy; expand: {}; aggregate: never; trigger: never };

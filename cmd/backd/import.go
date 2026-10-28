@@ -425,11 +425,12 @@ func uploadFiles(t *target, dir string, m *exportpkg.Manifest, fileFields map[st
 			if len(fields) == 0 {
 				continue
 			}
-			ids, err := fileIDsOf(filepath.Join(dir, filepath.FromSlash(col.Part)), fields)
+			refs, err := fileRefsOf(filepath.Join(dir, filepath.FromSlash(col.Part)), fields)
 			if err != nil {
 				return err
 			}
-			for _, id := range ids {
+			for _, ref := range refs {
+				id := ref.ID
 				sum, ok := m.Checksums[exportpkg.FilePart(db.Name, id)]
 				if !ok {
 					continue // a package made without files
@@ -441,7 +442,13 @@ func uploadFiles(t *target, dir string, m *exportpkg.Manifest, fileFields map[st
 				st, _ := f.Stat()
 				hdr := map[string]string{"X-Backd-Sha256": strings.TrimPrefix(sum, "sha256:")}
 				maps.Copy(hdr, lease)
-				err = t.send("PUT", "_admin/import", url.Values{"file": {db.Name + "/" + col.Name + "/" + id}}, f, st.Size(), "application/octet-stream", hdr, nil)
+				query := url.Values{"file": {db.Name + "/" + col.Name + "/" + id}}
+				if ref.Public {
+					// Stored in the target's public storage, after the checks an upload does.
+					query.Set("public", "true")
+					query.Set("key_name", ref.KeyName)
+				}
+				err = t.send("PUT", "_admin/import", query, f, st.Size(), "application/octet-stream", hdr, nil)
 				f.Close()
 				if err != nil {
 					return fmt.Errorf("file %s: %w", id, err)

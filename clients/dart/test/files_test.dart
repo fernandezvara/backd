@@ -288,5 +288,61 @@ void main() {
       expect(versionStatus(file, 'big').reason, 'not_an_image');
       expect(versionStatus(file, 'none').status, 'undeclared');
     });
+
+    final publicFile = {
+      ...fileJson('fl_pub'),
+      'public': true,
+      'key_name': 'Me.png',
+      'url': 'https://cdn.test/prod/shelf/main/docs/fl_pub/Me.png',
+      'versions': {
+        'thumb': {
+          'status': 'ready',
+          'url': 'https://cdn.test/prod/shelf/main/docs/fl_pub/thumb/Me.png'
+        },
+        'big': {'status': 'pending'},
+      },
+    };
+
+    test('publicUrl is the address a public file carries', () {
+      expect(publicUrl(publicFile),
+          'https://cdn.test/prod/shelf/main/docs/fl_pub/Me.png');
+      expect(publicUrl(publicFile, version: 'thumb'),
+          'https://cdn.test/prod/shelf/main/docs/fl_pub/thumb/Me.png');
+      expect(publicUrl(publicFile, version: 'big'), isNull); // not made yet
+      expect(publicUrl(publicFile, version: 'nope'), isNull);
+      expect(publicUrl(fileJson('fl_1')), isNull); // not a public file
+      expect(
+          publicUrl({...fileJson('fl_1'), 'url': 'https://signed/x'}), isNull);
+      expect(publicUrl(null), isNull);
+    });
+
+    test('fileUrl answers a public file from its details, without a request',
+        () async {
+      final t = FakeTransport();
+      final col = testClient(t, apiKey: 'k').db('main').collection('docs');
+      final link =
+          await col.fileUrl('doc1', 'cover', 'fl_pub', file: publicFile);
+      expect(link!.url, publicFile['url']);
+      expect(link.expiresAt, isNull);
+      final thumb = await col.fileUrl('doc1', 'cover', 'fl_pub',
+          file: publicFile, version: 'thumb');
+      expect(thumb!.url, endsWith('/thumb/Me.png'));
+      expect(
+          await col.fileUrl('doc1', 'cover', 'fl_pub',
+              file: publicFile, version: 'big'),
+          isNull);
+      expect(t.requests, isEmpty);
+    });
+
+    test('fileUrl still asks the server for anything else', () async {
+      final t = FakeTransport()
+        ..answer(respond(200,
+            {'url': 'https://s3/x', 'expires_at': '2026-10-06T10:05:00.000Z'}));
+      final col = testClient(t, apiKey: 'k').db('main').collection('docs');
+      final link =
+          await col.fileUrl('doc1', 'cover', 'fl_1', file: fileJson('fl_1'));
+      expect(link!.expiresAt, '2026-10-06T10:05:00.000Z');
+      expect(t.requests, hasLength(1));
+    });
   });
 }

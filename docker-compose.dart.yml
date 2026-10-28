@@ -39,6 +39,29 @@ services:
     depends_on: [minio]
     restart: on-failure:30
 
+  # One-shot: the public bucket (public) for public file fields, readable by anyone
+  # without listing (docker/minio/read-only-public.json): objects only, no ListBucket. Two steps,
+  # because the image has no shell.
+  minio-public-setup:
+    image: cgr.dev/chainguard/minio-client:latest
+    environment:
+      MC_HOST_local: "http://backd-dart:dev-p4ssw0rd!@minio:9000"
+    command: ["mb", "--ignore-existing", "local/public"]
+    depends_on: [minio]
+    restart: on-failure:30
+
+  minio-public-policy:
+    image: cgr.dev/chainguard/minio-client:latest
+    environment:
+      MC_HOST_local: "http://backd-dart:dev-p4ssw0rd!@minio:9000"
+    command: ["anonymous", "set-json", "/policy.json", "local/public"]
+    volumes:
+      - ./docker/minio/read-only-public.json:/policy.json:ro
+    depends_on:
+      minio-public-setup:
+        condition: service_completed_successfully
+    restart: on-failure:30
+
   # One-shot: bundles the test functions so backd's startup check passes.
   # Uses the executor image (backd + the pinned Deno) so no extra image
   # is needed to build (see docker/egress-test/docker-compose.yml).

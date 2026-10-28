@@ -113,6 +113,20 @@ func ObjectKey(prefix, realm, database, collection, fileID string) string {
 	return strings.Join([]string{prefix, realm, database, collection, fileID}, "/")
 }
 
+// PublicObjectKey is the key of a public file's object: the private key and the file's name
+// (the sanitized one, stored on the file), which a browser reads as the last part of the address.
+func PublicObjectKey(prefix, realm, database, collection, fileID, keyName string) string {
+	return ObjectKey(prefix, realm, database, collection, fileID) + "/" + keyName
+}
+
+// PublicVersionKey is the key of a made version of a public file: <file key without the name>/<version>/<name>.
+func PublicVersionKey(prefix, realm, database, collection, fileID, version, keyName string) string {
+	return ObjectKey(prefix, realm, database, collection, fileID) + "/" + version + "/" + keyName
+}
+
+// EscapeKey percent-encodes each segment of an object key for use in a URL path.
+func EscapeKey(key string) string { return escapeKey(key) }
+
 // ObjectInfo describes a stored object.
 type ObjectInfo struct {
 	Key         string
@@ -124,6 +138,8 @@ type ObjectInfo struct {
 	// multipart upload "<base64>-<parts>" (a composite checksum, see CompositeSHA256).
 	Checksum     string
 	LastModified time.Time
+	// CacheControl and ContentDisposition are the headers the object was stored with.
+	CacheControl, ContentDisposition string
 }
 
 func mapError(err error) error {
@@ -173,12 +189,39 @@ func fromB64(sum *string) string {
 	return hex.EncodeToString(raw)
 }
 
+// Headers are what a bucket sends with an object whenever it is read. A bucket cannot add them
+// per request, so the objects of a public storage are stored with the ones browsers and CDNs
+// need: they are set when the object is written.
+type Headers struct {
+	CacheControl       string
+	ContentDisposition string
+}
+
+// The headers of public files (design/public-files.md): an original's address never changes what
+// it serves (a replacement is a new file id), so it is cached for a year; a version is rewritten
+// in place when it is regenerated, so it is cached for a day.
+var (
+	PublicOriginalHeaders = Headers{CacheControl: "public, max-age=31536000, immutable", ContentDisposition: "inline"}
+	PublicVersionHeaders  = Headers{CacheControl: "public, max-age=86400", ContentDisposition: "inline"}
+)
+
 // Put stores body (size bytes) under key. With sha256 (hex) the storage verifies
 // the content against it and rejects the object when it differs.
 func (o *Objects) Put(ctx context.Context, key string, body io.Reader, size int64, contentType, sha256 string) error {
+	return o.PutWith(ctx, key, body, size, contentType, sha256, Headers{})
+}
+
+// PutWith is Put with the headers the object is served with.
+func (o *Objects) PutWith(ctx context.Context, key string, body io.Reader, size int64, contentType, sha256 string, h Headers) error {
 	in := &s3.PutObjectInput{Bucket: aws.String(o.cfg.Bucket), Key: aws.String(key), Body: body, ContentLength: aws.Int64(size)}
 	if contentType != "" {
 		in.ContentType = aws.String(contentType)
+	}
+	if h.CacheControl != "" {
+		in.CacheControl = aws.String(h.CacheControl)
+	}
+	if h.ContentDisposition != "" {
+		in.ContentDisposition = aws.String(h.ContentDisposition)
 	}
 	if sha256 != "" {
 		sum, err := b64(sha256)
@@ -198,6 +241,7 @@ func (o *Objects) Head(ctx context.Context, key string) (ObjectInfo, error) {
 		return ObjectInfo{}, mapError(err)
 	}
 	return ObjectInfo{Key: key, Size: aws.ToInt64(out.ContentLength), ContentType: aws.ToString(out.ContentType), ETag: aws.ToString(out.ETag),
+		CacheControl: aws.ToString(out.CacheControl), ContentDisposition: aws.ToString(out.ContentDisposition),
 		SHA256: fromB64(out.ChecksumSHA256), Checksum: aws.ToString(out.ChecksumSHA256), LastModified: aws.ToTime(out.LastModified)}, nil
 }
 
@@ -386,6 +430,11 @@ const UploadPartSize = 8 << 20
 // (a multipart upload, aborted if the stream fails), holding at most one part in
 // memory. It does not verify a checksum: the caller hashes the stream as it passes.
 func (o *Objects) PutStream(ctx context.Context, key string, body io.Reader, contentType string) error {
+	return o.PutStreamWith(ctx, key, body, contentType, Headers{})
+}
+
+// PutStreamWith is PutStream with the headers the object is served with.
+func (o *Objects) PutStreamWith(ctx context.Context, key string, body io.Reader, contentType string, h Headers) error {
 	tm := transfermanager.New(o.client, func(opt *transfermanager.Options) {
 		opt.PartSizeBytes = UploadPartSize
 		opt.MultipartUploadThreshold = UploadPartSize
@@ -397,6 +446,12 @@ func (o *Objects) PutStream(ctx context.Context, key string, body io.Reader, con
 	in := &transfermanager.UploadObjectInput{Bucket: aws.String(o.cfg.Bucket), Key: aws.String(key), Body: body}
 	if contentType != "" {
 		in.ContentType = aws.String(contentType)
+	}
+	if h.CacheControl != "" {
+		in.CacheControl = aws.String(h.CacheControl)
+	}
+	if h.ContentDisposition != "" {
+		in.ContentDisposition = aws.String(h.ContentDisposition)
 	}
 	_, err := tm.UploadObject(ctx, in)
 	return mapError(err)

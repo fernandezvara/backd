@@ -1,6 +1,6 @@
 ---
 title: "Connecting storage"
-description: "storage: in realm.yaml, the access keys as realm secrets, the prefix each backd instance needs, and backd storage check."
+description: "storage: and public_storage: in realm.yaml, the access keys as realm secrets, the prefix each backd instance needs, and backd storage check."
 icon: "cloud-arrow-up"
 weight: 571
 toc: true
@@ -53,6 +53,30 @@ There is no `path_style` setting (the provider decides how a bucket is addressed
 
 The admin UI's *Storage* page, `backd storage usage` and `GET /_admin/storage` show the usage against the limits.
 
+## Public storage
+
+Files that are not private (a gallery, product pictures) can be served straight from a bucket or a CDN instead of through `backd`'s rules and signed links. A realm that wants them declares a **second, independent storage** with `public_storage:`, and marks the file fields that use it with `public: true` in `collection.yaml`. It has its own provider, bucket, keys and prefix, so it can be on another provider (for example R2 behind a CDN while the private files are in MinIO), and a realm can have either storage or both.
+
+```yaml
+public_storage:
+  provider: r2
+  endpoint: https://<account id>.r2.cloudflarestorage.com
+  bucket: acme-public
+  prefix: prod
+  access_key: secret:PUBLIC_STORAGE_ACCESS_KEY
+  secret_key: secret:PUBLIC_STORAGE_SECRET_KEY
+  url: https://cdn.example.com       # where browsers read the files
+  pending_ttl: 1h
+```
+
+It takes the settings above (`provider`, `endpoint`, `region`, `bucket`, `prefix`, the two keys and `pending_ttl`, with the same rules) plus one more, **`url`**: the address browsers read files from, usually a CDN domain, with an optional path and no query. `backd` writes to `endpoint` and **never connects to `url`**; a public file's address is `<url>/<prefix>/<realm>/<database>/<collection>/<file id>/<name>`. `download`, `presigned_ttl`, `public_endpoint` and `quota` don't apply: files are read at `url`, uploads go through `backd`, and `storage.quota` counts public and private files together.
+
+`backd` refuses to start if the public storage is the same bucket on the same endpoint as `storage:` (everything in a public bucket is public), if it uses the same secrets as `storage:` (the key of the public bucket must not reach the private one), if a field is `public: true` without a `public_storage:`, or if a public field asks for anything but JPEG and PNG, `upload: direct`, `keep_metadata` or a download mode. Use other secrets for it: `backd secret set --realm acme --name PUBLIC_STORAGE_ACCESS_KEY`.
+
+{{< hint style="warning" >}}
+Making the bucket (or the CDN in front of it) **readable by everyone, with its listing off**, is yours to do and to test before production: `backd` can't see the public address. `backd storage check` leaves a small image in the bucket and prints the address it should be readable at; open it without credentials. Nothing private may ever go in this bucket, and a CDN may keep serving a deleted file until its cache expires.
+{{< /hint >}}
+
 ## The access keys
 
 The keys are secrets of the realm: set them with `backd secret set`, **without** `--database`, which makes them realm-scope secrets.
@@ -88,7 +112,9 @@ The running `backd` (which holds the keys) verifies the storage the way files wi
 | `cors` | The bucket's CORS rules, where the provider exposes them: browsers need them for [direct uploads](../../../build/files/transfers/#direct-uploads) (the `PUT` method and the `Content-Type` and `x-amz-checksum-sha256` headers) and for cross-origin downloads. It warns when a rule set couldn't carry a direct upload. |
 | `encryption` | The bucket's default encryption, where the provider exposes it. |
 
-The objects it makes are deleted again; nothing else in the bucket is touched. `--json` prints the report as JSON, and it is the admin API's [`POST /_admin/storage/check`](../../administration/admin/#endpoints) (audited as `storage.check`; the `config` area, read is enough).
+For a realm with a `public_storage:` the command checks that one too (`--storage private` or `--storage public` checks only one): the bucket and keys, a write that stores the headers public files need (`Cache-Control`, `Content-Disposition`) and reads them back, a read and a listing. It leaves one small image under `<prefix>/<realm>/_check/` (the next check replaces it) and prints its public address, because `backd` never connects to `url`: open it to confirm the bucket or CDN serves it without credentials. The report says `[private]` or `[public]` for each.
+
+The objects the private check makes are deleted again; nothing else in the bucket is touched. `--json` prints the report as JSON, and it is the admin API's [`POST /_admin/storage/check`](../../administration/admin/#endpoints) (audited as `storage.check`; the `config` area, read is enough).
 
 ## What `backd` connects to
 
@@ -102,7 +128,7 @@ In production, give `backd` a route to the declared storage and nothing else for
 
 ## Startup checks
 
-`backd` refuses to start, naming the file and the setting, for an unknown `provider`, an `endpoint` or `region` that doesn't fit the provider, a `public_endpoint` on a provider that doesn't allow one, a missing `prefix`, `bucket` or key, a `download`, `presigned_ttl` or `pending_ttl` out of range, `storage:` in a realm with `auth: disabled`, and plain `http` outside `BACKD_DEV=true`. A realm whose keys can't be read (no `BACKD_SECRETS_KEY`, or the secrets not set) starts with a warning instead.
+`backd` refuses to start, naming the file and the setting, for an unknown `provider`, an `endpoint` or `region` that doesn't fit the provider, a `public_endpoint` on a provider that doesn't allow one, a `public_storage:` that breaks the rules above, a missing `prefix`, `bucket` or key, a `download`, `presigned_ttl` or `pending_ttl` out of range, `storage:` in a realm with `auth: disabled`, and plain `http` outside `BACKD_DEV=true`. A realm whose keys can't be read (no `BACKD_SECRETS_KEY`, or the secrets not set) starts with a warning instead.
 
 ## When something is wrong
 

@@ -391,6 +391,46 @@ await backd.request({ method: 'POST', path: ['_auth', 'verify-email'], body: { t
 (await backd.auth.me()).email_verified   // true</pre></details>
         <p class="muted"><a href="/docs/auth/sessions/#email-verification">Email verification</a> · <a href="/docs/auth/sessions/#password-reset">Password reset</a> · <a href="/docs/functions/email/">Email</a></p>
       </section>
+
+      <!-- 7. a public gallery -->
+      <section class="card panel" id="gallery" aria-labelledby="gallery-title">
+        <h2 id="gallery-title"><span class="n">7</span> A public gallery <code>public_storage</code></h2>
+        <p class="goal">Not everything is private. The pictures of the gallery are for everyone, so their field is <code>public: true</code>: they are kept in a second, public bucket and each document carries the address its picture is read at. No function, no signed link: the page shows them with a plain <code>&lt;img&gt;</code>.</p>
+        <p class="muted" x-show="!pictures.length">The gallery is empty.</p>
+        <ul class="gallery" x-show="pictures.length">
+          <template x-for="p in pictures" :key="p.id">
+            <li>
+              <img :src="pictureUrl(p)" :alt="p.title" width="160" height="160" loading="lazy">
+              <span x-text="p.title"></span>
+              <a :href="p.photo && p.photo.url" target="_blank" rel="noopener">its address</a>
+              <button type="button" class="link" x-show="isStaff" :disabled="busy" @click="removePicture(p)">Remove</button>
+            </li>
+          </template>
+        </ul>
+        <p class="muted" x-show="!isStaff">Sign in as Staff to add a picture: only staff may write to the gallery (anyone may look).</p>
+        <div x-show="isStaff">
+          <div class="actions">
+            <label>Caption <input type="text" x-model="caption" maxlength="100" placeholder="optional"></label>
+            <label>Add a JPEG or PNG <input type="file" accept="image/jpeg,image/png" :disabled="busy" @change="addPicture($event)"></label>
+          </div>
+        </div>
+        <div class="notice">
+          <strong>What to notice</strong>
+          <ul>
+            <li>Look at the inspector: listing the gallery is one call, and the pictures are not fetched through backd at all. The page reads them from the bucket (<code>http://localhost:9000/backd-public/…</code> here, a CDN in production).</li>
+            <li>The address ends with the file's name and includes the file's id, so two <code>photo.png</code> never collide, and a replaced picture has a new address.</li>
+            <li>Only JPEG and PNG are accepted, a name whose extension doesn't match the content is refused (<code>400 file_extension_mismatch</code>, never renamed), and the metadata (the GPS position of a photograph) is always removed before the picture is published.</li>
+            <li>The thumbnail is made by a worker and gets its own address once it is ready; until then the page shows the original.</li>
+            <li>Anyone with an address can read the picture, and a CDN may keep serving a deleted one for a while: keep what is private in a field that is not public.</li>
+          </ul>
+        </div>
+        <details class="code"><summary>The code</summary><pre>const gallery = db.collection('gallery')
+const { items } = await gallery.list()          // anyone may read; each document carries the address
+items[0].photo.url                              // https://cdn.example.com/…/Sunset%20over%20the%20bay.png
+publicUrl(items[0].photo, 'thumb')              // the thumbnail's address once it is ready, else null
+await gallery.uploadFile(doc.id, 'photo', file) // staff only; JPEG or PNG</pre></details>
+        <p class="muted"><a href="/docs/build/files/file-fields/#public-fields">Public fields</a> · <a href="/docs/operate/providers/storage/#public-storage">Public storage</a></p>
+      </section>
     </main>
 
     <aside class="inspector" aria-labelledby="inspector-title">

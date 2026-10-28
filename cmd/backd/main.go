@@ -754,20 +754,23 @@ const keyExpiryNotice = 14 * 24 * time.Hour
 // (the keys are set after the instance is up, with backd secret set).
 func (a *app) logStorageSecrets(ctx context.Context, users func(string) *auth.Users) {
 	for _, rl := range a.reg.SortedRealms() {
-		st := rl.Settings.Storage
 		svc := users(rl.Name)
-		if st == nil || svc == nil {
-			continue
-		}
-		refs := []registry.SecretRef{{Realm: true, Name: st.AccessKey}, {Realm: true, Name: st.SecretKey}}
-		_, missing, err := svc.ResolveSecrets(ctx, refs, "")
-		switch {
-		case err != nil:
-			a.log.Warn("could not read the realm's storage keys", "realm", rl.Name, "error", err)
-		case len(missing) > 0:
-			a.log.Warn("storage keys are not set: the realm's file endpoints answer 503 storage_unavailable until they are (BACKD_SECRETS_KEY on this instance, then backd secret set and backd storage check)", "realm", rl.Name, "missing", missing, "secrets_key_configured", svc.Cipher != nil)
-		default:
-			a.log.Info("realm storage", "realm", rl.Name, "provider", st.Provider, "bucket", st.Bucket, "prefix", st.Prefix)
+		for _, st := range []*registry.StorageSettings{rl.Settings.Storage, rl.Settings.PublicStorage} {
+			if st == nil || svc == nil {
+				continue
+			}
+			refs := []registry.SecretRef{{Realm: true, Name: st.AccessKey}, {Realm: true, Name: st.SecretKey}}
+			_, missing, err := svc.ResolveSecrets(ctx, refs, "")
+			switch {
+			case err != nil:
+				a.log.Warn("could not read the realm's "+st.Label()+" keys", "realm", rl.Name, "error", err)
+			case len(missing) > 0:
+				a.log.Warn(st.Label()+" keys are not set: the realm's file endpoints answer 503 storage_unavailable until they are (BACKD_SECRETS_KEY on this instance, then backd secret set and backd storage check)", "realm", rl.Name, "missing", missing, "secrets_key_configured", svc.Cipher != nil)
+			case st.Public:
+				a.log.Info("realm public storage", "realm", rl.Name, "provider", st.Provider, "bucket", st.Bucket, "prefix", st.Prefix, "url", st.URL)
+			default:
+				a.log.Info("realm storage", "realm", rl.Name, "provider", st.Provider, "bucket", st.Bucket, "prefix", st.Prefix)
+			}
 		}
 	}
 }
@@ -1077,12 +1080,10 @@ func checkFunctions(reg *registry.Registry, cfg settings.Settings, log *slog.Log
 		}
 	}
 	for _, name := range reg.RealmNames() {
-		st := reg.Realms[name].Settings.Storage
-		if st == nil {
-			continue
-		}
-		if st.HTTP && !cfg.Dev {
-			return fmt.Errorf("realm %s: storage uses a plain http address (%s): only BACKD_DEV=true (local development) allows it; use https", name, plainHTTP(st))
+		for _, st := range []*registry.StorageSettings{reg.Realms[name].Settings.Storage, reg.Realms[name].Settings.PublicStorage} {
+			if st != nil && st.HTTP && !cfg.Dev {
+				return fmt.Errorf("realm %s: %s uses a plain http address (%s): only BACKD_DEV=true (local development) allows it; use https", name, st.Label(), plainHTTP(st))
+			}
 		}
 	}
 	for _, name := range reg.RealmNames() {
@@ -1248,8 +1249,11 @@ func (a *app) jobStats(ctx context.Context) (map[string]metrics.RealmJobs, error
 
 // plainHTTP is the storage address that is not https.
 func plainHTTP(st *registry.StorageSettings) string {
-	if strings.HasPrefix(st.Endpoint, "http://") {
+	switch {
+	case strings.HasPrefix(st.Endpoint, "http://"):
 		return st.Endpoint
+	case strings.HasPrefix(st.URL, "http://"):
+		return st.URL
 	}
 	return st.PublicEndpoint
 }
@@ -1260,6 +1264,15 @@ func storageOrigins(reg *registry.Registry) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, rl := range reg.SortedRealms() {
+		if ps := rl.Settings.PublicStorage; ps != nil {
+			// Public files are shown from their url, whatever the endpoint is.
+			if u, err := url.Parse(ps.URL); err == nil && u.Host != "" {
+				if origin := u.Scheme + "://" + u.Host; !seen[origin] {
+					seen[origin] = true
+					out = append(out, origin)
+				}
+			}
+		}
 		st := rl.Settings.Storage
 		if st == nil {
 			continue

@@ -211,6 +211,8 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 		"acme/app/vault/collection.yaml":    vaultConfig + rulesSection(filesRules),
 		"acme/app/profiles/schema.json":     filesSchema,
 		"acme/app/profiles/collection.yaml": profilesConfig + rulesSection(filesRules),
+		"acme/app/pictures/schema.json":     filesSchema,
+		"acme/app/pictures/collection.yaml": picturesConfig + rulesSection("read: \"true\"\ncreate: user != nil\nupdate: user != nil\ndelete: user != nil\n"),
 		"acme/app/gallery/schema.json":      filesSchema,
 		"acme/app/gallery/collection.yaml":  filesConfig + rulesSection(strings.Replace(filesRules, "read: user != nil && document._meta.owner == user.id", "read: true", 1)),
 	} {
@@ -223,7 +225,7 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 	// (see files_test.go): the address here is never connected to.
 	realmPath := filepath.Join(root, "acme", "realm.yaml")
 	realmYAML, _ := os.ReadFile(realmPath)
-	if err := os.WriteFile(realmPath, append(realmYAML, []byte(filesStorage)...), 0o644); err != nil {
+	if err := os.WriteFile(realmPath, append(realmYAML, []byte(filesStorage+filesPublicStorage)...), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	// The default hosted pages, in English and (the same text) Spanish.

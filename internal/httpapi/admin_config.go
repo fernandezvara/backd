@@ -185,6 +185,13 @@ func realmConfig(s registry.RealmSettings, seesUsers bool) map[string]any {
 			"quota": map[string]any{"realm": nilIfZero(st.QuotaRealm), "user": nilIfZero(st.QuotaUser)},
 		}
 	}
+	if ps := s.PublicStorage; ps != nil {
+		out["public_storage"] = map[string]any{
+			"provider": ps.Provider, "endpoint": ps.Endpoint, "region": ps.Region, "bucket": ps.Bucket, "prefix": ps.Prefix,
+			"access_key": "secret:" + ps.AccessKey, "secret_key": "secret:" + ps.SecretKey,
+			"url": ps.URL, "pending_ttl": dur(ps.PendingTTL),
+		}
+	}
 	return out
 }
 
@@ -260,6 +267,9 @@ func collectionConfig(c *registry.Collection, rel func(string) string) map[strin
 			view := map[string]any{"multiple": f.Multiple, "max_files": f.MaxFiles, "max_size": f.MaxSize, "types": orStrings(f.Types), "upload": f.Upload, "download": download, "presigned_ttl": ttl, "cache": cache}
 			if f.KeepMetadata {
 				view["keep_metadata"] = true
+			}
+			if f.Public {
+				view["public"] = true
 			}
 			if f.MaxPixels > 0 {
 				view["max_pixels"] = f.MaxPixels

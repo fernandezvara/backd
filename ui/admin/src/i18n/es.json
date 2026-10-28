@@ -228,7 +228,9 @@
     "refresh": "Actualizar",
     "asOf": "a {date}",
     "loadFailed": "No se pudo cargar el estado del almacenamiento.",
-    "none": "Este realm no tiene almacenamiento configurado (storage: en realm.yaml), así que no guarda archivos.",
+    "none": "Este realm no tiene almacenamiento configurado (storage: en realm.yaml), así que no guarda archivos privados.",
+    "publicTitle": "Almacenamiento público",
+    "publicWhere": "Los archivos públicos se leen en {url} (backd nunca se conecta a ella: abre un archivo público para comprobarlo).",
     "keys": "claves de acceso",
     "bucket": "depósito (bucket)",
     "ok": "bien",
@@ -999,7 +1001,9 @@
         "removed": "{name} quitado.",
         "preview": "Vista previa de {name}",
         "readonly": "Los archivos los cambia un administrador con escritura en datos.",
-        "direct": "Enviado directo al almacenamiento"
+        "direct": "Enviado directo al almacenamiento",
+        "public": "Público",
+        "publicLabel": "Abrir la dirección pública de {name}"
       },
       "unsaved": "Cambios sin guardar",
       "problems": "El servidor ha rechazado algunos campos:",
