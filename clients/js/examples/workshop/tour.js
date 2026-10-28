@@ -274,7 +274,9 @@ function png(/** @type {number} */ w, /** @type {number} */ h) {
   head.writeUInt32BE(w, 0); head.writeUInt32BE(h, 4); head[8] = 8; head[9] = 2
   return new Blob([Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', head), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))])], { type: 'image/png' })
 }
-const bytesOf = async (/** @type {Blob} */ b) => Buffer.from(await b.arrayBuffer())
+async function bytesOf(/** @type {Blob} */ b) {
+  return Buffer.from(await b.arrayBuffer())
+}
 
 console.log(failed === 0 ? '\nThe whole tour works.' : `\n${failed} check(s) failed.`)
 process.exit(failed === 0 ? 0 : 1)
