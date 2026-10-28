@@ -210,3 +210,4 @@ What changed between the design and the code, so the design stays true:
 - The JavaScript `fileUrl(..., {file})` and Dart `fileUrl(file:)` answer a public file without a request; `?link=json` on a public file answers the address with `expires_at: null`.
 - The `@backd/functions-testing` fake does not model public fields.
 - The workshop example's gallery needs MinIO in its CI stack (`scripts/example-ci.sh` starts it and the public bucket).
+- The representation tag also covers the **state of each public version** (id and status): a worker makes a version without bumping the document's version, so a cached read would otherwise never see it become ready (found by the workshop tour in CI).

@@ -656,3 +656,30 @@ func TestPublicFileLinkConfigAndStatus(t *testing.T) {
 		t.Errorf("public storage status: %v", st["public_storage"])
 	}
 }
+
+// A version becoming ready changes no document version, so the validator has to follow it: a
+// client that caches the read must see the thumbnail appear.
+func TestAVersionBecomingReadyChangesTheValidator(t *testing.T) {
+	f := newFilesFixture(t)
+	f.svc.Now = func() time.Time { return *f.clock }
+	w := newTestWorker(t, f.rulesFixture)
+	docID, rec, _ := f.publicUpload(t, "Big view.png", realPNG(t, 40, 20))
+	if rec.Code != http.StatusCreated {
+		t.Fatal(rec.Body)
+	}
+	path := "/v1/acme/app/pictures/" + docID
+	before := f.get(t, path, nil)
+	listBefore := f.get(t, "/v1/acme/app/pictures", nil)
+	runImageJobs(t, w)
+	after := f.get(t, path, map[string]string{"If-None-Match": before.Header().Get("ETag")})
+	if after.Code != http.StatusOK || after.Header().Get("ETag") == before.Header().Get("ETag") {
+		t.Errorf("document after the version was made: %d, tags %s → %s", after.Code, before.Header().Get("ETag"), after.Header().Get("ETag"))
+	}
+	if l := f.get(t, "/v1/acme/app/pictures", map[string]string{"If-None-Match": listBefore.Header().Get("ETag")}); l.Code != http.StatusOK {
+		t.Errorf("list after the version was made: %d", l.Code)
+	}
+	// Nothing changed since: the same tag, so a 304.
+	if again := f.get(t, path, map[string]string{"If-None-Match": after.Header().Get("ETag")}); again.Code != http.StatusNotModified {
+		t.Errorf("unchanged: %d", again.Code)
+	}
+}

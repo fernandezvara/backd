@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"mime"
 	"path"
@@ -151,25 +152,40 @@ func (d *documents) withPublicURLs(c *registry.Collection, doc map[string]any) m
 	return out
 }
 
-// publicTag is the part of a read's validator that depends on where public files are read from:
-// changing the public storage's url changes it, so clients refetch and get the new addresses
-// instead of keeping dead ones under a 304. It is empty (and changes nothing) for documents
+// publicTag is the part of a read's validator that depends on what a public file's address
+// shows: the public storage's url (changing it changes the addresses, so clients refetch instead
+// of keeping dead ones under a 304) and the state of each version (a worker makes or remakes a
+// version without changing the document's version, so without this a client that caches the
+// read would never see a thumbnail become ready). It is empty, and changes nothing, for documents
 // without public files.
 func (d *documents) publicTag(c *registry.Collection, docs ...map[string]any) []string {
 	st := d.storageFor(c, true)
 	if st == nil {
 		return nil
 	}
+	var parts []string
 	for _, doc := range docs {
 		for _, f := range c.Files {
 			for _, file := range filesOf(f, doc) {
-				if locOf(file).public {
-					return []string{"public-url:" + st.URL}
+				if !locOf(file).public {
+					continue
+				}
+				id, _ := file["id"].(string)
+				for name, v := range mapOf(file["versions"]) {
+					state := mapOf(v)
+					vid, _ := state["id"].(string)
+					parts = append(parts, fmt.Sprintf("version:%s/%s=%v/%s", id, name, state["status"], vid))
+				}
+				if parts == nil {
+					parts = []string{}
 				}
 			}
 		}
 	}
-	return nil
+	if parts == nil {
+		return nil
+	}
+	return append(parts, "public-url:"+st.URL)
 }
 
 // locByID finds where a file is from the document that records it (a document of the collection
