@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AuthenticationError, NetworkError } from 'backd-js'
+import { AuthenticationError, NetworkError, PasswordExpiredError, ValidationError } from 'backd-js'
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
@@ -9,6 +9,7 @@ import TextField from '@/components/TextField.vue'
 import LocaleSwitch from '@/components/LocaleSwitch.vue'
 import ThemeSwitch from '@/components/ThemeSwitch.vue'
 import { lastRealm, rememberRealm, validRealm } from '@/lib/realm'
+import { errorText } from '@/lib/format'
 import { safeNext } from '@/lib/redirect'
 import { NotAdminError, useSession } from '@/stores/session'
 
@@ -35,6 +36,57 @@ const recovery = ref<string[]>([])
 const ticked = ref<Record<string, boolean>>({})
 const allTicked = () => (session.step?.consents ?? []).every((c) => ticked.value[c.name])
 
+// A password that expired for this account: the form that replaces it with the current one.
+const expired = ref<{ emailed: boolean } | null>(null)
+const current = ref('')
+const newPassword = ref('')
+const repeat = ref('')
+const needsCode = ref(false)
+const method = ref<'totp' | 'recovery'>('totp')
+const changed = ref(false)
+const fieldError = ref('')
+
+async function updatePassword() {
+  fieldError.value = ''
+  error.value = ''
+  if (newPassword.value !== repeat.value) {
+    fieldError.value = t('signIn.expired.mismatch')
+    return
+  }
+  busy.value = true
+  try {
+    await session.updatePassword(realm.value, {
+      email: email.value.trim(),
+      password: current.value,
+      newPassword: newPassword.value,
+      ...(needsCode.value ? { code: code.value.trim(), method: method.value } : {}),
+    })
+    current.value = newPassword.value = repeat.value = code.value = ''
+    expired.value = null
+    needsCode.value = false
+    changed.value = true
+  } catch (e) {
+    if (e instanceof PasswordExpiredError) {
+      error.value = t('signIn.expired.realmWide')
+    } else if (e instanceof ValidationError && e.details?.some((d) => d.path === 'code')) {
+      needsCode.value = true
+      error.value = t('signIn.expired.codeNeeded')
+    } else if (e instanceof ValidationError && e.details?.some((d) => d.path === 'new_password')) {
+      fieldError.value = errorText(e.details.find((d) => d.path === 'new_password')?.reason, t('common.unexpected'))
+    } else if (e instanceof ValidationError && e.code === 'invalid_code') {
+      error.value = t('signIn.codeFailed')
+    } else if (e instanceof NetworkError) {
+      error.value = t('signIn.unreachable')
+    } else if (e instanceof AuthenticationError) {
+      error.value = t('signIn.expired.wrong')
+    } else {
+      error.value = errorText(e, t('common.unexpected'))
+    }
+  } finally {
+    busy.value = false
+  }
+}
+
 // Only the realm's own pages are followed after signing in.
 const next = () => safeNext(route.query.next, realm.value)
 
@@ -51,6 +103,12 @@ async function submit() {
     ticked.value = {}
     if (result === 'done') await router.replace(next())
   } catch (e) {
+    if (e instanceof PasswordExpiredError) {
+      // The password is right but expired: it can be replaced here by proving it.
+      password.value = ''
+      expired.value = { emailed: e.resetEmailQueued }
+      return
+    }
     error.value =
       e instanceof NotAdminError ? t('signIn.notAdmin') : e instanceof NetworkError ? t('signIn.unreachable') : e instanceof AuthenticationError ? t('signIn.failed') : t('signIn.failed')
   } finally {
@@ -137,6 +195,7 @@ function cancel() {
       </div>
     </div>
     <h1 class="text-xl font-semibold">{{ t('signIn.title') }}</h1>
+    <AppAlert v-if="changed && !expired" data-testid="password-changed">{{ t('signIn.expired.changed') }}</AppAlert>
     <AppAlert v-if="session.ended">{{ t(`signIn.ended.${session.ended}`) }}</AppAlert>
     <AppAlert v-if="error" kind="error">{{ error }}</AppAlert>
     <section v-if="recovery.length" class="space-y-3" aria-labelledby="recovery-h">
@@ -147,6 +206,26 @@ function cancel() {
       </ul>
       <AppButton @click="continueAfterRecovery">{{ t('signIn.recovery.continue') }}</AppButton>
     </section>
+    <form v-else-if="expired" class="space-y-4" data-testid="expired-step" @submit.prevent="updatePassword">
+      <p class="text-sm">{{ t('signIn.expired.intro') }} <template v-if="expired.emailed">{{ t('signIn.expired.emailed') }}</template></p>
+      <TextField v-model="current" type="password" :label="t('signIn.expired.current')" autocomplete="current-password" required />
+      <TextField v-model="newPassword" type="password" :label="t('signIn.expired.new')" autocomplete="new-password" required />
+      <TextField v-model="repeat" type="password" :label="t('signIn.expired.repeat')" autocomplete="new-password" required :error="fieldError || undefined" />
+      <template v-if="needsCode">
+        <label class="block space-y-1 text-sm font-medium">
+          {{ t('signIn.expired.method') }}
+          <select v-model="method" class="block w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-normal dark:border-slate-600 dark:bg-slate-900">
+            <option value="totp">{{ t('signIn.expired.totp') }}</option>
+            <option value="recovery">{{ t('signIn.expired.recovery') }}</option>
+          </select>
+        </label>
+        <TextField v-model="code" :label="t('signIn.code.label')" autocomplete="one-time-code" required />
+      </template>
+      <div class="flex justify-end gap-2">
+        <AppButton type="button" variant="secondary" @click="expired = null">{{ t('signIn.cancel') }}</AppButton>
+        <AppButton type="submit" :busy="busy">{{ t('signIn.expired.submit') }}</AppButton>
+      </div>
+    </form>
     <form v-else-if="session.step?.kind === 'consent'" class="space-y-4" data-testid="consent-step" @submit.prevent="acceptConsents">
       <p class="text-sm">{{ t('signIn.consent.intro') }}</p>
       <section v-for="c in session.step.consents" :key="c.name" class="space-y-2">

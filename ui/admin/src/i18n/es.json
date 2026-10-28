@@ -58,6 +58,22 @@
     "invalid": "El nombre de un realm solo tiene letras minúsculas, dígitos, - y _."
   },
   "signIn": {
+    "expired": {
+      "intro": "Esta contraseña ha caducado. Elige una nueva: escribe la contraseña actual y la nueva dos veces.",
+      "emailed": "También te hemos enviado un enlace para elegir una.",
+      "current": "Contraseña actual",
+      "new": "Contraseña nueva",
+      "repeat": "Contraseña nueva otra vez",
+      "mismatch": "Las dos contraseñas nuevas no coinciden.",
+      "wrong": "La contraseña actual no es correcta.",
+      "realmWide": "Todas las contraseñas de este realm han caducado. Elige una nueva con el enlace del correo, o pídeselo a un administrador.",
+      "codeNeeded": "Esta cuenta usa verificación en dos pasos: escribe también un código.",
+      "method": "Código de",
+      "totp": "Aplicación de autenticación",
+      "recovery": "Código de recuperación",
+      "submit": "Cambiar contraseña",
+      "changed": "Contraseña cambiada. Inicia sesión con la nueva."
+    },
     "codeFailed": "Ese código no es correcto. Prueba con el siguiente, o con un código de recuperación.",
     "cancel": "Cancelar",
     "code": {"intro": "Escribe el código de tu aplicación de autenticación, o un código de recuperación.", "label": "Código", "submit": "Verificar"},

@@ -58,6 +58,22 @@
     "invalid": "A realm name has lowercase letters, digits, - and _ only."
   },
   "signIn": {
+    "expired": {
+      "intro": "This password has expired. Choose a new one: enter the current password and the new one twice.",
+      "emailed": "We also emailed you a link to choose one.",
+      "current": "Current password",
+      "new": "New password",
+      "repeat": "New password again",
+      "mismatch": "The two new passwords are not the same.",
+      "wrong": "The current password is not right.",
+      "realmWide": "Every password in this realm expired. Choose a new one with the link in the email, or ask an administrator.",
+      "codeNeeded": "This account uses two-step verification: enter a code too.",
+      "method": "Code from",
+      "totp": "Authenticator app",
+      "recovery": "Recovery code",
+      "submit": "Change password",
+      "changed": "Password changed. Sign in with the new one."
+    },
     "codeFailed": "That code is not right. Try the next one, or a recovery code.",
     "cancel": "Cancel",
     "code": {"intro": "Enter the code of your authenticator app, or a recovery code.", "label": "Code", "submit": "Verify"},

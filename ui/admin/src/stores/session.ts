@@ -119,6 +119,12 @@ export const useSession = defineStore('session', () => {
     return 'done'
   }
 
+  /** Changes the password with the current one, with no session (a password that expired for this user alone). */
+  async function updatePassword(forRealm: string, input: { email: string; password: string; newPassword: string; code?: string; method?: 'totp' | 'recovery' }) {
+    const c = createClient({ url: window.location.origin, realm: forRealm, storage: memoryStore() })
+    await c.auth.updatePassword(input)
+  }
+
   /** The second step: the code of the authenticator app, or a recovery code (xxxxx-xxxxx). */
   async function verifyCode(code: string) {
     const c = client.value!
@@ -216,5 +222,5 @@ export const useSession = defineStore('session', () => {
     idleSeconds.value = n
   }
 
-  return { realm, client, access, ended, signedIn, email, idleSeconds, readable, writable, canRead, canWrite, step, signIn, verifyCode, startEnrollment, confirmEnrollment, acceptConsents, cancelStep, restore, signOut, expired, setIdleSeconds }
+  return { realm, client, access, ended, signedIn, email, idleSeconds, readable, writable, canRead, canWrite, step, signIn, updatePassword, verifyCode, startEnrollment, confirmEnrollment, acceptConsents, cancelStep, restore, signOut, expired, setIdleSeconds }
 })

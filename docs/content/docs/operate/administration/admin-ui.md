@@ -20,7 +20,7 @@ It is off by default. Set `BACKD_ADMIN_UI=true` on the instance that should serv
 docker run -e BACKD_ADMIN_UI=true … ghcr.io/fernandezvara/backd:vX.Y.Z serve
 ```
 
-Open `https://<your backd>/_ui/`, one form takes the administrator's email, the realm's name and the password. The address carries the realm, `/_ui/r/<realm>/…`, so a link opens the same realm for whoever follows it and fills the field; at `/_ui/` the field starts with the realm of the last sign-in. An administrator works in one realm at a time, so to change realm you sign out and sign in again.
+Open `https://<your backd>/_ui/`, one form takes the administrator's email, the realm's name and the password. The address carries the realm, `/_ui/r/<realm>/…`, so a link opens the same realm for whoever follows it and fills the field; at `/_ui/` the field starts with the realm of the last sign-in. An administrator works in one realm at a time, so to change realm you sign out and sign in again. A user whose password was [expired for them alone](../../../build/auth/users/#expiring-a-password) gets, instead of an error, a form to choose a new one: the current password, the new one twice and, for an account with a second factor, a code (it calls [`POST /_auth/password/update`](../../../build/auth/sessions/#change-the-password-signed-out)); then they sign in as usual. When the whole realm's passwords were expired, the form says to use the emailed link.
 
 The UI needs the admin API on the same instance: `BACKD_ADMIN_UI=true` with `BACKD_ADMIN_API=false` is a startup error. A binary built from source without the UI (`go build` without running `make ui` first) starts, logs a warning, and answers `404` at `/_ui/`.
 
