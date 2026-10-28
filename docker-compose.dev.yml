@@ -93,6 +93,29 @@ services:
     depends_on: [minio]
     restart: on-failure:20
 
+  # One-shot: the public bucket (backd-public) for public file fields, readable by anyone
+  # without listing (docker/minio/read-only-backd-public.json): objects only, no ListBucket. Two steps,
+  # because the image has no shell.
+  minio-public-setup:
+    image: cgr.dev/chainguard/minio-client:latest
+    environment:
+      MC_HOST_local: "http://backd-dev:dev-p4ssw0rd!@minio:9000"
+    command: ["mb", "--ignore-existing", "local/backd-public"]
+    depends_on: [minio]
+    restart: on-failure:20
+
+  minio-public-policy:
+    image: cgr.dev/chainguard/minio-client:latest
+    environment:
+      MC_HOST_local: "http://backd-dev:dev-p4ssw0rd!@minio:9000"
+    command: ["anonymous", "set-json", "/policy.json", "local/backd-public"]
+    volumes:
+      - ./docker/minio/read-only-backd-public.json:/policy.json:ro
+    depends_on:
+      minio-public-setup:
+        condition: service_completed_successfully
+    restart: on-failure:20
+
   # One-shot: bundles every functions project before backd starts (backd refuses stale or
   # missing bundles). In dev mode backd bundles again whenever a function changes.
   functions-build:

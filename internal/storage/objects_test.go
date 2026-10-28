@@ -462,3 +462,66 @@ func TestCompositeSHA256(t *testing.T) {
 		t.Error("a digest that is not 64 hex characters was accepted")
 	}
 }
+
+// A public storage: a bucket anyone may read objects from but not list, which is how the
+// stack's docker/minio/read-only-*.json policies make one. What the operator is told to test by
+// hand, the test does: the object is readable without credentials with the headers it was
+// stored with, the listing is not, and the private bucket is not readable the same way.
+func TestPublicBucketOnMinIO(t *testing.T) {
+	private := minioObjects(t)
+	cfg := minioConfig(t)
+	cfg.Bucket = "backd-test-public"
+	public, err := NewObjects(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := public.client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(cfg.Bucket)}); err != nil && !strings.Contains(err.Error(), "BucketAlready") {
+		t.Fatal(err)
+	}
+	policy := `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":["*"]},"Action":["s3:GetObject"],"Resource":["arn:aws:s3:::` + cfg.Bucket + `/*"]}]}`
+	if _, err := public.client.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{Bucket: aws.String(cfg.Bucket), Policy: aws.String(policy)}); err != nil {
+		t.Fatal(err)
+	}
+
+	key := public.cfg.Prefix + "/acme/app/notes/fl_1/Holiday photo.png"
+	privateKey := private.cfg.Prefix + "/acme/app/notes/fl_1"
+	body := publicSentinel
+	if err := public.PutWith(ctx, key, bytes.NewReader(body), int64(len(body)), "image/png", "", PublicOriginalHeaders); err != nil {
+		t.Fatal(err)
+	}
+	if err := private.Put(ctx, privateKey, bytes.NewReader(body), int64(len(body)), "image/png", ""); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = public.Delete(ctx, key); _ = private.Delete(ctx, privateKey) })
+
+	get := func(bucket, k string) *http.Response {
+		t.Helper()
+		res, err := http.Get(cfg.Endpoint + "/" + bucket + "/" + escapeKey(k))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { res.Body.Close() })
+		return res
+	}
+	res := get(cfg.Bucket, key)
+	got, _ := io.ReadAll(res.Body)
+	if res.StatusCode != http.StatusOK || !bytes.Equal(got, body) || res.Header.Get("Cache-Control") != PublicOriginalHeaders.CacheControl || res.Header.Get("Content-Disposition") != "inline" || res.Header.Get("Content-Type") != "image/png" {
+		t.Errorf("anonymous read of the public object: %d %v", res.StatusCode, res.Header)
+	}
+	if res := get(private.cfg.Bucket, privateKey); res.StatusCode != http.StatusForbidden {
+		t.Errorf("anonymous read of the private bucket: %d", res.StatusCode)
+	}
+	if res, err := http.Get(cfg.Endpoint + "/" + cfg.Bucket + "/?list-type=2&prefix=" + public.cfg.Prefix); err != nil || res.StatusCode != http.StatusForbidden {
+		t.Errorf("anonymous listing of the public bucket: %v %v", res, err)
+	}
+
+	rep := public.CheckPublic(ctx, "acme", cfg.Endpoint+"/"+cfg.Bucket, PublicOriginalHeaders)
+	if !rep.OK() {
+		t.Fatalf("check: %+v", rep.Steps)
+	}
+	t.Cleanup(func() { _ = public.Delete(ctx, public.PublicSentinelKey("acme")) })
+	if res := get(cfg.Bucket, public.PublicSentinelKey("acme")); res.StatusCode != http.StatusOK || res.Header.Get("Content-Type") != "image/png" {
+		t.Errorf("anonymous read of the sentinel at %s: %d", rep.SentinelURL, res.StatusCode)
+	}
+}

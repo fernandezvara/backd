@@ -15,3 +15,13 @@ storage:
   prefix: itest
   access_key: secret:STORAGE_ACCESS_KEY
   secret_key: secret:STORAGE_SECRET_KEY
+# Public file fields: another bucket of the same MinIO that anyone may read without listing
+# (docker/minio/read-only-public.json). Browsers read it at `url`, here the host's published port.
+public_storage:
+  provider: minio
+  endpoint: http://minio:9000
+  bucket: public
+  prefix: itest
+  access_key: secret:PUBLIC_STORAGE_ACCESS_KEY
+  secret_key: secret:PUBLIC_STORAGE_SECRET_KEY
+  url: http://127.0.0.1:18090/public
