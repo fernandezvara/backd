@@ -34,7 +34,7 @@ func TestAPasswordIsUpdatedWithTheCurrentOne(t *testing.T) {
 
 func TestAnIndividuallyExpiredPasswordCanBeUpdated(t *testing.T) {
 	ctx := context.Background()
-	svc, _, clock, u := enrollFixture(t)
+	svc, store, clock, u := enrollFixture(t)
 	*clock = clock.Add(time.Hour)
 	if err := svc.ExpirePassword(ctx, u.Email, "support case"); err != nil {
 		t.Fatal(err)
@@ -48,6 +48,9 @@ func TestAnIndividuallyExpiredPasswordCanBeUpdated(t *testing.T) {
 	}
 	if _, err := svc.SignIn(ctx, u.Email, "dev-p4ssw0rd!2", ""); err != nil {
 		t.Errorf("after the update: %v", err)
+	}
+	if got, err := store.UserByID(ctx, u.ID); err != nil || !got.PasswordExpiredAt.IsZero() {
+		t.Errorf("the user's expiry flag stays after a new password: %v, %v", got.PasswordExpiredAt, err)
 	}
 }
 
@@ -126,5 +129,34 @@ func TestUpdatingThePasswordOfAnAccountWithASecondFactorNeedsACode(t *testing.T)
 	in.Password, in.NewPassword = "dev-p4ssw0rd!3", "dev-p4ssw0rd!4"
 	if err := f.svc.UpdatePassword(ctx, in); !errors.As(err, &bad) {
 		t.Fatalf("a used recovery code: %v", err)
+	}
+}
+
+func TestEveryNewPasswordClearsTheUsersExpiryFlag(t *testing.T) {
+	ctx := context.Background()
+	flagged := func(t *testing.T, svc *Users, store interface {
+		UserByID(context.Context, string) (User, error)
+	}, u User) bool {
+		t.Helper()
+		got, err := store.UserByID(ctx, u.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return !got.PasswordExpiredAt.IsZero()
+	}
+	svc, store, clock, u := enrollFixture(t)
+	*clock = clock.Add(time.Hour)
+	if err := svc.ExpirePassword(ctx, u.Email, ""); err != nil {
+		t.Fatal(err)
+	}
+	if !flagged(t, svc, store, u) {
+		t.Fatal("expiring sets the flag")
+	}
+	*clock = clock.Add(time.Minute)
+	if err := svc.SetPassword(ctx, u.Email, "dev-p4ssw0rd!2"); err != nil {
+		t.Fatal(err)
+	}
+	if flagged(t, svc, store, u) {
+		t.Error("set-password left the flag")
 	}
 }

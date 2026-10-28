@@ -108,7 +108,11 @@ func (s *Users) SetPassword(ctx context.Context, email, password string) error {
 	if err != nil {
 		return err
 	}
-	if err := s.putPassword(ctx, u.ID, hash, s.now()); err != nil {
+	now := s.now()
+	if err := s.putPassword(ctx, u.ID, hash, now); err != nil {
+		return err
+	}
+	if err := s.clearPasswordExpiry(ctx, u, now); err != nil {
 		return err
 	}
 	s.Audit(ctx, AuditUserPassword, userTarget(u.ID), nil)
@@ -236,6 +240,17 @@ func (s *Users) hash(ctx context.Context, password string) (string, error) {
 		return "", err
 	}
 	return s.Hasher.Hash(ctx, p)
+}
+
+// clearPasswordExpiry drops the user's own expiry once they have a new password: it no longer
+// applies, and the flag would go on telling administrators the password is expired. The realm's
+// epoch is not the user's to clear. Call it after the new password was stored.
+func (s *Users) clearPasswordExpiry(ctx context.Context, u User, now time.Time) error {
+	if u.PasswordExpiredAt.IsZero() {
+		return nil
+	}
+	var none time.Time
+	return s.Store.UpdateUser(ctx, u.ID, UserUpdate{PasswordExpiredAt: &none}, now)
 }
 
 func (s *Users) putPassword(ctx context.Context, userID, hash string, now time.Time) error {

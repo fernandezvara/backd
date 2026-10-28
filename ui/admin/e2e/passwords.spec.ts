@@ -51,6 +51,11 @@ test('an administrator expires one password, and a new one makes the account usa
   await expect(page.getByRole('status').filter({ hasText: 'Password changed' })).toBeVisible()
   await expect(page.getByTestId('user-status')).toHaveText('Active')
   expect((await login('another-p4ssw0rd!')).ok()).toBe(true)
+  // The list stops marking it.
+  await page.getByRole('link', { name: 'All users' }).click()
+  await page.getByLabel('Search by email').fill(email)
+  await expect(page.getByRole('row', { name: email })).toBeVisible()
+  await expect(page.getByTestId('password-expired-tag')).toHaveCount(0)
 
   // The realm sends no email, so there is no reset link to make.
   await expect(page.getByTestId('reset-link')).toHaveCount(0)
