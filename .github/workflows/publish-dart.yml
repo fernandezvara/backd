@@ -2,9 +2,9 @@ name: Publish Dart client
 
 # Publishes clients/dart to pub.dev (package "backd") when a dart- tag is pushed:
 #   1. set "version" in clients/dart/pubspec.yaml, merge it
-#   2. git tag dart-v0.9.3 && git push origin dart-v0.9.3
+#   2. git tag dart-v0.9.4 && git push origin dart-v0.9.4
 # The tag must match the version, and point at a commit on main. A version with
-# a suffix (dart-v0.9.3-rc.1) is a pub.dev pre-release automatically — pub.dev
+# a suffix (dart-v0.9.4-rc.1) is a pub.dev pre-release automatically — pub.dev
 # shows it only to users who ask for pre-release versions, so a suffix tag is
 # all it takes; `dart pub add backd` keeps getting the latest stable one.
 #

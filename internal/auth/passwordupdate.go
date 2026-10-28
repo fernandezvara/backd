@@ -85,6 +85,9 @@ func (s *Users) UpdatePassword(ctx context.Context, in PasswordUpdate) error {
 	if err := s.putPassword(ctx, u.ID, hash, now); err != nil {
 		return err
 	}
+	if err := s.clearPasswordExpiry(ctx, u, now); err != nil {
+		return err
+	}
 	s.AuditAs(ctx, userTarget(u.ID), AuditPasswordChange, userTarget(u.ID), map[string]any{"by": "current_password", "was_expired": expired})
 	if err := s.endSessions(ctx, u.ID, "password_changed"); err != nil {
 		return err

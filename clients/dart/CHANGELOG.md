@@ -1,3 +1,7 @@
+## 0.9.4
+
+- **`auth.updatePassword(email, password, newPassword, {code, method})`:** changes the password signed out with the current one (a password that expired for the user alone, or one the user wants to replace). An account with a second factor also gives `code`; every session of the user ends and none starts. A password expired for the whole realm is refused with `password_expired`. Needs a backd server with `POST /_auth/password/update`.
+
 ## 0.9.3
 
 - **Breaking, with a backd server that scopes sessions (34.2):** `Collection.inOrg()` and the `org` option of `create`, and `TypedCollection.inOrg`, are gone: a session works in the one organization it was opened for, so there is none to name (`inTeam` needs no `inOrg` before it). `orgs.list()`, `orgs.previewInvitation` and `orgs.acceptInvitation` are gone too: use `orgs.signedIn()`, `auth.previewInvitation(token, org:)` and a login with the `invitation:`. A `session_unscoped` answer expires the session like `unauthenticated`. `orgs.update` takes `sessionMaxAge`.

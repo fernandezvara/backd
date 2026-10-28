@@ -57,7 +57,7 @@ import { connectionBody } from './orgs.js'
  * @property {string} created_at
  * @property {string} updated_at
  * @property {string | null} erased_at   When the user was erased; a tombstone keeps only its id (and a placeholder email).
- * @property {string | null} password_expired_at   When an administrator expired this user's password; null when none did.
+ * @property {string | null} password_expired_at   When an administrator expired this user's password; null when none did or once a new password was set.
  * @property {boolean} [password_expired]   Whether the password is expired now (this user's expiry or the realm's epoch); only in `users.get()`.
  */
 

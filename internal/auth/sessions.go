@@ -480,7 +480,11 @@ func (s *Users) ChangePassword(ctx context.Context, p Principal, next string) er
 		return err
 	}
 	_, had := s.Store.IdentityOf(ctx, p.User.ID, ProviderPassword)
-	if err := s.putPassword(ctx, p.User.ID, hash, s.now()); err != nil {
+	now := s.now()
+	if err := s.putPassword(ctx, p.User.ID, hash, now); err != nil {
+		return err
+	}
+	if err := s.clearPasswordExpiry(ctx, p.User, now); err != nil {
 		return err
 	}
 	if errors.Is(had, ErrNotFound) {

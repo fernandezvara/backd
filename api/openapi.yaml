@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: backd HTTP API
-  version: 0.9.3
+  version: 0.9.4
   summary: Config-driven, schema-validated REST API over MongoDB.
   description: |
     The contract of backd's HTTP API. Collections and their document fields
@@ -10805,7 +10805,7 @@ components:
       required: [id, email, email_verified, roles, locale, disabled, admin_networks, login_networks, created_at, updated_at, erased_at, password_expired_at]
       properties:
         password_expired: { type: boolean, description: "Whether the password is expired now (an expiry of this user or the realm's epoch). Only in the answer of `GET /_admin/users/{id}`; lists leave it out." }
-        password_expired_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }], description: "When an administrator expired this user's password (`POST /_admin/users/{id}/expire-password`): a password set before it no longer opens the account. Null when none did; a realm-wide epoch is not shown here." }
+        password_expired_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }], description: "When an administrator expired this user's password (`POST /_admin/users/{id}/expire-password`): a password set before it no longer opens the account. Null when none did, and again once the user has a new password; a realm-wide epoch is not shown here." }
         erased_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }], description: "When the user was erased; a tombstone has no email of its own, no roles and can't be enabled." }
         id: { type: string }
         email: { type: string }

@@ -87,6 +87,10 @@ ui-test:
 ui-e2e:
 	scripts/ui-e2e.sh
 
+# Stops the backd-ui-e2e stack if a run was interrupted before cleanup.
+ui-e2e-down:
+	docker compose -p backd-ui-e2e down -v
+
 # Lint api/openapi.yaml (needs Node). The Go contract tests check the server against it.
 lint-api:
 	npx --yes @redocly/cli@2 lint --config api/redocly.yaml api/openapi.yaml
