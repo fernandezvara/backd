@@ -248,6 +248,8 @@
     "reconcileNote": "Tras restaurar una copia, o quitar un campo de archivos, ejecuta backd storage reconcile para hallar objetos que ningún documento referencia."
   },
   "users": {
+    "passwordsShow": "Mostrar las acciones de una filtración",
+    "passwordsHide": "Ocultar las acciones de una filtración",
     "title": "Usuarios",
     "search": "Buscar por correo",
     "searchHelp": "Encuentra los correos que contienen el texto.",
@@ -657,6 +659,8 @@
     "loadFailed": "No se ha podido cargar el historial de invocaciones."
   },
   "checks": {
+    "show": "Mostrar la comprobación de esquema",
+    "hide": "Ocultar la comprobación de esquema",
     "title": "Comprobaciones de esquema",
     "help": "Encuentra los documentos guardados que ya no cumplen el esquema de su colección, por ejemplo tras cambiarlo. Una comprobación lee todos los documentos y nunca modifica ninguno.",
     "panel": "Comprobación de esquema",

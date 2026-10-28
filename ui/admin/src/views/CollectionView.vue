@@ -213,6 +213,8 @@ async function restore(doc: Doc) {
     toasts.push(errorText(e, t('common.unexpected')), 'error')
   }
 }
+// The schema check stays folded until asked for.
+const showCheck = ref(false)
 const showStatus = computed(() => (total.value !== undefined ? t('data.collection.total', { n: total.value }) : ''))
 </script>
 
@@ -222,11 +224,12 @@ const showStatus = computed(() => (total.value !== undefined ? t('data.collectio
       <button type="button" class="px-3 py-1.5" :class="view === 'live' ? 'bg-brand-700 text-white' : ''" :aria-pressed="view === 'live'" @click="switchView('live')">{{ t('data.collection.live') }}</button>
       <button type="button" class="px-3 py-1.5" :class="view === 'trash' ? 'bg-brand-700 text-white' : ''" :aria-pressed="view === 'trash'" @click="switchView('trash')">{{ t('data.collection.trash') }}</button>
     </div>
+    <AppButton variant="secondary" :aria-expanded="showCheck" aria-controls="schema-check" data-testid="check-toggle" @click="showCheck = !showCheck">{{ showCheck ? t('checks.hide') : t('checks.show') }}</AppButton>
     <AppButton v-if="canWrite && orgMode" variant="secondary" @click="openAssign">{{ t('data.collection.assign.open') }}</AppButton>
     <RouterLink v-if="canWrite" :to="{ name: 'data-new', params: { realm, database, collection } }" class="rounded-md bg-brand-700 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-800">{{ t('data.collection.new') }}</RouterLink>
   </PageHeader>
 
-  <SchemaCheckPanel :realm="realm" :database="database" :collection="collection" :total="conditions.length || view === 'trash' ? undefined : total" />
+  <SchemaCheckPanel v-if="showCheck" :realm="realm" :database="database" :collection="collection" :total="conditions.length || view === 'trash' ? undefined : total" />
 
   <form class="mt-4 space-y-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900" role="search" :aria-label="t('data.collection.where')" @submit.prevent="apply">
     <template v-if="!rawOpen">

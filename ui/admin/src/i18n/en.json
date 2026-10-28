@@ -248,6 +248,8 @@
     "reconcileNote": "After restoring a backup, or removing a file field, run backd storage reconcile to find objects no document references."
   },
   "users": {
+    "passwordsShow": "Show the leak actions",
+    "passwordsHide": "Hide the leak actions",
     "title": "Users",
     "search": "Search by email",
     "searchHelp": "Finds emails containing the text.",
@@ -657,6 +659,8 @@
     "loadFailed": "The invocation history could not be loaded."
   },
   "checks": {
+    "show": "Show the schema check",
+    "hide": "Hide the schema check",
     "title": "Schema checks",
     "help": "Finds the stored documents that no longer match their collection's schema, for example after the schema changed. A check reads every document and never changes one.",
     "panel": "Schema check",

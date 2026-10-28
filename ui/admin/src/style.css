@@ -4,7 +4,7 @@
 
 @theme {
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Ubuntu Mono', monospace;
   /* A small radius everywhere: the shared components and the pages use rounded-md and rounded-lg. */
   --radius-md: 3px;
   --radius-lg: 4px;

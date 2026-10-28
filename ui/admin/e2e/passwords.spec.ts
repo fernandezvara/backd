@@ -60,6 +60,8 @@ test('the actions for a leak ask for the number of accounts and the realm name',
   await signIn('admin')
   await go(page, 'Users')
   const panel = page.getByTestId('passwords-panel')
+  await expect(panel).toHaveCount(0) // folded until asked for
+  await page.getByTestId('passwords-toggle').click()
   await expect(panel).toBeVisible()
   await expect(page.getByTestId('passwords-status')).toContainText('accounts have a password')
 
@@ -87,4 +89,5 @@ test('only a full administrator sees the actions', async ({ page, signIn }) => {
   await go(page, 'Users')
   await expect(page.getByTestId('users-table')).toBeVisible()
   await expect(page.getByTestId('passwords-panel')).toHaveCount(0)
+  await expect(page.getByTestId('passwords-toggle')).toHaveCount(0)
 })

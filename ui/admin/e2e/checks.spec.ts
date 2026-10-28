@@ -8,6 +8,7 @@ import { setTheme } from './nav'
 test('a collection is checked against its schema, with a warning first, and the report names the document', async ({ page, signIn }) => {
   await signIn('admin', { keep: true })
   await page.goto(`/_ui/r/${REALM}/data/main/labels`)
+  await page.getByTestId('check-toggle').click()
   const panel = page.getByTestId('schema-check')
   await expect(panel).toContainText('Never checked.')
 
@@ -46,6 +47,7 @@ test('a read-only administrator reads the reports and may start a check', async 
   await expect(page.getByTestId('check-main-labels')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Check every collection' })).toBeEnabled()
   await page.goto(`/_ui/r/${REALM}/data/main/labels`)
+  await page.getByTestId('check-toggle').click()
   await expect(page.getByTestId('schema-check')).toBeVisible()
 })
 
@@ -70,6 +72,7 @@ test('the schema check views have no accessibility violations', async ({ page, s
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
     await page.keyboard.press('Escape')
     await page.goto(`/_ui/r/${REALM}/data/main/labels`)
+    await page.getByTestId('check-toggle').click()
     await expect(page.getByTestId('schema-check')).toBeVisible()
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
   }
