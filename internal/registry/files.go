@@ -476,6 +476,9 @@ func fileDetailsSchema() map[string]any {
 			"type":        str(),
 			"sha256":      map[string]any{"type": "string", "pattern": "^[0-9a-f]{64}$"},
 			"uploaded_at": map[string]any{"type": "string", "format": "date-time"},
+			// A public file is in the realm's public storage, under a key that ends with key_name.
+			"public":   map[string]any{"type": "boolean"},
+			"key_name": str(),
 			// The pixel size of an image original, and the state of each declared version.
 			"width":    map[string]any{"type": "integer"},
 			"height":   map[string]any{"type": "integer"},
@@ -527,4 +530,14 @@ func withFileSchemas(schema map[string]any, files map[string]*FileField) map[str
 		}
 	}
 	return out
+}
+
+// HasPublicFiles reports whether any file field of the collection is public.
+func (c *Collection) HasPublicFiles() bool {
+	for _, f := range c.Files {
+		if f.Public {
+			return true
+		}
+	}
+	return false
 }

@@ -1,7 +1,7 @@
 {
   "generator": "1",
   "realm": "shelf",
-  "fingerprint": "ac4aabbe1f4a27f6de1dad59d4ec9064679a83ef71d53ef7f9e5f21174221c2f",
+  "fingerprint": "b11aad6eca88dbae1e6a3550a371c7d42faeb86bd1ac5d4d9086f3b26b196dc9",
   "entries": {
     "collection mail/outbox": "",
     "collection main/assets": "",
@@ -32,7 +32,9 @@
     "field main/assets file": "FileDetails",
     "field main/assets file.height": "number",
     "field main/assets file.id": "string (required)",
+    "field main/assets file.key_name": "string",
     "field main/assets file.name": "string (required)",
+    "field main/assets file.public": "boolean",
     "field main/assets file.sha256": "string (required)",
     "field main/assets file.size": "number (required)",
     "field main/assets file.type": "string (required)",

@@ -17,6 +17,10 @@ export interface FileDetails {
   versions?: Record<string, FileVersion>;
   url?: string;
   expires_at?: DateTimeString;
+  /** True for a file in the realm's public storage; url is then its permanent address. */
+  public?: boolean;
+  /** A public file's name as its address ends with it. */
+  key_name?: string;
 }
 
 export type FileVersion =

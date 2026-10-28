@@ -17,6 +17,10 @@ export interface FileDetails {
   versions?: Record<string, FileVersion>;
   url?: string;
   expires_at?: DateTimeString;
+  /** True for a file in the realm's public storage; url is then its permanent address. */
+  public?: boolean;
+  /** A public file's name as its address ends with it. */
+  key_name?: string;
 }
 
 export type FileVersion =
@@ -95,7 +99,9 @@ export type MainAssetsWhere = {
   "_meta.updated_by"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
   "attachments.height"?: number | (Ops<number> & NullOps & RangeOps<number>);
   "attachments.id"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "attachments.key_name"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
   "attachments.name"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "attachments.public"?: boolean | (Ops<boolean> & NullOps);
   "attachments.sha256"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
   "attachments.size"?: number | (Ops<number> & NullOps & RangeOps<number>);
   "attachments.type"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
@@ -105,7 +111,9 @@ export type MainAssetsWhere = {
   downloads?: number | (Ops<number> & NullOps & RangeOps<number>);
   "file.height"?: number | (Ops<number> & NullOps & RangeOps<number>);
   "file.id"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "file.key_name"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
   "file.name"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "file.public"?: boolean | (Ops<boolean> & NullOps);
   "file.sha256"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
   "file.size"?: number | (Ops<number> & NullOps & RangeOps<number>);
   "file.type"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
@@ -119,7 +127,7 @@ export type MainAssetsWhere = {
   $or?: Array<MainAssetsWhere>;
   $and?: Array<MainAssetsWhere>;
 };
-export type MainAssetsOrderByField = "id" | "-id" | "_meta.created_at" | "-_meta.created_at" | "_meta.updated_at" | "-_meta.updated_at" | "_meta.version" | "-_meta.version" | "_meta.owner" | "-_meta.owner" | "_meta.created_by" | "-_meta.created_by" | "_meta.updated_by" | "-_meta.updated_by" | "attachments.height" | "-attachments.height" | "attachments.id" | "-attachments.id" | "attachments.name" | "-attachments.name" | "attachments.sha256" | "-attachments.sha256" | "attachments.size" | "-attachments.size" | "attachments.type" | "-attachments.type" | "attachments.uploaded_at" | "-attachments.uploaded_at" | "attachments.width" | "-attachments.width" | "body" | "-body" | "downloads" | "-downloads" | "file.height" | "-file.height" | "file.id" | "-file.id" | "file.name" | "-file.name" | "file.sha256" | "-file.sha256" | "file.size" | "-file.size" | "file.type" | "-file.type" | "file.uploaded_at" | "-file.uploaded_at" | "file.width" | "-file.width" | "kind" | "-kind" | "published_at" | "-published_at" | "tags" | "-tags" | "title" | "-title" | "url" | "-url";
+export type MainAssetsOrderByField = "id" | "-id" | "_meta.created_at" | "-_meta.created_at" | "_meta.updated_at" | "-_meta.updated_at" | "_meta.version" | "-_meta.version" | "_meta.owner" | "-_meta.owner" | "_meta.created_by" | "-_meta.created_by" | "_meta.updated_by" | "-_meta.updated_by" | "attachments.height" | "-attachments.height" | "attachments.id" | "-attachments.id" | "attachments.key_name" | "-attachments.key_name" | "attachments.name" | "-attachments.name" | "attachments.public" | "-attachments.public" | "attachments.sha256" | "-attachments.sha256" | "attachments.size" | "-attachments.size" | "attachments.type" | "-attachments.type" | "attachments.uploaded_at" | "-attachments.uploaded_at" | "attachments.width" | "-attachments.width" | "body" | "-body" | "downloads" | "-downloads" | "file.height" | "-file.height" | "file.id" | "-file.id" | "file.key_name" | "-file.key_name" | "file.name" | "-file.name" | "file.public" | "-file.public" | "file.sha256" | "-file.sha256" | "file.size" | "-file.size" | "file.type" | "-file.type" | "file.uploaded_at" | "-file.uploaded_at" | "file.width" | "-file.width" | "kind" | "-kind" | "published_at" | "-published_at" | "tags" | "-tags" | "title" | "-title" | "url" | "-url";
 export type MainAssetsOrderBy = MainAssetsOrderByField | `${MainAssetsOrderByField},${string}`;
 /** main/imports */
 export type MainImports = { id: string; _meta: Meta } & { asset_id?: string; event_id: string; };

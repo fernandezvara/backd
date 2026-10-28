@@ -56,9 +56,6 @@ func (d *documents) uploadPending(w http.ResponseWriter, r *http.Request) {
 	if f == nil {
 		return
 	}
-	if !publicUploadsAvailable(w, r, f) {
-		return
-	}
 	svc := d.users(c.Realm)
 	if svc == nil {
 		notFound(w, r)
@@ -278,6 +275,9 @@ func (d *documents) resolvePending(w http.ResponseWriter, r *http.Request, c *re
 			}
 			meta := map[string]any{
 				"id": e.ID, "name": e.Name, "size": e.Size, "type": e.Type, "sha256": e.SHA256, "uploaded_at": e.UploadedAt.UTC().Format(timeFormat)}
+			if e.Public {
+				meta["public"], meta["key_name"] = true, e.KeyName
+			}
 			p.files[name] = append(p.files[name], pendingFile{ref: ref, meta: withImage(meta, e.Image)})
 		}
 	}

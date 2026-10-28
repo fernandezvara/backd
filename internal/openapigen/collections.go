@@ -31,8 +31,10 @@ func (b *builder) addFileDetails() {
 			"width":       map[string]any{"type": "integer"},
 			"height":      map[string]any{"type": "integer"},
 			"versions":    map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "object"}},
-			"url":         map[string]any{"type": "string"},
+			"url":         map[string]any{"type": "string", "description": "A public file's permanent address, or (with ?file_links=true) a signed link."},
 			"expires_at":  map[string]any{"$ref": "#/components/schemas/Timestamp"},
+			"public":      map[string]any{"type": "boolean", "description": "True for a file in the realm's public storage."},
+			"key_name":    map[string]any{"type": "string", "description": "A public file's name as its address ends with it."},
 		},
 	}
 }

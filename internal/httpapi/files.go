@@ -178,9 +178,6 @@ func (d *documents) uploadFile(w http.ResponseWriter, r *http.Request) {
 	if f == nil {
 		return
 	}
-	if !publicUploadsAvailable(w, r, f) {
-		return
-	}
 	if f.Upload != registry.UploadProxy {
 		writeError(w, r, http.StatusConflict, codeUploadModeMismatch, "this field takes direct uploads: start one with POST …/{id}/_files/"+f.Name+"/uploads")
 		return
@@ -882,6 +879,9 @@ func (d *documents) addFileLinks(w http.ResponseWriter, r *http.Request, c *regi
 	if r.URL.Query().Get("file_links") != "true" || len(c.Files) == 0 {
 		return true
 	}
+	if d.storageFor(c, false) == nil {
+		return true // only public files, which carry their own address
+	}
 	obj, err := d.objects.For(r.Context(), c.Realm, false)
 	if err != nil {
 		logger(r.Context()).Warn("file links left out: the realm's storage is not available", "realm", c.Realm, "error", err)
@@ -896,6 +896,10 @@ func (d *documents) addFileLinks(w http.ResponseWriter, r *http.Request, c *regi
 			}
 			linked := make([]map[string]any, len(files))
 			for i, file := range files {
+				if locOf(file).public { // read at its own address, which a signed link would replace
+					linked[i] = file
+					continue
+				}
 				cp := make(map[string]any, len(file)+2)
 				maps.Copy(cp, file)
 				l, exp, err := d.fileLink(r.Context(), r, obj, c, f, docID, d.sourceTarget(c, file))
@@ -968,6 +972,15 @@ func (d *documents) storeUpload(w http.ResponseWriter, r *http.Request, c *regis
 		tooLarge(w, r, limit)
 	}
 
+	// A public file's address ends with its name, which has to be usable before anything else.
+	public, keyName := f.Public, ""
+	if public {
+		var ok bool
+		if keyName, ok = publicNameFor(w, r, f, requestedFileName(r)); !ok {
+			return nil, false
+		}
+	}
+
 	// The first bytes decide the type, before anything is stored.
 	body := http.MaxBytesReader(w, r.Body, limit)
 	headSize := sniffBytes
@@ -987,16 +1000,22 @@ func (d *documents) storeUpload(w http.ResponseWriter, r *http.Request, c *regis
 		writeError(w, r, http.StatusUnsupportedMediaType, codeUnsupportedFile, "this field doesn't accept "+contentType+" (detected from the file's content)")
 		return nil, false
 	}
+	// A public file is never renamed: its name must say what its content is.
+	if public && !publicExtensionMatches(keyName, contentType) {
+		writeError(w, r, http.StatusBadRequest, codeFileExtensionMismatch, "the file's content is "+contentType+" but its name is \""+keyName+"\": a public file's name must end with "+strings.Join(publicExtensions[contentType], " or "))
+		return nil, false
+	}
 	var image map[string]any
 	if len(f.Versions) > 0 || strings.HasPrefix(contentType, "image/") {
 		image = imageDetails(f, head, d.imageMaxPixels)
 	}
 
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), uploadTimeout)
-	key := obj.Key(c.Realm, c.Database, c.Name, plan.id)
+	key := d.fileKey(c, fileLoc{id: plan.id, public: public, keyName: keyName})
 	caller, _ := callerOf(r)
 	entry := template
 	entry.ID, entry.Database, entry.Collection, entry.Field, entry.Key, entry.Caller, entry.Size = plan.id, c.Database, c.Name, f.Name, key, caller.Subject(), max(r.ContentLength, 0)
+	entry.Public, entry.KeyName = public, keyName
 	var err error
 	if entry.Pending {
 		err = svc.JournalPendingUpload(ctx, entry, d.pendingTTL(c, entry.Public))
@@ -1038,7 +1057,11 @@ func (d *documents) storeUpload(w http.ResponseWriter, r *http.Request, c *regis
 	hasher := sha256.New()
 	var size int64
 	stream := io.TeeReader(&countingReader{r: source, n: &size}, hasher)
-	if err := obj.PutStream(ctx, key, stream, contentType); err != nil {
+	var headers storage.Headers
+	if public {
+		headers = storage.PublicOriginalHeaders // an original's address never changes what it serves
+	}
+	if err := obj.PutStreamWith(ctx, key, stream, contentType, headers); err != nil {
 		abandon()
 		cancel()
 		if stripped != nil {
@@ -1083,6 +1106,9 @@ func (d *documents) storeUpload(w http.ResponseWriter, r *http.Request, c *regis
 	}
 
 	meta := map[string]any{"id": plan.id, "name": plan.name, "size": size, "type": contentType, "sha256": sum, "uploaded_at": uploadedAt.Format(timeFormat)}
+	if public {
+		meta["public"], meta["key_name"] = true, keyName
+	}
 	maps.Copy(meta, image)
 	return &storedUpload{ctx: ctx, cancel: cancel, key: key, meta: meta, abandon: abandon}, true
 }

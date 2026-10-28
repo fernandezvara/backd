@@ -182,5 +182,6 @@ func nullAt(doc map[string]any, path string) {
 // writeViewed answers with a document as the caller may see it.
 func (d *documents) writeViewed(w http.ResponseWriter, r *http.Request, c *registry.Collection, status int, doc map[string]any) {
 	shown, _ := d.revealerFor(r, c).view(doc)
-	writeDocument(w, status, shown)
+	w.Header().Set("ETag", etag(version(shown)))
+	writeJSON(w, status, d.renderIn(c, shown))
 }

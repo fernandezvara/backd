@@ -221,7 +221,7 @@ func (run *expandRun) follow(ctx context.Context, parents []storage.Document, ou
 	for _, k := range slices.Sorted(maps.Keys(found)) {
 		// The target's own reveal rules decide what of it the caller sees.
 		shown, redacted := run.reveal(n.target).view(found[k])
-		o := selectFields(shown, n.fields)
+		o := selectFields(run.d.withPublicURLs(n.target, shown), n.fields)
 		markRedacted(o, n.fields, redacted)
 		shaped[k] = o
 		tDocs = append(tDocs, found[k])

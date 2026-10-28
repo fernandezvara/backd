@@ -35,7 +35,7 @@ files:
 | `presigned_ttl` | the realm's | How long this field's links last (at most 7 days) |
 | `cache` | none | With `download: proxy`: how long shared caches may keep the file, only when anyone may read the document |
 | `keep_metadata` | `false` | By default the metadata of JPEG and PNG pictures is [removed](#metadata-and-the-gps-risk) when they are stored. `true` stores them exactly as sent |
-| `public` | `false` | `true` stores the field's files in the realm's [`public_storage:`](../../../operate/providers/storage/#public-storage) to be read straight from the bucket or a CDN. Only JPEG and PNG (the default `types`), uploaded through backd (`upload: direct`, `download`, `presigned_ttl`, `cache` and `keep_metadata` don't apply). Not implemented yet beyond the configuration: uploads to public fields arrive in the next steps of the public files milestone |
+| `public` | `false` | `true` stores the field's files in the realm's [`public_storage:`](../../../operate/providers/storage/#public-storage) to be read straight from the bucket or a CDN. Only JPEG and PNG (the default `types`), uploaded through backd (`upload: direct`, `download`, `presigned_ttl`, `cache` and `keep_metadata` don't apply). See [Public fields](#public-fields) |
 | `max_pixels` | the instance's | For images: the most pixels (width × height) the field gets [versions](#image-versions) for. It can only lower `BACKD_IMAGE_MAX_PIXELS`; a higher value stops startup |
 | `versions` | none | Resized copies of an image, declared by name: see [Image versions](#image-versions) |
 
@@ -59,6 +59,32 @@ backd owns it. Clients can't write it: a `POST`, `PUT`, `PATCH` or batch operati
 `type` is the detected content type, `sha256` the digest of the bytes backd stored. Names are cleaned, never rejected: Unicode is normalized (NFC), path and control characters are dropped, the name is cut at 255 bytes and an empty one becomes `file`.
 
 Objects are stored under `<prefix>/<realm>/<database>/<collection>/<file id>` and never move. The name is not part of the key, so renaming or sharing names never touches storage.
+
+## Public fields
+
+A field with `public: true` keeps its files in the realm's [`public_storage:`](../../../operate/providers/storage/#public-storage), a bucket (or a CDN in front of it) that anyone can read without credentials. The document carries each file's permanent address, so an application can put it in the page as soon as the document arrives, with no signed link and no request to `backd`:
+
+```json
+{
+  "id": "fl_8f3k2n5x0q7w1a9b4c6d",
+  "name": "Holiday photo.jpg",
+  "key_name": "Holiday photo.jpg",
+  "public": true,
+  "url": "https://cdn.example.com/prod/main/shop/products/fl_8f3k2n5x0q7w1a9b4c6d/Holiday%20photo.jpg",
+  "size": 48213, "type": "image/jpeg", "sha256": "…", "uploaded_at": "2026-10-28T10:15:00.000Z"
+}
+```
+
+- **Only JPEG and PNG**, uploaded through `backd` (proxy or [pending uploads](../transfers/#creating-a-document-with-its-files); never `upload: direct`). The type is detected from the bytes, and the metadata is always removed before the file is published.
+- **The name matters.** The address ends with the file's name, cleaned more strictly than other names: only letters, digits and `. - _ ( ) +` and spaces are kept (the rest becomes `_`), at most 120 bytes. It has to end with `.jpg`, `.jpeg` or `.png` and **agree with the content**: a PNG named `photo.jpg` is refused with `400 file_extension_mismatch`, never renamed, and a name with nothing usable (none given, or only an extension) is `400 invalid_file_name`. Any other type is `415 unsupported_file_type`, as in every field. Give the name with `?name=` or a `Content-Disposition` filename.
+- **Unique addresses.** The address includes the file's id, so two files called `photo.jpg` are different addresses, and replacing a file gives a new one.
+- **`url` is computed on every read** from the file's recorded key and the public storage's `url`, never stored: moving to another CDN domain changes nothing in the documents. A document that has public files gets a validator (`ETag`) that depends on that `url`, so clients refetch after you change it. A made [version](#image-versions) has its own `url` once it is `ready`.
+- **Reading the document is still governed by the [rules](../rules/); reading the bytes at `url` is not.** Anyone who has the address can read the file, and a cache or CDN may keep serving a deleted file until it expires. Use public fields for what is not private. The file is also still available through the usual download route, which follows the rules.
+- **Where a file is stored is recorded on the file.** Changing a field's `public` setting only decides where new uploads go: files already stored stay where they are, with the address they have. There is no migration yet.
+
+{{< hint style="warning" >}}
+A public file can be read by anyone who has its address, and by a CDN long after you delete it. Keep anything private in a field that is not `public`.
+{{< /hint >}}
 
 ## Metadata and the GPS risk
 

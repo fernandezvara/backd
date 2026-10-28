@@ -1,11 +1,17 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
 	"maps"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/registry"
@@ -197,23 +203,320 @@ func TestReconcileOfThePublicStorage(t *testing.T) {
 	}
 }
 
-func TestUploadsToAPublicFieldWaitForTheNextStep(t *testing.T) {
-	f := newFilesFixture(t)
-	id := f.newDoc(t, "pictures")
-	rec, _ := f.upload(t, f.ada, "pictures", id, "photo", "a.png", "image/png", pngBytes(5), nil)
-	if rec.Code != http.StatusNotImplemented {
-		t.Errorf("upload: %d %s", rec.Code, rec.Body)
+func TestSanitizePublicName(t *testing.T) {
+	for _, tc := range []struct {
+		in, want string
+		ok       bool
+	}{
+		{"photo.jpg", "photo.jpg", true},
+		{"../a b.PNG", "a b.PNG", true},
+		{`C:\Users\me\Holiday  photo.jpeg`, "Holiday photo.jpeg", true},
+		{"a*b?<c>.png", "a_b__c_.png", true},
+		{"ünï cødé 写真.png", "ünï cødé 写真.png", true},
+		{"cafe\u0301.png", "café.png", true},       // NFC
+		{"tab\there\x00.jpg", "tabhere.jpg", true}, // control characters go
+		{"  ..hidden.png", "hidden.png", true},
+		{"my (copy)+1_final-2.png", "my (copy)+1_final-2.png", true},
+		{"photo", "photo", true}, // no extension: the type check refuses it, not the name
+		{"", "", false},
+		{".png", "", false},
+		{"...", "", false},
+		{"..", "", false},
+		{"   .jpg", "", false},
+		{"/", "", false},
+	} {
+		got, ok := sanitizePublicName(tc.in)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("sanitizePublicName(%q) = %q, %v; want %q, %v", tc.in, got, ok, tc.want, tc.ok)
+		}
 	}
-	rec, _ = f.doRaw(t, "POST", "/v1/acme/app/pictures/_files/photo/uploads", pngBytes(5), map[string]string{"Authorization": "Bearer " + f.ada, "Content-Type": "image/png"})
-	if rec.Code != http.StatusNotImplemented {
-		t.Errorf("pending upload: %d %s", rec.Code, rec.Body)
+	long := strings.Repeat("é", 100) + ".jpg" // 200 bytes of stem
+	got, ok := sanitizePublicName(long)
+	if !ok || len(got) > maxPublicNameBytes || !strings.HasSuffix(got, ".jpg") || !utf8.ValidString(got) {
+		t.Errorf("a long name = %q (%d bytes), %v", got, len(got), ok)
+	}
+	if got, ok := sanitizePublicName(strings.Repeat("a", 300) + ".png"); !ok || len(got) != maxPublicNameBytes || !strings.HasSuffix(got, "a.png") {
+		t.Errorf("an ASCII name = %d bytes %v", len(got), ok)
+	}
+}
+
+// publicUpload uploads body as name to the public field of a new document in `pictures`.
+func (f *filesFixture) publicUpload(t *testing.T, name string, body []byte) (docID string, rec *httptest.ResponseRecorder, doc map[string]any) {
+	t.Helper()
+	docID = f.newDoc(t, "pictures")
+	rec, doc = f.upload(t, f.ada, "pictures", docID, "photo", name, "application/octet-stream", body, nil)
+	return docID, rec, doc
+}
+
+func (f *filesFixture) publicObject(t *testing.T, key string) *http.Response {
+	t.Helper()
+	res, err := http.Get(f.pub.URL + "/public/" + key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { res.Body.Close() })
+	return res
+}
+
+func TestUploadToAPublicFieldStoresItInThePublicStorage(t *testing.T) {
+	f := newFilesFixture(t)
+	dirty, clean := dirtyJPEG(t, 16, 8)
+	docID, rec, doc := f.publicUpload(t, "Holiday photo.JPG", dirty)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("upload: %d %s", rec.Code, rec.Body)
+	}
+	file, _ := doc["photo"].(map[string]any)
+	id, _ := file["id"].(string)
+	key := "t/acme/app/pictures/" + id + "/Holiday photo.JPG"
+	if file["public"] != true || file["key_name"] != "Holiday photo.JPG" || file["name"] != "Holiday photo.JPG" || file["type"] != "image/jpeg" {
+		t.Fatalf("file = %v", file)
+	}
+	if want := "https://cdn.acme.example/t/acme/app/pictures/" + id + "/Holiday%20photo.JPG"; file["url"] != want {
+		t.Errorf("url = %v, want %v", file["url"], want)
+	}
+	if keys := f.pub.Keys(); len(keys) != 1 || keys[0] != key {
+		t.Errorf("public storage: %v", keys)
+	}
+	if len(f.s3.Keys()) != 0 {
+		t.Errorf("the private storage got %v", f.s3.Keys())
+	}
+	// Stored with the headers a CDN needs, and without the metadata.
+	res := f.publicObject(t, key)
+	stored, _ := io.ReadAll(res.Body)
+	if res.Header.Get("Cache-Control") != "public, max-age=31536000, immutable" || res.Header.Get("Content-Disposition") != "inline" || res.Header.Get("Content-Type") != "image/jpeg" {
+		t.Errorf("headers: %v", res.Header)
+	}
+	if bytes.Contains(stored, []byte("SECRET")) || !bytes.Equal(pixelsOf(t, stored), pixelsOf(t, clean)) {
+		t.Error("the public file kept its metadata")
+	}
+	// The journal says where it is.
+	e, _ := f.svc.Store.(interface {
+		JournalEntry(string) (auth.FileJournalEntry, bool)
+	}).JournalEntry(id)
+	if !e.Public || e.KeyName != "Holiday photo.JPG" || e.Key != key {
+		t.Errorf("journal: %+v", e)
+	}
+	// A read carries the address too, in a get and in a list, for anyone who may read the document.
+	_, got := f.as(t, f.ada, "GET", "/v1/acme/app/pictures/"+docID, "")
+	if got["photo"].(map[string]any)["url"] != file["url"] {
+		t.Errorf("get: %v", got["photo"])
+	}
+	rec2, list := f.doRaw(t, "GET", "/v1/acme/app/pictures", nil, nil)
+	items, _ := list["items"].([]any)
+	if rec2.Code != 200 || len(items) != 1 || items[0].(map[string]any)["photo"].(map[string]any)["url"] != file["url"] {
+		t.Errorf("anonymous list: %d %v", rec2.Code, list)
+	}
+	// Downloading through the API still works and is the same bytes.
+	if r := f.get(t, "/v1/acme/app/pictures/"+docID+"/_files/photo/"+id, map[string]string{"Authorization": "Bearer " + f.ada}); r.Code != 200 || !bytes.Equal(r.Body.Bytes(), stored) {
+		t.Errorf("download: %d", r.Code)
+	}
+}
+
+func TestPublicUploadRefusesWhatIsNotAnImageWithItsExtension(t *testing.T) {
+	f := newFilesFixture(t)
+	png := realPNG(t, 8, 8)
+	_, jpg := dirtyJPEG(t, 8, 8)
+	for _, tc := range []struct {
+		name string
+		body []byte
+		code int
+		want string
+	}{
+		{"", png, 400, "invalid_file_name"},
+		{".png", png, 400, "invalid_file_name"},
+		{"photo", png, 400, "file_extension_mismatch"},
+		{"photo.txt", png, 400, "file_extension_mismatch"},
+		{"photo.jpg", png, 400, "file_extension_mismatch"}, // not renamed: a PNG called .jpg is refused
+		{"photo.png", jpg, 400, "file_extension_mismatch"},
+		{"photo.gif", []byte("GIF89a\x01\x00\x01\x00\x00\x00\x00;"), 415, "unsupported_file_type"},
+		{"notes.png", []byte("just text, not a picture"), 415, "unsupported_file_type"},
+		{"vector.svg", []byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`), 415, "unsupported_file_type"},
+		{"page.html", []byte("<html><body>hi</body></html>"), 415, "unsupported_file_type"},
+	} {
+		_, rec, _ := f.publicUpload(t, tc.name, tc.body)
+		var out struct{ Error struct{ Code string } }
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		if rec.Code != tc.code || out.Error.Code != tc.want {
+			t.Errorf("%q: %d %s, want %d %s", tc.name, rec.Code, rec.Body, tc.code, tc.want)
+		}
 	}
 	if len(f.pub.Keys()) != 0 || len(f.s3.Keys()) != 0 {
 		t.Errorf("something was stored: %v %v", f.pub.Keys(), f.s3.Keys())
 	}
-	// A private field of the same collection still takes files.
-	rec, _ = f.upload(t, f.ada, "pictures", id, "secret", "a.png", "image/png", pngBytes(5), nil)
+	// A damaged picture is refused rather than published with what it carries.
+	if _, rec, _ := f.publicUpload(t, "cut.png", pngBytes(5)); rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("a cut picture: %d %s", rec.Code, rec.Body)
+	}
+	// The jpg and the jpeg spellings both fit a JPEG.
+	for _, name := range []string{"a.jpg", "b.JPEG"} {
+		if _, rec, _ := f.publicUpload(t, name, jpg); rec.Code != http.StatusCreated {
+			t.Errorf("%s: %d %s", name, rec.Code, rec.Body)
+		}
+	}
+}
+
+func TestPublicFilesChangeTheDocumentsValidator(t *testing.T) {
+	f := newFilesFixture(t)
+	png := realPNG(t, 8, 8)
+	docID, rec, _ := f.publicUpload(t, "a.png", png)
+	if rec.Code != 201 {
+		t.Fatal(rec.Body)
+	}
+	plain := f.newDoc(t, "pictures")
+	path := "/v1/acme/app/pictures/" + docID
+	r1 := f.get(t, path, nil)
+	tag := r1.Header().Get("ETag")
+	if !strings.Contains(tag, ".r") {
+		t.Fatalf("a document with a public file has a plain tag: %s", tag)
+	}
+	if r := f.get(t, path, map[string]string{"If-None-Match": tag}); r.Code != http.StatusNotModified {
+		t.Errorf("same url: %d", r.Code)
+	}
+	// Another address for the same bytes is another validator, so clients refetch.
+	f.reg.Realms["acme"].Settings.PublicStorage.URL = "https://img.acme.example"
+	r2 := f.get(t, path, map[string]string{"If-None-Match": tag})
+	if r2.Code != http.StatusOK || r2.Header().Get("ETag") == tag {
+		t.Errorf("new url: %d %s", r2.Code, r2.Header().Get("ETag"))
+	}
+	var doc map[string]any
+	_ = json.Unmarshal(r2.Body.Bytes(), &doc)
+	if u, _ := doc["photo"].(map[string]any)["url"].(string); !strings.HasPrefix(u, "https://img.acme.example/") {
+		t.Errorf("url = %v", u)
+	}
+	// A document without public files keeps the plain tag; If-Match still takes the plain one.
+	if r := f.get(t, "/v1/acme/app/pictures/"+plain, nil); strings.Contains(r.Header().Get("ETag"), ".r") {
+		t.Errorf("plain document: %s", r.Header().Get("ETag"))
+	}
+	if r := f.get(t, path, nil); r.Header().Get("ETag") == tag {
+		t.Error("the tag did not change with the url")
+	}
+	// The list's validator follows too.
+	l1 := f.get(t, "/v1/acme/app/pictures", nil)
+	f.reg.Realms["acme"].Settings.PublicStorage.URL = "https://other.acme.example"
+	l2 := f.get(t, "/v1/acme/app/pictures", map[string]string{"If-None-Match": l1.Header().Get("ETag")})
+	if l2.Code != http.StatusOK {
+		t.Errorf("list after a url change: %d", l2.Code)
+	}
+}
+
+func TestPublicFilesInPendingUploadsReplacementsAndLinks(t *testing.T) {
+	f := newFilesFixture(t)
+	png := realPNG(t, 8, 8)
+	// A pending upload, then a document that names it.
+	hdr := map[string]string{"Authorization": "Bearer " + f.ada, "Content-Type": "image/png"}
+	rec, up := f.doRaw(t, "POST", "/v1/acme/app/pictures/_files/photo/uploads?name=Cover.png", png, hdr)
 	if rec.Code != http.StatusCreated {
+		t.Fatalf("pending: %d %s", rec.Code, rec.Body)
+	}
+	code, doc := f.as(t, f.ada, "POST", "/v1/acme/app/pictures", `{"title": "p", "photo": {"upload": "`+up["upload_id"].(string)+`", "token": "`+up["upload_token"].(string)+`"}}`)
+	if code != 201 {
+		t.Fatalf("create: %d %v", code, doc)
+	}
+	first := doc["photo"].(map[string]any)
+	id := first["id"].(string)
+	if first["public"] != true || first["key_name"] != "Cover.png" || first["url"] != "https://cdn.acme.example/t/acme/app/pictures/"+id+"/Cover.png" {
+		t.Errorf("attached file = %v", first)
+	}
+	if keys := f.pub.Keys(); len(keys) != 1 {
+		t.Fatalf("public keys: %v", keys)
+	}
+	docID := doc["id"].(string)
+	// ?file_links=true leaves a public file at its own address.
+	_, linked := f.doRaw(t, "GET", "/v1/acme/app/pictures/"+docID+"?file_links=true", nil, map[string]string{"Authorization": "Bearer " + f.ada})
+	if lf := linked["photo"].(map[string]any); lf["url"] != first["url"] || lf["expires_at"] != nil {
+		t.Errorf("file_links changed a public file: %v", lf)
+	}
+	// Replacing the single field's file queues the old object in the public storage.
+	w := newTestWorker(t, f.rulesFixture)
+	f.svc.Now = func() time.Time { return *f.clock }
+	rec, doc2 := f.upload(t, f.ada, "pictures", docID, "photo", "Second.png", "image/png", realPNG(t, 9, 9), nil)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("replace: %d %s", rec.Code, rec.Body)
+	}
+	if q := f.deletions(); len(q) != 1 || !q[0].Public || !strings.HasSuffix(q[0].Key, id+"/Cover.png") {
+		t.Fatalf("queued: %+v", q)
+	}
+	w.FilesDue(context.Background())
+	if keys := f.pub.Keys(); len(keys) != 1 || !strings.HasSuffix(keys[0], "/Second.png") {
+		t.Errorf("after the worker: %v", keys)
+	}
+	// Removing the file queues the rest.
+	newID := doc2["photo"].(map[string]any)["id"].(string)
+	if r, _ := f.doRaw(t, "DELETE", "/v1/acme/app/pictures/"+docID+"/_files/photo/"+newID, nil, map[string]string{"Authorization": "Bearer " + f.ada}); r.Code != http.StatusOK {
+		t.Fatalf("delete file: %d", r.Code)
+	}
+	w.FilesDue(context.Background())
+	if len(f.pub.Keys()) != 0 || len(f.deletions()) != 0 {
+		t.Errorf("after delete: %v %v", f.pub.Keys(), f.deletions())
+	}
+}
+
+func TestPublicVersionsAreMadeInThePublicStorage(t *testing.T) {
+	f := newFilesFixture(t)
+	f.svc.Now = func() time.Time { return *f.clock }
+	w := newTestWorker(t, f.rulesFixture)
+	docID, rec, doc := f.publicUpload(t, "Big view.png", realPNG(t, 40, 20))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("upload: %d %s", rec.Code, rec.Body)
+	}
+	file := doc["photo"].(map[string]any)
+	id := file["id"].(string)
+	if th := versionsOf(t, file)["thumb"].(map[string]any); th["status"] != "pending" || th["url"] != nil {
+		t.Fatalf("thumb right after the upload: %v", th)
+	}
+	runImageJobs(t, w)
+	_, got := f.as(t, f.ada, "GET", "/v1/acme/app/pictures/"+docID, "")
+	th := versionsOf(t, got["photo"].(map[string]any))["thumb"].(map[string]any)
+	if th["status"] != "ready" {
+		t.Fatalf("thumb: %v", th)
+	}
+	vkey := "t/acme/app/pictures/" + id + "/thumb/Big view.png"
+	if want := "https://cdn.acme.example/t/acme/app/pictures/" + id + "/thumb/Big%20view.png"; th["url"] != want {
+		t.Errorf("version url = %v, want %v", th["url"], want)
+	}
+	if keys := f.pub.Keys(); len(keys) != 2 {
+		t.Fatalf("public keys: %v", keys)
+	}
+	res := f.publicObject(t, vkey)
+	if res.StatusCode != 200 || res.Header.Get("Cache-Control") != "public, max-age=86400" {
+		t.Errorf("version object: %d %v", res.StatusCode, res.Header)
+	}
+	if len(f.s3.Keys()) != 0 {
+		t.Errorf("the private storage got %v", f.s3.Keys())
+	}
+	// Deleting the document removes the original and the version from the public storage.
+	if r, _ := f.doRaw(t, "DELETE", "/v1/acme/app/pictures/"+docID, nil, map[string]string{"Authorization": "Bearer " + f.ada}); r.Code != http.StatusNoContent {
+		t.Fatalf("delete: %d", r.Code)
+	}
+	w.FilesDue(context.Background())
+	if len(f.pub.Keys()) != 0 {
+		t.Errorf("left behind: %v", f.pub.Keys())
+	}
+}
+
+// A private field of the collection still takes files, and a public file is not affected by a
+// field that stopped being public: where it is stays recorded on the file.
+func TestPrivateFieldsAndFilesThatOutliveTheSetting(t *testing.T) {
+	f := newFilesFixture(t)
+	docID := f.newDoc(t, "pictures")
+	if rec, _ := f.upload(t, f.ada, "pictures", docID, "secret", "a.png", "image/png", pngBytes(5), nil); rec.Code != http.StatusCreated {
 		t.Errorf("private upload: %d %s", rec.Code, rec.Body)
+	}
+	if len(f.s3.Keys()) != 1 || len(f.pub.Keys()) != 0 {
+		t.Errorf("keys: %v %v", f.s3.Keys(), f.pub.Keys())
+	}
+	rec, doc := f.upload(t, f.ada, "pictures", docID, "photo", "a.png", "image/png", realPNG(t, 8, 8), nil)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("public upload: %d %s", rec.Code, rec.Body)
+	}
+	id := doc["photo"].(map[string]any)["id"].(string)
+	// The field is made private in the configuration: the file stays public and is still read.
+	f.reg.Realms["acme"].Databases["app"].Collections["pictures"].Files["photo"].Public = false
+	_, got := f.as(t, f.ada, "GET", "/v1/acme/app/pictures/"+docID, "")
+	if got["photo"].(map[string]any)["url"] == nil {
+		t.Errorf("the file lost its address: %v", got["photo"])
+	}
+	if r := f.get(t, "/v1/acme/app/pictures/"+docID+"/_files/photo/"+id, map[string]string{"Authorization": "Bearer " + f.ada}); r.Code != http.StatusOK {
+		t.Errorf("download: %d", r.Code)
 	}
 }

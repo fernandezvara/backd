@@ -41,7 +41,9 @@ type FileJournalEntry struct {
 	Key        string // the object's key
 	// Public is true when the object is in the realm's public storage (a public field): where a
 	// file is stored is decided when it is uploaded and never changes.
-	Public    bool
+	Public bool
+	// KeyName is, for a public file, the sanitized name its key ends with.
+	KeyName   string
 	Caller    string // who uploaded it, for display (user:<id>, key:<name>, func:…)
 	Size      int64
 	Status    string

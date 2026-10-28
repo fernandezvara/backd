@@ -8798,6 +8798,12 @@ paths:
         comments, PNG text and time), its pixels untouched and its orientation kept, unless
         the field sets `keep_metadata: true`; the file's `size` and `sha256` describe what
         is stored. A picture too damaged to be copied that way is `422 invalid_image`.
+        A field with `public: true` stores the file in the realm's `public_storage:`: the
+        name must end with `.jpg`, `.jpeg` or `.png` and agree with the detected content
+        (`400 file_extension_mismatch`, never renamed; `400 invalid_file_name` when no usable
+        name is given), only JPEG and PNG are accepted (`415 unsupported_file_type`), and the
+        file's details carry `public: true`, `key_name` and `url`, the permanent address it is
+        read at without credentials.
       operationId: uploadFile
       security: [{}, { session: [] }, { apiKey: [] }]
       parameters:
@@ -11773,7 +11779,10 @@ components:
         A stored document. Other fields follow the collection's schema.json.
         A file field (`files:` in collection.yaml) holds backd's file details, an
         object `{id, name, size, type, sha256, uploaded_at}` (an array of them on a
-        `multiple` field), which only uploads write. An image also has `width` and
+        `multiple` field), which only uploads write. A file of a `public: true` field also has
+        `public: true`, `key_name` (the name its address ends with) and `url`, computed on every read
+        from the public storage's `url`: the address the file is read at without credentials; each
+        `ready` version of it has a `url` too. An image also has `width` and
         `height` (as a viewer sees it, with the EXIF orientation applied), and a field
         that declares `versions:` has `versions`: an object by version name whose value
         is `{status}` with `pending` (a worker will make it), `ready` (made; with `id`,
