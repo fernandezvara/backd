@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "backd admin",
+    "name": "back(d) admin",
     "skip": "Saltar al contenido"
   },
   "common": {
@@ -47,29 +47,46 @@
     "label": "Idioma",
     "auto": "Automático"
   },
+  "breadcrumb": {
+    "label": "Ruta de navegación"
+  },
+  "account": {
+    "label": "Cuenta"
+  },
   "realm": {
     "label": "Realm",
-    "current": "Realm: {name}",
-    "choose": "Elige un realm",
-    "chooseHelp": "Sólo se puede estar en un realm a la vez. Escribe el nombre del realm.",
-    "open": "Continuar",
     "invalid": "El nombre de un realm solo tiene letras minúsculas, dígitos, - y _."
   },
   "signIn": {
+    "expired": {
+      "intro": "Esta contraseña ha caducado. Elige una nueva: escribe la contraseña actual y la nueva dos veces.",
+      "emailed": "También te hemos enviado un enlace para elegir una.",
+      "current": "Contraseña actual",
+      "new": "Contraseña nueva",
+      "repeat": "Contraseña nueva otra vez",
+      "mismatch": "Las dos contraseñas nuevas no coinciden.",
+      "wrong": "La contraseña actual no es correcta.",
+      "realmWide": "Todas las contraseñas de este realm han caducado. Elige una nueva con el enlace del correo, o pídeselo a un administrador.",
+      "codeNeeded": "Esta cuenta usa verificación en dos pasos: escribe también un código.",
+      "method": "Código de",
+      "totp": "Aplicación de autenticación",
+      "recovery": "Código de recuperación",
+      "submit": "Cambiar contraseña",
+      "changed": "Contraseña cambiada. Inicia sesión con la nueva."
+    },
     "codeFailed": "Ese código no es correcto. Prueba con el siguiente, o con un código de recuperación.",
     "cancel": "Cancelar",
     "code": {"intro": "Escribe el código de tu aplicación de autenticación, o un código de recuperación.", "label": "Código", "submit": "Verificar"},
     "enroll": {"intro": "Esta cuenta debe usar verificación en dos pasos. Configura una aplicación de autenticación para continuar.", "start": "Configurar una aplicación de autenticación", "qrAlt": "Código QR para escanear con tu aplicación de autenticación", "secret": "O escribe este secreto:", "label": "Código que muestra la aplicación", "submit": "Activarla y entrar"},
     "consent": {"intro": "Lee y acepta para continuar.", "accept": "Acepto {name}", "submit": "Aceptar e iniciar sesión", "failed": "No se pudieron aceptar los consentimientos. Vuelve a iniciar sesión."},
     "recovery": {"title": "Códigos de recuperación", "body": "Cada uno sirve una vez y solo se muestran ahora. Guárdalos en un lugar seguro, no en el teléfono con la aplicación.", "continue": "Los guardé, continuar"},
-    "title": "Inicia sesión en {realm}",
+    "title": "Inicia sesión",
     "email": "Correo electrónico",
     "password": "Contraseña",
     "keep": "Mantener la sesión iniciada en esta pestaña",
     "keepHelp": "Guarda la sesión en esta pestaña hasta que se cierre. Déjalo desactivado en ordenadores compartidos.",
     "submit": "Iniciar sesión",
     "submitting": "Iniciando sesión...",
-    "otherRealm": "Cambiar realm",
     "failed": "El correo o la contraseña no son correctos, o el inicio de sesión está bloqueado temporalmente.",
     "notAdmin": "Esta cuenta no es administradora de este realm.",
     "unreachable": "No se ha podido conectar con el servidor.",
@@ -91,11 +108,7 @@
     "canRead": "Puede leer",
     "canWrite": "Puede modificar",
     "nothing": "Nada",
-    "key": "una clave de API ({name})",
-    "links": {
-      "users": "Gestionar usuarios",
-      "invitations": "Gestionar invitaciones"
-    }
+    "key": "una clave de API ({name})"
   },
   "areas": {
     "users": "Usuarios",
@@ -197,6 +210,7 @@
       "delivering": "Entregando"
     },
     "test": {
+      "queued": "Notificación de prueba encolada.",
       "open": "Enviar una prueba",
       "title": "Enviar un push de prueba",
       "help": "Llega a los dispositivos de un usuario con los mismos límites que cualquier push, y cuenta para los suyos. Queda auditado.",
@@ -244,6 +258,8 @@
     "reconcileNote": "Tras restaurar una copia, o quitar un campo de archivos, ejecuta backd storage reconcile para hallar objetos que ningún documento referencia."
   },
   "users": {
+    "passwordsShow": "Mostrar las acciones de una filtración",
+    "passwordsHide": "Ocultar las acciones de una filtración",
     "title": "Usuarios",
     "search": "Buscar por correo",
     "searchHelp": "Encuentra los correos que contienen el texto.",
@@ -569,6 +585,7 @@
       "jobs": "Trabajos"
     },
     "openapi": {
+      "done": "Documento OpenAPI descargado.",
       "client": "Descargar OpenAPI (aplicaciones)",
       "clientHelp": "Solo lo que las aplicaciones pueden alcanzar: sin rutas de administración.",
       "admin": "Descargar OpenAPI (con administración)",
@@ -653,6 +670,8 @@
     "loadFailed": "No se ha podido cargar el historial de invocaciones."
   },
   "checks": {
+    "show": "Mostrar la comprobación de esquema",
+    "hide": "Ocultar la comprobación de esquema",
     "title": "Comprobaciones de esquema",
     "help": "Encuentra los documentos guardados que ya no cumplen el esquema de su colección, por ejemplo tras cambiarlo. Una comprobación lee todos los documentos y nunca modifica ninguno.",
     "panel": "Comprobación de esquema",
@@ -670,6 +689,7 @@
     "showReport": "Ver el informe",
     "empty": "Este realm no tiene colecciones.",
     "loadFailed": "No se pudieron cargar las comprobaciones.",
+    "finished": "Comprobación terminada.",
     "started": "Comprobación iniciada.",
     "cancelled": "Comprobación cancelada.",
     "cancel": "Cancelar la comprobación",
@@ -868,6 +888,7 @@
     "collection": {
       "assign": {"open": "Asignar una organización", "title": "Asignar una organización", "help": "Da esta organización a los documentos que no tienen ninguna, en un trabajo. Los que ya pertenecen a una no se mueven.", "action": "Asignar", "matched": "{n} documentos no tienen organización.", "done": "La asignación quedó en cola: síguela en Funciones, Trabajos."},
       "new": "Nuevo documento",
+      "in": "Una colección de la base de datos {database}.",
       "trash": "Papelera",
       "live": "Documentos",
       "view": "Mostrar",

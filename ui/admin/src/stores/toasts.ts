@@ -11,7 +11,8 @@ export interface Toast {
 export const useToasts = defineStore('toasts', () => {
   const items = ref<Toast[]>([])
   let next = 1
-  function push(text: string, kind: Toast['kind'] = 'info', ms = 6000) {
+  // A confirmation goes away by itself; an error stays until it is dismissed, so it can't be missed.
+  function push(text: string, kind: Toast['kind'] = 'info', ms = kind === 'error' ? 0 : 6000) {
     const id = next++
     items.value.push({ id, kind, text })
     if (ms > 0) setTimeout(() => dismiss(id), ms)

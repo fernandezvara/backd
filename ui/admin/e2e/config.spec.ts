@@ -1,6 +1,6 @@
 import { expect, test } from './fixtures'
 import { REALM, users } from './users'
-import { go, navLabels } from './nav'
+import { go, navLabels, setTheme } from './nav'
 
 test('the overview shows the realm, its fingerprint and the startup warnings', async ({ page, signIn }) => {
   await signIn('admin')
@@ -66,7 +66,7 @@ test('the configuration views have no accessibility violations', async ({ page, 
   const { default: AxeBuilder } = await import('@axe-core/playwright')
   await signIn('admin')
   for (const theme of ['Light', 'Dark']) {
-    await page.getByLabel('Theme').selectOption({ label: theme })
+    await setTheme(page, theme)
     await go(page, 'Configuration')
     await expect(page.getByTestId('config-realm')).toBeVisible()
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])

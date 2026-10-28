@@ -47,3 +47,23 @@ export async function navLabels(page: Page): Promise<string[]> {
   }
   return labels
 }
+
+// The account menu holds the language, the theme and the way out.
+const accountButton = (page: Page) => page.getByTestId('account-menu')
+
+/** Opens the account menu, runs the steps inside it and closes it again. */
+export async function inAccount(page: Page, steps: () => Promise<void>) {
+  await accountButton(page).click()
+  await expect(accountButton(page)).toHaveAttribute('aria-expanded', 'true')
+  await steps()
+  await page.keyboard.press('Escape')
+  await expect(accountButton(page)).toHaveAttribute('aria-expanded', 'false')
+}
+
+export const setTheme = (page: Page, label: string) => inAccount(page, () => page.getByLabel(/^(Theme|Tema)$/).selectOption({ label }))
+export const setLanguage = (page: Page, value: string) => inAccount(page, () => page.getByTestId('language-switch').selectOption(value))
+
+export async function signOut(page: Page) {
+  await accountButton(page).click()
+  await page.getByRole('button', { name: /^(Sign out|Cerrar sesión)$/ }).click()
+}

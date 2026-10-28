@@ -1,6 +1,6 @@
 import { expect, test } from './fixtures'
 import { PASSWORD, REALM } from './users'
-import { go } from './nav'
+import { go, setTheme } from './nav'
 
 const stamp = Date.now().toString(36)
 
@@ -118,7 +118,7 @@ test('the keys, secrets and audit views have no accessibility violations', async
   const { default: AxeBuilder } = await import('@axe-core/playwright')
   await signIn('admin')
   for (const theme of ['Light', 'Dark']) {
-    await page.getByLabel('Theme').selectOption({ label: theme })
+    await setTheme(page, theme)
     for (const [link, table] of [['API keys', 'apikeys-table'], ['Secrets', 'secrets-table'], ['Audit', 'audit-table']] as const) {
       await go(page, link)
       await expect(page.getByTestId(table)).toBeVisible()

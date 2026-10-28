@@ -279,12 +279,13 @@ test('me carries the sign-in methods', async () => {
 })
 
 test('the email flows send their bodies without a session and answer nothing', async () => {
-  const m = mockFetch([{ status: 202, body: { status: 'accepted' } }, { status: 204 }, { status: 202, body: { status: 'accepted' } }, { status: 204 }, { status: 204 }, { status: 204 }, { status: 204 }])
+  const m = mockFetch([{ status: 202, body: { status: 'accepted' } }, { status: 204 }, { status: 202, body: { status: 'accepted' } }, { status: 204 }, { status: 204 }, { status: 204 }, { status: 204 }, { status: 204 }])
   const { c, events } = clientWith(m)
   assert.equal(await c.auth.resendVerification({ email: 'ada@example.com' }), undefined)
   assert.equal(await c.auth.verifyEmail('tok1'), undefined)
   await c.auth.requestPasswordReset({ email: 'ada@example.com', redirectTo: 'https://app.example/signin' })
   await c.auth.resetPassword({ token: 'tok2', password: 'dev-p4ssw0rd!2' })
+  await c.auth.updatePassword({ email: 'ada@example.com', password: 'dev-p4ssw0rd!', newPassword: 'dev-p4ssw0rd!2', code: '123456' })
   await c.auth.confirmEmailChange('tok3')
   await c.auth.revertEmailChange('tok4')
   await c.auth.acceptInvitation({ token: 'tok5', password: 'dev-p4ssw0rd!', locale: 'es' })
@@ -294,6 +295,7 @@ test('the email flows send their bodies without a session and answer nothing', a
     ['POST', '/v1/acme/_auth/verify-email', { token: 'tok1' }],
     ['POST', '/v1/acme/_auth/reset-password/request', { email: 'ada@example.com', redirect_to: 'https://app.example/signin' }],
     ['POST', '/v1/acme/_auth/reset-password', { token: 'tok2', password: 'dev-p4ssw0rd!2' }],
+    ['POST', '/v1/acme/_auth/password/update', { email: 'ada@example.com', password: 'dev-p4ssw0rd!', new_password: 'dev-p4ssw0rd!2', code: '123456' }],
     ['POST', '/v1/acme/_auth/confirm-email-change', { token: 'tok3' }],
     ['POST', '/v1/acme/_auth/revert-email-change', { token: 'tok4' }],
     ['POST', '/v1/acme/_auth/accept-invitation', { token: 'tok5', password: 'dev-p4ssw0rd!', locale: 'es' }],

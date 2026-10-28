@@ -1158,6 +1158,35 @@ final class Auth {
       _accepted(const ['_auth', 'reset-password'],
           {'token': token, 'password': password}, options);
 
+  /// Changes the password with the current one, signed out: for a password
+  /// that expired for the user alone (`password_expired` at sign-in) or one
+  /// the user wants to replace without a session. An account with a second
+  /// factor also gives [code] (a recovery code with [method] `'recovery'`;
+  /// the default is `'totp'`); without it this throws a [ValidationError] for
+  /// `code`. Ends every session of the user and starts none: log in
+  /// afterwards. A password the realm's expiry covers (a leak) is refused with
+  /// `password_expired`: use [requestPasswordReset]. A wrong current password
+  /// is `invalid_credentials`.
+  Future<void> updatePassword(
+    String email,
+    String password,
+    String newPassword, {
+    String? code,
+    String? method,
+    RequestOptions? options,
+  }) =>
+      _accepted(
+        const ['_auth', 'password', 'update'],
+        {
+          'email': email,
+          'password': password,
+          'new_password': newPassword,
+          'code': code,
+          'method': method,
+        },
+        options,
+      );
+
   /// Asks to change the signed-in user's email address (realms with
   /// `account.allow_email_change`). Needs a fresh proof: call [reauth] first.
   /// Resolves whether or not the new address is free; nothing changes until

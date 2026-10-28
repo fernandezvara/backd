@@ -134,7 +134,7 @@ curl -X POST https://localhost:8443/v1/blog/_auth/login \
 
 Any failure returns the same `401 invalid_credentials`: unknown email, wrong password, a user without a password, or a disabled user. Repeated failures are slowed down (see [brute-force protection](#brute-force-protection)). Unknown emails take the same time to answer as known ones, so neither the response nor its timing reveals whether an email is registered.
 
-A password that was **expired** (an administrator ran [`backd user expire-password`](../users/#expiring-a-password), or [every password was expired](../users/#expiring-every-password) after the day it was set) is refused only when it is the right one: `401 password_expired`, and the `password-expired` [email](../../functions/email/), with a link to choose a new password, is queued when the realm sends email, with the limits of a reset request. The same applies to proving yourself again with the password (`POST /_auth/reauth`), and to finishing a second step, an enrollment or the acceptance of consents that a password sign-in started before the passwords were expired: they end in the same answer. Setting a new password makes the account usable again.
+A password that was **expired** (an administrator ran [`backd user expire-password`](../users/#expiring-a-password), or [every password was expired](../users/#expiring-every-password) after the day it was set) is refused only when it is the right one: `401 password_expired`, and the `password-expired` [email](../../functions/email/), with a link to choose a new password, is queued when the realm sends email, with the limits of a reset request. The same applies to proving yourself again with the password (`POST /_auth/reauth`), and to finishing a second step, an enrollment or the acceptance of consents that a password sign-in started before the passwords were expired: they end in the same answer. Setting a new password makes the account usable again; for a password expired for one user alone, that can be [changing it signed out](#change-the-password-signed-out).
 
 A user with [`login_networks`](../../configuration/realm/#network-restrictions) can only log in from those networks: elsewhere, the right password answers `401 invalid_credentials` too, and counts as a failure. Their session also only works from those networks.
 
@@ -209,6 +209,14 @@ Every user has a `locale`, the language of the emails they receive. A realm list
 `POST /_auth/password` with `{"new_password": "…"}` replaces the password. It needs a fresh [proof of identity](../reauth/) (`X-Backd-Reauth`), which is where the current password is asked for. The current session stays valid and every other session ends. A password that breaks the policy returns `400 validation_error` naming `new_password`.
 
 In a realm with [`email`](../../functions/email/), the owner gets a `password-changed` email after this, after a [reset](#password-reset) and after an administrator sets a password ([`backd user set-password`](../users/)), so a change they didn't make doesn't go unnoticed.
+
+### Change the password signed out
+
+`POST /_auth/password/update` with `{"email", "password", "new_password"}` (and `"code"` for an account with a [second factor](../mfa/), a recovery code with `"method": "recovery"`) sets a new password for someone who knows the current one but has no session: typically one [expired for them alone](../users/#expiring-a-password), which sign-in refuses with `401 password_expired`. It works with an unexpired password too. The new password must meet the policy and differ from the current one (`400 validation_error` naming `new_password`); an account with a second factor that sends no `code` gets `400 validation_error` naming `code`, and a wrong one `400 invalid_code`. A wrong password is `401 invalid_credentials`, counted and throttled like a wrong sign-in. On success every session of the user ends, none starts (the user signs in again, second factor included), the `password-changed` email is sent and the change is audited as `user.password_change` with `by: current_password`. The [admin UI](../../../operate/administration/admin-ui/) shows this form when its sign-in gets `password_expired`.
+
+{{< hint style="warning" >}}
+A password expired for the **whole realm** ([`expire-passwords`](../users/#expiring-every-password), the first step after a leak) is **not** accepted here: it may be in the leak, and anyone holding it could take the account. It answers `401 password_expired` and the user resets it with the emailed link instead.
+{{< /hint >}}
 
 ### Password reset
 

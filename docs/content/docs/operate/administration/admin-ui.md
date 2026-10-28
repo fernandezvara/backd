@@ -12,7 +12,7 @@ The interface is bundled in the `backd` binary and the release images. Nothing i
 
 ## Switching it on
 
-{{< screenshot src="admin-ui/signin.png" alt="The sign-in page: the realm is always shown, with the email, password and the opt-in to keep the session in this tab" >}}
+{{< screenshot src="admin-ui/signin.png" alt="The sign-in page: the email, the realm and the password and the opt-in to keep the session in this tab" >}}
 
 It is off by default. Set `BACKD_ADMIN_UI=true` on the instance that should serve it:
 
@@ -20,7 +20,7 @@ It is off by default. Set `BACKD_ADMIN_UI=true` on the instance that should serv
 docker run -e BACKD_ADMIN_UI=true … ghcr.io/fernandezvara/backd:vX.Y.Z serve
 ```
 
-Open `https://<your backd>/_ui/`, enter the realm's name and sign in with an administrator's email and password. The address carries the realm, `/_ui/r/<realm>/…`, so a link opens the same realm for whoever follows it; the realm is always shown at the top of the page, because an administrator works in one realm at a time.
+Open `https://<your backd>/_ui/`, one form takes the administrator's email, the realm's name and the password. The address carries the realm, `/_ui/r/<realm>/…`, so a link opens the same realm for whoever follows it and fills the field; at `/_ui/` the field starts with the realm of the last sign-in. An administrator works in one realm at a time, so to change realm you sign out and sign in again. A user whose password was [expired for them alone](../../../build/auth/users/#expiring-a-password) gets, instead of an error, a form to choose a new one: the current password, the new one twice and, for an account with a second factor, a code (it calls [`POST /_auth/password/update`](../../../build/auth/sessions/#change-the-password-signed-out)); then they sign in as usual. When the whole realm's passwords were expired, the form says to use the emailed link.
 
 The UI needs the admin API on the same instance: `BACKD_ADMIN_UI=true` with `BACKD_ADMIN_API=false` is a startup error. A binary built from source without the UI (`go build` without running `make ui` first) starts, logs a warning, and answers `404` at `/_ui/`.
 
@@ -31,7 +31,7 @@ The UI needs the admin API on the same instance: `BACKD_ADMIN_UI=true` with `BAC
 
 ## Who sees what
 
-{{< screenshot src="admin-ui/overview.png" alt="The overview of a full administrator: the realm in the header, the level, and the areas the account may read and change" >}}
+{{< screenshot src="admin-ui/overview.png" alt="The overview of a full administrator: the realm in the bar, the breadcrumb, the level, and the areas the account may read and change" >}}
 
 Signing in needs a user with one of the realm's [admin roles](../admin/#admin-rights); a user without one is refused, and their session is ended at once. After sign-in the UI asks the server what the account may do (`GET /_admin/whoami`) and shows only that: a read-only administrator sees no buttons that change anything, and `admin.read_access` decides whether they see users and data. The server enforces every permission anyway; the interface only avoids offering what would be refused.
 
@@ -39,7 +39,23 @@ The overview page lists the level (full, read-only or custom) and the areas the 
 
 ## Navigation
 
-The pages are in five menus along the top: **Identity** (Overview, Users, Organizations, Invitations), **Access** (API keys, Secrets), **Data** (Data, Storage), **Compute** (Functions, Push, Jobs and history) and **Platform** (Audit, Configuration). A menu opens with a click or with Enter on its button, shows what each page is for, and closes with Escape; the page you are on is marked. The menus show only the pages the account may read: a group with nothing to show is not there, and neither are Organizations, Storage or Push in a realm that has not switched them on. On a narrow screen the groups stack under one menu button.
+{{< screenshot src="admin-ui/menu.png" alt="The bar with the Compute menu open: Functions, Push, and Jobs and history, each with a line saying what it is for; the breadcrumb below the bar" >}}
+
+The pages are in five menus along the top:
+
+| Menu | Pages |
+|---|---|
+| **Identity** | Overview, Users, Organizations, Invitations |
+| **Access** | API keys, Secrets |
+| **Data** | Data (with the schema checks), Storage |
+| **Compute** | Functions, Push, Jobs and history |
+| **Platform** | Audit, Configuration |
+
+A menu opens with a click, or with Enter or Space on its button; it lists its pages with a line saying what each is for, puts the focus on the first, and closes with Escape or a click elsewhere. The page you are on is marked, and so is its menu. The menus show only the pages the account may read: a group with nothing to show is not there, and neither are Organizations, Storage or Push in a realm that has not switched them on.
+
+Under the bar, the **breadcrumb** shows where you are, from the realm, in the accent colour, to the page (for example `Realm: adminui › Data › main › notes › a document`). Every part that has a page of its own leads there; a database has none, so it is plain text. The tab of the browser carries the name of the page too.
+
+On the right, the **account menu** (the button with your initial) shows who is signed in, the language and theme choices and **Sign out**. What an action did is confirmed by a message under the bar (an error stays until it is dismissed). On a narrow screen the five menus and the account controls stack under one **Menu** button.
 
 ## Users and invitations
 
@@ -59,7 +75,7 @@ The **Users** page lists the realm's users, a page at a time, and searches by em
 
 **Invitations** lists the pending ones (who they are for, who created them, when they expire). Creating one shows its token once, to copy; *Email an invitation* has backd send it (offered only when the realm sends email); *Revoke* asks for the word to be typed.
 
-A full administrator also gets a **Passwords and sessions** panel on the Users page for the first minutes of a leak ([`backd user expire-passwords`](../../../build/auth/users/#expiring-every-password) from the browser): it shows when passwords were last expired and how many accounts have one, and offers **Expire every password** (a reason, whether to keep the sessions and, when the realm sends email, whether to email every user a link; you confirm by typing the number of accounts it affects), **Tell the users** (starts or continues the [notification job](../../../build/auth/users/#telling-the-users)) and **End every session** (you confirm by typing the realm name). Each asks for a fresh proof of identity. A user whose password an administrator expired is marked in the list and in their page.
+A full administrator also gets a **Show the leak actions** button next to *Create user*; it unfolds a **Passwords and sessions** panel (folded by default) for the first minutes of a leak ([`backd user expire-passwords`](../../../build/auth/users/#expiring-every-password) from the browser): it shows when passwords were last expired and how many accounts have one, and offers **Expire every password** (a reason, whether to keep the sessions and, when the realm sends email, whether to email every user a link; you confirm by typing the number of accounts it affects), **Tell the users** (starts or continues the [notification job](../../../build/auth/users/#telling-the-users)) and **End every session** (you confirm by typing the realm name). Each asks for a fresh proof of identity. A user whose password an administrator expired is marked in the list and in their page.
 
 A read-only level sees the Users page only when the realm's `admin.read_access.users` grants it, and then without any control that changes something. The same holds for every area: a control appears only when `whoami` says the level may use it.
 
@@ -141,7 +157,7 @@ The **Data** area browses and fixes documents through the [admin data route](../
 - **Browsing:** a table with the collection's first scalar fields, the update time and version, paged (20, 50 or 100 a page) with the total, and a *JSON* view of the same page. The **query builder** offers the fields the schema declares (nested ones by dot path, plus `id` and `_meta`), and for each type only the operators backd's query language accepts: text operators for strings, comparisons and ranges for numbers and dates, `is one of` for enums. Values are checked in the browser (a number must be a number, a date a date) before anything is sent. Sorting is by any of those fields, and *Raw where (JSON)* takes the API's own query language for anything the builder can't say.
 - **Forms:** creating and editing use a form drawn from the collection's JSON Schema: objects, arrays (add, remove, reorder), strings with their formats (`email`, `date`, `date-time`, `uri`) and length limits, numbers with their limits, booleans, enums, required markers and descriptions. `id` and `_meta` are shown, never edited. Fields appear in alphabetical order: the configuration API returns a schema's properties sorted by name, not in the order the file declares them. Whatever a form can't draw faithfully, such as `oneOf`, `anyOf`, `if`/`then`, a recursive `$ref` or a free-form object, becomes a **JSON editor for that field**, and a schema that can't be a form at all is edited as JSON as a whole. Fields the schema doesn't declare are kept as they are. The server's validation messages appear next to the field they are about, and in a list at the top.
 - **Concurrent edits:** a save sends the version you read (`If-Match`). If someone changed the document meanwhile, the page says so and offers the newer version to read; you can **load it** (dropping your edit) or **keep your changes** on top of it and save again.
-- **Schema check:** a collection's page has a **Check documents against the schema** button. It asks first and **says that a check reads every document, so on a big collection it takes a long time and loads the database** (with about how many documents when the page knows). The check runs in the background: the page shows its percentage with a Cancel button, and then the latest report, each invalid document's id linking to it, whether it is in the trash, and the path and rule of its problems (never values). The *Schema checks* page lists every collection's latest report and can check them all; one check runs at a time. See [Finding documents that no longer match](../../../build/configuration/validation/#finding-documents-that-no-longer-match).
+- **Schema check:** a collection's page has a **Show the schema check** button (the panel is folded by default) that unfolds a **Check documents against the schema** button. It asks first and **says that a check reads every document, so on a big collection it takes a long time and loads the database** (with about how many documents when the page knows). The check runs in the background: the page shows its percentage with a Cancel button, and then the latest report, each invalid document's id linking to it, whether it is in the trash, and the path and rule of its problems (never values). The *Schema checks* page lists every collection's latest report and can check them all; one check runs at a time. See [Finding documents that no longer match](../../../build/configuration/validation/#finding-documents-that-no-longer-match).
 - **Deleting:** it asks for the document's id to be typed. In a collection with `soft_delete` the document goes to the **trash**: browse it with the *Trash* switch, *Restore* a document, or *Delete for good* (also typed). Elsewhere a delete is final.
 
 - **Files:** a document of a collection with [file fields](../../../build/files/file-fields/) has a **Files** section below its form (the form and the JSON tab leave those fields out: they are backd's, and a save keeps them). Each field shows its limits (size, types, how many), what it holds with a **preview** of the images, and **Download**, **Remove** (it asks for the file's name) and **Upload** controls. An upload goes through backd or straight to the bucket, as the field says, with a progress bar; every upload or removal is a change to the document (a new version, audited as `data.update`) that your unsaved edits survive, and the field's own refusals (too large, a type it doesn't take, too many files) appear as they are. They use the admin data route's `_files` routes, past the collection's rules like the rest of the Data area.

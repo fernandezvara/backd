@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import AppCard from '@/components/AppCard.vue'
 import type { SecretInfo } from 'backd-js'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FormDialog from '@/components/FormDialog.vue'
 import TextField from '@/components/TextField.vue'
@@ -94,16 +96,14 @@ async function remove() {
 </script>
 
 <template>
-  <div class="flex flex-wrap items-end justify-between gap-4">
-    <h1 class="text-2xl font-semibold">{{ t('secrets.title') }}</h1>
+  <PageHeader :title="t('secrets.title')" :description="t('secrets.help')">
     <AppButton v-if="canWrite" @click="openSet">{{ t('secrets.set.open') }}</AppButton>
-  </div>
-  <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">{{ t('secrets.help') }}</p>
+  </PageHeader>
 
   <AppAlert v-if="error" kind="error" class="mt-4">{{ error }}</AppAlert>
   <p v-if="loading" class="mt-4 text-sm" role="status">{{ t('common.loading') }}</p>
 
-  <div class="mt-4 overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+  <AppCard flush class="mt-4">
     <table class="w-full text-left text-sm" data-testid="secrets-table">
       <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
         <tr>
@@ -129,7 +129,7 @@ async function remove() {
         </tr>
       </tbody>
     </table>
-  </div>
+  </AppCard>
 
   <FormDialog v-model:open="setting" :title="t('secrets.set.title')" :submit="t('common.save')" :busy="setBusy" :error="setError" @submit="set">
     <TextField v-model="name" :label="t('secrets.set.name')" :help="t('secrets.set.nameHelp')" autocomplete="off" required />

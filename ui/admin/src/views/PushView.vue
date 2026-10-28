@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import AppCard from '@/components/AppCard.vue'
 import type { PushSend, PushStatus } from 'backd-js'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import FormDialog from '@/components/FormDialog.vue'
 import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
@@ -90,6 +92,7 @@ async function submitTest() {
       email: t0.email.trim(),
       ...(t0.kind.trim() ? { kind: t0.kind.trim() } : { title: t0.title, body: t0.body }),
     })
+    toasts.push(t('push.test.queued'))
     await loadSends()
   } catch (e) {
     testError.value = errorText(e, t('common.unexpected'))
@@ -105,13 +108,10 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="flex flex-wrap items-baseline justify-between gap-2">
-    <h1 class="text-2xl font-semibold">{{ t('push.title') }}</h1>
-    <div class="flex items-center gap-2">
-      <AppButton variant="secondary" :busy="loading" @click="loadStatus().then(loadSends)">{{ t('push.refresh') }}</AppButton>
-      <AppButton v-if="canTest && status?.enabled" @click="openTest">{{ t('push.test.open') }}</AppButton>
-    </div>
-  </div>
+  <PageHeader :title="t('push.title')" :description="t('nav.desc.push')">
+    <AppButton variant="secondary" :busy="loading" @click="loadStatus().then(loadSends)">{{ t('push.refresh') }}</AppButton>
+    <AppButton v-if="canTest && status?.enabled" @click="openTest">{{ t('push.test.open') }}</AppButton>
+  </PageHeader>
 
   <AppAlert v-if="statusError" kind="error" class="mt-4">{{ statusError }}</AppAlert>
   <AppAlert v-else-if="status && !status.enabled" class="mt-4" data-testid="push-none">{{ t('push.none') }}</AppAlert>
@@ -152,7 +152,7 @@ onMounted(async () => {
       </form>
       <AppAlert v-if="sendsError" kind="error" class="mt-2">{{ sendsError }}</AppAlert>
       <p v-else-if="!sends.length" class="mt-2 text-sm text-slate-600 dark:text-slate-400" data-testid="push-no-sends">{{ t('push.noSends') }}</p>
-      <div v-else class="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+      <AppCard v-else flush class="mt-2">
         <table class="w-full text-left text-sm" data-testid="push-sends">
           <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
             <tr>
@@ -175,7 +175,7 @@ onMounted(async () => {
             </tr>
           </tbody>
         </table>
-      </div>
+      </AppCard>
       <div class="mt-3 flex gap-2">
         <AppButton variant="secondary" :disabled="skip === 0" @click="page(-1)">{{ t('common.previous') }}</AppButton>
         <AppButton variant="secondary" :disabled="!hasMore" @click="page(1)">{{ t('common.next') }}</AppButton>

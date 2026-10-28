@@ -379,12 +379,14 @@ void main() {
         ..answer(respond(202))
         ..answer(respond(202))
         ..answer(respond(202))
-        ..answer(respond(202));
+        ..answer(respond(202))
+        ..answer(respond(204));
       final client = testClient(t);
       await client.auth.resendVerification('a@b.c');
       await client.auth.verifyEmail('tok');
       await client.auth.requestPasswordReset('a@b.c');
       await client.auth.resetPassword('tok', 'pw');
+      await client.auth.updatePassword('a@b.c', 'pw', 'pw2', code: '123456');
       await client.auth.confirmEmailChange('tok');
       await client.auth.revertEmailChange('tok');
       await client.auth.acceptInvitation('inv', 'pw', locale: 'de');
@@ -395,6 +397,7 @@ void main() {
           '/v1/shelf/_auth/verify-email',
           '/v1/shelf/_auth/reset-password/request',
           '/v1/shelf/_auth/reset-password',
+          '/v1/shelf/_auth/password/update',
           '/v1/shelf/_auth/confirm-email-change',
           '/v1/shelf/_auth/revert-email-change',
           '/v1/shelf/_auth/accept-invitation',

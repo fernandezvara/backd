@@ -7,11 +7,13 @@ import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FormDialog from '@/components/FormDialog.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import JsonField from '@/components/JsonField.vue'
 import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
 import { errorText, formatDate, parseList } from '@/lib/format'
 import { useRealmConfig } from '@/stores/config'
+import { useCrumbNames } from '@/stores/crumbs'
 import { useSession } from '@/stores/session'
 import { useToasts } from '@/stores/toasts'
 
@@ -19,6 +21,7 @@ const props = defineProps<{ realm: string; id: string }>()
 const { t } = useI18n()
 const admin = useAdmin()
 const session = useSession()
+const crumbNames = useCrumbNames()
 const toasts = useToasts()
 const realmConfig = useRealmConfig()
 
@@ -54,6 +57,7 @@ async function load() {
   loadError.value = ''
   try {
     org.value = await admin.orgs.get(props.id)
+    crumbNames.set('org', props.id, org.value.name)
     claims.value = JSON.parse(JSON.stringify(org.value.claims))
     if (org.value.status === 'deleted') {
       members.value = []
@@ -437,7 +441,7 @@ const th = 'px-3 py-2'
   <AppAlert v-if="loadError" kind="error" class="mt-4">{{ loadError }}</AppAlert>
 
   <template v-if="org">
-    <h1 class="mt-2 text-2xl font-semibold" data-testid="org-name">{{ org.name }}</h1>
+    <PageHeader :title="org.name" testid="org-name" />
 
     <dl class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <div :class="[box, 'p-4']">

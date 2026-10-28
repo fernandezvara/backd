@@ -110,7 +110,7 @@ const submitRevoke = () => revoke.submit(() => (revokeTyped.value.trim() === pro
 </script>
 
 <template>
-  <section class="mt-6 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900" aria-labelledby="passwords-h" data-testid="passwords-panel">
+  <section id="passwords-panel" class="mt-6 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900" aria-labelledby="passwords-h" data-testid="passwords-panel">
     <h2 id="passwords-h" class="text-lg font-semibold">{{ t('passwords.title') }}</h2>
     <AppAlert v-if="loadError" kind="error" class="mt-2">{{ loadError }}</AppAlert>
     <p class="mt-1 text-sm text-slate-600 dark:text-slate-400" data-testid="passwords-status">

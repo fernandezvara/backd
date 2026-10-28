@@ -1,19 +1,22 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, watchEffect } from 'vue'
+import { useRoute } from 'vue-router'
+import { crumbsFor } from '@/lib/crumbs'
 import { visibleNav } from '@/lib/nav'
 import { useRealmConfig } from '@/stores/config'
+import { useCrumbNames } from '@/stores/crumbs'
 import { useSession } from '@/stores/session'
-import AppButton from './AppButton.vue'
+import AccountControls from './AccountControls.vue'
+import AccountMenu from './AccountMenu.vue'
+import AppBreadcrumb from './AppBreadcrumb.vue'
 import AppNav from './AppNav.vue'
-import LocaleSwitch from './LocaleSwitch.vue'
-import ThemeSwitch from './ThemeSwitch.vue'
 
 const { t } = useI18n()
 const session = useSession()
-const router = useRouter()
 const cfg = useRealmConfig()
+const route = useRoute()
+const names = useCrumbNames()
 onMounted(() => void cfg.load())
 
 // Organizations show when the realm has them; a level that can't read the configuration is
@@ -24,11 +27,14 @@ const groups = computed(() =>
   visibleNav({ canRead: session.canRead, orgs: orgsEnabled.value, storage: !!cfg.config?.settings.storage, push: !!cfg.config?.settings.push }),
 )
 
-async function signOut() {
-  const realm = session.realm
-  await session.signOut()
-  await router.push({ name: 'signin', params: { realm } })
-}
+const crumbs = computed(() =>
+  typeof route.name === 'string' ? crumbsFor(route.name, route.params, { t, realm: session.realm, groups: groups.value, name: names.get }) : null,
+)
+// The tab says where you are too.
+watchEffect(() => {
+  const here = crumbs.value?.at(-1)
+  document.title = here ? `${here.label} · ${t('app.name')}` : t('app.name')
+})
 </script>
 
 <template>
@@ -37,25 +43,18 @@ async function signOut() {
     <div class="relative mx-auto flex h-14 max-w-6xl items-center gap-3 px-4">
       <AppNav :groups="groups" class="min-[900px]:order-3">
         <template #mobile>
-          <div class="flex flex-wrap items-center gap-3 border-t border-slate-200 pt-3 dark:border-slate-800">
-            <span v-if="session.email" class="text-sm text-slate-600 dark:text-slate-300">{{ session.email }}</span>
-            <LocaleSwitch />
-            <ThemeSwitch />
-            <AppButton variant="secondary" @click="signOut">{{ t('common.signOut') }}</AppButton>
+          <div class="border-t border-slate-200 pt-3 dark:border-slate-800">
+            <AccountControls />
           </div>
         </template>
       </AppNav>
       <span class="shrink-0 font-semibold">{{ t('app.name') }}</span>
-      <span class="shrink-0 rounded-md bg-brand-50 px-2.5 py-1 text-sm font-semibold text-brand-800 dark:bg-brand-800 dark:text-brand-50" data-testid="realm-badge">
-        {{ t('realm.current', { name: session.realm }) }}
-      </span>
-      <div class="order-4 ml-auto hidden items-center gap-2 min-[900px]:flex">
-        <LocaleSwitch />
-        <ThemeSwitch />
-        <AppButton variant="secondary" @click="signOut">{{ t('common.signOut') }}</AppButton>
+      <div class="order-4 ml-auto hidden items-center min-[900px]:flex">
+        <AccountMenu />
       </div>
     </div>
   </header>
+  <AppBreadcrumb v-if="crumbs" :crumbs="crumbs" />
   <main id="main" class="mx-auto max-w-6xl px-4 py-6">
     <slot />
   </main>
