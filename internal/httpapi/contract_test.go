@@ -576,6 +576,21 @@ func TestContract(t *testing.T) {
 	req("POST", a+"/reset-password", `{"token": "x"}`, map[string]string{"Content-Type": "text/plain"}, 415)
 	req("POST", "/v1/nope/_auth/reset-password", `{"token": "x", "password": "y"}`, nil, 404)
 
+	// A password changed signed out, with the current one.
+	if _, _, err := f.svc.Signup(context.Background(), "updater@example.com", "dev-p4ssw0rd!", ""); err != nil {
+		t.Fatal(err)
+	}
+	req("POST", a+"/password/update", `{"email": "updater@example.com", "password": "dev-p4ssw0rd!", "new_password": "short"}`, nil, 400)
+	req("POST", a+"/password/update", `{"email": "updater@example.com", "password": "dev-p4ssw0rd!", "new_password": "dev-p4ssw0rd!2"}`, nil, 204)
+	req("POST", a+"/password/update", `{"email": "updater@example.com", "password": "dev-p4ssw0rd!", "new_password": "dev-p4ssw0rd!3"}`, nil, 401)
+	req("POST", a+"/password/update", `{"email": "updater@example.com", "password": "dev-p4ssw0rd!2"}`, nil, 400)
+	req("POST", a+"/password/update", `{"email": "updater@example.com"}`, map[string]string{"Content-Type": "text/plain"}, 415)
+	req("POST", "/v1/nope/_auth/password/update", `{"email": "a@example.com", "password": "x", "new_password": "y"}`, nil, 404)
+	for range 4 {
+		req("POST", a+"/password/update", `{"email": "updater@example.com", "password": "dev-p4ssw0rd!0", "new_password": "dev-p4ssw0rd!3"}`, nil, 401)
+	}
+	req("POST", a+"/password/update", `{"email": "updater@example.com", "password": "dev-p4ssw0rd!0", "new_password": "dev-p4ssw0rd!3"}`, nil, 429)
+
 	// proofOf is the headers of a request a sensitive action accepts: the session of tok and a
 	// fresh proof of it with the password.
 	proofOf := func(tok, password string) map[string]string {

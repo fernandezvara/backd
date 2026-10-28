@@ -816,6 +816,22 @@ export class Auth {
   }
 
   /**
+   * Changes the password with the current one, signed out: for a password that expired for the user
+   * alone (`password_expired` at sign-in) or one the user wants to replace without a session. An
+   * account with a second factor also gives `code` (a recovery code with `method: 'recovery'`); without
+   * it the call rejects with a `ValidationError` for `code`. Ends every session of the user and starts
+   * none: log in afterwards. A password the realm's expiry covers (a leak) is refused with
+   * `password_expired`: use {@link Auth#requestPasswordReset}. Rejects with `invalid_credentials` when
+   * the current password is wrong.
+   * @param {{ email: string, password: string, newPassword: string, code?: string, method?: 'totp' | 'recovery' }} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async updatePassword({ email, password, newPassword, code, method }, opts) {
+    await this.accepted(['_auth', 'password', 'update'], { email, password, new_password: newPassword, code, method }, opts)
+  }
+
+  /**
    * Asks to change the signed-in user's email address (realms with
    * `account.allow_email_change`). Needs a fresh proof: call {@link Auth#reauth} first. Resolves
    * whether or not the new address is free; nothing changes until the link

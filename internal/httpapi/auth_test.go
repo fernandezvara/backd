@@ -556,3 +556,58 @@ func TestAuthLoginWithAnExpiredPassword(t *testing.T) {
 		t.Errorf("unknown user: %d %v", rec.Code, out)
 	}
 }
+
+func TestAuthPasswordUpdate(t *testing.T) {
+	f := newAuthFixture(t)
+	f.svc.Settings.Organizations = nil
+	f.signup(t, "ada@example.com")
+	update := func(body string) (*httptest.ResponseRecorder, map[string]any) {
+		return f.do(t, "POST", authBase+"/password/update", body)
+	}
+	rec, out := update(`{"email": "ada@example.com", "password": "dev-p4ssw0rd!0", "new_password": "dev-p4ssw0rd!2"}`)
+	if rec.Code != http.StatusUnauthorized || errCode(out) != "invalid_credentials" {
+		t.Errorf("wrong password: %d %v", rec.Code, out)
+	}
+	rec, out = update(`{"email": "ada@example.com", "password": "dev-p4ssw0rd!", "new_password": "short"}`)
+	if rec.Code != http.StatusBadRequest || errCode(out) != "validation_error" {
+		t.Errorf("a weak password: %d %v", rec.Code, out)
+	}
+	rec, out = update(`{"email": "ada@example.com", "password": "dev-p4ssw0rd!"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("no new password: %d %v", rec.Code, out)
+	}
+	if rec, _ = update(`{"email": "ada@example.com", "password": "dev-p4ssw0rd!", "new_password": "dev-p4ssw0rd!2"}`); rec.Code != http.StatusNoContent {
+		t.Fatalf("update: %d", rec.Code)
+	}
+	if rec, _ = f.do(t, "POST", authBase+"/login", `{"email": "ada@example.com", "password": "dev-p4ssw0rd!2"}`); rec.Code != http.StatusOK {
+		t.Errorf("sign in with the new password: %d", rec.Code)
+	}
+
+	// The realm-wide expiry of a leak is not undone with the leaked password.
+	later := time.Now().Add(time.Hour)
+	if ok, err := f.store.SetPasswordEpoch(context.Background(), auth.PasswordEpoch{ValidAfter: later, SetBy: "test", SetAt: later}); !ok || err != nil {
+		t.Fatal(ok, err)
+	}
+	f.svc.Now = func() time.Time { return later.Add(time.Minute) }
+	rec, out = update(`{"email": "ada@example.com", "password": "dev-p4ssw0rd!2", "new_password": "dev-p4ssw0rd!3"}`)
+	if rec.Code != http.StatusUnauthorized || errCode(out) != "password_expired" {
+		t.Errorf("leak expiry: %d %v", rec.Code, out)
+	}
+}
+
+func TestAuthPasswordUpdateAsksAnAccountWithASecondFactorForACode(t *testing.T) {
+	f := newMFAHTTP(t)
+	body := func(code string) string {
+		return `{"email": "mia@example.com", "password": "dev-p4ssw0rd!", "new_password": "dev-p4ssw0rd!2"` + code + `}`
+	}
+	rec, out := f.do(t, "POST", authBase+"/password/update", body(""))
+	if rec.Code != http.StatusBadRequest || errCode(out) != "validation_error" {
+		t.Errorf("no code: %d %v", rec.Code, out)
+	}
+	if rec, out = f.do(t, "POST", authBase+"/password/update", body(`, "code": "000000"`)); rec.Code != http.StatusBadRequest || errCode(out) != "invalid_code" {
+		t.Errorf("wrong code: %d %v", rec.Code, out)
+	}
+	if rec, _ = f.do(t, "POST", authBase+"/password/update", body(`, "code": "`+f.code(t, 0)+`"`)); rec.Code != http.StatusNoContent {
+		t.Errorf("right code: %d", rec.Code)
+	}
+}

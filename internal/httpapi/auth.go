@@ -61,6 +61,8 @@ func (a *authAPI) routes(r chi.Router) {
 		r.Post("/mfa/totp/confirm", a.mfaConfirm)
 		r.With(json).Post("/verify-email/resend", a.resendVerification)
 		r.With(json).Post("/reset-password/request", a.requestPasswordReset)
+		// Signed out: the proof is the current password (and the code of a second factor).
+		r.With(json).Post("/password/update", a.updatePassword)
 		a.hostedRoutes(r)
 		a.oauthRoutes(r, json)
 		r.Group(func(r chi.Router) {
@@ -462,6 +464,27 @@ func (a *authAPI) changePassword(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// updatePassword handles POST /_auth/password/update: a new password for someone who gives the
+// current one, expired or not, with no session.
+func (a *authAPI) updatePassword(w http.ResponseWriter, r *http.Request) {
+	obj, ok := readObject(w, r)
+	if !ok {
+		return
+	}
+	f, ok := fields(w, r, obj, map[string]string{"email": "string", "password": "string", "new_password": "string", "code": "string?", "method": "string?"})
+	if !ok {
+		return
+	}
+	in := auth.PasswordUpdate{Email: f["email"].(string), Password: f["password"].(string), NewPassword: f["new_password"].(string), IP: clientIP(r)}
+	in.Code, _ = f["code"].(string)
+	in.Method, _ = f["method"].(string)
+	if err := usersOf(r).UpdatePassword(r.Context(), in); err != nil {
+		authError(w, r, err, "new_password")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (a *authAPI) sessions(w http.ResponseWriter, r *http.Request) {
 	p := principalOf(r)
 	list, err := usersOf(r).Sessions(r.Context(), p)
@@ -605,6 +628,8 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 	case errors.Is(err, auth.ErrReauthRequired):
 		w.Header().Set("WWW-Authenticate", `Bearer realm="`+chi.URLParam(r, "realm")+`", error="insufficient_user_authentication"`)
 		writeError(w, r, http.StatusUnauthorized, codeReauthRequired, "this action needs a fresh proof of identity: POST /_auth/reauth and send the token in "+reauthHeader)
+	case errors.Is(err, auth.ErrCodeRequired):
+		writeError(w, r, http.StatusBadRequest, codeValidation, err.Error(), Detail{Path: "code", Reason: "is required: the account uses a second factor"})
 	case errors.Is(err, auth.ErrReauthMethod):
 		writeError(w, r, http.StatusBadRequest, codeValidation, "that proof is not accepted for this user", Detail{Path: "method", Reason: "use one of the user's reauth_methods"})
 	case errors.Is(err, auth.ErrMagicLinkDisabled):
