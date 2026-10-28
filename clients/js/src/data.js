@@ -504,21 +504,21 @@ export class Collection {
   /**
    * A link to a file, to show or open: `{ url, expiresAt }`. It works without credentials until
    * it expires, so fetch it when it is needed. With `version` it links that made version of an
-   * image (a thumbnail), or is `null` while the version isn't ready.
+   * image (a thumbnail), or is `null` while the version isn't ready. Pass the file's details as `file` and the address of a public file is answered without a request (`expiresAt` is `null`: it never expires).
    * @overload
    * @param {string} id
    * @param {string} field
    * @param {string} fileId
-   * @param {RequestOptions & { version?: undefined }} [opts]
-   * @returns {Promise<{ url: string, expiresAt: string }>}
+   * @param {RequestOptions & { version?: undefined, file?: import('./files.js').FileDetails }} [opts]
+   * @returns {Promise<{ url: string, expiresAt: string | null }>}
    */
   /**
    * @overload
    * @param {string} id
    * @param {string} field
    * @param {string} fileId
-   * @param {RequestOptions & { version: string }} opts
-   * @returns {Promise<{ url: string, expiresAt: string } | null>}
+   * @param {RequestOptions & { version: string, file?: import('./files.js').FileDetails }} opts
+   * @returns {Promise<{ url: string, expiresAt: string | null } | null>}
    */
   /**
    * @param {string} id
@@ -537,7 +537,7 @@ export class Collection {
    * @param {string} field
    * @param {string} fileId
    * @param {RequestOptions} [opts]
-   * @returns {Promise<{ url: string, expiresAt: string }>}
+   * @returns {Promise<{ url: string, expiresAt: string | null }>}
    */
   downloadFile(id, field, fileId, opts) {
     return downloadFile(this.client, this.path, id, field, fileId, opts)

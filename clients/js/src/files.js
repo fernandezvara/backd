@@ -19,6 +19,10 @@ import { sha256Blob } from './sha256.js'
  * @property {number} [width]       Pixels, for an image (as a viewer sees it).
  * @property {number} [height]
  * @property {Record<string, VersionState>} [versions]   The state of each version the field declares (`versions:` in collection.yaml).
+ * @property {boolean} [public]     True for a file of a public field (`public: true`): it is read at `url`, with no signed link.
+ * @property {string} [key_name]    A public file's name as its address ends with it.
+ * @property {string} [url]         A public file's permanent address (computed on every read), or the signed link of `?file_links=true`.
+ * @property {string} [expires_at]  When a signed `url` stops working (never set on a public file's address).
  */
 
 /**
@@ -38,12 +42,14 @@ import { sha256Blob } from './sha256.js'
  * @property {string} [fingerprint]
  * @property {boolean} [custom]       Made with parameters a function gave (`generate`), not the declared ones.
  * @property {string} [generated_at]  RFC3339 timestamp.
+ * @property {string} [url]           The copy's permanent address, on a public file once it is ready.
  */
 
 /**
  * Options of `get` and `link`: `version` names a made version of an image (`versions:` in
- * collection.yaml) to read instead of the original.
- * @typedef {RequestOptions & { version?: string }} VersionOptions
+ * collection.yaml) to read instead of the original. `fileUrl` also takes `file`: the file's
+ * details as a document holds them, which for a public file answers without a request.
+ * @typedef {RequestOptions & { version?: string, file?: FileDetails }} VersionOptions
  */
 
 /**
@@ -73,7 +79,7 @@ import { sha256Blob } from './sha256.js'
  * A link to a file that works without credentials until it expires.
  * @typedef {object} FileLink
  * @property {string} url
- * @property {string} expires_at   RFC3339 timestamp.
+ * @property {string | null} expires_at   RFC3339 timestamp; `null` for the address of a public file, which never expires.
  */
 
 /**
@@ -504,15 +510,17 @@ export async function prepareUpload(client, collectionPath, field, file, opts = 
  * A link to a file, for an app to show or open: `{ url, expiresAt }`. With `version` it is a
  * link to that made version of an image, or `null` while the version isn't ready (pending,
  * skipped, failed, or not made by a worker yet): show a placeholder, and read the document
- * (`versionStatus`) to tell why.
+ * (`versionStatus`) to tell why. Pass the file's details as `file` and a public file's address
+ * is answered without a request (`expiresAt` is `null`: it never expires); `publicUrl` is the
+ * same, synchronous.
  * @overload
  * @param {Client} client
  * @param {string[]} collectionPath
  * @param {string} id
  * @param {string} field
  * @param {string} fileId
- * @param {RequestOptions & { version?: undefined }} [opts]
- * @returns {Promise<{ url: string, expiresAt: string }>}
+ * @param {RequestOptions & { version?: undefined, file?: FileDetails }} [opts]
+ * @returns {Promise<{ url: string, expiresAt: string | null }>}
  */
 /**
  * @overload
@@ -521,8 +529,8 @@ export async function prepareUpload(client, collectionPath, field, file, opts = 
  * @param {string} id
  * @param {string} field
  * @param {string} fileId
- * @param {RequestOptions & { version: string }} opts
- * @returns {Promise<{ url: string, expiresAt: string } | null>}
+ * @param {RequestOptions & { version: string, file?: FileDetails }} opts
+ * @returns {Promise<{ url: string, expiresAt: string | null } | null>}
  */
 /**
  * @param {Client} client
@@ -533,6 +541,11 @@ export async function prepareUpload(client, collectionPath, field, file, opts = 
  * @param {VersionOptions} [opts]
  */
 export async function fileUrl(client, collectionPath, id, field, fileId, opts) {
+  // A public file already carries its address, which never expires: no request is needed.
+  if (opts?.file?.public) {
+    const url = publicUrl(opts.file, opts.version)
+    return url === null ? null : { url, expiresAt: null }
+  }
   try {
     const l = await new Files(client, collectionPath, id, field).link(fileId, opts)
     return { url: l.url, expiresAt: l.expires_at }
@@ -540,6 +553,23 @@ export async function fileUrl(client, collectionPath, id, field, fileId, opts) {
     if (opts?.version !== undefined && e instanceof BackdError && e.code === 'version_unavailable') return null
     throw e
   }
+}
+
+/**
+ * The permanent address of a public file, or of one of its made versions: where anyone reads
+ * it without credentials, to put straight into an `<img src>` as soon as the document arrives.
+ * `null` for a file that is not public, and for a version that isn't ready yet (show a
+ * placeholder; `versionStatus` tells why). Nothing is requested: the address is in the details
+ * the document came with.
+ * @param {FileDetails | null | undefined} file    A file as a document holds it.
+ * @param {string} [version]                        A made version's name instead of the original.
+ * @returns {string | null}
+ */
+export function publicUrl(file, version) {
+  if (!file?.public) return null
+  if (version === undefined) return file.url ?? null
+  const v = file.versions?.[version]
+  return v?.status === 'ready' ? (v.url ?? null) : null
 }
 
 /**
@@ -567,7 +597,7 @@ export function versionStatus(file, name) {
  * @param {string} field
  * @param {string} fileId
  * @param {RequestOptions} [opts]
- * @returns {Promise<{ url: string, expiresAt: string }>}
+ * @returns {Promise<{ url: string, expiresAt: string | null }>}
  */
 export async function downloadFile(client, collectionPath, id, field, fileId, opts) {
   if (typeof window === 'undefined' || typeof window.location?.assign !== 'function') {

@@ -8872,7 +8872,9 @@ paths:
         The `read` rule decides (a document the caller can't read is `404`). In
         `download: presigned` mode (the default) the answer is a `302` to a short-lived
         signed link of the storage, forcing a download; `?link=json` answers
-        `{url, expires_at}` instead. In `download: proxy` mode backd streams the
+        `{url, expires_at}` instead (for a file of a public field the answer is its
+        permanent address and `expires_at` is `null`; the download itself is streamed
+        by backd). In `download: proxy` mode backd streams the
         bytes: with `nosniff` and a sandbox CSP, one `Range` (`206`, `416`), a strong
         `ETag` from the file's sha256 (`If-None-Match` → `304`, `If-Range`), and
         public caching only for a document anyone may read. A signed backd link
@@ -9590,7 +9592,9 @@ paths:
         The `read` rule decides (a document the caller can't read is `404`). In
         `download: presigned` mode (the default) the answer is a `302` to a short-lived
         signed link of the storage, forcing a download; `?link=json` answers
-        `{url, expires_at}` instead. In `download: proxy` mode backd streams the
+        `{url, expires_at}` instead (for a file of a public field the answer is its
+        permanent address and `expires_at` is `null`; the download itself is streamed
+        by backd). In `download: proxy` mode backd streams the
         bytes: with `nosniff` and a sandbox CSP, one `Range` (`206`, `416`), a strong
         `ETag` from the file's sha256 (`If-None-Match` → `304`, `If-Range`), and
         public caching only for a document anyone may read. A signed backd link
@@ -12053,7 +12057,11 @@ components:
       required: [url, expires_at]
       properties:
         url: { type: string }
-        expires_at: { $ref: "#/components/schemas/Timestamp" }
+        expires_at:
+          description: When the link stops working; `null` for the address of a public file, which never expires.
+          oneOf:
+            - { $ref: "#/components/schemas/Timestamp" }
+            - { type: "null" }
 
     DocumentBody:
       type: object

@@ -714,6 +714,12 @@ func (d *documents) downloadFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if q.Get("link") == "json" && !signed {
+		// A public file is read at its own address, which never expires.
+		if tg.public {
+			w.Header().Set("Cache-Control", "private, no-store")
+			writeJSON(w, http.StatusOK, map[string]any{"url": d.publicURL(c, tg.key), "expires_at": nil})
+			return
+		}
 		l, exp, err := d.fileLink(r.Context(), r, obj, c, f, docID, tg)
 		if err != nil {
 			linkError(w, r, err)

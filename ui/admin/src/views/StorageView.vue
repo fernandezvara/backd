@@ -54,9 +54,21 @@ const canOpenUsers = computed(() => session.canRead('users'))
   <AppAlert v-if="error" kind="error" class="mt-4">{{ error }}</AppAlert>
 
   <template v-else-if="status">
-    <AppAlert v-if="!status.configured" class="mt-4" data-testid="storage-none">{{ t('storage.none') }}</AppAlert>
+    <AppAlert v-if="!status.configured && !status.public_storage" class="mt-4" data-testid="storage-none">{{ t('storage.none') }}</AppAlert>
 
-    <template v-else>
+    <section v-if="status.public_storage" class="mt-4 max-w-3xl" aria-labelledby="public-h" data-testid="storage-public">
+      <h2 id="public-h" class="text-lg font-semibold">{{ t('storage.publicTitle') }}</h2>
+      <p class="mt-1 text-sm text-slate-600 dark:text-slate-400" data-testid="storage-public-where">
+        <code class="font-mono">{{ status.public_storage.provider }} · {{ status.public_storage.bucket }}/{{ status.public_storage.prefix }}</code>
+        — {{ t('storage.keys') }}: <strong>{{ status.public_storage.keys.ok ? t('storage.ok') : t('storage.notUsable') }}</strong>,
+        {{ t('storage.bucket') }}: <strong>{{ status.public_storage.reachable.ok ? t('storage.reachable') : t('storage.unreachable') }}</strong>
+      </p>
+      <p class="mt-1 text-sm">{{ t('storage.publicWhere', { url: status.public_storage.url }) }}</p>
+      <AppAlert v-if="!status.public_storage.keys.ok" kind="error" class="mt-2">{{ status.public_storage.keys.error }}</AppAlert>
+      <AppAlert v-else-if="!status.public_storage.reachable.ok" kind="error" class="mt-2">{{ status.public_storage.reachable.error }}</AppAlert>
+    </section>
+
+    <template v-if="status.configured">
       <p class="mt-2 text-sm text-slate-600 dark:text-slate-400" data-testid="storage-where">
         <code class="font-mono">{{ status.provider }} · {{ status.bucket }}/{{ status.prefix }}</code>
         — {{ t('storage.keys') }}: <strong>{{ status.keys?.ok ? t('storage.ok') : t('storage.notUsable') }}</strong>,

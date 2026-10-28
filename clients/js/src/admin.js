@@ -391,6 +391,8 @@ import { connectionBody } from './orgs.js'
  * @property {{ queued: number, retrying: number, oldest: string | null }} [deletions]   Objects waiting to be deleted.
  * @property {{ realm: number | null, user: number | null }} [quota]   The limits usage is held to (`storage.quota`), in bytes; null: none.
  * @property {number} [stale_uploads]   Uploads left unfinished past their time.
+ * @property {{ provider: string, endpoint: string, region: string, bucket: string, prefix: string, url: string, access_key: string, secret_key: string, keys: { ok: boolean, error?: string }, reachable: { ok: boolean, error?: string } }} [public_storage]
+ *   The realm's `public_storage:`, when it has one: where public files are written, the `url` they are read at, and whether its keys work and the bucket answers.
  */
 
 /**

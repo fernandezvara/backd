@@ -23,3 +23,7 @@ files:
   notes:
     max_size: 64KiB
     download: proxy
+  # Read straight from the public bucket at the address the document carries.
+  photo:
+    public: true
+    max_size: 64KiB

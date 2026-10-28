@@ -268,6 +268,9 @@ func collectionConfig(c *registry.Collection, rel func(string) string) map[strin
 			if f.KeepMetadata {
 				view["keep_metadata"] = true
 			}
+			if f.Public {
+				view["public"] = true
+			}
 			if f.MaxPixels > 0 {
 				view["max_pixels"] = f.MaxPixels
 			}

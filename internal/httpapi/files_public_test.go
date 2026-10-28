@@ -609,3 +609,50 @@ func (f *filesFixture) readDoc2(t *testing.T, id string) map[string]any {
 	}
 	return doc
 }
+
+// ?link=json on a public file is its permanent address, with no expiry; the config view says
+// which fields are public, and the storage status shows the public storage.
+func TestPublicFileLinkConfigAndStatus(t *testing.T) {
+	f := newFilesFixture(t)
+	docID, rec, doc := f.publicUpload(t, "Cover.png", realPNG(t, 8, 8))
+	if rec.Code != http.StatusCreated {
+		t.Fatal(rec.Body)
+	}
+	file := doc["photo"].(map[string]any)
+	hdr := map[string]string{"Authorization": "Bearer " + f.ada}
+	r, out := f.doRaw(t, "GET", "/v1/acme/app/pictures/"+docID+"/_files/photo/"+file["id"].(string)+"?link=json", nil, hdr)
+	if r.Code != 200 || out["url"] != file["url"] || out["expires_at"] != nil {
+		t.Errorf("link: %d %v", r.Code, out)
+	}
+	if _, has := out["expires_at"]; !has {
+		t.Error("expires_at is missing: it is null for a public file")
+	}
+	// A private file of the same collection still gets a link that expires.
+	pid, _ := f.upload(t, f.ada, "pictures", docID, "secret", "a.png", "image/png", pngBytes(5), nil)
+	_ = pid
+	_, got := f.as(t, f.ada, "GET", "/v1/acme/app/pictures/"+docID, "")
+	sid := got["secret"].(map[string]any)["id"].(string)
+	if _, out := f.doRaw(t, "GET", "/v1/acme/app/pictures/"+docID+"/_files/secret/"+sid+"?link=json", nil, hdr); out["expires_at"] == nil {
+		t.Errorf("a private link has no expiry: %v", out)
+	}
+
+	adminH := map[string]string{"Authorization": "Bearer " + f.key}
+	_, cfg := f.doRaw(t, "GET", "/v1/acme/_admin/config", nil, adminH)
+	var found bool
+	for _, c := range cfg["databases"].(map[string]any)["app"].(map[string]any)["collections"].([]any) {
+		cm := c.(map[string]any)
+		if cm["name"] != "pictures" {
+			continue
+		}
+		files := cm["files"].(map[string]any)
+		found = files["photo"].(map[string]any)["public"] == true && files["secret"].(map[string]any)["public"] == nil
+	}
+	if !found {
+		t.Errorf("the config doesn't say which field is public: %v", cfg["databases"])
+	}
+	_, st := f.doRaw(t, "GET", "/v1/acme/_admin/storage", nil, adminH)
+	ps, _ := st["public_storage"].(map[string]any)
+	if ps["url"] != "https://cdn.acme.example" || ps["bucket"] != "public" || ps["access_key"] != "secret:PUBLIC_ACCESS_KEY" || ps["keys"].(map[string]any)["ok"] != true || ps["reachable"].(map[string]any)["ok"] != true {
+		t.Errorf("public storage status: %v", st["public_storage"])
+	}
+}

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createClient, NotFoundError, VersionMismatchError } from '../src/index.js'
+import { createClient, NotFoundError, VersionMismatchError, publicUrl } from '../src/index.js'
 import { mockFetch, errorBody } from './helpers.js'
 
 /** @param {string} id @param {string} [name] */
@@ -76,4 +76,42 @@ test('the admin data route has files too', async () => {
   const c = createClient({ url: 'https://api.test', realm: 'acme', apiKey: 'bdk_x', fetch: m.fetch })
   await c.admin.data('app', 'people').files('d1', 'avatar').put('x', { type: 'text/plain' })
   assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/data/app/people/d1/_files/avatar')
+})
+
+const publicFile = () => ({
+  ...file('fl_pub', 'Me.png'), public: true, key_name: 'Me.png', url: 'https://cdn.test/prod/acme/app/people/fl_pub/Me.png',
+  versions: {
+    thumb: { status: /** @type {const} */ ('ready'), id: 'fv_1', url: 'https://cdn.test/prod/acme/app/people/fl_pub/thumb/Me.png' },
+    big: { status: /** @type {const} */ ('pending') },
+    mark: { status: /** @type {const} */ ('empty') },
+  },
+})
+
+test('publicUrl is the address a public file carries, and of a version once it is ready', () => {
+  const f = publicFile()
+  assert.equal(publicUrl(f), 'https://cdn.test/prod/acme/app/people/fl_pub/Me.png')
+  assert.equal(publicUrl(f, 'thumb'), 'https://cdn.test/prod/acme/app/people/fl_pub/thumb/Me.png')
+  assert.equal(publicUrl(f, 'big'), null) // not made yet
+  assert.equal(publicUrl(f, 'mark'), null)
+  assert.equal(publicUrl(f, 'nope'), null)
+  assert.equal(publicUrl(file('fl_1')), null) // not a public file
+  assert.equal(publicUrl({ ...file('fl_1'), url: 'https://signed/x' }), null) // a signed link is not an address
+  assert.equal(publicUrl(undefined), null)
+})
+
+test('fileUrl answers a public file from its details, without a request', async () => {
+  const m = mockFetch([])
+  const people = createClient({ url: 'https://api.test', realm: 'acme', apiKey: 'bdk_x', fetch: m.fetch }).db('app').collection('people')
+  const f = publicFile()
+  assert.deepEqual(await people.fileUrl('d1', 'avatar', 'fl_pub', { file: f }), { url: f.url, expiresAt: null })
+  assert.deepEqual(await people.fileUrl('d1', 'avatar', 'fl_pub', { file: f, version: 'thumb' }), { url: f.versions.thumb.url, expiresAt: null })
+  assert.equal(await people.fileUrl('d1', 'avatar', 'fl_pub', { file: f, version: 'big' }), null)
+  assert.equal(m.calls.length, 0)
+})
+
+test('fileUrl still asks the server for anything else', async () => {
+  const m = mockFetch([{ body: { url: 'https://s3/x', expires_at: '2026-10-06T10:05:00.000Z' } }])
+  const people = createClient({ url: 'https://api.test', realm: 'acme', apiKey: 'bdk_x', fetch: m.fetch }).db('app').collection('people')
+  assert.deepEqual(await people.fileUrl('d1', 'avatar', 'fl_1', { file: file('fl_1') }), { url: 'https://s3/x', expiresAt: '2026-10-06T10:05:00.000Z' })
+  assert.equal(m.calls.length, 1)
 })

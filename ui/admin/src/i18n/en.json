@@ -228,7 +228,9 @@
     "refresh": "Refresh",
     "asOf": "as of {date}",
     "loadFailed": "The storage status could not be loaded.",
-    "none": "This realm has no storage configured (storage: in realm.yaml), so it keeps no files.",
+    "none": "This realm has no storage configured (storage: in realm.yaml), so it keeps no private files.",
+    "publicTitle": "Public storage",
+    "publicWhere": "Public files are read at {url} (backd never connects to it: open a public file to check it).",
     "keys": "access keys",
     "bucket": "bucket",
     "ok": "ok",
@@ -999,7 +1001,9 @@
         "removed": "{name} removed.",
         "preview": "Preview of {name}",
         "readonly": "Files can be changed by an administrator with write access to data.",
-        "direct": "Sent straight to the storage"
+        "direct": "Sent straight to the storage",
+        "public": "Public",
+        "publicLabel": "Open the public address of {name}"
       },
       "unsaved": "Unsaved changes",
       "problems": "The server refused some fields:",

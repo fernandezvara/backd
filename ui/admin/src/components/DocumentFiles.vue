@@ -2,6 +2,7 @@
 import type { Doc } from 'backd-js'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import AppBadge from '@/components/AppBadge.vue'
 import AppButton from '@/components/AppButton.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { useAdmin } from '@/lib/admin'
@@ -32,6 +33,8 @@ interface Held {
   size: number
   type: string
   url?: string
+  /** A file of a public field: `url` is its permanent address, readable by anyone. */
+  public?: boolean
 }
 const held = (field: string): Held[] => {
   const v = (props.doc as Record<string, unknown>)[field]
@@ -119,6 +122,7 @@ async function remove() {
       <div class="flex flex-wrap items-baseline justify-between gap-2">
         <h3 class="font-mono text-sm font-medium">{{ field }}</h3>
         <span v-if="fields[field].upload === 'direct'" class="text-xs text-slate-600 dark:text-slate-400">{{ t('data.doc.files.direct') }}</span>
+        <AppBadge v-if="fields[field].public" kind="warn" data-testid="field-public">{{ t('data.doc.files.public') }}</AppBadge>
       </div>
       <p class="text-xs text-slate-600 dark:text-slate-400">{{ limits(fields[field]) }}</p>
 
@@ -129,6 +133,10 @@ async function remove() {
           <div class="min-w-0 flex-1">
             <p class="truncate text-sm font-medium" data-testid="file-name">{{ f.name }}</p>
             <p class="text-xs text-slate-600 dark:text-slate-400">{{ f.type }} · {{ size(f.size) }}</p>
+            <p v-if="f.public && f.url" class="truncate text-xs" data-testid="file-public-url">
+              <AppBadge kind="warn">{{ t('data.doc.files.public') }}</AppBadge>
+              <a :href="f.url" target="_blank" rel="noopener noreferrer" class="ml-1 font-mono text-brand-700 underline dark:text-brand-300" :aria-label="t('data.doc.files.publicLabel', { name: f.name })">{{ f.url }}</a>
+            </p>
           </div>
           <AppButton variant="secondary" :aria-label="t('data.doc.files.downloadLabel', { name: f.name })" @click="download(field, f)">{{ t('data.doc.files.download') }}</AppButton>
           <AppButton v-if="writable" variant="danger" :disabled="busy" :aria-label="t('data.doc.files.removeLabel', { name: f.name })" @click="askRemove(field, f)">{{ t('data.doc.files.remove') }}</AppButton>

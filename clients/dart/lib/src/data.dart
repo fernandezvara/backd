@@ -571,16 +571,18 @@ final class Collection {
 
   /// A link to a file, to show or open: `{ url, expiresAt }`. It works
   /// without credentials until it expires. With [version] it is null while
-  /// the version isn't ready.
+  /// the version isn't ready. Pass the file's details as [file] and the
+  /// address of a public file is answered without a request.
   Future<fileio.FileLink?> fileUrl(
     String id,
     String field,
     String fileId, {
     String? version,
+    Map<String, Object?>? file,
     RequestOptions? options,
   }) =>
       fileio.fileUrl(client, _path, id, field, fileId,
-          version: version, options: options);
+          version: version, file: file, options: options);
 
   /// A fresh link to download a file, for the app to open (with
   /// `url_launcher`, a browser, or an HTTP client): the same

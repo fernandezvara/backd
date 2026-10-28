@@ -25,7 +25,7 @@ export interface FileDetails {
 
 export type FileVersion =
   | { status: "pending" }
-  | { status: "ready"; id: string; size: number; type: string; width: number; height: number; params: Record<string, unknown>; fingerprint: string; generated_at: DateTimeString }
+  | { status: "ready"; id: string; size: number; type: string; width: number; height: number; params: Record<string, unknown>; fingerprint: string; generated_at: DateTimeString; url?: string }
   | { status: "empty" }
   | { status: "skipped"; reason: "not_an_image" | "unsupported_format" }
   | { status: "failed"; reason: "too_large" | "decode_error" };

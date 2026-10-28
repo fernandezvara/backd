@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { BackdError, ValidationError, NotFoundError } from '../../src/index.js'
+import { BackdError, ValidationError, NotFoundError, publicUrl } from '../../src/index.js'
 import { email, filesApiKey, filesClient, password, skip } from './env.js'
 
 /** A signed-in user of the files realm, and their `docs` collection. */
@@ -34,7 +34,7 @@ test('a proxy upload, a link that works without credentials, and a download thro
   assert.ok(progress.length >= 1)
 
   const { url, expiresAt } = await docs.fileUrl(doc.id, 'attachment', out.attachment.id)
-  assert.ok(new Date(expiresAt) > new Date())
+  assert.ok(new Date(/** @type {string} */ (expiresAt)) > new Date())
   assert.deepEqual(await fetched(url), await bytesOf(file)) // no credentials, straight from the bucket
   const got = await docs.files(doc.id, 'attachment').get() // through the redirect
   assert.deepEqual(await got.bytes(), await bytesOf(file))
@@ -118,4 +118,38 @@ test('the rules decide who may upload, and a key skips them', { skip }, async ()
   assert.equal(mine.attachment.id, out.attachment.id)
   // And the plain error type is the client's own.
   await assert.rejects(docs.uploadFile('nope', 'attachment', png()), (/** @type {any} */ e) => e instanceof BackdError)
+})
+
+// A whole 1x1 picture: a public field cleans a picture of its metadata, so it has to be a real one.
+const wholePng = () => new File([Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='), (c) => c.charCodeAt(0))], 'Cover photo.png', { type: 'image/png' })
+
+test('a public file is read at the address its document carries, with no credentials and no request', { skip }, async () => {
+  const { docs } = await setup()
+  const doc = await docs.create({ title: 'p' })
+  const file = wholePng()
+  const out = await docs.uploadFile(doc.id, 'photo', file)
+  const photo = out.photo
+  assert.equal(photo.public, true)
+  assert.equal(photo.key_name, 'Cover photo.png')
+  assert.ok(photo.url?.startsWith('http://127.0.0.1:18090/public/itest/files/app/docs/fl_'))
+  assert.ok(photo.url?.endsWith('/Cover%20photo.png'))
+  // Straight from the bucket, as a browser would.
+  const res = await fetch(/** @type {string} */ (photo.url))
+  assert.equal(res.status, 200)
+  assert.equal(res.headers.get('cache-control'), 'public, max-age=31536000, immutable')
+  assert.deepEqual(new Uint8Array(await res.arrayBuffer()), await bytesOf(file))
+  // The helpers answer from the details, never asking the server.
+  assert.equal(publicUrl(photo), photo.url)
+  assert.equal(publicUrl(photo, 'thumb'), null)
+  assert.deepEqual(await docs.fileUrl(doc.id, 'photo', photo.id, { file: photo }), { url: photo.url, expiresAt: null })
+  // A read carries the same address; the private route still works and follows the rules.
+  assert.equal((await docs.get(doc.id)).photo.url, photo.url)
+  assert.equal((await docs.get(doc.id, { fileLinks: true })).photo.url, photo.url)
+  const through = await docs.files(doc.id, 'photo').get(photo.id)
+  assert.deepEqual(await through.bytes(), await bytesOf(file))
+  // The bucket can't be listed, and a private file isn't there.
+  assert.equal((await fetch('http://127.0.0.1:18090/public/?list-type=2')).status, 403)
+  // A public field refuses what it can't publish.
+  await assert.rejects(docs.uploadFile(doc.id, 'photo', new File([await bytesOf(file)], 'cover.jpg', { type: 'image/png' })), (/** @type {any} */ e) => e.code === 'file_extension_mismatch')
+  await assert.rejects(docs.uploadFile(doc.id, 'photo', new File(['<svg xmlns="http://www.w3.org/2000/svg"></svg>'], 'x.svg', { type: 'image/svg+xml' })), (/** @type {any} */ e) => e.code === 'unsupported_file_type')
 })

@@ -972,6 +972,7 @@ final class FileVersionReady extends FileVersionDetails {
     this.width,
     this.height,
     this.params,
+    this.url,
   }) : super._();
 
   factory FileVersionReady.fromJson(Map<String, Object?> json) =>
@@ -986,6 +987,7 @@ final class FileVersionReady extends FileVersionDetails {
         params: json['params'] == null
             ? null
             : Map<String, Object?>.from(json['params'] as Map),
+        url: json['url'] as String?,
       );
 
   final String id;
@@ -996,6 +998,9 @@ final class FileVersionReady extends FileVersionDetails {
   final int? width;
   final int? height;
   final Map<String, Object?>? params;
+
+  /// The copy's permanent address, on a public file.
+  final String? url;
 }
 
 final class FileVersionEmpty extends FileVersionDetails {
