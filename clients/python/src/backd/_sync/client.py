@@ -409,7 +409,9 @@ class Client:
             try:
                 body: Any = _stream(upload, req.on_progress) if upload is not None else payload
                 http_req = self._http.build_request(req.method, url, headers=headers, content=body)
-                res = self._http.send(http_req, stream=True)
+                # A file is read through a redirect to the storage's signed link; httpx drops our credentials when it
+                # leaves the server's address.
+                res = self._http.send(http_req, stream=True, follow_redirects=req.raw)
             except httpx.TimeoutException as e:
                 raise _network("timeout", "request timed out") from e
             except httpx.HTTPError as e:

@@ -3,6 +3,7 @@ than syntax. The async twin is ``_async/realtime.py``; the state and the rules b
 
 from __future__ import annotations
 
+import socket
 import threading
 from typing import TYPE_CHECKING, Any, cast
 
@@ -196,6 +197,15 @@ class Realtime(RealtimeBase):
         """Ends the stream that is open, if one is: closing the answer wakes the thread that is reading it."""
         response, self._response = self._response, None
         if response is not None:
+            # Closing a socket does not wake a thread that is waiting to read from it; shutting it down does. The
+            # server sends a heartbeat only every 25 seconds, so without this the thread would wait that long.
+            stream = response.extensions.get("network_stream")
+            sock = stream.get_extra_info("socket") if stream is not None else None
+            if sock is not None:
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:  # already closed
+                    pass
             try:
                 response.close()
             except Exception:  # already gone

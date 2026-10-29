@@ -31,8 +31,8 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         try:
             self._chunk(b"event: ready\ndata: {}\n\n")
-            while True:  # then quiet: one heartbeat every second, like the real thing every 25
-                time.sleep(1)
+            while True:  # then quiet: a heartbeat only every 25 seconds, like the real thing
+                time.sleep(25)
                 self._chunk(b": heartbeat\n\n")
         except OSError:
             return

@@ -6,7 +6,7 @@ weight: 640
 toc: true
 ---
 
-The Python client is the same client as [`backd-js`](../js/), the [Dart client](../dart/) and the [Go client](../go/), for services, scripts, notebooks and data work. It is being built in steps (milestone 38); this page lists what exists today and grows with each step.
+The Python client is the same client as [`backd-js`](../js/), the [Dart client](../dart/) and the [Go client](../go/), for services, scripts, notebooks and data work: the whole sign-in surface, collections that speak the [query language](../../api/querying/), files, functions and their jobs, organizations and teams, push devices, consents, the app configuration, an `ETag` revalidation cache, live views over one realtime stream and [generated types](../types/). It comes as a sync `Client` and an async `AsyncClient` with the same calls.
 
 It has **one runtime dependency**, [`httpx`](https://www.python-httpx.org/), and needs Python 3.10 or later. The package is typed (`py.typed`, `mypy --strict` clean).
 
@@ -21,6 +21,40 @@ The package is `backd` (published to PyPI when the client reaches parity; until 
 ```sh
 pip install "backd @ git+https://github.com/fernandezvara/backd#subdirectory=clients/python"
 ```
+
+## Quickstart
+
+```python
+from backd import Client
+
+with Client(url="http://localhost:8080", realm="shelf") as client:
+    client.auth.signup("ada@example.com", "dev-p4ssw0rd!")
+    notes = client.db("main").collection("assets")
+    note = notes.create({"kind": "note", "title": "Hello"})
+    for asset in notes.iterate(where={"kind": "note"}, order_by="-_meta.created_at"):
+        print(asset["title"])
+```
+
+The same with `async`:
+
+```python
+import asyncio
+
+from backd import AsyncClient
+
+
+async def main() -> None:
+    async with AsyncClient(url="http://localhost:8080", realm="shelf") as client:
+        await client.auth.login("ada@example.com", "dev-p4ssw0rd!")
+        notes = client.db("main").collection("assets")
+        async for asset in notes.iterate(where={"kind": "note"}):
+            print(asset["title"])
+
+
+asyncio.run(main())
+```
+
+A complete script, with the generated types, is in [`clients/python/examples/shelf`](https://github.com/fernandezvara/backd/tree/main/clients/python/examples/shelf): it signs in to the [tutorial](../../../tutorial/) stack, lists the published assets, saves a note and follows the assets live.
 
 ## Create a client
 

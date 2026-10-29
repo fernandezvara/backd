@@ -30,6 +30,19 @@ jobs:
       - name: Test
         run: pytest
 
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: pip install -e '.[dev]'
+        working-directory: clients/python
+      - name: Integration tests (backd + MongoDB + MinIO in Docker)
+        run: PYTHON=python clients/python/tests/integration/run.sh
+
   generated-types:
     runs-on: ubuntu-latest
     steps:
