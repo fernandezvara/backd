@@ -6064,7 +6064,7 @@ paths:
       parameters:
         - { name: db, in: query, required: false, schema: { type: string }, description: Only this database. }
         - { name: lang, in: query, required: false, schema: { type: string, enum: [ts, dart, go], default: ts }, description: The language of the types. }
-        - { name: package, in: query, required: false, schema: { type: string }, description: With `lang=go`, the package name of the file (`backdtypes` by default). }
+        - { name: package, in: query, required: false, schema: { type: string }, description: "With `lang=go`, the package name of the file (`backdtypes` by default)." }
       responses:
         "200":
           description: The generated types.
