@@ -84,7 +84,7 @@ var initialisms = map[string]bool{"id": true, "url": true, "uri": true, "api": t
 // initialisms in capitals.
 func goIdent(s string) string {
 	var out strings.Builder
-	for _, w := range strings.FieldsFunc(s, func(r rune) bool { return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9') }) {
+	for _, w := range strings.FieldsFunc(s, func(r rune) bool { return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') }) {
 		if initialisms[strings.ToLower(w)] {
 			out.WriteString(strings.ToUpper(w))
 			continue
@@ -144,24 +144,6 @@ func (c *goConverter) typeOf(s any, path, hint string) goType {
 		return c.typeOfMap(t, path, hint)
 	}
 	return goType{expr: "any", nullable: true}
-}
-
-func (c *goConverter) kind(s map[string]any) string {
-	if _, ok := str(s["x-backd-ts"]); ok {
-		return "file"
-	}
-	if _, ok := str(s["$ref"]); ok {
-		return "ref"
-	}
-	if isStringEnum(s) {
-		return "enum"
-	}
-	for _, kw := range []string{"oneOf", "anyOf"} {
-		if arr, ok := s[kw].([]any); ok && len(arr) > 0 {
-			return "union"
-		}
-	}
-	return "plain"
 }
 
 // isStringEnum reports whether the schema is an enum (or const) whose values are all strings.
