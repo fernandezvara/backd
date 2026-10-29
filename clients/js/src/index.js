@@ -8,6 +8,7 @@ export { Account } from './account.js'
 export { Config } from './config.js'
 export { Orgs, OrgMembers, OrgTeams, OrgTemplates, OrgInvitations } from './orgs.js'
 export { Files, publicUrl, versionStatus } from './files.js'
+export { parseSize, formatBytes } from './size.js'
 export { expand } from './expand.js'
 export { fillBuckets } from './buckets.js'
 export { Sha256, sha256Blob } from './sha256.js'
@@ -61,6 +62,7 @@ export { parseReturn as parseOAuthReturn } from './oauth.js'
  * @typedef {import('./client.js').RequestOptions} RequestOptions
  * @typedef {import('./client.js').RetryOptions} RetryOptions
  * @typedef {import('./storage.js').TokenStorage} TokenStorage
+ * @typedef {import('./size.js').SizeFamily} SizeFamily
  * @typedef {import('./auth.js').User} User
  * @typedef {import('./auth.js').Session} Session
  * @typedef {import('./auth.js').Me} Me

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Doc } from 'backd-js'
+import { formatBytes, type Doc } from 'backd-js'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppBadge from '@/components/AppBadge.vue'
@@ -42,14 +42,8 @@ const held = (field: string): Held[] => {
 }
 const names = computed(() => Object.keys(props.fields).sort())
 
-function size(n: number): string {
-  if (n < 1024) return `${n} B`
-  if (n < 1024 ** 2) return `${(n / 1024).toFixed(1)} KiB`
-  if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MiB`
-  return `${(n / 1024 ** 3).toFixed(1)} GiB`
-}
 function limits(f: FileFieldConfig): string {
-  const base = f.multiple ? t('data.doc.files.limit', { n: f.max_files, size: size(f.max_size) }) : t('data.doc.files.limitOne', { size: size(f.max_size) })
+  const base = f.multiple ? t('data.doc.files.limit', { n: f.max_files, size: formatBytes(f.max_size) }) : t('data.doc.files.limitOne', { size: formatBytes(f.max_size) })
   return `${base}. ${f.types.length ? t('data.doc.files.types', { types: f.types.join(', ') }) : t('data.doc.files.anyType')}.`
 }
 const canUpload = (field: string) => props.writable && (props.fields[field].multiple ? held(field).length < props.fields[field].max_files : true)
@@ -132,7 +126,7 @@ async function remove() {
           <img v-if="f.url && f.type.startsWith('image/')" :src="f.url" :alt="t('data.doc.files.preview', { name: f.name })" class="h-16 w-16 rounded border border-slate-200 object-cover dark:border-slate-700" />
           <div class="min-w-0 flex-1">
             <p class="truncate text-sm font-medium" data-testid="file-name">{{ f.name }}</p>
-            <p class="text-xs text-slate-600 dark:text-slate-400">{{ f.type }} · {{ size(f.size) }}</p>
+            <p class="text-xs text-slate-600 dark:text-slate-400">{{ f.type }} · {{ formatBytes(f.size) }}</p>
             <p v-if="f.public && f.url" class="truncate text-xs" data-testid="file-public-url">
               <AppBadge kind="warn">{{ t('data.doc.files.public') }}</AppBadge>
               <a :href="f.url" target="_blank" rel="noopener noreferrer" class="ml-1 font-mono text-brand-700 underline dark:text-brand-300" :aria-label="t('data.doc.files.publicLabel', { name: f.name })">{{ f.url }}</a>

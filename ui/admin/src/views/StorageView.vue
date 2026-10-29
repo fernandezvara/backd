@@ -7,7 +7,8 @@ import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { useAdmin } from '@/lib/admin'
-import { errorText, formatBytes, formatDate, percentOf } from '@/lib/format'
+import { formatBytes } from 'backd-js'
+import { errorText, formatDate, percentOf } from '@/lib/format'
 import { useSession } from '@/stores/session'
 
 defineProps<{ realm: string }>()

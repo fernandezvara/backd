@@ -27,7 +27,7 @@ test('a picture is uploaded, previewed, downloaded and removed', async ({ page, 
   await signIn('admin', { keep: true })
   await page.goto(`/_ui/r/${REALM}/data/main/docs/${doc.id}`)
   const cover = page.getByTestId('files-cover')
-  await expect(cover).toContainText('One file of up to 1.0 MiB')
+  await expect(cover).toContainText('One file of up to 1 MiB')
   await expect(cover).toContainText('image/png, image/jpeg')
   await expect(cover).toContainText('No file.')
 
@@ -59,7 +59,7 @@ test('a direct upload shows its progress, and the field is full at max_files', a
   await signIn('admin', { keep: true })
   await page.goto(`/_ui/r/${REALM}/data/main/docs/${doc.id}`)
   const manuals = page.getByTestId('files-manuals')
-  await expect(manuals).toContainText('Up to 2 files of 2.0 MiB each')
+  await expect(manuals).toContainText('Up to 2 files of 2 MiB each')
   await expect(manuals).toContainText('Sent straight to the storage')
   for (const name of ['a.txt', 'b.txt']) {
     await manuals.getByTestId('upload-manuals').setInputFiles({ name, mimeType: 'text/plain', buffer: Buffer.from(`manual ${name}`) })

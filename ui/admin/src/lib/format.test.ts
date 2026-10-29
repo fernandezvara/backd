@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { errorText, formatBytes, formatDate, parseList, percentOf, prettyDuration } from './format'
+import { errorText, formatDate, parseList, percentOf, prettyDuration } from './format'
 
 test('dates', () => {
   expect(formatDate(null)).toBe('—')
@@ -28,13 +28,6 @@ test('durations', () => {
   expect(prettyDuration('10s')).toBe('10s')
   expect(prettyDuration('0s')).toBe('0s')
   expect(prettyDuration('soon')).toBe('soon')
-})
-
-test('formatBytes uses the unit that reads best', () => {
-  expect(formatBytes(0)).toBe('0 B')
-  expect(formatBytes(1536)).toBe('1.5 KiB')
-  expect(formatBytes(5 * 1024 ** 2)).toBe('5.0 MiB')
-  expect(formatBytes(3 * 1024 ** 3)).toBe('3.0 GiB')
 })
 
 test('percentOf does not cap a percentage at 100', () => {
