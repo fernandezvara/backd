@@ -47,6 +47,7 @@ type request struct {
 	reauth      bool
 	noCache     bool
 	retry       *Retry
+	err         error
 }
 
 // WithQuery adds query parameters.
@@ -72,6 +73,11 @@ func WithHeader(key, value string) RequestOption {
 // to application/octet-stream. Without a [io.Seeker] the call is not repeated on a retry.
 func WithRawBody(body io.Reader, contentType string) RequestOption {
 	return func(r *request) { r.raw, r.contentType = body, contentType }
+}
+
+// WithContentType sets the content type of a JSON body, such as application/merge-patch+json.
+func WithContentType(contentType string) RequestOption {
+	return func(r *request) { r.contentType = contentType }
 }
 
 // WithRaw returns the answer unread in [Response.Body], for a file's bytes. The caller closes it.
@@ -106,6 +112,9 @@ func (c *Client) Do(ctx context.Context, method string, path []string, body, out
 	r := &request{method: method, path: path, body: body, headers: http.Header{}}
 	for _, o := range opts {
 		o(r)
+	}
+	if r.err != nil {
+		return nil, r.err
 	}
 	res, err := c.do(ctx, r)
 	if err != nil {
@@ -182,7 +191,11 @@ func (c *Client) do(ctx context.Context, r *request) (*Response, error) {
 		}
 		headers.Set("Content-Type", ct)
 	case jsonBody != nil:
-		headers.Set("Content-Type", "application/json")
+		ct := r.contentType
+		if ct == "" {
+			ct = "application/json"
+		}
+		headers.Set("Content-Type", ct)
 	}
 	if c.opts.Types != "" {
 		headers.Set("X-Backd-Types", c.opts.Types)
