@@ -507,40 +507,6 @@ func (cfg *Config) revalidate(key string) {
 	}
 }
 
-// reread revalidates the held entries that touch the changed paths (all of them with none).
-func (cfg *Config) reread(ctx context.Context, changed []string) {
-	if _, err := cfg.scope(ctx); err != nil {
-		cfg.emitError(err)
-		return
-	}
-	cfg.mu.Lock()
-	keys := make([]string, 0, len(cfg.entries))
-	for k := range cfg.entries {
-		keys = append(keys, k)
-	}
-	cfg.mu.Unlock()
-	for _, key := range keys {
-		if len(changed) > 0 && !touches(key, changed) {
-			continue
-		}
-		cfg.revalidate(key)
-	}
-}
-
-func touches(key string, changed []string) bool {
-	if key == "" {
-		return true
-	}
-	for _, p := range strings.Split(key, ",") {
-		for _, c := range changed {
-			if c == p || strings.HasPrefix(c, p+".") || strings.HasPrefix(p, c+".") {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 func cloneMap(m map[string]any) map[string]any {
 	b, _ := json.Marshal(m)
 	out := map[string]any{}
