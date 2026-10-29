@@ -163,7 +163,7 @@ func openDirect(c *kli.CommandContext) (*direct, error) {
 	hc.StorageAccessKey, hc.StorageSecretKey = storageKey, storageSecret
 	hc.PublicStorageAccessKey, hc.PublicStorageSecretKey = publicKey, publicSecret
 	h := httpapi.NewHandler(hc)
-	return &direct{app: a, t: &target{url: "http://backd.offline", realm: realm, fromKey: true, http: &http.Client{Transport: inProcess{h}}}}, nil
+	return &direct{app: a, t: offlineTarget("http://backd.offline", realm, &http.Client{Transport: inProcess{h}})}, nil
 }
 
 func firstSet(vs ...string) string {

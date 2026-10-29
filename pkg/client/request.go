@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -120,7 +121,7 @@ func (c *Client) Do(ctx context.Context, method string, path []string, body, out
 	}
 	res, err := c.do(ctx, r)
 	if err != nil {
-		return nil, err
+		return nil, c.mapError(r.path, err)
 	}
 	if out != nil && !r.wantRaw && len(res.Data) > 0 {
 		if err := json.Unmarshal(res.Data, out); err != nil {
@@ -368,4 +369,16 @@ func (p *progressReader) Read(b []byte) (int, error) {
 		p.fn(UploadProgress{Loaded: p.loaded, Total: p.total})
 	}
 	return n, err
+}
+
+// mapError records where the call went and gives Options.MapError its say.
+func (c *Client) mapError(path []string, err error) error {
+	var e *Error
+	if errors.As(err, &e) && e.Path == "" {
+		e.Path = strings.Join(path, "/")
+	}
+	if c.opts.MapError != nil {
+		return c.opts.MapError(err)
+	}
+	return err
 }

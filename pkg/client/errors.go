@@ -139,6 +139,11 @@ type Error struct {
 	RequestID string
 	// RetryAfter is how long the server asked to wait, for retryable answers; 0 when it didn't say.
 	RetryAfter time.Duration
+	// Header holds the response headers of the failed call (nil when there was no answer).
+	Header http.Header
+	// Path is the path after /v1/{realm} of the call that failed, such as "_admin/jobs"; empty for
+	// errors that were not the answer to a call.
+	Path string
 
 	kind  *kind
 	cause error
@@ -258,7 +263,7 @@ func errorFromResponse(res *http.Response) error {
 	if reqID == "" {
 		reqID = res.Header.Get("X-Request-ID")
 	}
-	err := &Error{Status: res.StatusCode, Code: code, Message: msg, Details: e.Details, RequestID: reqID, kind: k}
+	err := &Error{Status: res.StatusCode, Code: code, Message: msg, Details: e.Details, RequestID: reqID, Header: res.Header, kind: k}
 	if k.is(kRetryable) {
 		err.RetryAfter = parseRetryAfter(res.Header.Get("Retry-After"), time.Now())
 	}

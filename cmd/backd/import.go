@@ -163,7 +163,7 @@ func importAction(c *kli.CommandContext) error {
 	}
 	var begun importBeginAnswer
 	body := map[string]any{"manifest": slim, "mode": mode, "skip_invalid": skipInvalid, "dry_run": dry}
-	if _, err := t.callHeaders("POST", "_admin/import", nil, body, &begun, proof); err != nil {
+	if err := t.adm.Import.Begin(t.ctx, body, &begun, withProof(proof)...); err != nil {
 		return err
 	}
 	lease := map[string]string{"X-Backd-Export": begun.Lease}
@@ -173,7 +173,7 @@ func importAction(c *kli.CommandContext) error {
 		if complete {
 			q.Set("complete", "true")
 		}
-		_, _ = t.callHeaders("DELETE", "_admin/import", q, nil, nil, lease)
+		_ = t.adm.Import.Abort(t.ctx, q, withHeaders(lease)...)
 	}()
 	for _, w := range begun.Warnings {
 		fmt.Fprintf(stderr, "warning: %s\n", w)
@@ -300,7 +300,7 @@ func runPhase(t *target, dir string, m *exportpkg.Manifest, phase string, lease 
 			}
 			var ans importChunkAnswer
 			q := url.Values{"phase": {phase}, "part": {ap.Part}}
-			if err := t.send("POST", "_admin/import", q, bytes.NewReader(chunk), int64(len(chunk)), "application/x-ndjson", lease, &ans); err != nil {
+			if err := t.admLong.Import.Send(t.ctx, "POST", q, bytes.NewReader(chunk), "application/x-ndjson", &ans, withHeaders(lease)...); err != nil {
 				return fmt.Errorf("%s: %w", ap.Part, err)
 			}
 			totals.add(ap.Part, firstLine-1, ans)
@@ -325,7 +325,7 @@ func runPhase(t *target, dir string, m *exportpkg.Manifest, phase string, lease 
 				}
 				var ans importChunkAnswer
 				q := url.Values{"phase": {phase}, "part": {col.Part}}
-				if err := t.send("POST", "_admin/import", q, bytes.NewReader(chunk), int64(len(chunk)), "application/x-ndjson", lease, &ans); err != nil {
+				if err := t.admLong.Import.Send(t.ctx, "POST", q, bytes.NewReader(chunk), "application/x-ndjson", &ans, withHeaders(lease)...); err != nil {
 					return fmt.Errorf("%s: %w", col.Part, err)
 				}
 				totals.add(col.Part, firstLine-1, ans)
@@ -448,7 +448,7 @@ func uploadFiles(t *target, dir string, m *exportpkg.Manifest, fileFields map[st
 					query.Set("public", "true")
 					query.Set("key_name", ref.KeyName)
 				}
-				err = t.send("PUT", "_admin/import", query, f, st.Size(), "application/octet-stream", hdr, nil)
+				err = t.admLong.Import.Send(t.ctx, "PUT", query, io.NewSectionReader(f, 0, st.Size()), "application/octet-stream", nil, withHeaders(hdr)...)
 				f.Close()
 				if err != nil {
 					return fmt.Errorf("file %s: %w", id, err)
@@ -639,6 +639,6 @@ func sendDataKeys(t *target, dir string, lease map[string]string, maxChunk int64
 	return eachChunk(f, maxChunk, func(chunk []byte, _ int) error {
 		var ans struct{}
 		q := url.Values{"phase": {"keys"}, "part": {exportpkg.DataKeysName}}
-		return t.send("POST", "_admin/import", q, bytes.NewReader(chunk), int64(len(chunk)), "application/x-ndjson", lease, &ans)
+		return t.admLong.Import.Send(t.ctx, "POST", q, bytes.NewReader(chunk), "application/x-ndjson", &ans, withHeaders(lease)...)
 	})
 }

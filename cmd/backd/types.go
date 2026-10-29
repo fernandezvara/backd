@@ -145,7 +145,7 @@ func typesFromServer(c *kli.CommandContext, from, realm, db, lang string) (*type
 		}
 		query.Set("lang", lang)
 	}
-	if err := t.call("GET", "_admin/types", query, nil, &body); err != nil {
+	if err := t.adm.Types.Get(t.ctx, query, &body); err != nil {
 		return nil, err
 	}
 	return &typegen.Output{Types: body.Types, Info: body.Info, Warnings: body.Warnings}, nil

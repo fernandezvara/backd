@@ -126,3 +126,11 @@ func TestPasswordExpiredSaysWhetherAnEmailWasQueued(t *testing.T) {
 		t.Errorf("%#v", err)
 	}
 }
+
+func TestErrorKeepsTheResponseHeaders(t *testing.T) {
+	err := errFor(t, 500, `{"error":{"code":"function_error","message":"boom"}}`, map[string]string{"X-Backd-Dev-Logs": "[1]"})
+	var e *Error
+	if !errors.As(err, &e) || e.Header.Get("X-Backd-Dev-Logs") != "[1]" {
+		t.Errorf("%#v", err)
+	}
+}

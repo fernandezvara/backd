@@ -46,7 +46,7 @@ func userIDByEmail(t *target, email string) (string, error) {
 			ID string `json:"id"`
 		} `json:"items"`
 	}
-	if err := t.call("GET", "_admin/users", url.Values{"email": {email}}, nil, &page); err != nil {
+	if err := t.adm.Users.List(t.ctx, url.Values{"email": {email}}, &page); err != nil {
 		return "", err
 	}
 	if len(page.Items) == 0 {
@@ -67,7 +67,7 @@ func orgsList(c *kli.CommandContext) error {
 	var out struct {
 		Items []orgRow `json:"items"`
 	}
-	if err := t.call("GET", "_admin/orgs", q, nil, &out); err != nil {
+	if err := t.adm.Orgs.List(t.ctx, q, &out); err != nil {
 		return err
 	}
 	io := ioOf(c)
@@ -89,7 +89,7 @@ func orgsShow(c *kli.CommandContext) error {
 		return err
 	}
 	var o orgRow
-	if err := t.call("GET", "_admin/orgs/"+url.PathEscape(str(c, "id")), nil, nil, &o); err != nil {
+	if err := t.adm.Orgs.Get(t.ctx, str(c, "id"), &o); err != nil {
 		return err
 	}
 	io := ioOf(c)
@@ -109,7 +109,7 @@ func orgsCreate(c *kli.CommandContext) error {
 	}
 	body := map[string]any{"name": str(c, "name"), "slug": str(c, "slug"), "owner": owner}
 	var o orgRow
-	if err := t.call("POST", "_admin/orgs", nil, body, &o); err != nil {
+	if err := t.adm.Orgs.Create(t.ctx, body, &o); err != nil {
 		return err
 	}
 	fmt.Fprintf(ioOf(c).stdout, "organization %s created (%s), owned by %s\n", o.ID, o.Name, str(c, "owner"))
@@ -125,7 +125,7 @@ func orgsMembers(c *kli.CommandContext) error {
 		Items   []orgMemberRow `json:"items"`
 		HasMore bool           `json:"has_more"`
 	}
-	if err := t.call("GET", "_admin/orgs/"+url.PathEscape(str(c, "id"))+"/members", url.Values{"limit": {"500"}}, nil, &out); err != nil {
+	if err := t.adm.Orgs.Members(t.ctx, str(c, "id"), url.Values{"limit": {"500"}}, &out); err != nil {
 		return err
 	}
 	io := ioOf(c)
@@ -160,7 +160,7 @@ func orgsAddMember(c *kli.CommandContext) error {
 	if r := str(c, "roles"); r != "" {
 		body["roles"] = strings.Split(r, ",")
 	}
-	if err := t.call("POST", "_admin/orgs/"+url.PathEscape(str(c, "id"))+"/members", nil, body, nil); err != nil {
+	if err := t.adm.Orgs.AddMember(t.ctx, str(c, "id"), body); err != nil {
 		return err
 	}
 	fmt.Fprintf(ioOf(c).stdout, "%s added to %s\n", str(c, "email"), str(c, "id"))
@@ -176,7 +176,7 @@ func orgsAssignOwner(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	if err := t.call("POST", "_admin/orgs/"+url.PathEscape(str(c, "id"))+"/owner", nil, map[string]any{"user": id}, nil); err != nil {
+	if err := t.adm.Orgs.SetOwner(t.ctx, str(c, "id"), map[string]any{"user": id}); err != nil {
 		return err
 	}
 	fmt.Fprintf(ioOf(c).stdout, "%s is now a manager of %s\n", str(c, "email"), str(c, "id"))
@@ -192,7 +192,7 @@ func orgsClaimsSet(c *kli.CommandContext) error {
 	if err := json.Unmarshal([]byte(str(c, "claims")), &claims); err != nil {
 		return fmt.Errorf("--claims must be a JSON object: %w", err)
 	}
-	if err := t.call("PUT", "_admin/orgs/"+url.PathEscape(str(c, "id"))+"/claims", nil, claims, nil); err != nil {
+	if err := t.adm.Orgs.SetClaims(t.ctx, str(c, "id"), claims); err != nil {
 		return err
 	}
 	fmt.Fprintf(ioOf(c).stdout, "claims of %s set\n", str(c, "id"))
@@ -244,7 +244,7 @@ func orgsInvite(c *kli.CommandContext) error {
 		Link      *string `json:"link"`
 		ExpiresAt string  `json:"expires_at"`
 	}
-	if err := t.call("POST", "_admin/orgs/"+url.PathEscape(str(c, "id"))+"/invitations", nil, body, &out); err != nil {
+	if err := t.adm.Orgs.Invite(t.ctx, str(c, "id"), body, &out); err != nil {
 		return err
 	}
 	io := ioOf(c)
@@ -274,7 +274,7 @@ func orgsInvitations(c *kli.CommandContext) error {
 			ExpiresAt string   `json:"expires_at"`
 		} `json:"items"`
 	}
-	if err := t.call("GET", "_admin/orgs/"+url.PathEscape(str(c, "id"))+"/invitations", nil, nil, &out); err != nil {
+	if err := t.adm.Orgs.Invitations(t.ctx, str(c, "id"), &out); err != nil {
 		return err
 	}
 	io := ioOf(c)
@@ -298,7 +298,7 @@ func orgsRevokeInvitation(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	if err := t.call("DELETE", "_admin/orgs/"+url.PathEscape(str(c, "id"))+"/invitations/"+url.PathEscape(str(c, "invitation")), nil, nil, nil); err != nil {
+	if err := t.adm.Orgs.RevokeInvitation(t.ctx, str(c, "id"), str(c, "invitation")); err != nil {
 		return err
 	}
 	fmt.Fprintf(ioOf(c).stdout, "invitation %s revoked\n", str(c, "invitation"))
@@ -324,8 +324,7 @@ func dataTransfer(c *kli.CommandContext) error {
 	default:
 		body["team"] = team
 	}
-	path := "_admin/data/" + url.PathEscape(str(c, "database")) + "/" + url.PathEscape(str(c, "collection")) + "/" + url.PathEscape(str(c, "id")) + "/_transfer"
-	if err := t.call("POST", path, nil, body, nil); err != nil {
+	if err := t.adm.Data.Transfer(t.ctx, str(c, "database"), str(c, "collection"), str(c, "id"), body, nil); err != nil {
 		return err
 	}
 	to := str(c, "org")
@@ -357,12 +356,11 @@ func dataAssignOrg(c *kli.CommandContext) error {
 	if flag(c, "dry-run") {
 		q.Set("dry_run", "true")
 	}
-	path := "_admin/data/" + url.PathEscape(str(c, "database")) + "/" + url.PathEscape(str(c, "collection")) + "/_assign_org"
 	var out struct {
 		Job     string `json:"job"`
 		Matched int64  `json:"matched"`
 	}
-	if err := t.call("POST", path, q, body, &out); err != nil {
+	if err := t.adm.Data.AssignOrg(t.ctx, str(c, "database"), str(c, "collection"), q, body, &out); err != nil {
 		return err
 	}
 	io := ioOf(c)
@@ -390,7 +388,7 @@ func orgsOwned(c *kli.CommandContext) error {
 		ToDelete int64 `json:"to_delete"`
 		ToKeep   int64 `json:"to_keep"`
 	}
-	if err := t.call("GET", "_admin/orgs/"+url.PathEscape(str(c, "id"))+"/owned", nil, nil, &out); err != nil {
+	if err := t.adm.Orgs.Owned(t.ctx, str(c, "id"), &out); err != nil {
 		return err
 	}
 	io := ioOf(c)
@@ -411,7 +409,7 @@ func orgsDelete(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	if err := t.call("DELETE", "_admin/orgs/"+url.PathEscape(str(c, "id")), nil, nil, nil); err != nil {
+	if err := t.adm.Orgs.Delete(t.ctx, str(c, "id")); err != nil {
 		return err
 	}
 	fmt.Fprintf(ioOf(c).stdout, "organization %s deleted; its documents are being cleaned up in the background\n", str(c, "id"))
@@ -424,7 +422,7 @@ func orgsSetSlug(c *kli.CommandContext) error {
 		return err
 	}
 	var o orgRow
-	if err := t.call("PUT", "_admin/orgs/"+url.PathEscape(str(c, "id"))+"/slug", nil, map[string]any{"slug": str(c, "slug")}, &o); err != nil {
+	if err := t.adm.Orgs.SetSlug(t.ctx, str(c, "id"), map[string]any{"slug": str(c, "slug")}, &o); err != nil {
 		return err
 	}
 	fmt.Fprintf(ioOf(c).stdout, "organization %s is now %s\n", o.ID, o.slug())
@@ -440,7 +438,7 @@ func orgsReactivate(c *kli.CommandContext) error {
 	if s := str(c, "slug"); s != "" {
 		body["slug"] = s
 	}
-	if err := t.call("POST", "_admin/orgs/"+url.PathEscape(str(c, "id"))+"/reactivate", nil, body, nil); err != nil {
+	if err := t.adm.Orgs.Reactivate(t.ctx, str(c, "id"), body); err != nil {
 		return err
 	}
 	fmt.Fprintf(ioOf(c).stdout, "organization %s is active again, with no members: assign an owner with `backd orgs assign-owner`\n", str(c, "id"))

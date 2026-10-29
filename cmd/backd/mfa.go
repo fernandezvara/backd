@@ -7,28 +7,23 @@ import (
 
 	"github.com/boombuler/barcode/qr"
 
-	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/pkg/client"
 )
 
 // The second step of a sign-in in the terminal (design/mfa-passwordless.md §11): a code when the
 // user has a second factor, setting one up when their role requires it, and magic links.
 
-// challengeAnswer is what a first factor answers when a second step is needed.
-type challengeAnswer struct {
-	MFARequired           bool     `json:"mfa_required"`
-	MFAEnrollmentRequired bool     `json:"mfa_enrollment_required"`
-	Challenge             string   `json:"challenge"`
-	Methods               []string `json:"methods"`
-}
-
-// finishSignIn takes the answer of a first factor to a session: it asks for the code of a second
-// factor, or sets one up, as the answer says. res is filled with the session.
-func finishSignIn(t *target, uio userIO, ch challengeAnswer, res *sessionAnswer) error {
-	switch {
-	case ch.MFARequired:
-		return askSecondFactor(t, uio, ch.Challenge, res)
-	case ch.MFAEnrollmentRequired:
-		return enrollInTerminal(t, uio, ch.Challenge, res)
+// finishStep takes what a first factor led to, to a session: it asks for the code of a second
+// factor, or sets one up, as the step says. res is filled with the session.
+func finishStep(t *target, uio userIO, step *client.Step, res *sessionAnswer) error {
+	switch step.Kind {
+	case client.StepSession:
+		*res = sessionOf(step.Session)
+		return nil
+	case client.StepMFA:
+		return askSecondFactor(t, uio, step.Challenge, res)
+	case client.StepEnrollment:
+		return enrollInTerminal(t, uio, step.Challenge, res)
 	}
 	return errors.New("the server answered with neither a session nor a second step")
 }
@@ -56,17 +51,13 @@ func askSecondFactor(t *target, uio userIO, challenge string, res *sessionAnswer
 		if codeIsRecovery(code) {
 			method = "recovery_code"
 		}
-		var out struct {
-			sessionAnswer
-			RecoveryCodesLeft *int `json:"recovery_codes_left"`
-		}
-		err = t.call("POST", "_auth/mfa/verify", nil, map[string]string{"challenge": challenge, "method": method, "code": code}, &out)
+		session, err := t.cl.Auth().VerifyMFA(t.ctx, challenge, method, code)
 		var ae *apiError
 		switch {
 		case err == nil:
-			*res = out.sessionAnswer
-			if out.RecoveryCodesLeft != nil {
-				fmt.Fprintf(uio.stderr, "note: a recovery code was used; %d left. Replace them with `backd account recovery-codes` when you can\n", *out.RecoveryCodesLeft)
+			*res = sessionOf(session)
+			if session.RecoveryCodesLeft != nil {
+				fmt.Fprintf(uio.stderr, "note: a recovery code was used; %d left. Replace them with `backd account recovery-codes` when you can\n", *session.RecoveryCodesLeft)
 			}
 			return nil
 		case errors.As(err, &ae) && ae.Code == "invalid_code":
@@ -84,25 +75,18 @@ func askSecondFactor(t *target, uio userIO, challenge string, res *sessionAnswer
 // the recovery codes once.
 func enrollInTerminal(t *target, uio userIO, challenge string, res *sessionAnswer) error {
 	fmt.Fprintln(uio.stderr, "this account must use two-step verification: set up an authenticator app")
-	var setup struct {
-		SetupID string `json:"setup_id"`
-		Secret  string `json:"secret"`
-		URI     string `json:"otpauth_uri"`
-	}
-	if err := t.call("POST", "_auth/mfa/totp/setup", nil, map[string]string{"challenge": challenge}, &setup); err != nil {
+	setup, err := t.cl.Auth().MFA.Setup(t.ctx, challenge)
+	if err != nil {
 		return err
 	}
-	showSetup(uio, setup.URI, setup.Secret)
-	var out struct {
-		sessionAnswer
-		RecoveryCodes []string `json:"recovery_codes"`
-	}
+	showSetup(uio, setup.OtpauthURI, setup.Secret)
+	var out *client.MFAConfirmResult
 	for tries := 0; ; tries++ {
 		code, err := readLine(uio, "Code shown by the app, to confirm")
 		if err != nil {
 			return err
 		}
-		err = t.call("POST", "_auth/mfa/totp/confirm", nil, map[string]string{"challenge": challenge, "setup_id": setup.SetupID, "code": code}, &out)
+		out, err = t.cl.Auth().MFA.Confirm(t.ctx, client.MFAConfirmInput{Challenge: challenge, SetupID: setup.SetupID, Code: code})
 		var ae *apiError
 		if err == nil {
 			break
@@ -112,7 +96,9 @@ func enrollInTerminal(t *target, uio userIO, challenge string, res *sessionAnswe
 		}
 		fmt.Fprintln(uio.stderr, "that code is not right: try the next one the app shows")
 	}
-	*res = out.sessionAnswer
+	if out.Session != nil {
+		*res = sessionOf(out.Session)
+	}
 	showRecoveryCodes(uio, out.RecoveryCodes)
 	return nil
 }
@@ -180,20 +166,10 @@ func qrBlocks(text string) (string, error) {
 	return strings.TrimRight(sb.String(), "\n"), nil
 }
 
-// pkce makes the PKCE verifier and challenge of a magic-link request.
-func pkce() (verifier, challenge string, err error) { return auth.NewPKCE() }
-
 // magicLinkSignIn signs in with a link or a code sent to an address: it asks for a message, then
 // for the code in it, and ends with the session or, for a user with a second factor, the second step.
 func magicLinkSignIn(t *target, uio userIO, address string, res *sessionAnswer) error {
-	verifier, challenge, err := pkce()
-	if err != nil {
-		return err
-	}
-	var asked struct {
-		RequestID string `json:"request_id"`
-	}
-	if err := t.call("POST", "_auth/magic-link", nil, map[string]string{"email": address, "code_challenge": challenge}, &asked); err != nil {
+	if _, err := t.cl.Auth().MagicLink.Request(t.ctx, address, client.MagicLinkOptions{}); err != nil {
 		return err
 	}
 	fmt.Fprintf(uio.stderr, "if %s can sign in, a message with a 6-digit code is on its way\n", address)
@@ -201,16 +177,9 @@ func magicLinkSignIn(t *target, uio userIO, address string, res *sessionAnswer) 
 	if err != nil {
 		return err
 	}
-	var out struct {
-		sessionAnswer
-		challengeAnswer
-	}
-	if err := t.call("POST", "_auth/magic-link/verify", nil, map[string]string{"request_id": asked.RequestID, "code": code, "code_verifier": verifier}, &out); err != nil {
+	step, err := t.cl.Auth().MagicLink.VerifyCode(t.ctx, code)
+	if err != nil {
 		return err
 	}
-	if out.Token != "" {
-		*res = out.sessionAnswer
-		return nil
-	}
-	return finishSignIn(t, uio, out.challengeAnswer, res)
+	return finishStep(t, uio, step, res)
 }

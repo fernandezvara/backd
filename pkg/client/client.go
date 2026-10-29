@@ -57,6 +57,10 @@ type Options struct {
 	// the server's config has moved on it answers X-Backd-Types-Stale and OnStaleTypes is called, once.
 	// Leave it out in production: nothing is sent then.
 	Types string
+	// MapError, when set, is given every error [Client.Do] and the calls built on it return, and
+	// returns what the caller sees: to add a hint, to turn it into the error type of a larger program.
+	// What it returns should still wrap the original ([errors.Is] and [errors.As] keep working).
+	MapError func(error) error
 	// OnStaleTypes is called once when the server says the types are stale; a warning is logged by default.
 	OnStaleTypes func()
 }

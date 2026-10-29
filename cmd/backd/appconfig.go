@@ -73,7 +73,7 @@ func appConfigGet(c *kli.CommandContext) error {
 		return err
 	}
 	var v appConfigView
-	if err := t.call("GET", "_admin/app-config", nil, nil, &v); err != nil {
+	if _, err := t.adm.AppConfig.Get(t.ctx, &v); err != nil {
 		return err
 	}
 	flat := map[string]any{}
@@ -124,7 +124,7 @@ func currentConfigVersion(c *kli.CommandContext, t *target) (string, error) {
 	if v := str(c, "if-match"); v != "" {
 		return strings.Trim(v, `"`), nil
 	}
-	hdr, err := t.callHeaders("GET", "_admin/app-config", nil, nil, nil, nil)
+	hdr, err := t.adm.AppConfig.Get(t.ctx, nil)
 	if err != nil {
 		return "", err
 	}
@@ -207,7 +207,7 @@ func patchAppConfig(c *kli.CommandContext, t *target, body map[string]any) error
 		return err
 	}
 	var res appConfigResult
-	if _, err := t.callHeaders("PATCH", "_admin/app-config", nil, body, &res, map[string]string{"If-Match": `"` + version + `"`}); err != nil {
+	if err := t.adm.AppConfig.Patch(t.ctx, version, body, &res); err != nil {
 		return err
 	}
 	return printConfigResult(c, res)
@@ -226,7 +226,7 @@ func appConfigHistory(c *kli.CommandContext) error {
 	var out struct {
 		History []appConfigEntry `json:"history"`
 	}
-	if err := t.call("GET", "_admin/app-config/history", q, nil, &out); err != nil {
+	if err := t.adm.AppConfig.History(t.ctx, q, &out); err != nil {
 		return err
 	}
 	if flag(c, "json") {
@@ -258,7 +258,7 @@ func appConfigRollback(c *kli.CommandContext) error {
 	}
 	var res appConfigResult
 	body := map[string]any{"version": str(c, "version")}
-	if _, err := t.callHeaders("POST", "_admin/app-config/rollback", nil, body, &res, map[string]string{"If-Match": `"` + version + `"`}); err != nil {
+	if err := t.adm.AppConfig.Rollback(t.ctx, version, body, &res); err != nil {
 		return err
 	}
 	return printConfigResult(c, res)

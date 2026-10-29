@@ -58,7 +58,7 @@ func storageCheck(c *kli.CommandContext) error {
 	var missing error
 	for _, kind := range kinds {
 		var rep storageCheckReport
-		if err := t.call("POST", "_admin/storage/check", url.Values{"storage": {kind}}, nil, &rep); err != nil {
+		if err := t.adm.Storage.Check(t.ctx, url.Values{"storage": {kind}}, &rep); err != nil {
 			// Checking every storage skips the one the realm doesn't have.
 			if ae, ok := errors.AsType[*apiError](err); ok && ae.Status == http.StatusNotFound && which == "" {
 				if missing == nil {

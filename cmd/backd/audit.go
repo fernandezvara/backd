@@ -95,7 +95,7 @@ func printAudit(t *target, q url.Values, c *kli.CommandContext, limit int, uio u
 		}
 		q.Set("limit", strconv.Itoa(min(100, limit-len(recs))))
 		q.Set("skip", strconv.Itoa(skip))
-		if err := t.call("GET", "_admin/audit", q, nil, &page); err != nil {
+		if err := t.adm.Audit.List(t.ctx, q, &page); err != nil {
 			return err
 		}
 		recs = append(recs, page.Items...)

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -75,7 +74,7 @@ func dataCheck(c *kli.CommandContext) error {
 		Collections        []string `json:"collections"`
 		EstimatedDocuments *int64   `json:"estimated_documents"`
 	}
-	if err := t.call("POST", "_admin/data-checks", nil, body, &started); err != nil {
+	if err := t.adm.DataChecks.Start(t.ctx, body, &started); err != nil {
 		var ae *apiError
 		if errors.As(err, &ae) && ae.Code == "check_running" && len(ae.Details) > 0 {
 			return fmt.Errorf("a schema check is already running in this realm (job %s): wait for it, follow it with `backd functions jobs --realm %s --job %s`, or cancel it with `backd functions cancel --realm %s --job %s`", ae.Details[0].Reason, t.realm, ae.Details[0].Reason, t.realm, ae.Details[0].Reason)
@@ -96,7 +95,7 @@ func dataCheck(c *kli.CommandContext) error {
 	last := ""
 	for {
 		var job jobRecord
-		if err := t.call("GET", "_admin/jobs/"+url.PathEscape(started.ID), nil, nil, &job); err != nil {
+		if err := t.adm.Jobs.Get(t.ctx, started.ID, &job); err != nil {
 			return err
 		}
 		if p := job.Progress; p != nil {
@@ -126,7 +125,7 @@ func dataCheck(c *kli.CommandContext) error {
 	for _, key := range started.Collections {
 		db, name, _ := strings.Cut(key, "/")
 		var r checkReport
-		if err := t.call("GET", "_admin/data-checks/"+url.PathEscape(db)+"/"+url.PathEscape(name), nil, nil, &r); err != nil {
+		if err := t.adm.DataChecks.Get(t.ctx, db, name, &r); err != nil {
 			return err
 		}
 		reports = append(reports, r)
@@ -211,7 +210,7 @@ func dataChecks(c *kli.CommandContext) error {
 	}
 	if collection != "" {
 		var r checkReport
-		if err := t.call("GET", "_admin/data-checks/"+url.PathEscape(database)+"/"+url.PathEscape(collection), nil, nil, &r); err != nil {
+		if err := t.adm.DataChecks.Get(t.ctx, database, collection, &r); err != nil {
 			return err
 		}
 		if flag(c, "json") {
@@ -228,7 +227,7 @@ func dataChecks(c *kli.CommandContext) error {
 			Report     *checkReport `json:"report"`
 		} `json:"items"`
 	}
-	if err := t.call("GET", "_admin/data-checks", nil, nil, &out); err != nil {
+	if err := t.adm.DataChecks.List(t.ctx, &out); err != nil {
 		return err
 	}
 	if flag(c, "json") {

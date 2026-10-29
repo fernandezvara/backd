@@ -164,12 +164,12 @@ func exportAction(c *kli.CommandContext) error {
 		headers["X-Backd-Export"] = progress.Lease
 	}
 	var plan exportPlan
-	method := "GET"
+	// With a body the plan is asked for (POST), without one it is read back (GET).
 	var requestBody any
 	if planBody != nil {
-		method, requestBody = "POST", planBody
+		requestBody = planBody
 	}
-	if _, err := t.callHeaders(method, "_admin/export", q, requestBody, &plan, headers); err != nil {
+	if err := t.adm.Export.Plan(t.ctx, q, requestBody, &plan, withHeaders(headers)...); err != nil {
 		var ae *apiError
 		if errors.As(err, &ae) && ae.Code == "export_running" {
 			return fmt.Errorf("%w\nonly one export of a realm runs at a time", err)
@@ -315,7 +315,7 @@ func exportAction(c *kli.CommandContext) error {
 	var totals struct {
 		AuthUnavailable int64 `json:"auth_unavailable"`
 	}
-	if _, err := t.callHeaders("DELETE", "_admin/export", url.Values{"complete": {"true"}}, nil, &totals, lease); err != nil {
+	if err := t.adm.Export.Complete(t.ctx, url.Values{"complete": {"true"}}, &totals, withHeaders(lease)...); err != nil {
 		fmt.Fprintf(stderr, "the package is complete, but the server wasn't told: %v\n", err)
 	}
 	if totals.AuthUnavailable > 0 {
@@ -452,7 +452,7 @@ func fetchPart(t *target, out, part string, q url.Values, headers map[string]str
 }
 
 func fetchPartOnce(t *target, out, part string, q url.Values, headers map[string]string, lines bool) (exportedPart, error) {
-	res, err := t.open("_admin/export", q, headers)
+	res, err := t.admLong.Export.Part(t.ctx, q, withHeaders(headers)...)
 	if err != nil {
 		return exportedPart{}, err
 	}
@@ -639,7 +639,7 @@ func ciphertextFields(m *exportpkg.Manifest) []string {
 // fetchKeyRecords reads the wrapped keys of the export from the server without keeping them in
 // the package (a CSV extract holds none).
 func fetchKeyRecords(t *target, headers map[string]string) (map[string]fieldcrypt.Record, error) {
-	res, err := t.open("_admin/export", url.Values{"part": {exportpkg.DataKeysName}}, headers)
+	res, err := t.admLong.Export.Part(t.ctx, url.Values{"part": {exportpkg.DataKeysName}}, withHeaders(headers)...)
 	if err != nil {
 		return nil, err
 	}

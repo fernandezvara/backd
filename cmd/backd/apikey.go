@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 	"text/tabwriter"
 
@@ -74,7 +73,7 @@ func apikeyCreate(c *kli.CommandContext) error {
 		return err
 	}
 	var k apiKey
-	if _, err := t.callHeaders("POST", "_admin/apikeys", nil, body, &k, proof); err != nil {
+	if err := t.adm.APIKeys.Create(t.ctx, body, &k, withProof(proof)...); err != nil {
 		return err
 	}
 	fmt.Fprintln(uio.stdout, k.Key)
@@ -97,7 +96,7 @@ func apikeyList(c *kli.CommandContext) error {
 		return err
 	}
 	var page struct{ Items []apiKey }
-	if err := t.call("GET", "_admin/apikeys", nil, nil, &page); err != nil {
+	if err := t.adm.APIKeys.List(t.ctx, &page); err != nil {
 		return err
 	}
 	tw := tabwriter.NewWriter(c.Stdout(), 0, 0, 2, ' ', 0)
@@ -122,7 +121,7 @@ func apikeyRevoke(c *kli.CommandContext) error {
 	}
 	name := str(c, "name")
 	var ae *apiError
-	if err := t.call("DELETE", "_admin/apikeys/"+url.PathEscape(name), nil, nil, nil); err != nil {
+	if err := t.adm.APIKeys.Delete(t.ctx, name); err != nil {
 		if errors.As(err, &ae) && ae.Status == 404 && ae.Message == "API key not found" {
 			return fmt.Errorf("no API key named %q", name)
 		}
