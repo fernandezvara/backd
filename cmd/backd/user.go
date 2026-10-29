@@ -17,6 +17,7 @@ import (
 	"github.com/fernandezvara/kli"
 	"golang.org/x/term"
 
+	"github.com/fernandezvara/backd/internal/adminclient"
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/mongodb"
 	"github.com/fernandezvara/backd/internal/registry"
@@ -51,7 +52,7 @@ type userIO struct {
 // find looks a user up by email.
 func (c *userCtx) find() (adminUser, error) {
 	var page struct{ Items []adminUser }
-	if err := c.t.call("GET", "_admin/users", url.Values{"email": {c.email}}, nil, &page); err != nil {
+	if err := c.t.adm.Users.List(c.t.ctx, url.Values{"email": {c.email}}, &page); err != nil {
 		return adminUser{}, err
 	}
 	if len(page.Items) == 0 {
@@ -61,13 +62,13 @@ func (c *userCtx) find() (adminUser, error) {
 }
 
 // onUser finds the user and sends a request to one of their resources.
-func (c *userCtx) onUser(method, sub string, body any) (adminUser, error) {
+func (c *userCtx) onUser(do func(id string, out *adminUser) error) (adminUser, error) {
 	u, err := c.find()
 	if err != nil {
 		return u, err
 	}
 	var out adminUser
-	err = c.t.call(method, "_admin/users/"+url.PathEscape(u.ID)+sub, nil, body, &out)
+	err = do(u.ID, &out)
 	if out.ID == "" {
 		out = u
 	}
@@ -85,7 +86,7 @@ func userCreate(c *userCtx) error {
 		body["password"] = p
 	}
 	var u adminUser
-	if err := c.t.call("POST", "_admin/users", nil, body, &u); err != nil {
+	if err := c.t.adm.Users.Create(c.t.ctx, body, &u); err != nil {
 		return err
 	}
 	fmt.Fprintf(c.uio.stdout, "created user %s (id %s)\n", u.Email, u.ID)
@@ -108,7 +109,7 @@ func userList(c *userCtx) error {
 		if after != "" {
 			q.Set("after", after)
 		}
-		if err := c.t.call("GET", "_admin/users", q, nil, &page); err != nil {
+		if err := c.t.adm.Users.List(c.t.ctx, q, &page); err != nil {
 			return err
 		}
 		for _, x := range page.Items {
@@ -128,7 +129,9 @@ func userSetPassword(c *userCtx) error {
 	if err != nil {
 		return err
 	}
-	u, err := c.onUser("POST", "/password", map[string]string{"password": p})
+	u, err := c.onUser(func(id string, out *adminUser) error {
+		return c.t.adm.Users.SetPassword(c.t.ctx, id, map[string]string{"password": p}, out)
+	})
 	if err != nil {
 		return err
 	}
@@ -141,7 +144,9 @@ func userExpirePassword(c *userCtx) error {
 	if r := str(c.cmd, "reason"); r != "" {
 		body["reason"] = r
 	}
-	u, err := c.onUser("POST", "/expire-password", body)
+	u, err := c.onUser(func(id string, out *adminUser) error {
+		return c.t.adm.Users.ExpirePassword(c.t.ctx, id, body, out)
+	})
 	if err != nil {
 		return err
 	}
@@ -171,7 +176,7 @@ func userExpirePasswords(c *userCtx) error {
 	if err != nil {
 		return err
 	}
-	if _, err := c.t.callHeaders("POST", "_admin/passwords/expire", nil, body, &out, proof); err != nil {
+	if err := c.t.adm.Passwords.Expire(c.t.ctx, body, &out, withProof(proof)...); err != nil {
 		return err
 	}
 	fmt.Fprintf(c.uio.stdout, "every password set before %s expired: %d accounts with a password, %d sessions ended\nusers choose a new password with a reset (a sign-in with the old one queues the email), or you set one with `backd user set-password`\n", out.ValidAfter, out.Accounts, out.Sessions)
@@ -189,7 +194,7 @@ func userNotifyExpired(c *userCtx) error {
 	if err != nil {
 		return err
 	}
-	if _, err := c.t.callHeaders("POST", "_admin/passwords/notify", nil, nil, &out, proof); err != nil {
+	if err := c.t.adm.Passwords.Notify(c.t.ctx, &out, withProof(proof)...); err != nil {
 		return err
 	}
 	fmt.Fprintf(c.uio.stdout, "telling the users whose password expired: job %s; users already told are skipped (follow it with `backd functions jobs`)\n", out.ID)
@@ -208,7 +213,7 @@ func userRevokeSessions(c *userCtx) error {
 	if err != nil {
 		return err
 	}
-	if _, err := c.t.callHeaders("DELETE", "_admin/sessions", nil, nil, &out, proof); err != nil {
+	if err := c.t.adm.Sessions.RevokeAll(c.t.ctx, &out, withProof(proof)...); err != nil {
 		return err
 	}
 	fmt.Fprintf(c.uio.stdout, "%d sessions ended\n", out.Sessions)
@@ -232,7 +237,7 @@ func userResetLink(c *userCtx) error {
 		Link      string
 		ExpiresAt string `json:"expires_at"`
 	}
-	if _, err := c.t.callHeaders("POST", "_admin/users/"+url.PathEscape(u.ID)+"/reset-link", nil, body, &out, proof); err != nil {
+	if err := c.t.adm.Users.ResetLink(c.t.ctx, u.ID, body, &out, withProof(proof)...); err != nil {
 		return err
 	}
 	fmt.Fprintln(c.uio.stdout, out.Link)
@@ -241,7 +246,9 @@ func userResetLink(c *userCtx) error {
 }
 
 func userChangeEmail(c *userCtx) error {
-	u, err := c.onUser("POST", "/email", map[string]string{"email": str(c.cmd, "new-email")})
+	u, err := c.onUser(func(id string, out *adminUser) error {
+		return c.t.adm.Users.ChangeEmail(c.t.ctx, id, map[string]string{"email": str(c.cmd, "new-email")}, out)
+	})
 	if err != nil {
 		return err
 	}
@@ -253,7 +260,7 @@ func userChangeEmail(c *userCtx) error {
 // prints message with the user's email.
 func userPatch(body map[string]bool, message string) func(*userCtx) error {
 	return func(c *userCtx) error {
-		u, err := c.onUser("PATCH", "", body)
+		u, err := c.onUser(func(id string, out *adminUser) error { return c.t.adm.Users.Patch(c.t.ctx, id, body, out) })
 		if err != nil {
 			return err
 		}
@@ -278,7 +285,7 @@ func userDelete(c *userCtx) error {
 		ID     string `json:"id"`
 		Status string `json:"status"`
 	}
-	if err := c.t.call("DELETE", "_admin/users/"+url.PathEscape(u.ID), nil, nil, &job); err != nil {
+	if err := c.t.adm.Users.Erase(c.t.ctx, u.ID, &job); err != nil {
 		return err
 	}
 	out := c.uio.stdout
@@ -295,7 +302,7 @@ func userDelete(c *userCtx) error {
 				Status string `json:"status"`
 			} `json:"items"`
 		}
-		if err := c.t.call("GET", "_admin/jobs", url.Values{"origin": {"backd:account.erase"}, "limit": {"100"}}, nil, &jobs); err != nil {
+		if err := c.t.adm.Jobs.List(c.t.ctx, url.Values{"origin": {"backd:account.erase"}, "limit": {"100"}}, &jobs); err != nil {
 			return err
 		}
 		for _, j := range jobs.Items {
@@ -320,7 +327,7 @@ func printErased(c *userCtx, id string) error {
 			} `json:"details"`
 		} `json:"items"`
 	}
-	if err := c.t.call("GET", "_admin/audit", url.Values{"action": {"user.erased"}, "target": {"user:" + id}, "limit": {"1"}}, nil, &page); err != nil {
+	if err := c.t.adm.Audit.List(c.t.ctx, url.Values{"action": {"user.erased"}, "target": {"user:" + id}, "limit": {"1"}}, &page); err != nil {
 		return err
 	}
 	out := c.uio.stdout
@@ -379,7 +386,7 @@ func userOwned(c *userCtx) error {
 		return err
 	}
 	var report ownedReport
-	if err := c.t.call("GET", "_admin/users/"+url.PathEscape(u.ID)+"/owned", nil, nil, &report); err != nil {
+	if err := c.t.adm.Users.Owned(c.t.ctx, u.ID, &report); err != nil {
 		return err
 	}
 	out := c.uio.stdout
@@ -440,11 +447,9 @@ func localSettings(realm string, getenv func(string) string) *registry.RealmSett
 }
 
 func userRole(c *userCtx, verb, role string) error {
-	method := "PUT"
-	if verb == "remove" {
-		method = "DELETE"
-	}
-	u, err := c.onUser(method, "/roles/"+url.PathEscape(role), nil)
+	u, err := c.onUser(func(id string, out *adminUser) error {
+		return c.t.adm.Users.Role(c.t.ctx, id, role, verb != "remove", out)
+	})
 	if err != nil {
 		return err
 	}
@@ -495,7 +500,7 @@ func userNetworks(c *userCtx) error {
 	}
 	if changed {
 		body := map[string][]string{"admin_networks": nonNil(admin), "login_networks": nonNil(login)}
-		if err := c.t.call("PUT", "_admin/users/"+url.PathEscape(u.ID)+"/networks", nil, body, &u); err != nil {
+		if err := c.t.adm.Users.SetNetworks(c.t.ctx, u.ID, body, &u); err != nil {
 			return err
 		}
 	}
@@ -608,7 +613,7 @@ func userIdentities(c *userCtx) error {
 			LastUsedAt    *string `json:"last_used_at"`
 		} `json:"items"`
 	}
-	if err := c.t.call("GET", "_admin/users/"+url.PathEscape(u.ID)+"/identities", nil, nil, &out); err != nil {
+	if err := c.t.adm.Users.Identities(c.t.ctx, u.ID, &out); err != nil {
 		return err
 	}
 	w := tabwriter.NewWriter(c.uio.stdout, 0, 4, 2, ' ', 0)
@@ -630,7 +635,7 @@ func userUnlinkIdentity(c *userCtx) error {
 	if err != nil {
 		return err
 	}
-	if err := c.t.call("DELETE", "_admin/users/"+url.PathEscape(u.ID)+"/identities/"+url.PathEscape(provider), nil, nil, nil); err != nil {
+	if err := c.t.adm.Users.UnlinkIdentity(c.t.ctx, u.ID, provider); err != nil {
 		return err
 	}
 	fmt.Fprintf(c.uio.stdout, "%s can no longer sign in with %s\n", u.Email, provider)
@@ -651,7 +656,7 @@ func userMFAStatus(c *userCtx) error {
 			Required          bool `json:"required"`
 			RecoveryCodesLeft int  `json:"recovery_codes_left"`
 		}
-		if err := c.t.call("GET", "_admin/users/"+url.PathEscape(u.ID)+"/mfa", nil, nil, &st); err != nil {
+		if err := c.t.adm.Users.MFA(c.t.ctx, u.ID, &st); err != nil {
 			return err
 		}
 		fmt.Fprintf(c.uio.stdout, "%s: second factor %s; required by role: %t; recovery codes left: %d\n", u.Email, onOff(st.Enabled), st.Required, st.RecoveryCodesLeft)
@@ -667,7 +672,7 @@ func userMFAStatus(c *userCtx) error {
 		} `json:"users_without_mfa"`
 		Total int `json:"total_without_mfa"`
 	}
-	if err := c.t.call("GET", "_admin/mfa", nil, nil, &out); err != nil {
+	if err := c.t.adm.MFA.Status(c.t.ctx, &out); err != nil {
 		return err
 	}
 	switch {
@@ -709,7 +714,7 @@ func userMFAReset(c *userCtx) error {
 	if err != nil {
 		return err
 	}
-	if err := c.t.call("POST", "_admin/users/"+url.PathEscape(u.ID)+"/mfa/reset", nil, nil, nil); err != nil {
+	if err := c.t.adm.Users.ResetMFA(c.t.ctx, u.ID); err != nil {
 		return err
 	}
 	fmt.Fprintf(c.uio.stdout, "second factor of %s removed; their sessions ended\n", u.Email)
@@ -785,7 +790,6 @@ func userExport(c *userCtx) error {
 	if err != nil {
 		return err
 	}
-	base := "_admin/users/" + url.PathEscape(u.ID) + "/export"
 	var rec struct {
 		ID        string `json:"id"`
 		Status    string `json:"status"`
@@ -797,7 +801,7 @@ func userExport(c *userCtx) error {
 		ExpiresAt string `json:"expires_at"`
 		Size      int64  `json:"size"`
 	}
-	if _, err := c.t.callHeaders("POST", base, nil, body, &rec, proof); err != nil {
+	if err := c.t.adm.Users.StartExport(c.t.ctx, u.ID, body, &rec, withProof(proof)...); err != nil {
 		return err
 	}
 	switch {
@@ -823,7 +827,7 @@ func userExport(c *userCtx) error {
 			return fmt.Errorf("the export is still %s after %s; it goes on in the background: fetch it later with `backd user export-download` (id %s)", rec.Status, wait, rec.ID)
 		}
 		time.Sleep(exportPoll)
-		if err := c.t.call("GET", base+"s/"+url.PathEscape(rec.ID), nil, nil, &rec); err != nil {
+		if err := c.t.adm.Users.Export(c.t.ctx, u.ID, rec.ID, &rec); err != nil {
 			return err
 		}
 		if rec.Step != "" && rec.Step != last {
@@ -835,7 +839,9 @@ func userExport(c *userCtx) error {
 	if out == "" {
 		out = "export-" + rec.ID + ".zip"
 	}
-	return downloadExport(c, base+"s/"+url.PathEscape(rec.ID)+"/download", out, proof, rec.ExpiresAt)
+	return downloadExport(c, func() (*adminclient.Stream, error) {
+		return c.t.admLong.Users.OpenExport(c.t.ctx, u.ID, rec.ID, withProof(proof)...)
+	}, out, rec.ExpiresAt)
 }
 
 // exportPoll is how often the CLI asks whether an export is ready.
@@ -856,16 +862,18 @@ func userExportDownload(c *userCtx) error {
 	if out == "" {
 		out = "export-" + id + ".zip"
 	}
-	return downloadExport(c, "_admin/users/"+url.PathEscape(u.ID)+"/exports/"+url.PathEscape(id)+"/download", out, proof, "")
+	return downloadExport(c, func() (*adminclient.Stream, error) {
+		return c.t.admLong.Users.OpenExport(c.t.ctx, u.ID, id, withProof(proof)...)
+	}, out, "")
 }
 
 // downloadExport writes a package to path, never over a file that is there.
-func downloadExport(c *userCtx, apiPath, path string, proof map[string]string, expires string) error {
+func downloadExport(c *userCtx, open func() (*adminclient.Stream, error), path, expires string) error {
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return fmt.Errorf("can't write %s (an existing file is never overwritten): %w", path, err)
 	}
-	res, err := c.t.open(apiPath, nil, proof)
+	res, err := open()
 	if err != nil {
 		f.Close()
 		_ = os.Remove(path)

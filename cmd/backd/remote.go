@@ -2,7 +2,7 @@ package main
 
 import (
 	"bufio"
-	"bytes"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -13,10 +13,14 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/fernandezvara/kli"
+
+	"github.com/fernandezvara/backd/internal/adminclient"
+	"github.com/fernandezvara/backd/pkg/client"
 )
 
 // The CLI manages realms through backd's HTTP API: `backd login` stores a
@@ -91,12 +95,21 @@ func (c *credentials) save(path string) error {
 	return os.Rename(tmp, path)
 }
 
-// target is a server and realm the CLI talks to, with a credential.
+// target is a server and realm the CLI talks to, with a credential. Everything it asks of the
+// server goes through the Go client (pkg/client) and, for the administration, internal/adminclient
+// on top of it.
 type target struct {
 	url, realm string
 	credential string // a session token or an API key; "" when none
 	fromKey    bool   // credential is BACKD_API_KEY
-	http       *http.Client
+
+	ctx context.Context
+	cl  *client.Client // 60 seconds for a whole call
+	adm *adminclient.Admin
+	// long is the same without a time limit, for answers and uploads too big to hold (an export's
+	// parts, an import's chunks).
+	long    *client.Client
+	admLong *adminclient.Admin
 }
 
 // resolveURL picks the server: --url, BACKD_URL, or the one used last.
@@ -118,6 +131,41 @@ func resolveURL(flagURL string, getenv func(string) string, creds *credentials) 
 	return strings.TrimRight(u, "/"), nil
 }
 
+// makeTarget builds the clients of a server and realm, signed in with a session token or an API key
+// (neither when credential is empty).
+func makeTarget(u, realm, credential string, fromKey bool, hc *http.Client) (*target, error) {
+	t := &target{url: u, realm: realm, credential: credential, fromKey: fromKey, ctx: context.Background()}
+	long := *hc
+	long.Timeout = 0
+	build := func(doer client.Doer) (*client.Client, *adminclient.Admin, error) {
+		o := client.Options{URL: u, Realm: realm, Doer: doer, MapError: t.mapError}
+		switch {
+		case credential == "":
+		case fromKey:
+			o.APIKey = credential
+		default:
+			s := client.NewMemoryStorage()
+			if err := s.Set(t.ctx, credential); err != nil {
+				return nil, nil, err
+			}
+			o.Storage = s
+		}
+		c, err := client.New(o)
+		if err != nil {
+			return nil, nil, err
+		}
+		return c, adminclient.New(c), nil
+	}
+	var err error
+	if t.cl, t.adm, err = build(hc); err != nil {
+		return nil, err
+	}
+	if t.long, t.admLong, err = build(&long); err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
 // newTarget resolves server, realm and credential for API commands: an
 // admin API key from BACKD_API_KEY (unless sessionOnly), else the session
 // stored by `backd login` for that server and realm.
@@ -134,14 +182,11 @@ func newTarget(flagURL, realm string, getenv func(string) string, sessionOnly bo
 	if err != nil {
 		return nil, err
 	}
-	t := &target{url: u, realm: realm, http: hc}
 	if key := getenv("BACKD_API_KEY"); key != "" && !sessionOnly {
-		t.credential, t.fromKey = key, true
-		return t, nil
+		return makeTarget(u, realm, key, true, hc)
 	}
 	if s, ok := creds.Sessions[u][realm]; ok {
-		t.credential = s.Token
-		return t, nil
+		return makeTarget(u, realm, s.Token, false, hc)
 	}
 	return nil, fmt.Errorf("not logged in to realm %q on %s: run `backd login --realm %s --url %s` (or set BACKD_API_KEY to an admin API key)", realm, u, realm, u)
 }
@@ -178,13 +223,16 @@ func httpClient(getenv func(string) string) (*http.Client, error) {
 	return c, nil
 }
 
-// apiError is an error answer from backd, in its envelope.
+// apiError is an error answer from backd as the CLI shows it: its status, code and message, the
+// details and the request id, with a hint when the CLI user can act on it. It wraps the client's
+// error, so errors.Is(err, client.ErrNotFound) and errors.As(err, &*client.Error) work.
 type apiError struct {
 	Status    int
 	Code      string
 	Message   string
 	Details   []struct{ Path, Reason string }
 	RequestID string
+	err       *client.Error
 }
 
 func (e *apiError) Error() string {
@@ -199,70 +247,35 @@ func (e *apiError) Error() string {
 	return b.String()
 }
 
-// call sends a request to /v1/{realm}/{path} with the target's credential
-// and decodes a JSON answer into out (when not nil).
-func (t *target) call(method, path string, query url.Values, body, out any) error {
-	_, err := t.callHeaders(method, path, query, body, out, nil)
-	return err
-}
+func (e *apiError) Unwrap() error { return e.err }
 
-// callHeaders is call, but also sends extra request headers and returns
-// the response headers (for `backd functions invoke`'s dev diagnostics).
-func (t *target) callHeaders(method, path string, query url.Values, body, out any, reqHeaders map[string]string) (http.Header, error) {
-	u := t.url + "/v1/" + url.PathEscape(t.realm) + "/" + path
-	if len(query) > 0 {
-		u += "?" + query.Encode()
+var anonymousStatusCode = regexp.MustCompile(`^http_\d+$`)
+
+// mapError is the client's MapError: it turns what the client returns into the errors the CLI
+// shows, with the hints of explain.
+func (t *target) mapError(err error) error {
+	var ce *client.Error
+	if !errors.As(err, &ce) {
+		return err
 	}
-	var reader io.Reader
-	if body != nil {
-		data, err := json.Marshal(body)
-		if err != nil {
-			return nil, err
+	if errors.Is(err, client.ErrNetwork) {
+		cause := errors.Unwrap(ce)
+		if cause == nil {
+			cause = ce
 		}
-		reader = bytes.NewReader(data)
+		return fmt.Errorf("can't reach %s: %w", t.url, cause)
 	}
-	req, err := http.NewRequest(method, u, reader)
-	if err != nil {
-		return nil, err
+	if ce.Status == 0 {
+		return err
 	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	e := &apiError{Status: ce.Status, Code: ce.Code, Message: ce.Message, RequestID: ce.RequestID, err: ce}
+	if anonymousStatusCode.MatchString(ce.Code) {
+		e.Code = "http_error" // the answer was not backd's
 	}
-	if t.credential != "" {
-		req.Header.Set("Authorization", "Bearer "+t.credential)
+	for _, d := range ce.Details {
+		e.Details = append(e.Details, struct{ Path, Reason string }{d.Path, d.Reason})
 	}
-	for k, v := range reqHeaders {
-		req.Header.Set(k, v)
-	}
-	res, err := t.http.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("can't reach %s: %w", t.url, err)
-	}
-	defer res.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(res.Body, 16<<20))
-	if err != nil {
-		return nil, err
-	}
-	if res.StatusCode >= 300 {
-		var env struct {
-			Error struct {
-				Code      string `json:"code"`
-				Message   string `json:"message"`
-				Details   []struct{ Path, Reason string }
-				RequestID string `json:"request_id"`
-			} `json:"error"`
-		}
-		e := &apiError{Status: res.StatusCode, Code: "http_error", Message: http.StatusText(res.StatusCode)}
-		if json.Unmarshal(data, &env) == nil && env.Error.Code != "" {
-			e.Code, e.Message, e.RequestID = env.Error.Code, env.Error.Message, env.Error.RequestID
-			e.Details = env.Error.Details
-		}
-		return res.Header, t.explain(path, e)
-	}
-	if out != nil && len(data) > 0 {
-		return res.Header, json.Unmarshal(data, out)
-	}
-	return res.Header, nil
+	return t.explain(ce.Path, e)
 }
 
 // proof asks the signed-in user for a fresh proof of identity, the strongest they have
@@ -273,26 +286,23 @@ func (t *target) proof(uio userIO) (map[string]string, error) {
 	if t.fromKey {
 		return nil, nil
 	}
-	var me struct {
-		ReauthMethods []string `json:"reauth_methods"`
-	}
-	if err := t.call("GET", "_auth/me", nil, nil, &me); err != nil {
+	me, err := t.cl.Auth().Me(t.ctx)
+	if err != nil {
 		return nil, err
 	}
 	if len(me.ReauthMethods) == 0 {
 		return nil, nil
 	}
-	method := me.ReauthMethods[0]
-	body := map[string]string{"method": method}
-	switch method {
+	in := client.ReauthInput{Method: me.ReauthMethods[0]}
+	switch in.Method {
 	case "password":
 		pw, err := readSecret(uio, false, "Password (to confirm it is you)")
 		if err != nil {
 			return nil, err
 		}
-		body["password"] = pw
+		in.Password = pw
 	case "email_code":
-		if err := t.call("POST", "_auth/reauth/email-code", nil, nil, nil); err != nil {
+		if err := t.cl.Auth().RequestReauthCode(t.ctx); err != nil {
 			return nil, err
 		}
 		fmt.Fprintln(uio.stderr, "a confirmation code was sent to your email address")
@@ -300,25 +310,29 @@ func (t *target) proof(uio userIO) (map[string]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		body["code"] = code
+		in.Code = code
 	default: // totp: the code of the authenticator app
 		code, err := readLine(uio, "Code from your authenticator app (or a recovery code)")
 		if err != nil {
 			return nil, err
 		}
 		if strings.ContainsAny(code, "-") || len(strings.TrimSpace(code)) > 6 {
-			body["method"] = "recovery_code"
+			in.Method = "recovery_code"
 		}
-		body["code"] = code
+		in.Code = code
 	}
-	var out struct {
-		Token string `json:"reauth_token"`
-	}
-	if err := t.call("POST", "_auth/reauth", nil, body, &out); err != nil {
+	p, err := t.cl.Auth().Reauth(t.ctx, in)
+	if err != nil {
 		return nil, err
 	}
-	return map[string]string{"X-Backd-Reauth": out.Token}, nil
+	return map[string]string{"X-Backd-Reauth": p.Token}, nil
 }
+
+// withProof turns the header a proof is carried in (or any headers) into request options.
+func withProof(headers map[string]string) []client.RequestOption { return adminclient.Proof(headers) }
+
+// withHeaders is withProof for headers that are not a proof (an export's lease).
+var withHeaders = withProof
 
 // readLine reads one line the user types (a code): from the terminal with a prompt, or the first
 // line of standard input when it isn't one.
@@ -352,103 +366,12 @@ func (t *target) explain(path string, e *apiError) error {
 	return e
 }
 
-// open sends a GET to /v1/{realm}/{path} and returns the response with its body still to read,
-// for answers too big to hold (an export's parts): no client timeout, the caller closes the
-// body. Errors are decoded as call does.
-func (t *target) open(path string, query url.Values, reqHeaders map[string]string) (*http.Response, error) {
-	u := t.url + "/v1/" + url.PathEscape(t.realm) + "/" + path
-	if len(query) > 0 {
-		u += "?" + query.Encode()
-	}
-	req, err := http.NewRequest("GET", u, nil)
+// offlineTarget is the target of an in-process handler (the --direct tools): there is no network
+// and no credential, only the handler the transport calls.
+func offlineTarget(u, realm string, hc *http.Client) *target {
+	t, err := makeTarget(u, realm, "", true, hc)
 	if err != nil {
-		return nil, err
+		panic(err) // the address is a constant
 	}
-	if t.credential != "" {
-		req.Header.Set("Authorization", "Bearer "+t.credential)
-	}
-	for k, v := range reqHeaders {
-		req.Header.Set(k, v)
-	}
-	hc := *t.http
-	hc.Timeout = 0
-	res, err := hc.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("can't reach %s: %w", t.url, err)
-	}
-	if res.StatusCode < 300 {
-		return res, nil
-	}
-	defer res.Body.Close()
-	data, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
-	var env struct {
-		Error struct {
-			Code      string `json:"code"`
-			Message   string `json:"message"`
-			Details   []struct{ Path, Reason string }
-			RequestID string `json:"request_id"`
-		} `json:"error"`
-	}
-	e := &apiError{Status: res.StatusCode, Code: "http_error", Message: http.StatusText(res.StatusCode)}
-	if json.Unmarshal(data, &env) == nil && env.Error.Code != "" {
-		e.Code, e.Message, e.RequestID = env.Error.Code, env.Error.Message, env.Error.RequestID
-		e.Details = env.Error.Details
-	}
-	return nil, t.explain(path, e)
-}
-
-// send sends body (size bytes, -1 when unknown) to /v1/{realm}/{path} and decodes a JSON answer
-// into out (when not nil). It has no client timeout, for uploads; errors are decoded as call does.
-func (t *target) send(method, path string, query url.Values, body io.Reader, size int64, contentType string, reqHeaders map[string]string, out any) error {
-	u := t.url + "/v1/" + url.PathEscape(t.realm) + "/" + path
-	if len(query) > 0 {
-		u += "?" + query.Encode()
-	}
-	req, err := http.NewRequest(method, u, body)
-	if err != nil {
-		return err
-	}
-	if size >= 0 {
-		req.ContentLength = size
-	}
-	if contentType != "" {
-		req.Header.Set("Content-Type", contentType)
-	}
-	if t.credential != "" {
-		req.Header.Set("Authorization", "Bearer "+t.credential)
-	}
-	for k, v := range reqHeaders {
-		req.Header.Set(k, v)
-	}
-	hc := *t.http
-	hc.Timeout = 0
-	res, err := hc.Do(req)
-	if err != nil {
-		return fmt.Errorf("can't reach %s: %w", t.url, err)
-	}
-	defer res.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(res.Body, 16<<20))
-	if err != nil {
-		return err
-	}
-	if res.StatusCode >= 300 {
-		var env struct {
-			Error struct {
-				Code      string `json:"code"`
-				Message   string `json:"message"`
-				Details   []struct{ Path, Reason string }
-				RequestID string `json:"request_id"`
-			} `json:"error"`
-		}
-		e := &apiError{Status: res.StatusCode, Code: "http_error", Message: http.StatusText(res.StatusCode)}
-		if json.Unmarshal(data, &env) == nil && env.Error.Code != "" {
-			e.Code, e.Message, e.RequestID = env.Error.Code, env.Error.Message, env.Error.RequestID
-			e.Details = env.Error.Details
-		}
-		return t.explain(path, e)
-	}
-	if out != nil && len(data) > 0 {
-		return json.Unmarshal(data, out)
-	}
-	return nil
+	return t
 }

@@ -36,7 +36,7 @@ func complianceScopeCmd(c *kli.CommandContext) error {
 		return err
 	}
 	var sc complianceScope
-	if err := t.call("GET", "_admin/compliance/scope", nil, nil, &sc); err != nil {
+	if err := t.adm.Compliance.Scope(t.ctx, &sc); err != nil {
 		return err
 	}
 	if flag(c, "json") {

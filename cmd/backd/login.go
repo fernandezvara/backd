@@ -11,6 +11,8 @@ import (
 
 	"github.com/fernandezvara/kli"
 	"golang.org/x/term"
+
+	"github.com/fernandezvara/backd/pkg/client"
 )
 
 func loginAction(c *kli.CommandContext) error {
@@ -25,13 +27,19 @@ func whoamiAction(c *kli.CommandContext) error {
 	return whoami(str(c, "realm"), str(c, "url"), c.Getenv, ioOf(c))
 }
 
+// sessionAnswer is the session a sign-in ends in.
 type sessionAnswer struct {
-	Token     string `json:"token"`
-	ExpiresAt string `json:"expires_at"`
-	User      struct {
-		Email string   `json:"email"`
-		Roles []string `json:"roles"`
-	} `json:"user"`
+	Token     string
+	ExpiresAt string
+	Email     string
+}
+
+func sessionOf(s *client.Session) sessionAnswer {
+	a := sessionAnswer{Token: s.Token, ExpiresAt: s.ExpiresAt}
+	if s.User != nil {
+		a.Email = s.User.Email
+	}
+	return a
 }
 
 func login(realm, flagURL, email string, magicLink bool, getenv func(string) string, uio userIO) error {
@@ -66,7 +74,10 @@ func login(realm, flagURL, email string, magicLink bool, getenv func(string) str
 		// The password and a code are two lines of the same input.
 		uio.stdin = bufio.NewReader(uio.stdin)
 	}
-	t := &target{url: u, realm: realm, http: hc}
+	t, err := makeTarget(u, realm, "", false, hc)
+	if err != nil {
+		return err
+	}
 	var res sessionAnswer
 	if magicLink {
 		if err := magicLinkSignIn(t, uio, email, &res); err != nil {
@@ -77,19 +88,12 @@ func login(realm, flagURL, email string, magicLink bool, getenv func(string) str
 		if err != nil {
 			return err
 		}
-		var out struct {
-			sessionAnswer
-			challengeAnswer
-		}
-		if err := t.call("POST", "_auth/login", nil, map[string]string{"email": email, "password": pw}, &out); err != nil {
+		step, err := t.cl.Auth().SignIn(t.ctx, client.SignInInput{Email: email, Password: pw})
+		if err != nil {
 			return err
 		}
-		res = out.sessionAnswer
-		if res.Token == "" {
-			// Not a session yet: the second factor, or setting one up first.
-			if err := finishSignIn(t, uio, out.challengeAnswer, &res); err != nil {
-				return err
-			}
+		if err := finishStep(t, uio, step, &res); err != nil {
+			return err
 		}
 	}
 	if res.Token == "" {
@@ -98,12 +102,12 @@ func login(realm, flagURL, email string, magicLink bool, getenv func(string) str
 	if creds.Sessions[u] == nil {
 		creds.Sessions[u] = map[string]storedAuth{}
 	}
-	creds.Sessions[u][realm] = storedAuth{Token: res.Token, Email: res.User.Email, ExpiresAt: res.ExpiresAt}
+	creds.Sessions[u][realm] = storedAuth{Token: res.Token, Email: res.Email, ExpiresAt: res.ExpiresAt}
 	creds.DefaultURL = u
 	if err := creds.save(path); err != nil {
 		return fmt.Errorf("logged in, but can't store the session: %w", err)
 	}
-	fmt.Fprintf(uio.stdout, "logged in to realm %s on %s as %s (session expires at %s at the latest)\n", realm, u, res.User.Email, res.ExpiresAt)
+	fmt.Fprintf(uio.stdout, "logged in to realm %s on %s as %s (session expires at %s at the latest)\n", realm, u, res.Email, res.ExpiresAt)
 	if getenv("BACKD_API_KEY") != "" {
 		fmt.Fprintln(uio.stderr, "note: BACKD_API_KEY is set, so commands use that key instead of this session")
 	}
@@ -117,7 +121,7 @@ func logout(realm, flagURL string, getenv func(string) string, uio userIO) error
 	}
 	// A session the server no longer accepts is forgotten anyway.
 	var ae *apiError
-	if err := t.call("POST", "_auth/logout", nil, nil, nil); err != nil && (!errors.As(err, &ae) || ae.Status != 401) {
+	if err := t.cl.Auth().Logout(t.ctx); err != nil && (!errors.As(err, &ae) || ae.Status != 401) {
 		return err
 	}
 	creds, path, err := loadCredentials(getenv)
@@ -140,12 +144,8 @@ func whoami(realm, flagURL string, getenv func(string) string, uio userIO) error
 	if err != nil {
 		return err
 	}
-	var me struct {
-		Email string   `json:"email"`
-		ID    string   `json:"id"`
-		Roles []string `json:"roles"`
-	}
-	if err := t.call("GET", "_auth/me", nil, nil, &me); err != nil {
+	me, err := t.cl.Auth().Me(t.ctx)
+	if err != nil {
 		return err
 	}
 	fmt.Fprintf(uio.stdout, "%s (id %s) on realm %s at %s; roles: %s\n", me.Email, me.ID, realm, t.url, orNone(me.Roles))

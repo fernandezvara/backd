@@ -1146,6 +1146,13 @@ func TestContract(t *testing.T) {
 	req("GET", spec, "", nil, 401)
 	req("GET", spec, "", ada, 403)
 	req("GET", ad+"/types", "", key, 200)
+	if goTypes := req("GET", ad+"/types?lang=go&package=acmeapi", "", key, 200); !strings.Contains(fmt.Sprint(goTypes["types"]), "\npackage acmeapi\n") {
+		t.Errorf("lang=go: %v", goTypes["types"])
+	}
+	req("GET", ad+"/types?lang=dart", "", key, 200)
+	req("GET", ad+"/types?lang=go&package=not-a-name", "", key, 400)
+	req("GET", ad+"/types?package=acmeapi", "", key, 400)
+	req("GET", ad+"/types?lang=rust", "", key, 400)
 	adminSpec := req("GET", ad+"/openapi.json", "", key, 200)
 	if adminSpec["openapi"] != "3.1.0" {
 		t.Errorf("admin openapi document = %v", adminSpec["openapi"])

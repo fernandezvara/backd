@@ -16,7 +16,7 @@
 | Dependencies | Standard library only. A CI check (`go list -deps`) fails when the package imports `internal/` or a third-party module. |
 | Parity | Everything `backd-js` does except the admin API and browser-only modes. |
 | Admin API | Not in this package, for the same safety reason as the other clients. It lives in `internal/adminclient`, an add-on that wraps a configured `*client.Client` (§6). |
-| Extension point | `pkg/client` exports one request primitive (`Do`) that applies auth, `If-Match`, retries, error mapping and the cache rules; add-ons and library users build on it. |
+| Extension point | `pkg/client` exports one request primitive (`Do(ctx, method, path, body, out, opts...)`, with `RequestOption`s such as `WithQuery`, `WithHeader`, `WithRawBody`, `WithRaw`, `WithoutAuth`) that applies auth, `If-Match`, retries, error mapping and the cache rules; add-ons and library users build on it. |
 | Context | Every call that does I/O takes a `context.Context` first. |
 | Types | `backd types --lang go` from `internal/typegen`, with generic helpers for typed documents. Untyped use is `map[string]any`. |
 | Errors | `*client.Error` (`Code`, `Status`, `Message`, `Details`); sentinel errors for `errors.Is` and typed errors for `errors.As`, one per server error `code`. |
@@ -30,7 +30,7 @@
 ## 3. Shape
 
 ```go
-c := client.New(client.Options{URL: "http://localhost:8080", Realm: "shelf", APIKey: key})
+c, err := client.New(client.Options{URL: "http://localhost:8080", Realm: "shelf", APIKey: key})
 page, err := c.DB("main").Collection("assets").List(ctx, client.Query{
     Where:   client.Where{"published_at": client.NotNull()},
     OrderBy: "-published_at",

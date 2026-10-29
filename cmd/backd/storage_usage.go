@@ -62,7 +62,7 @@ func storageUsage(c *kli.CommandContext) error {
 		return err
 	}
 	var st storageStatus
-	if err := t.call("GET", "_admin/storage", nil, nil, &st); err != nil {
+	if err := t.adm.Storage.Usage(t.ctx, &st); err != nil {
 		return err
 	}
 	if flag(c, "json") {
@@ -157,7 +157,7 @@ func storageReconcile(c *kli.CommandContext) error {
 	var missing error
 	for _, kind := range kinds {
 		var rep reconcileReport
-		if err := t.call("POST", "_admin/storage/reconcile", nil, map[string]any{"delete": flag(c, "delete"), "storage": kind}, &rep); err != nil {
+		if err := t.adm.Storage.Reconcile(t.ctx, map[string]any{"delete": flag(c, "delete"), "storage": kind}, &rep); err != nil {
 			// Doing every storage skips the one the realm doesn't have.
 			if ae, ok := errors.AsType[*apiError](err); ok && ae.Status == http.StatusNotFound && which == "" {
 				if missing == nil {

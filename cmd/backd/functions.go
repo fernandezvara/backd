@@ -19,6 +19,7 @@ import (
 	"github.com/fernandezvara/backd/internal/functions"
 	"github.com/fernandezvara/backd/internal/httpapi"
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/pkg/client"
 )
 
 func functionsBuild(c *kli.CommandContext) error {
@@ -93,7 +94,7 @@ func functionsInvoke(c *kli.CommandContext) error {
 	reqHeaders := map[string]string{}
 	if email := str(c, "as"); email != "" {
 		var page struct{ Items []adminUser }
-		if err := t.call("GET", "_admin/users", url.Values{"email": {email}}, nil, &page); err != nil {
+		if err := t.adm.Users.List(t.ctx, url.Values{"email": {email}}, &page); err != nil {
 			return fmt.Errorf("--as %s: %w", email, err)
 		}
 		if len(page.Items) == 0 {
@@ -104,7 +105,13 @@ func functionsInvoke(c *kli.CommandContext) error {
 
 	start := time.Now()
 	var out json.RawMessage
-	hdr, callErr := t.callHeaders("POST", database+"/_func/"+name, nil, body, &out, reqHeaders)
+	var hdr http.Header
+	callRes, callErr := t.cl.Do(t.ctx, "POST", []string{database, "_func", name}, body, &out, withHeaders(reqHeaders)...)
+	if callRes != nil {
+		hdr = callRes.Header
+	} else if ce, ok := errors.AsType[*client.Error](callErr); ok {
+		hdr = ce.Header // an error answer carries the development logs too
+	}
 	// An internal function has no _func route (it answers like a missing
 	// one): an administrator runs it through the admin route instead.
 	var ae *apiError
@@ -117,7 +124,7 @@ func functionsInvoke(c *kli.CommandContext) error {
 			adminBody["as"] = email
 		}
 		var viaAdmin json.RawMessage
-		if h2, err := t.callHeaders("POST", "_admin/functions/"+database+"/"+name+"/invoke", nil, adminBody, &viaAdmin, nil); err == nil {
+		if h2, err := t.adm.Functions.Invoke(t.ctx, database, name, adminBody, &viaAdmin); err == nil {
 			hdr, callErr, out = h2, nil, viaAdmin
 			fmt.Fprintln(stderr, "(run through the admin API: the function is internal)")
 		} else if errors.As(err, &ae) && ae.Status != http.StatusNotFound && ae.Status != http.StatusUnauthorized && ae.Status != http.StatusForbidden {
@@ -328,7 +335,7 @@ func functionsJobs(c *kli.CommandContext) error {
 		}
 		q.Set("limit", strconv.Itoa(min(100, limit-len(jobs))))
 		q.Set("skip", strconv.Itoa(skip))
-		if err := t.call("GET", "_admin/jobs", q, nil, &page); err != nil {
+		if err := t.adm.Jobs.List(t.ctx, q, &page); err != nil {
 			return err
 		}
 		jobs = append(jobs, page.Items...)
@@ -371,7 +378,7 @@ func functionsJobDetail(c *kli.CommandContext, id string) error {
 		return err
 	}
 	var j jobRecord
-	if err := t.call("GET", "_admin/jobs/"+url.PathEscape(id), nil, nil, &j); err != nil {
+	if err := t.adm.Jobs.Get(t.ctx, id, &j); err != nil {
 		return err
 	}
 	if flag(c, "json") {
@@ -429,7 +436,7 @@ func jobControl(c *kli.CommandContext, op, verb string) error {
 		return err
 	}
 	var job jobRecord
-	if err := t.call("POST", "_admin/jobs/"+url.PathEscape(str(c, "job"))+"/"+op, nil, nil, &job); err != nil {
+	if err := t.adm.Jobs.Control(t.ctx, str(c, "job"), op, &job); err != nil {
 		return err
 	}
 	if flag(c, "json") {
@@ -457,7 +464,7 @@ func functionsSchedules(c *kli.CommandContext) error {
 		return err
 	}
 	var out struct{ Items []scheduleRecord }
-	if err := t.call("GET", "_admin/schedules", nil, nil, &out); err != nil {
+	if err := t.adm.Functions.Schedules(t.ctx, &out); err != nil {
 		return err
 	}
 	if flag(c, "json") {
@@ -491,7 +498,7 @@ func scheduleControl(c *kli.CommandContext, op string) error {
 		return err
 	}
 	var s scheduleRecord
-	if err := t.call("POST", "_admin/functions/"+url.PathEscape(database)+"/"+url.PathEscape(name)+"/"+op, nil, nil, &s); err != nil {
+	if err := t.adm.Functions.Control(t.ctx, database, name, op, &s); err != nil {
 		return err
 	}
 	if flag(c, "json") {
@@ -568,7 +575,7 @@ func fetchInvocations(t *target, q url.Values, limit int) ([]invocationRecord, e
 		}
 		q.Set("limit", strconv.Itoa(min(100, limit-len(recs))))
 		q.Set("skip", strconv.Itoa(skip))
-		if err := t.call("GET", "_admin/invocations", q, nil, &page); err != nil {
+		if err := t.adm.Functions.Invocations(t.ctx, q, &page); err != nil {
 			return nil, err
 		}
 		recs = append(recs, page.Items...)

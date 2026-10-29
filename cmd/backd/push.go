@@ -27,7 +27,7 @@ func pushDevices(c *userCtx) error {
 			LastSeen string  `json:"last_seen"`
 		} `json:"items"`
 	}
-	if err := c.t.call("GET", "_admin/users/"+url.PathEscape(u.ID)+"/devices", nil, nil, &out); err != nil {
+	if err := c.t.adm.Users.Devices(c.t.ctx, u.ID, &out); err != nil {
 		return err
 	}
 	if len(out.Items) == 0 {
@@ -53,7 +53,7 @@ func pushRemoveDevice(c *userCtx) error {
 		return err
 	}
 	id := str(c.cmd, "id")
-	if err := c.t.call("DELETE", "_admin/users/"+url.PathEscape(u.ID)+"/devices/"+url.PathEscape(id), nil, nil, nil); err != nil {
+	if err := c.t.adm.Users.DeleteDevice(c.t.ctx, u.ID, id); err != nil {
 		return err
 	}
 	fmt.Fprintf(c.uio.stdout, "device %s of %s removed\n", id, u.Email)
@@ -91,7 +91,7 @@ func pushSends(c *kli.CommandContext) error {
 	out := ioOf(c)
 	if id := str(c, "id"); id != "" {
 		var row pushSendRow
-		if err := t.call("GET", "_admin/push/sends/"+url.PathEscape(id), nil, nil, &row); err != nil {
+		if err := t.adm.Push.Send(t.ctx, id, &row); err != nil {
 			return err
 		}
 		state := "in progress"
@@ -112,7 +112,7 @@ func pushSends(c *kli.CommandContext) error {
 	var page struct {
 		Items []pushSendRow `json:"items"`
 	}
-	if err := t.call("GET", "_admin/push/sends", query, nil, &page); err != nil {
+	if err := t.adm.Push.Sends(t.ctx, query, &page); err != nil {
 		return err
 	}
 	if len(page.Items) == 0 {
@@ -148,7 +148,7 @@ func pushTest(c *userCtx) error {
 		Limited   int    `json:"limited"`
 		NoDevices int    `json:"no_devices"`
 	}
-	if err := c.t.call("POST", "_admin/push/test", nil, body, &out); err != nil {
+	if err := c.t.adm.Push.Test(c.t.ctx, body, &out); err != nil {
 		return err
 	}
 	fmt.Fprintf(c.uio.stdout, "send %s: %s\n", out.SendID, map[bool]string{
@@ -174,7 +174,7 @@ func pushWebKeys(c *kli.CommandContext) error {
 	name := orDefault(str(c, "name"), webKeysSecret)
 	rotate := flag(c, "rotate")
 	var page struct{ Items []secret }
-	if err := t.call("GET", "_admin/secrets", nil, nil, &page); err != nil {
+	if err := t.adm.Secrets.List(t.ctx, &page); err != nil {
 		return err
 	}
 	exists := false
@@ -198,14 +198,14 @@ func pushWebKeys(c *kli.CommandContext) error {
 	}
 	private := base64.RawURLEncoding.EncodeToString(scalar)
 	public := base64.RawURLEncoding.EncodeToString(pub.Bytes())
-	if err := t.call("PUT", "_admin/secrets/"+url.PathEscape(name), nil, map[string]any{"value": private}, nil); err != nil {
+	if err := t.adm.Secrets.Put(t.ctx, name, map[string]any{"value": private}); err != nil {
 		return err
 	}
 	if exists {
 		var res struct {
 			Removed int `json:"removed"`
 		}
-		if err := t.call("DELETE", "_admin/push/devices", url.Values{"platform": {"web"}}, nil, &res); err != nil {
+		if err := t.adm.Push.DeleteDevices(t.ctx, url.Values{"platform": {"web"}}, &res); err != nil {
 			return fmt.Errorf("the key was replaced, but the web devices could not be removed: %w", err)
 		}
 		fmt.Fprintf(out.stderr, "rotated: %d web devices removed; apps subscribe again at their next launch\n", res.Removed)
