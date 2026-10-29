@@ -4,6 +4,17 @@ All notable changes to `backd` and to its JavaScript client `backd-js`, which ar
 
 Until a stable release is declared, a minor release may have breaking changes; they are listed first.
 
+## Unreleased
+
+### Breaking
+
+- **Sizes follow one grammar:** a number and a case-sensitive unit with no space (`512KiB`, `1.5GB`), decimals allowed when the result is a whole number of bytes, in decimal (`KB`...`TB`, powers of 1000) or binary (`KiB`...`TiB`, powers of 1024) units. A function's `memory` takes binary units only (`256MB` is refused: write `256MiB`). The units are explained in [Sizes and units](https://fernandezvara.github.io/backd/docs/build/configuration/#sizes-and-units).
+
+### Added
+
+- **Environment variables with a size** (`MAX_BODY_BYTES`, `BACKD_MAX_UPLOAD_BYTES`, `BACKD_REALTIME_MEMORY`) take a unit as well as a bare number of bytes: `1MiB` and `1048576` are the same value.
+- **`backd storage usage`** prints sizes with at most two decimals (`1.5 KiB`, `5 MiB`) and stops at `TiB`.
+
 ## 0.9.5
 
 ### Added

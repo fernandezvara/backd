@@ -16,6 +16,7 @@ import (
 
 	"github.com/fernandezvara/backd/internal/realtime"
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/internal/strutil"
 )
 
 // ProvisionMode controls what startup provisioning does to MongoDB.
@@ -183,15 +184,15 @@ func Load(getenv func(string) string) (Settings, error) {
 	}
 
 	maxBody := orDefault(getenv("MAX_BODY_BYTES"), "1048576")
-	if n, err := strconv.ParseInt(maxBody, 10, 64); err != nil || n < 1 {
-		errs = append(errs, fmt.Errorf("MAX_BODY_BYTES must be a positive integer, got %q", maxBody))
+	if n, err := envSize(maxBody); err != nil {
+		errs = append(errs, fmt.Errorf("MAX_BODY_BYTES: %w", err))
 	} else {
 		s.MaxBodyBytes = n
 	}
 
 	maxUpload := orDefault(getenv("BACKD_MAX_UPLOAD_BYTES"), "104857600")
-	if n, err := strconv.ParseInt(maxUpload, 10, 64); err != nil || n < 1 {
-		errs = append(errs, fmt.Errorf("BACKD_MAX_UPLOAD_BYTES must be a positive integer, got %q", maxUpload))
+	if n, err := envSize(maxUpload); err != nil {
+		errs = append(errs, fmt.Errorf("BACKD_MAX_UPLOAD_BYTES: %w", err))
 	} else {
 		s.MaxUploadBytes = n
 	}
@@ -542,9 +543,9 @@ func RealtimeLimitsFrom(getenv func(string) string) (realtime.Limits, error) {
 	num("BACKD_REALTIME_MAX_STREAMS", &l.Streams)
 	num("BACKD_REALTIME_BUFFER", &l.BufferBytes)
 	if v := getenv("BACKD_REALTIME_MEMORY"); v != "" {
-		n, err := strconv.ParseInt(v, 10, 64)
-		if err != nil || n < 1 {
-			errs = append(errs, fmt.Errorf("BACKD_REALTIME_MEMORY must be a positive number of bytes, got %q", v))
+		n, err := envSize(v)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("BACKD_REALTIME_MEMORY: %w", err))
 		} else {
 			l.Memory = n
 		}
@@ -574,4 +575,14 @@ func ImageMaxPixels(getenv func(string) string) (int64, error) {
 		return 0, fmt.Errorf("BACKD_IMAGE_MAX_PIXELS must be a positive integer, got %q", v)
 	}
 	return n, nil
+}
+
+// envSize reads a size from an environment variable: a whole number of bytes ("1048576") or a
+// number with a unit ("1MiB", "1.5GB"), and at least 1 byte.
+func envSize(v string) (int64, error) {
+	n, err := strutil.ParseSize(v, strutil.SizeBoth, true)
+	if err == nil && n < 1 {
+		err = fmt.Errorf("invalid size %q: must be at least 1 byte", v)
+	}
+	return n, err
 }
