@@ -1,0 +1,31 @@
+name: Client Python
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  python-client:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    defaults:
+      run:
+        working-directory: clients/python
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install
+        run: pip install -e '.[dev]'
+      - name: The sync client is generated from the async one
+        run: python scripts/unasync.py --check
+      - name: Lint
+        run: ruff check . && ruff format --check .
+      - name: Types
+        run: mypy
+      - name: Test
+        run: pytest
