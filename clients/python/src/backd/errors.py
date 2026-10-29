@@ -285,7 +285,12 @@ class NetworkError(BackdError):
 
 
 class JobTimeoutError(BackdError):
-    """A job did not finish within the time given to ``Job.wait``."""
+    """``Job.wait`` gave up before the job finished. The job itself is unaffected and still running: call ``wait``
+    again, or poll with ``status``, whenever you like."""
+
+    def __init__(self, job_id: str) -> None:
+        super().__init__(f"job {job_id} did not finish within the given timeout", code="job_timeout")
+        self.job_id = job_id
 
 
 _BY_STATUS: dict[int, type[BackdError]] = {

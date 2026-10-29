@@ -19,6 +19,9 @@ __all__ = [
     "FileField",
     "FileLink",
     "Identity",
+    "JobData",
+    "JobResult",
+    "JobStep",
     "Me",
     "Meta",
     "MfaChallenge",
@@ -375,3 +378,67 @@ class PreparedUpload(TypedDict):
     expires_at: str
     #: What backd stored: ``name``, ``size``, ``type``, ``sha256``.
     file: dict[str, Any]
+
+
+# -- jobs ------------------------------------------------------------------------------------
+
+
+class _ResultRequired(TypedDict):
+    #: ``ok``, ``function_error``, ``timeout``, ``memory``, ``cpu``, ``crash``, ``output_too_large`` or ``bundle``.
+    status: str
+    duration_ms: int
+
+
+class JobResult(_ResultRequired, total=False):
+    """How an ``async`` job ended, once its ``status`` is ``done``: the same shape a ``sync`` call's own answer
+    would carry for the same outcome."""
+
+    #: The function's output, when ``status`` is ``ok``.
+    output: Any
+    #: The status a ``sync`` call would have answered with; absent only when ``status`` is ``ok``.
+    http_status: int
+    #: The function's own code (``function_error``) or one of backd's own; absent only when ``status`` is ``ok``.
+    code: str
+    message: str
+    details: list[Any]
+
+
+class JobStep(TypedDict):
+    """One step the function reported with ``ctx.step()``, and how far it got with ``ctx.progress()``."""
+
+    #: 1 for the first step of the attempt (it counts steps left out too).
+    n: int
+    name: str
+    status: Literal["running", "done", "failed", "timed_out", "cancelled"]
+    started_at: str
+    #: ``None`` while running.
+    ended_at: str | None
+    duration_ms: int | None
+    #: How far the step got.
+    current: int
+    #: How much there is to do, when the function said.
+    total: int | None
+    message: str | None
+    updated_at: str
+
+
+class _JobRequired(TypedDict):
+    id: str
+    #: ``<database>/<name>``.
+    function: str
+    status: Literal["queued", "running", "done"]
+    created_at: str
+    result: JobResult | None
+
+
+class JobData(_JobRequired, total=False):
+    """A job as the API returns it: ``POST .../_func/{name}``'s ``202`` body, or ``GET .../_jobs/{id}``."""
+
+    #: How many times a worker has started it.
+    attempts: int
+    #: When a failed attempt will be retried (the function's ``retry`` policy); ``None`` otherwise.
+    next_attempt_at: str | None
+    #: What the running (or last) attempt reported with ``ctx.step()``, the last being the current step; at most 100.
+    steps: list[JobStep]
+    #: How many were left out of the middle when there were more than 100.
+    steps_omitted: int

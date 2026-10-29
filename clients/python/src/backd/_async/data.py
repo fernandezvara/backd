@@ -1,4 +1,4 @@
-"""Databases and collections. Source of ``_sync/data.py``."""
+"""Databases and collections."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from ..models import AggregateResult, BatchOperation, FileDetails, FileField, Fi
 from ..query import Where, csv, if_match_value, where_json
 from ..upload import Progress, Upload, UploadSource
 from .files import AsyncFiles, file_field, file_url, prepare_upload, upload_file
+from .functions import AsyncJob, call_function
 
 if TYPE_CHECKING:
     from .client import AsyncClient
@@ -36,6 +37,24 @@ class AsyncDatabase:
         """A collection of this database. ``doc`` is the (generated) document type of the collection; it only
         tells the type checker what the reads return."""
         return AsyncCollection(self._client, self.name, name)
+
+    async def fn(
+        self,
+        name: str,
+        input: Any = None,
+        *,
+        idempotency_key: str | None = None,
+        respond_async: bool = False,
+    ) -> Any | AsyncJob:
+        """Calls a function of this database. Returns its output directly for a ``sync`` function; for ``async``, an
+        :class:`AsyncJob` handle to poll instead of the output (``job.status()``, or ``job.wait()`` for the output).
+        A function's own error (``ctx.error(status, code, message)``) arrives as a :class:`BackdError` with that
+        status and code (for ``async``, only once ``job.wait()`` returns). ``input`` is any JSON value; omitted it is
+        sent as ``null``. ``respond_async=True`` queues a ``sync`` function as a job too. ``webhook`` functions can't
+        be called through this method."""
+        return await call_function(
+            self._client, self.name, name, input, idempotency_key=idempotency_key, respond_async=respond_async
+        )
 
     async def batch(
         self,
@@ -75,6 +94,19 @@ class AsyncCollection(Generic[D]):
         self.path = [database, name]
         self._team = team
         self._org = org
+
+    async def fn(
+        self,
+        name: str,
+        input: Any = None,
+        *,
+        idempotency_key: str | None = None,
+        respond_async: bool = False,
+    ) -> Any | AsyncJob:
+        """Calls a function of this collection's database; the same as ``db.fn``."""
+        return await call_function(
+            self._client, self.path[0], name, input, idempotency_key=idempotency_key, respond_async=respond_async
+        )
 
     def in_team(self, team: str) -> AsyncCollection[D]:
         """The same collection scoped to a team of the session's organization: ``create`` puts documents in that

@@ -1,4 +1,4 @@
-"""The client. This file is the source of ``_sync/client.py`` (``scripts/unasync.py``): write it async."""
+"""The client."""
 
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ from ..upload import Progress, Upload
 from .auth import AsyncAuth
 from .config import AsyncConfig
 from .data import AsyncDatabase
+from .functions import AsyncFunctions
 
 __all__ = ["AsyncClient"]
 
@@ -127,6 +128,8 @@ class AsyncClient:
         # What was read as someone else (or no one) isn't theirs.
         self.on_credential_change(self.clear_cache)
         self.on_credential_change(self.config.clear)
+        #: Calls functions by their full name (``database/function``).
+        self.functions = AsyncFunctions(self)
         #: Sign-up, login and sessions.
         self.auth = AsyncAuth(self)
         self._expired = self.auth._expired

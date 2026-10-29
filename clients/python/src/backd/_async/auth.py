@@ -1,4 +1,4 @@
-"""Sign-up, login and session management: ``client.auth``. Source of ``_sync/auth.py``."""
+"""Sign-up, login and session management: ``client.auth``."""
 
 from __future__ import annotations
 

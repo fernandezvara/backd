@@ -40,7 +40,6 @@ SUBSTITUTIONS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\b_aio\b"), "_sio"),
     (re.compile(r"\b_async\b"), "_sync"),
     (re.compile(r"\bAsync(?=[A-Z])"), ""),
-    (re.compile(r"\basync\b"), "sync"),
 ]
 
 

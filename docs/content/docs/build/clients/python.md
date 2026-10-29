@@ -200,6 +200,26 @@ thumb = posts.file_url("p1", "cover", doc["cover"]["id"], version="thumb", file=
 - **Public files** — pass the file's details as `file=` to `file_url` and the permanent address comes back with no request; `public_url(file, version)` and `version_status(file, "thumb")` do the same from the details a document came with, to show a placeholder while a version is `pending`.
 - **Versions** — `files(id, field).version("thumb").regenerate()`, `.generate(max_width=…)` or `.delete()` wait for a worker and return the version's state.
 
+## Functions and jobs
+
+Call a function of a database with `db.fn(name, input)` (or `collection.fn`, `client.functions.call("database/name", input)`). A `sync` function returns its output; an `async` one returns a `Job` to follow.
+
+```python
+refund = client.db("main").fn("refund", {"order": "o1"}, idempotency_key="refund-o1")
+
+job = client.db("main").fn("report", {"month": "2026-09"})       # an async function: a Job
+print(job.status())                                                # "queued", "running" or "done"
+rows = job.wait(timeout=120, on_progress=lambda steps, job: print(steps[-1]["name"]))
+
+rows = client.functions.run("main/report", {"month": "2026-09"})  # call, and wait when it is a job
+```
+
+- **Errors** — a function's own error (`ctx.error(409, "already_refunded", …)`) arrives as the `BackdError` its status stands for, with its `code` and `message`. For a job it arrives from `wait()`, the same as a `sync` call would have raised.
+- **`wait`** polls every `poll_interval` seconds (0.5) and returns the output. With `timeout` it raises `JobTimeoutError` when the job has not finished; the job itself goes on, so wait again whenever you like. `job.steps` is what the function reported with `ctx.step()`, as of the last poll.
+- **`respond_async=True`** queues a `sync` function as a job too, for calls that take long or that nobody waits for.
+- **`idempotency_key`** makes a repeated request return the first one's answer, and lets the client repeat the call after a `429` or `503` when `retry` is on.
+- **No input** is sent as JSON `null`. `webhook` functions can't be called here: their caller is whatever service sends the webhook.
+
 ## Errors
 
 Every failure is a `BackdError` with `status`, `code`, `message`, `details`, `request_id` and `path`. The subclasses follow the server's error `code`s with the names `backd-js` uses, and a class matches its parents: `except ConflictError` also catches `IdTakenError`, and `except ValidationError` catches `InvalidIdError`.

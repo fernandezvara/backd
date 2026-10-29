@@ -1,4 +1,4 @@
-"""The realm's app configuration: ``client.config``. Source of ``_sync/config.py``."""
+"""The realm's app configuration: ``client.config``."""
 
 from __future__ import annotations
 

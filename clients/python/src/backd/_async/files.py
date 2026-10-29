@@ -1,4 +1,4 @@
-"""The files of a document's file field. Source of ``_sync/files.py``."""
+"""The files of a document's file field."""
 
 from __future__ import annotations
 
