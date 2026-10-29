@@ -22,10 +22,14 @@ from ..errors import BackdError, NetworkError, RetryableError, error_from_respon
 from ..oauth import MemoryOAuthStorage, OAuthStorage
 from ..storage import MemoryStorage, SlotStorage, TokenStorage
 from ..upload import Progress, Upload
+from .account import Account
 from .auth import Auth
 from .config import Config
+from .consents import Consents
 from .data import Database
 from .functions import Functions
+from .orgs import Orgs
+from .push import Push
 
 __all__ = ["Client"]
 
@@ -133,6 +137,14 @@ class Client:
         self.functions = Functions(self)
         #: Sign-up, login and sessions.
         self.auth = Auth(self)
+        #: Push notifications: register this device so that functions can reach the signed-in user.
+        self.push = Push(self)
+        #: The consents the realm asks for: their texts, and what the signed-in user holds.
+        self.consents = Consents(self)
+        #: The signed-in user's own data: ask for a copy of everything the realm holds about them, and download it.
+        self.account = Account(self)
+        #: Organizations of the signed-in user: members, teams and invitations.
+        self.orgs = Orgs(self)
         self._expired = self.auth._expired
         #: How each file field takes files, asked once (``database/collection/field`` to its answer).
         self._file_fields: dict[str, dict[str, Any]] = {}
@@ -160,6 +172,16 @@ class Client:
         except httpx.HTTPError as e:
             raise _network("network_error", f"network error: {e}") from e
         return res
+
+    def open_external(self, method: str, url: str) -> httpx.Response:
+        """Opens an address that is not backd's (a signed link) without any of backd's credentials. The answer's body
+        is not read: the caller reads it and closes it."""
+        try:
+            return self._http.send(self._http.build_request(method, url), stream=True)
+        except httpx.TimeoutException as e:
+            raise _network("timeout", "request timed out") from e
+        except httpx.HTTPError as e:
+            raise _network("network_error", f"network error: {e}") from e
 
     def db(self, name: str) -> Database:
         """A database of the realm, to reach its collections: ``client.db("main").collection("posts")``."""

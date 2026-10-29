@@ -12,7 +12,13 @@ __all__ = [
     "AggregateResult",
     "BatchOperation",
     "ConsentChallenge",
+    "ConsentInfo",
     "ConsentRef",
+    "ConsentState",
+    "ConsentText",
+    "DataExport",
+    "Device",
+    "DeviceInput",
     "Doc",
     "EnrollmentChallenge",
     "FileDetails",
@@ -25,11 +31,21 @@ __all__ = [
     "Me",
     "Meta",
     "MfaChallenge",
+    "Org",
+    "OrgConnection",
+    "OrgInvitation",
+    "OrgMember",
+    "OrgTeam",
+    "OrgTeamMember",
+    "OrgTeamRoleGrant",
+    "OrgTemplate",
+    "OrgTemplateText",
     "Page",
     "PreparedUpload",
     "Profile",
     "ProviderSession",
     "ReauthMethod",
+    "RoleOrigin",
     "Session",
     "SessionInfo",
     "SignInResult",
@@ -442,3 +458,259 @@ class JobData(_JobRequired, total=False):
     steps: list[JobStep]
     #: How many were left out of the middle when there were more than 100.
     steps_omitted: int
+
+
+# -- organizations, consents, push, account --------------------------------------------------
+
+
+class RoleOrigin(TypedDict):
+    """Where an effective role came from: ``direct``, ``default`` or a team's name."""
+
+    role: str
+    origin: list[str]
+
+
+class _OrgRequired(TypedDict):
+    id: str
+    name: str
+    slug: str | None
+    status: Literal["active", "orphaned", "deleted"]
+    created_at: str
+
+
+class Org(_OrgRequired, total=False):
+    """An organization, as the signed-in user sees it."""
+
+    #: The organization requires a second factor of its members.
+    require_mfa: bool
+    #: The organization's people can only sign in through its connection.
+    sso_required: bool
+    #: Only in the answer that turned ``sso_required`` on: members with no identity on a connection.
+    members_without_sso: int
+    #: Only in that answer: the sessions that did not come through a connection, which ended.
+    sessions_revoked: int
+    #: False when it requires a second factor and this session used none.
+    mfa_met: bool
+    #: Written by administrators and functions; read-only here.
+    claims: dict[str, Any]
+    #: The user's effective role names there.
+    roles: list[str]
+    effective_roles: list[RoleOrigin]
+    #: The user's teams (ids).
+    teams: list[str]
+    #: The team roles that count now, by team id.
+    team_roles: dict[str, list[str]]
+
+
+class _GrantRequired(TypedDict):
+    team: str
+    role: str
+    granted_at: str
+    #: Whether it counts now.
+    active: bool
+
+
+# ``from`` is a keyword: the functional syntax keeps the wire name.
+_GrantOptional = TypedDict(
+    "_GrantOptional",
+    {
+        # The grant counts from then (always, when absent) and until then (for ever, when absent).
+        "from": str,
+        "until": str,
+        # A user id; absent for administrators and functions.
+        "granted_by": str,
+    },
+    total=False,
+)
+
+
+class OrgTeamRoleGrant(_GrantRequired, _GrantOptional):
+    """A team role held by a member: a role within one team, which doesn't need membership of it."""
+
+
+class _MemberRequired(TypedDict):
+    user: str
+    #: Direct roles.
+    roles: list[str]
+    teams: list[str]
+    joined_at: str
+
+
+class OrgMember(_MemberRequired, total=False):
+    """A member of an organization."""
+
+    #: Per the realm's ``members_visible_to``.
+    email: str
+    team_roles: list[OrgTeamRoleGrant]
+    effective_roles: list[RoleOrigin]
+    #: Roles held directly and also through a team or by default.
+    overlap: list[str]
+    #: Whether they have a second factor; only for managers.
+    mfa: bool
+    mfa_roles: list[str]
+    invited_by: str
+
+
+class OrgTeamMember(OrgMember, total=False):
+    """A member or role holder of one team."""
+
+    in_team: bool
+    roles_in_team: list[str]
+
+
+class OrgTeam(TypedDict):
+    id: str
+    name: str
+    roles: list[str]
+    created_at: str
+
+
+class OrgTemplateText(TypedDict):
+    """The three parts of an email an organization wrote itself, in the logic-less syntax."""
+
+    subject: str
+    text: str
+    html: str
+
+
+class OrgTemplate(TypedDict, total=False):
+    """An organization's version of a kind of email in a language."""
+
+    kind: str
+    locale: str
+    version: int
+    updated_at: str
+    updated_by: str
+    #: Only when one template is read.
+    subject: str
+    text: str
+    html: str
+    #: Previous ones, newest first (at most 20).
+    versions: list[dict[str, Any]]
+    #: Only in the answer to a save: what the HTML sanitizer drops from the sample.
+    removed: list[str]
+
+
+class OrgInvitation(TypedDict, total=False):
+    id: str
+    #: Who may accept: ``user``, ``email`` (whoever holds a verified address) or ``none`` (anyone with the link).
+    binding: Literal["user", "email", "none"]
+    status: Literal["pending", "used", "revoked", "expired"]
+    user: str
+    email: str
+    roles: list[str]
+    teams: list[str]
+    max_uses: int
+    uses: int
+    expires_at: str
+    #: Only in the answer to a create or a new link: shown once.
+    token: str
+    link: str | None
+
+
+class OrgConnection(TypedDict, total=False):
+    """An organization's sign-in connection: its own Google Workspace or Microsoft Entra tenant as a provider for
+    its people. The client secret is write-only: only whether it is set comes back."""
+
+    provider: Literal["google", "microsoft"]
+    client_id: str
+    #: Microsoft: the organization's tenant id.
+    tenant: str
+    #: Google: the Workspace domain.
+    hosted_domain: str
+    email_domains: list[str]
+    native_client_ids: list[str]
+    join_roles: list[str]
+    enabled: bool
+    client_secret_set: bool
+    #: The address to register with the provider (when backd knows its public address).
+    redirect_uri: str
+    redirect_path: str
+    created_at: str
+    updated_at: str
+
+
+class ConsentInfo(TypedDict):
+    """A consent the realm asks for, with the version in force."""
+
+    name: str
+    #: Needed for an account; optional ones are given and withdrawn at will.
+    required: bool
+    #: ``version``; ``reaccept`` (people who accepted an older one are asked again); ``reaccept_by`` (a date).
+    current: dict[str, Any]
+    #: The languages its text exists in.
+    locales: list[str]
+
+
+class ConsentText(TypedDict):
+    """The exact text of a version."""
+
+    name: str
+    version: str
+    #: The language of the text: the best the realm has for the one asked for.
+    locale: str
+    #: Markdown.
+    text: str
+    #: SHA-256 of the text: what a consent record keeps as proof.
+    hash: str
+    #: The version in force.
+    current: bool
+
+
+class _StateRequired(TypedDict):
+    #: Consent name to the version the user holds.
+    consents: dict[str, str]
+    #: Required consents to accept (again).
+    to_accept: list[ConsentRef]
+
+
+class ConsentState(_StateRequired, total=False):
+    """What the signed-in user holds and has still to accept."""
+
+    #: With ``consents.state()``, oldest first.
+    history: list[dict[str, Any]]
+
+
+class _DeviceRequired(TypedDict):
+    id: str
+    platform: Literal["android", "ios", "web"]
+    name: str | None
+    created_at: str
+    last_seen: str
+
+
+class Device(_DeviceRequired):
+    """A device registered for push notifications. Never carries the token."""
+
+
+class _DeviceInputRequired(TypedDict):
+    platform: Literal["android", "ios", "web"]
+    #: The FCM registration token, the APNs device token or, for ``web``, the subscription as JSON.
+    token: str
+
+
+class DeviceInput(_DeviceInputRequired, total=False):
+    """What an app hands over to register a device. ``name`` is a label to show the user, such as "Ana's Pixel"."""
+
+    name: str
+
+
+class _ExportRequired(TypedDict):
+    id: str
+    #: ``ready`` can be downloaded until ``expires_at``; ``failed`` may be asked for again at once.
+    status: Literal["queued", "running", "ready", "failed", "expired"]
+    created_at: str
+
+
+class DataExport(_ExportRequired, total=False):
+    """An export of the signed-in user's personal data."""
+
+    finished_at: str
+    #: When the package is deleted (ready only).
+    expires_at: str
+    #: Bytes of the zip (ready only).
+    size: int
+    #: What it holds (ready only): records per part, and ``files``.
+    counts: dict[str, int]
+    #: What it is doing now (queued or running, as ``account.export(id)`` shows it).
+    step: str

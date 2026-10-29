@@ -220,6 +220,35 @@ rows = client.functions.run("main/report", {"month": "2026-09"})  # call, and wa
 - **`idempotency_key`** makes a repeated request return the first one's answer, and lets the client repeat the call after a `429` or `503` when `retry` is on.
 - **No input** is sent as JSON `null`. `webhook` functions can't be called here: their caller is whatever service sends the webhook.
 
+## Organizations, consents, push and your own data
+
+The rest of the account-level surface, with the structure of `backd-js`.
+
+- **`client.orgs`** — `create(name, slug=…)` (the new organization comes with a session of its own, kept under `client.org(slug)`), `get`, `update` (a name or slug; `require_mfa`, `sso_required` and `session_max_age` ask for a fresh proof, see `with_proof`), `leave`, `delete`, and `signed_in()` for an organization switcher. Members, teams, templates, invitations and connections hang off one organization:
+
+  ```python
+  orgs = client.orgs
+  orgs.members("o1").list(limit=50)                       # a page: items, has_more, next
+  orgs.members("o1").update("u1", ["editor"])
+  orgs.teams("o1").create("Ops", roles=["responder"])
+  orgs.teams("o1").grant_role("t1", "u1", "lead", until="2026-12-31T00:00:00Z")
+  orgs.invitations("o1").create("email", email="ada@example.com", roles=["editor"], send=True)
+  orgs.templates("o1").put("invite", "es", {"subject": "…", "text": "…", "html": "…"})
+  orgs.sso("o1").set("google", client_id="…", client_secret="…", hosted_domain="acme.example")
+  ```
+
+  A team of the session's organization is reached from a collection with `collection.in_team("t1")`.
+- **`client.consents`** — `current()` and `text(name, version, locale)` need no session (a person reads the text before having an account); `state()`, `accept({"terms": "2026-10"})` and `withdraw(name)` are the signed-in user's. A required consent can't be withdrawn (`ConflictError`, code `consent_required_for_account`).
+- **`client.push`** — `register("android", token, name="Pixel")` registers this device for the signed-in user's pushes (it needs a user session, not an API key); `devices()`, `unregister()`, and `register_on_launch(get_token)`, which keeps the device registered now and after every sign-in, in the background. Browser web push is not part of this client.
+- **`client.account`** — a copy of everything the realm holds about the signed-in user. Needs a fresh proof and a realm with `compliance.export: true`:
+
+  ```python
+  client.auth.reauth({"method": "password", "password": password})
+  export = client.account.request_export()
+  ready = client.account.wait_for_export(export["id"])        # polls every 2 s, up to 30 minutes
+  client.account.download_export(ready["id"]).save("export.zip")
+  ```
+
 ## Errors
 
 Every failure is a `BackdError` with `status`, `code`, `message`, `details`, `request_id` and `path`. The subclasses follow the server's error `code`s with the names `backd-js` uses, and a class matches its parents: `except ConflictError` also catches `IdTakenError`, and `except ValidationError` catches `InvalidIdError`.
