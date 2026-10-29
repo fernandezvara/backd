@@ -108,6 +108,40 @@ client = Client(url=url, realm="shelf", storage=FileStorage(Path.home() / ".conf
 
 `FileStorage(path)` writes the token to a file readable by its owner only, so a script or a tool stays signed in. Any object with `get`, `set` and `remove` works as a storage.
 
+## Collections
+
+`client.db("main").collection("posts")` reads and writes documents. Documents are plain `dict`s: the collection's fields plus `id` and `_meta` (the generated [types](../types/) describe them as `TypedDict`s when you want them).
+
+```python
+posts = client.db("main").collection("posts")
+
+page = posts.list(
+    where={"published_at": backd.not_null(), "tags": backd.in_("news", "go")},
+    order_by="-published_at",
+    limit=20,
+    count=True,
+)
+for doc in page:                       # page.items, page.has_more, page.next_cursor, page.total
+    print(doc["id"], doc["title"])
+
+for doc in posts.iterate(where={"status": "published"}):   # every match, following cursors
+    ...
+
+doc = posts.create({"title": "Hello"}, idempotency_key="import-42")
+doc = posts.patch(doc["id"], {"title": "Hello again", "draft": None}, if_match=doc["_meta"]["version"])
+posts.delete(doc["id"])               # soft delete in a collection with soft_delete; purge=True removes it for good
+posts.restore(doc["id"])
+```
+
+`where` takes a dict in the [query language](../../api/querying/) (or its JSON text). The helpers build the operators: `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `in_`, `nin`, `between`, `is_null`, `not_null`, `like`, `ilike`, `starts_with`, `ends_with`, `contains` (and the case-insensitive `i…` forms), `search`, and `or_` / `and_` for lists of filters. `expand(("author", ["name"]), "tags")` builds the `expand` option that returns referenced documents in `_expanded`.
+
+- **Writes** — `create`, `replace`, `patch` (JSON Merge Patch: `None` removes a field), `delete`, `restore`. `if_match=3` (or `"*"`) makes the write fail with `VersionMismatchError` unless the document is still at that version, and a write with `if_match` or `idempotency_key` is safe to retry. A collection with `custom_id` takes the new document's `id` in the document; a taken one raises `IdTakenError`.
+- **`iterate`** follows `next_cursor`, so documents created or deleted meanwhile never shift a page; a list ordered by something a cursor can't follow (arrays, objects, mixed types) is fetched by offset instead. `limit` is the page size (100 by default). The async client's `iterate` is an async generator: `async for doc in posts.iterate(): ...`.
+- **`search("red \"running shoes\" -kids")`** is a list with the text as its `$search`, best match first (`_meta.score`).
+- **`aggregate(group_by=["category", "paid_at:month"], metrics=["count", "sum:total"], tz="Europe/Madrid")`** returns `{"groups": [...], "total_groups": n}`; `fill_buckets(groups, field="paid_at", unit="month", from_="2026-01", to="2026-12")` adds the empty buckets a chart needs.
+- **`client.db("main").batch([...])`** applies up to 100 writes across the database's collections in one transaction: all or none.
+- **Teams and organizations** — `posts.in_team("t1")` scopes `list`, `iterate`, `aggregate` and `create` to a team of the session's organization; `in_org("o1")` names the organization of a create made with an admin key.
+
 ## Errors
 
 Every failure is a `BackdError` with `status`, `code`, `message`, `details`, `request_id` and `path`. The subclasses follow the server's error `code`s with the names `backd-js` uses, and a class matches its parents: `except ConflictError` also catches `IdTakenError`, and `except ValidationError` catches `InvalidIdError`.

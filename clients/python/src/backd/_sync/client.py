@@ -19,6 +19,7 @@ from ..errors import BackdError, NetworkError, RetryableError, error_from_respon
 from ..oauth import MemoryOAuthStorage, OAuthStorage
 from ..storage import MemoryStorage, SlotStorage, TokenStorage
 from .auth import Auth
+from .data import Database
 
 __all__ = ["Client"]
 
@@ -109,6 +110,10 @@ class Client:
         #: Sign-up, login and sessions.
         self.auth = Auth(self)
         self._expired = self.auth._expired
+
+    def db(self, name: str) -> Database:
+        """A database of the realm, to reach its collections: ``client.db("main").collection("posts")``."""
+        return Database(self, name)
 
     @property
     def has_api_key(self) -> bool:

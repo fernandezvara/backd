@@ -18,6 +18,7 @@ from ..errors import BackdError, NetworkError, RetryableError, error_from_respon
 from ..oauth import MemoryOAuthStorage, OAuthStorage
 from ..storage import MemoryStorage, SlotStorage, TokenStorage
 from .auth import AsyncAuth
+from .data import AsyncDatabase
 
 __all__ = ["AsyncClient"]
 
@@ -108,6 +109,10 @@ class AsyncClient:
         #: Sign-up, login and sessions.
         self.auth = AsyncAuth(self)
         self._expired = self.auth._expired
+
+    def db(self, name: str) -> AsyncDatabase:
+        """A database of the realm, to reach its collections: ``client.db("main").collection("posts")``."""
+        return AsyncDatabase(self, name)
 
     @property
     def has_api_key(self) -> bool:
