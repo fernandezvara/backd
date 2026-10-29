@@ -92,7 +92,7 @@ func (s *filesServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(r.URL.Path, "/bucket/") && r.Method == "PUT":
 		s.bucket(w, r, b)
 	default:
-		http.Error(w, `{"error":{"code":"not_found","message":"no route `+r.Method+" "+p+`"}}`, 404)
+		http.Error(w, `{"error":{"code":"not_found","message":"no route `+r.Method+" "+p+`"}}`, http.StatusNotFound)
 	}
 }
 
