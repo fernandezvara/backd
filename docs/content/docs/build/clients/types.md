@@ -6,7 +6,7 @@ weight: 640
 toc: true
 ---
 
-A realm's config already describes its API: collections and their schemas, functions and their inputs, app configuration, templates and roles. `backd types` turns it into one TypeScript file — or one Dart file, with `--lang dart` — so editors and compilers know what the API holds. Nothing is checked at runtime from the generated types; the server validates every request regardless.
+A realm's config already describes its API: collections and their schemas, functions and their inputs, app configuration, templates and roles. `backd types` turns it into one TypeScript file — or one Dart file with `--lang dart`, or one Go file with `--lang go` — so editors and compilers know what the API holds. Nothing is checked at runtime from the generated types; the server validates every request regardless.
 
 ```sh
 CONFIG_DIR=./config backd types --realm shop --out src/backd
@@ -14,11 +14,14 @@ CONFIG_DIR=./config backd types --realm shop --out src/backd
 
 CONFIG_DIR=./config backd types --realm shop --lang dart --out lib/backd
 # wrote lib/backd/types.dart and lib/backd/realm.json (types 3f9a0c61d2b7e485)
+
+CONFIG_DIR=./config backd types --realm shop --lang go --package shopapi --out shopapi
+# wrote shopapi/types.go and shopapi/realm.json (types 3f9a0c61d2b7e485)
 ```
 
-The fingerprint is the same for both languages: they describe the same realm.
+The fingerprint is the same for every language: they describe the same realm.
 
-`--from https://api.example.com` reads the config of a running instance instead of `CONFIG_DIR` (an administrator of the realm, with the `config` area: [the admin API](../../../operate/administration/admin/)). `--lang` travels with it (`?lang=dart` asks the server's [types endpoint](../../api/) for Dart). `--db main` limits the output to one database.
+`--from https://api.example.com` reads the config of a running instance instead of `CONFIG_DIR` (an administrator of the realm, with the `config` area: [the admin API](../../../operate/administration/admin/)). `--lang` (and `--package`, for Go) travels with it (`?lang=dart` asks the server's [types endpoint](../../api/) for Dart). `--db main` limits the output to one database.
 
 ## What it writes
 
@@ -26,6 +29,7 @@ The fingerprint is the same for both languages: they describe the same realm.
 |---|---|
 | `types.d.ts` (`--lang ts`, the default) | The TypeScript types, with a header naming the generator version, the realm and the fingerprint of the types |
 | `types.dart` (`--lang dart`) | The same types for Dart: classes with `fromJson`/`toJson`, plus a `ShopRealm` accessor and an extension on `BackdClient<ShopRealm>` for the [Dart client](../dart/) |
+| `types.go` (`--lang go`) | The same types for Go: structs with JSON tags, string types with constants for enums, constants for the fields of `where` and `order_by`, plus a `ShopRealm` over the Go client (`pkg/client`) with typed collections and function calls. `--package` names the package (`backdtypes` by default) |
 | `realm.json` | The fingerprint, the generator version, the config fingerprint and one entry per field, function, setting, template and role: what `--diff` compares |
 
 Everything hangs off one `Realm` interface, addressed by path, so no naming rules are needed:
@@ -54,20 +58,20 @@ Friendly aliases are generated too, for every collection: `MainOrders` (the docu
 
 ## From JSON Schema to TypeScript
 
-| JSON Schema | TypeScript | Dart |
-|---|---|---|
-| `object` with `properties` and `required` | an object type with required and optional members | a class with required and nullable fields, `fromJson`/`toJson` |
-| `additionalProperties: false` | a closed object type; otherwise it also accepts other `unknown` keys | a closed class |
-| `additionalProperties: {…}` and no `properties` | `Record<string, T>` | `Map<String, T>` |
-| `array` with `items`, or `prefixItems` | `T[]`, or a tuple | `List<T>` |
-| `enum`, `const` | literal unions | an `enum`, or a `String` constant |
-| `type: ["string", "null"]` | `string \| null` | `String?` |
-| `integer`, `number` | `number` | `int`, `num` |
-| `oneOf`, `anyOf`, `allOf` | a union, or an intersection | a sealed class hierarchy |
-| `$ref` to `#/$defs/…` | a named type, `MainOrders_Address` | a named class, `MainOrdersAddress` |
-| `format: date-time` | `DateTimeString`, a branded `string` | `DateTimeString`, a Dart 3 extension type on `String` |
+| JSON Schema | TypeScript | Dart | Go |
+|---|---|---|---|
+| `object` with `properties` and `required` | an object type with required and optional members | a class with required and nullable fields, `fromJson`/`toJson` | a struct with JSON tags: required fields by value, optional ones as pointers (`omitempty`) |
+| `additionalProperties: false` | a closed object type; otherwise it also accepts other `unknown` keys | a closed class | a struct; unknown keys are dropped when decoding |
+| `additionalProperties: {…}` and no `properties` | `Record<string, T>` | `Map<String, T>` | `map[string]T` |
+| `array` with `items`, or `prefixItems` | `T[]`, or a tuple | `List<T>` | `[]T` (a tuple is `[]any`) |
+| `enum`, `const` | literal unions | an `enum`, or a `String` constant | a string type with a constant per value |
+| `type: ["string", "null"]` | `string \| null` | `String?` | `*string` |
+| `integer`, `number` | `number` | `int`, `num` | `int64`, `float64` |
+| `oneOf`, `anyOf`, `allOf` | a union, or an intersection | a sealed class hierarchy | `json.RawMessage`, with a warning |
+| `$ref` to `#/$defs/…` | a named type, `MainOrders_Address` | a named class, `MainOrdersAddress` | a named struct, `MainOrdersAddress` |
+| `format: date-time` | `DateTimeString`, a branded `string` | `DateTimeString`, a Dart 3 extension type on `String` | `time.Time` |
 
-Keywords that only validate (`minimum`, `pattern`, `maxLength`, other `format` values) don't change the type. A schema that uses `not`, `if`/`then`/`else`, `patternProperties`, `propertyNames`, `dependentSchemas`, `unevaluatedProperties`, `unevaluatedItems` or `contains`, or a `$ref` that isn't local, is typed `unknown`, and the generator prints a warning with the file and the place.
+Keywords that only validate (`minimum`, `pattern`, `maxLength`, other `format` values) don't change the type. A schema that uses `not`, `if`/`then`/`else`, `patternProperties`, `propertyNames`, `dependentSchemas`, `unevaluatedProperties`, `unevaluatedItems` or `contains`, or a `$ref` that isn't local, is typed `unknown` (`any` in Go, `Object?` in Dart), and the generator prints a warning with the file and the place.
 
 ## Organization roles
 
@@ -117,6 +121,26 @@ await client.typed.main.publish(FnMainPublishInput(assetId: id));
 
 Every collection gets a `TypedCollection<D, I, C>` wrapper — reads decode into the document class, `create`/`replace` encode its `Input` type, `.raw` reaches the plain collection — and every function a typed call. [The Dart client guide](../dart/#typed-client) has the whole picture.
 
+## In Go
+
+For the Go client (`pkg/client`): `--lang go` writes `types.go`, whose `ShopRealm` (named for the realm) binds the types to a `*client.Client`. A document is a struct that embeds `client.Base` (`ID`, `Meta`); `Typed` collections read into it and write the `Input` struct:
+
+```go
+import "example.com/app/shopapi"   // generated
+
+shop := shopapi.NewShopRealm(c)
+orders := shop.Main().Orders()     // *client.Typed[shopapi.MainOrders]
+
+page, err := orders.List(ctx, client.Query{
+    Where:   client.Where{shopapi.MainOrdersFieldStatus: "paid"},
+    OrderBy: []string{shopapi.MainOrdersFieldMetaCreatedAtDesc},
+})
+order, err := orders.Create(ctx, shopapi.MainOrdersInput{Status: shopapi.MainOrdersStatusNew, Items: items})
+out, err := shop.Main().Place(ctx, shopapi.FnMainPlaceInput{Items: items})   // a typed function call
+```
+
+An optional field is a pointer with `omitempty`, so a zero value can be told from an absent one; an optional list or map left empty is not sent. A schema Go can't express (`oneOf`, a union of JSON types) is typed `json.RawMessage` or `any`, with a warning. The file is marked `Code generated … DO NOT EDIT.`, so linters skip it.
+
 ## Keeping the types current (drift)
 
 Types are only useful while they match the config. backd gives three ways to notice when they don't, from the strictest to the softest:
@@ -157,4 +181,4 @@ When it fails, run the commands without `--check` and commit the result; the fai
 `realm.json`'s fingerprint covers the whole realm. The app's stale-types warning compares it with the types of the **whole** realm, so generate the app's types without `--db`; with it, the warning never goes away.
 {{< /hint >}}
 
-The [JavaScript client](../js/#typed-client) takes the `Realm` interface as `createClient<Realm>()`; the [Dart client](../dart/#typed-client) takes `ShelfRealm` as `BackdClient<ShelfRealm>()` and `client.typed`. For functions, `--functions` writes each functions project's `backd.d.ts` instead, with `defineFunction` ([Typed functions](../../functions/writing/#typed-functions)). The same types are available from a running instance at `GET /v1/{realm}/_admin/types` (`?lang=dart` for Dart; [API reference](../../api/)), and the realm's [OpenAPI document](../../api/openapi/) is the way to type clients in other languages.
+The [JavaScript client](../js/#typed-client) takes the `Realm` interface as `createClient<Realm>()`; the [Dart client](../dart/#typed-client) takes `ShelfRealm` as `BackdClient<ShelfRealm>()` and `client.typed`. For functions, `--functions` writes each functions project's `backd.d.ts` instead, with `defineFunction` ([Typed functions](../../functions/writing/#typed-functions)). The same types are available from a running instance at `GET /v1/{realm}/_admin/types` (`?lang=dart` for Dart, `?lang=go&package=name` for Go; [API reference](../../api/)), and the realm's [OpenAPI document](../../api/openapi/) is the way to type clients in other languages.

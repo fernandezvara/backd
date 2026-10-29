@@ -65,6 +65,41 @@ func TestTypesWritesChecksAndDiffs(t *testing.T) {
 	}
 }
 
+func TestTypesGo(t *testing.T) {
+	dir := typesConfig(t)
+	out := filepath.Join(t.TempDir(), "gen")
+	c := &cliEnv{t: t, env: map[string]string{"CONFIG_DIR": dir}}
+
+	code, stdout, stderr := c.run("", "types", "--realm", "app", "--lang", "go", "--package", "notesapi", "--out", out)
+	if code != 0 || !strings.Contains(stdout, "types.go") {
+		t.Fatalf("types --lang go: %d %s %s", code, stdout, stderr)
+	}
+	types, err := os.ReadFile(filepath.Join(out, "types.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"\npackage notesapi\n", "type MainNotes struct {", "func NewAppRealm(c *client.Client) *AppRealm"} {
+		if !strings.Contains(string(types), want) {
+			t.Errorf("types.go lacks %q:\n%s", want, types)
+		}
+	}
+	if code, stdout, _ := c.run("", "types", "--realm", "app", "--lang", "go", "--package", "notesapi", "--out", out, "--check"); code != 0 || !strings.Contains(stdout, "up to date") {
+		t.Errorf("--check on fresh files: %d %s", code, stdout)
+	}
+	if code, _, stderr := c.run("", "types", "--realm", "app", "--lang", "go", "--out", out, "--check"); code == 0 || !strings.Contains(stderr, "stale") {
+		t.Errorf("--check with another package name: %d %s", code, stderr)
+	}
+	if code, _, stderr := c.run("", "types", "--realm", "app", "--lang", "go", "--package", "not-a-name", "--out", out); code == 0 || !strings.Contains(stderr, "not a Go package name") {
+		t.Errorf("a bad package: %d %s", code, stderr)
+	}
+	if code, _, stderr := c.run("", "types", "--realm", "app", "--package", "x", "--out", out); code == 0 || !strings.Contains(stderr, "--package is for --lang go") {
+		t.Errorf("--package without --lang go: %d %s", code, stderr)
+	}
+	if code, _, stderr := c.run("", "types", "--realm", "app", "--lang", "rust", "--out", out); code == 0 || !strings.Contains(stderr, "ts, dart or go") {
+		t.Errorf("an unknown language: %d %s", code, stderr)
+	}
+}
+
 func TestTypesFunctions(t *testing.T) {
 	fnDir := "app/main/_functions/"
 	dir := writeConfig(t, map[string]string{
