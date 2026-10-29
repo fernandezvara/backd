@@ -1,0 +1,153 @@
+"""The signed-in user's own account data: ``client.account``."""
+
+from __future__ import annotations
+
+import os
+import time
+from collections.abc import AsyncIterator, Callable
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, BinaryIO, cast
+
+import httpx
+
+from .._aio import sleep
+from ..errors import BackdError
+from ..models import DataExport
+
+if TYPE_CHECKING:
+    from .client import AsyncClient
+
+__all__ = ["AsyncAccount", "AsyncExportDownload"]
+
+
+class AsyncExportDownload:
+    """A ready export, to save. ``url`` is a link signed for a few minutes, when the realm delivers by link
+    (``expires_at`` says when it stops working); a realm whose storage clients cannot reach sends the zip through the
+    API and ``url`` is ``None``. Either way :meth:`read` and :meth:`save` give the zip."""
+
+    def __init__(
+        self,
+        client: AsyncClient,
+        response: httpx.Response | None,
+        url: str | None = None,
+        expires_at: str | None = None,
+    ) -> None:
+        self._client = client
+        self._response = response
+        self.url = url
+        self.expires_at = expires_at
+
+    async def _stream(self) -> AsyncIterator[bytes]:
+        if self._response is None:
+            assert self.url is not None
+            response = await self._client.open_external("GET", self.url)
+            if not response.is_success:
+                await response.aclose()
+                raise BackdError(
+                    f"the export link answered {response.status_code}",
+                    status=response.status_code,
+                    code="download_failed",
+                )
+        else:
+            response = self._response
+        try:
+            async for chunk in response.aiter_bytes():
+                yield chunk
+        finally:
+            await response.aclose()
+
+    async def read(self) -> bytes:
+        """The zip's bytes."""
+        return b"".join([chunk async for chunk in self._stream()])
+
+    async def save(self, to: str | os.PathLike[str] | BinaryIO) -> int:
+        """Writes the zip to a path or an open binary file as it arrives; returns the bytes written."""
+        n = 0
+        if hasattr(to, "write"):
+            async for chunk in self._stream():
+                cast(BinaryIO, to).write(chunk)
+                n += len(chunk)
+            return n
+        with Path(to).open("wb") as f:
+            async for chunk in self._stream():
+                f.write(chunk)
+                n += len(chunk)
+        return n
+
+
+class AsyncAccount:
+    """The signed-in user's own account data: ``client.account``. A person can download a copy of everything the
+    realm holds about them (documents, files and account data, with a ``README.html``): ask for it, follow it, and
+    save it when it is ready.
+
+        client.auth.reauth({"method": "password", "password": password})   # a fresh proof, as for any sensitive action
+        job = client.account.request_export()                              # {"id": …, "status": "queued", …}
+        ready = client.account.wait_for_export(job["id"])                  # polls until it is ready
+        client.account.download_export(ready["id"]).save("export.zip")
+
+    The realm must set ``compliance.export: true`` (:class:`NotFoundError` otherwise). A user may ask once every 24
+    hours: a second request is a :class:`RetryableError` (``429``) whose ``retry_after`` says, in seconds, how long to
+    wait. When the package is ready the user is also emailed a link to the app's download page.
+    """
+
+    def __init__(self, client: AsyncClient) -> None:
+        self._client = client
+
+    async def request_export(self) -> DataExport:
+        """Asks for an export of the user's personal data. Needs a fresh proof: call ``client.auth.reauth()`` first (a
+        ``reauth_required`` error says so). It is built in the background."""
+        res = await self._client.request("POST", ["_auth", "me", "export"], reauth=True)
+        return cast(DataExport, res.data)
+
+    async def exports(self) -> list[DataExport]:
+        """The exports the user asked for, newest first."""
+        res = await self._client.request("GET", ["_auth", "me", "exports"], cache=False)
+        return cast("list[DataExport]", cast(dict[str, Any], res.data)["items"])
+
+    async def export(self, export_id: str) -> DataExport:
+        """One export, for a page that waits for it: ``step`` says what it is doing while it runs."""
+        res = await self._client.request("GET", ["_auth", "me", "exports", export_id], cache=False)
+        return cast(DataExport, res.data)
+
+    async def wait_for_export(
+        self,
+        export_id: str,
+        *,
+        poll_interval: float = 2.0,
+        timeout: float = 1800.0,
+        on_progress: Callable[[DataExport], None] | None = None,
+    ) -> DataExport:
+        """Polls an export until it is ``ready``. A ``failed`` or ``expired`` one raises a :class:`BackdError` (code
+        ``export_failed`` or ``export_expired``: the user may ask again), and so does waiting longer than ``timeout``
+        (``export_timeout``). Polls every 2 s for up to 30 minutes by default."""
+        end = time.monotonic() + timeout
+        while True:
+            e = await self.export(export_id)
+            if on_progress is not None:
+                on_progress(e)
+            if e["status"] == "ready":
+                return e
+            if e["status"] in ("failed", "expired"):
+                hint = ": ask for a new one" if e["status"] == "failed" else ""
+                raise BackdError(f"the export {e['status']}{hint}", code=f"export_{e['status']}")
+            if time.monotonic() + poll_interval > end:
+                raise BackdError(f"the export is still {e['status']} after {timeout:.0f}s", code="export_timeout")
+            await sleep(poll_interval)
+
+    async def download_export(self, export_id: str) -> AsyncExportDownload:
+        """Gives access to a ready export. :class:`ConflictError` until it is ready, and ``410 gone`` once it has
+        expired. A realm that delivers by link answers with ``url`` (open it, or :meth:`~AsyncExportDownload.read`
+        reads it); one whose storage clients cannot reach sends the zip through the API."""
+        res = await self._client.request(
+            "GET",
+            ["_auth", "me", "exports", export_id, "download"],
+            raw=True,
+            headers={"Accept": "application/json"},
+        )
+        assert res.response is not None
+        if not res.response.headers.get("Content-Type", "").startswith("application/json"):
+            return AsyncExportDownload(self._client, res.response)
+        await res.response.aread()
+        await res.response.aclose()
+        link = res.response.json()
+        return AsyncExportDownload(self._client, None, link.get("url"), link.get("expires_at"))

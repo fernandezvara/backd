@@ -6054,7 +6054,7 @@ paths:
       description: |
         The types of the config this instance runs: documents, `where` and `order_by` per
         collection, functions, app configuration, templates and roles, exactly what `backd types`
-        writes from `CONFIG_DIR`, in TypeScript, Dart (`lang=dart`) or Go (`lang=go`). `info` is
+        writes from `CONFIG_DIR`, in TypeScript, Dart (`lang=dart`), Go (`lang=go`) or Python (`lang=python`). `info` is
         the `realm.json` that goes with them (the types' fingerprint, the same for every language,
         and the type-level entries `backd types --diff` compares), and `warnings` lists what a
         schema says that the language can't express. `db` limits it to one database. Needs the
@@ -6063,7 +6063,7 @@ paths:
       security: [{ apiKey: [] }, { session: [] }]
       parameters:
         - { name: db, in: query, required: false, schema: { type: string }, description: Only this database. }
-        - { name: lang, in: query, required: false, schema: { type: string, enum: [ts, dart, go], default: ts }, description: The language of the types. }
+        - { name: lang, in: query, required: false, schema: { type: string, enum: [ts, dart, go, python], default: ts }, description: The language of the types. }
         - { name: package, in: query, required: false, schema: { type: string }, description: "With `lang=go`, the package name of the file (`backdtypes` by default)." }
       responses:
         "200":

@@ -95,8 +95,43 @@ func TestTypesGo(t *testing.T) {
 	if code, _, stderr := c.run("", "types", "--realm", "app", "--package", "x", "--out", out); code == 0 || !strings.Contains(stderr, "--package is for --lang go") {
 		t.Errorf("--package without --lang go: %d %s", code, stderr)
 	}
-	if code, _, stderr := c.run("", "types", "--realm", "app", "--lang", "rust", "--out", out); code == 0 || !strings.Contains(stderr, "ts, dart or go") {
+	if code, _, stderr := c.run("", "types", "--realm", "app", "--lang", "rust", "--out", out); code == 0 || !strings.Contains(stderr, "ts, dart, go or python") {
 		t.Errorf("an unknown language: %d %s", code, stderr)
+	}
+}
+
+func TestTypesPython(t *testing.T) {
+	dir := typesConfig(t)
+	out := filepath.Join(t.TempDir(), "gen")
+	c := &cliEnv{t: t, env: map[string]string{"CONFIG_DIR": dir}}
+
+	code, stdout, stderr := c.run("", "types", "--realm", "app", "--lang", "python", "--out", out)
+	if code != 0 || !strings.Contains(stdout, "types.py") {
+		t.Fatalf("types --lang python: %d %s %s", code, stdout, stderr)
+	}
+	types, err := os.ReadFile(filepath.Join(out, "types.py"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"from __future__ import annotations", "class MainNotes(backd.Doc,", "class AppRealm:", "class AsyncAppRealm:"} {
+		if !strings.Contains(string(types), want) {
+			t.Errorf("types.py lacks %q:\n%s", want, types)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(out, "realm.json")); err != nil {
+		t.Errorf("realm.json is written next to types.py: %v", err)
+	}
+	if code, stdout, _ := c.run("", "types", "--realm", "app", "--lang", "python", "--out", out, "--check"); code != 0 || !strings.Contains(stdout, "up to date") {
+		t.Errorf("--check on fresh files: %d %s", code, stdout)
+	}
+	if err := os.WriteFile(filepath.Join(out, "types.py"), append(types, "# edited\n"...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, stderr := c.run("", "types", "--realm", "app", "--lang", "python", "--out", out, "--check"); code == 0 || !strings.Contains(stderr, "stale") {
+		t.Errorf("--check on an edited file: %d %s", code, stderr)
+	}
+	if code, _, stderr := c.run("", "types", "--realm", "app", "--lang", "python", "--package", "x", "--out", out); code == 0 || !strings.Contains(stderr, "--package is for --lang go") {
+		t.Errorf("--package with python: %d %s", code, stderr)
 	}
 }
 

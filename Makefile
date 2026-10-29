@@ -1,6 +1,6 @@
 COMPOSE_TEST = docker compose -f docker-compose.test.yml
 
-.PHONY: dev dev-examples dev-build dev-down dev-reset dev-logs dev-backd lint build ui ui-test ui-e2e test test-local perf vet lint-api openapi-clients shelf-types shelf-types-update js-test js-package js-integration dart-package dart-integration functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour shelf-tour-ci example-attacks release-check
+.PHONY: dev dev-examples dev-build dev-down dev-reset dev-logs dev-backd lint build ui ui-test ui-e2e test test-local perf vet lint-api openapi-clients shelf-types shelf-types-update js-test js-package js-integration dart-package dart-integration python-test python-integration python-package functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour shelf-tour-ci example-attacks release-check
 
 build:
 	go build -o bin/backd ./cmd/backd
@@ -56,6 +56,23 @@ dart-package:
 dart-integration:
 	clients/dart/test/integration/run.sh
 
+# Python client: generated sync code current, ruff, mypy --strict and pytest, in a virtualenv of its own
+# (clients/python/.venv). Needs Python 3.10 or later.
+python-test:
+	cd clients/python && python3 -m venv .venv && .venv/bin/pip install -q -e '.[dev]' \
+		&& .venv/bin/python scripts/unasync.py --check && .venv/bin/ruff check . && .venv/bin/ruff format --check . \
+		&& .venv/bin/mypy && .venv/bin/pytest
+
+# Python client against a real backd + MongoDB + MinIO (docker-compose.python.yml); uses the clients/python/.venv of python-test.
+python-integration:
+	cd clients/python && python3 -m venv .venv && .venv/bin/pip install -q -e '.[dev]'
+	PYTHON=$(CURDIR)/clients/python/.venv/bin/python clients/python/tests/integration/run.sh
+
+# Python and PyPI (needs Python 3.10+ and network access; see scripts/check-python-package.sh): builds the sdist and
+# the wheel, checks what they hold and uses the wheel from a fresh virtualenv.
+python-package:
+	scripts/check-python-package.sh
+
 # @backd/functions-testing's own tests (needs Deno; the dockerized test
 # image already has it).
 functions-testing-test:
@@ -64,15 +81,17 @@ functions-testing-test:
 	$(COMPOSE_TEST) down -v
 
 # The Shelf's generated types are current: the app's (clients/js/examples/shelf/backd), the Go
-# example's (clients/go-examples/shelf/backd) and each functions project's backd.d.ts. After a schema change: `make shelf-types-update`.
+# example's (clients/go-examples/shelf/backd), the Python example's (clients/python/examples/shelf/shelf_types) and each functions project's backd.d.ts. After a schema change: `make shelf-types-update`.
 shelf-types:
 	CONFIG_DIR=examples/config go run ./cmd/backd types --realm shelf --out clients/js/examples/shelf/backd --check
 	CONFIG_DIR=examples/config go run ./cmd/backd types --realm shelf --functions --check
 	CONFIG_DIR=examples/config go run ./cmd/backd types --realm shelf --lang go --package backd --out clients/go-examples/shelf/backd --check
+	CONFIG_DIR=examples/config go run ./cmd/backd types --realm shelf --lang python --out clients/python/examples/shelf/shelf_types --check
 
 shelf-types-update:
 	CONFIG_DIR=examples/config go run ./cmd/backd types --realm shelf --out clients/js/examples/shelf/backd
 	CONFIG_DIR=examples/config go run ./cmd/backd types --realm shelf --lang go --package backd --out clients/go-examples/shelf/backd
+	CONFIG_DIR=examples/config go run ./cmd/backd types --realm shelf --lang python --out clients/python/examples/shelf/shelf_types
 	CONFIG_DIR=examples/config go run ./cmd/backd types --realm shelf --functions
 
 # The admin UI (ui/admin): build it into internal/adminui/dist, where the Go

@@ -1,0 +1,87 @@
+name: Publish Python client
+
+# Publishes clients/python to PyPI (package "backd") when a py- tag is pushed:
+#   1. set "__version__" in clients/python/src/backd/__init__.py, merge it
+#   2. git tag py-v0.9.6 && git push origin py-v0.9.6
+# The tag must match the version, and point at a commit on main. A version with a suffix (py-v0.9.6-rc.1, which
+# PyPI writes 0.9.6rc1) is a pre-release: pip installs it only when asked (--pre or an exact version).
+#
+# Publishing uses PyPI's trusted publishing (OIDC): no token is stored in the repository. Set it up once on pypi.org
+# (Your projects -> Publishing -> add a pending publisher for the project name "backd": owner fernandezvara,
+# repository backd, workflow filename publish-python.yml, environment pypi). See the docs page Contribute ->
+# Releasing.
+#
+# On a pull request that touches the client the same build runs without the last step: a dry run of the release.
+on:
+  push:
+    tags: ["py-v[0-9]+.[0-9]+.[0-9]+", "py-v[0-9]+.[0-9]+.[0-9]+-*"]
+  pull_request:
+    paths:
+      - "clients/python/**"
+      - "scripts/check-python-package.sh"
+      - ".github/workflows/publish-python.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: The tag points at a commit on main
+        if: startsWith(github.ref, 'refs/tags/py-v')
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - name: The tag matches the version of the package
+        if: startsWith(github.ref, 'refs/tags/py-v')
+        run: |
+          pip install -q packaging
+          python - <<'PY'
+          import os, re, pathlib
+          from packaging.version import Version
+          version = re.search(r'__version__ = "([^"]+)"', pathlib.Path("clients/python/src/backd/__init__.py").read_text()).group(1)
+          tag = os.environ["GITHUB_REF_NAME"].removeprefix("py-v")
+          if Version(tag) != Version(version):
+              raise SystemExit(f"tag {os.environ['GITHUB_REF_NAME']} doesn't match the package version {version}")
+          PY
+      - name: Install
+        run: pip install -e '.[dev]'
+        working-directory: clients/python
+      - name: The sync client is generated from the async one
+        run: python scripts/unasync.py --check
+        working-directory: clients/python
+      - name: Lint, types and unit tests
+        run: ruff check . && ruff format --check . && mypy && pytest
+        working-directory: clients/python
+      - name: The package, as a user installs it
+        run: scripts/check-python-package.sh
+      - name: Build the distributions
+        run: python -m build --outdir dist
+        working-directory: clients/python
+      - uses: actions/upload-artifact@v7
+        with:
+          name: python-package
+          path: clients/python/dist/
+          if-no-files-found: error
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/py-v')
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/backd
+    permissions:
+      id-token: write # PyPI trusted publishing
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: python-package
+          path: dist/
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
