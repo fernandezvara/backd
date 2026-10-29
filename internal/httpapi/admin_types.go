@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"go/token"
 	"net/http"
 	"strconv"
 	"strings"
@@ -34,11 +35,16 @@ func (a *adminAPI) openapi(w http.ResponseWriter, r *http.Request) {
 func (a *adminAPI) types(w http.ResponseWriter, r *http.Request) {
 	realm := chi.URLParam(r, "realm")
 	lang := r.URL.Query().Get("lang")
-	if lang != "" && lang != "ts" && lang != "dart" {
-		writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "unknown lang "+strconv.Quote(lang)+": ts or dart")
+	if lang != "" && lang != "ts" && lang != "dart" && lang != "go" {
+		writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "unknown lang "+strconv.Quote(lang)+": ts, dart or go")
 		return
 	}
-	out, err := typegen.Generate(a.reg, typegen.Options{Realm: realm, Database: r.URL.Query().Get("db"), Lang: lang})
+	pkg := r.URL.Query().Get("package")
+	if pkg != "" && (lang != "go" || !token.IsIdentifier(pkg)) {
+		writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "package is the name of the Go package, for lang go")
+		return
+	}
+	out, err := typegen.Generate(a.reg, typegen.Options{Realm: realm, Database: r.URL.Query().Get("db"), Lang: lang, Package: pkg})
 	if err != nil {
 		writeError(w, r, http.StatusBadRequest, codeInvalidQuery, err.Error())
 		return

@@ -6050,18 +6050,21 @@ paths:
     parameters: [{ $ref: "#/components/parameters/realm" }]
     get:
       tags: [admin]
-      summary: The realm's TypeScript types
+      summary: The realm's generated types
       description: |
-        The TypeScript types of the config this instance runs: documents, `where` and `order_by`
-        per collection, functions, app configuration, templates and roles, exactly what
-        `backd types` writes from `CONFIG_DIR`. `info` is the `realm.json` that goes with them
-        (the types' fingerprint and the type-level entries `backd types --diff` compares), and
-        `warnings` lists what a schema says that TypeScript can't express. `db` limits it to one
-        database. Needs the `config` area (a read-only administrator reads it).
+        The types of the config this instance runs: documents, `where` and `order_by` per
+        collection, functions, app configuration, templates and roles, exactly what `backd types`
+        writes from `CONFIG_DIR`, in TypeScript, Dart (`lang=dart`) or Go (`lang=go`). `info` is
+        the `realm.json` that goes with them (the types' fingerprint, the same for every language,
+        and the type-level entries `backd types --diff` compares), and `warnings` lists what a
+        schema says that the language can't express. `db` limits it to one database. Needs the
+        `config` area (a read-only administrator reads it).
       operationId: adminTypes
       security: [{ apiKey: [] }, { session: [] }]
       parameters:
         - { name: db, in: query, required: false, schema: { type: string }, description: Only this database. }
+        - { name: lang, in: query, required: false, schema: { type: string, enum: [ts, dart, go], default: ts }, description: The language of the types. }
+        - { name: package, in: query, required: false, schema: { type: string }, description: With `lang=go`, the package name of the file (`backdtypes` by default). }
       responses:
         "200":
           description: The generated types.
@@ -6072,7 +6075,7 @@ paths:
                 type: object
                 required: [types, info, warnings]
                 properties:
-                  types: { type: string, description: The contents of types.d.ts. }
+                  types: { type: string, description: The contents of types.d.ts (types.dart or types.go for the other languages). }
                   info:
                     type: object
                     required: [generator, realm, fingerprint, entries]
