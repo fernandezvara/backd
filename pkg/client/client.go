@@ -77,6 +77,7 @@ type Client struct {
 	fieldMu       sync.Mutex
 	fields        map[string]*FileField
 	config        *Config
+	push          *Push
 	life          context.Context
 	stopLife      context.CancelFunc
 	oauth         OAuthStorage
@@ -142,6 +143,7 @@ func newClient(opts Options, root *Client) (*Client, error) {
 	c.OnCredentialChange(c.ClearCache) // what was read as someone else (or no one) isn't theirs
 	c.auth = newAuth(c)
 	c.config = newConfig(c, opts.ConfigStorage)
+	c.push = newPush(c)
 	return c, nil
 }
 
