@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/fernandezvara/backd/internal/strutil"
 )
 
 // The _meta fields of a soft-deleted document: when it was deleted, by whom,
@@ -66,7 +68,7 @@ func (d *softDeleteDoc) settings(path string) (*SoftDelete, error) {
 	}
 	sd := &SoftDelete{}
 	if d.Retention != nil {
-		r, err := ParseDuration(*d.Retention)
+		r, err := strutil.ParseDuration(*d.Retention)
 		switch {
 		case err != nil:
 			return nil, fmt.Errorf("%s: soft_delete.retention: %w", path, err)

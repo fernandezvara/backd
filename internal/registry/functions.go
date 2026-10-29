@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -24,6 +23,7 @@ import (
 
 	"github.com/fernandezvara/backd/internal/cron"
 	"github.com/fernandezvara/backd/internal/rules"
+	"github.com/fernandezvara/backd/internal/strutil"
 )
 
 // Function layout inside a database directory.
@@ -236,24 +236,7 @@ const (
 var (
 	secretPattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,63}$`)
 	hostPattern   = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
-	sizePattern   = regexp.MustCompile(`^([0-9]+)(B|KB|MB|GB|TB|KiB|MiB|GiB|TiB)$`)
 )
-
-var sizeUnits = map[string]int64{"B": 1, "KB": 1e3, "MB": 1e6, "GB": 1e9, "TB": 1e12, "KiB": 1 << 10, "MiB": 1 << 20, "GiB": 1 << 30, "TiB": 1 << 40}
-
-// ParseSize parses a size such as 128MB (decimal) or 1MiB (binary).
-func ParseSize(v string) (int64, error) {
-	m := sizePattern.FindStringSubmatch(strings.TrimSpace(v))
-	if m == nil {
-		return 0, fmt.Errorf("invalid size %q: want a whole number and a unit (B, KB, MB, GB, TB, KiB, MiB, GiB, TiB), such as 128MB or 1MiB", v)
-	}
-	n, err := strconv.ParseInt(m[1], 10, 64)
-	unit := sizeUnits[m[2]]
-	if err != nil || n > math.MaxInt64/unit {
-		return 0, fmt.Errorf("invalid size %q: too large", v)
-	}
-	return n * unit, nil
-}
 
 // loadFunctions reads a database's _functions project, if it has one.
 func loadFunctions(db *Database, settings RealmSettings, dbPath string) (*Functions, []error) {
@@ -440,7 +423,7 @@ func loadFunction(db *Database, settings RealmSettings, name, dir string) (*Func
 		fn.Timeout, maxTimeout = DefaultAsyncTimeout, MaxAsyncTimeout
 	}
 	if doc.Timeout != nil {
-		d, err := ParseDuration(*doc.Timeout)
+		d, err := strutil.ParseDuration(*doc.Timeout)
 		switch {
 		case err != nil:
 			add("timeout: %v", err)
@@ -453,7 +436,7 @@ func loadFunction(db *Database, settings RealmSettings, name, dir string) (*Func
 
 	fn.Memory = DefaultMemory
 	if doc.Memory != nil {
-		n, err := ParseSize(*doc.Memory)
+		n, err := strutil.ParseSize(*doc.Memory)
 		switch {
 		case err != nil:
 			add("memory: %v", err)
@@ -470,7 +453,7 @@ func loadFunction(db *Database, settings RealmSettings, name, dir string) (*Func
 		maxOutput = MaxAsyncOutput
 	}
 	if doc.MaxOutput != nil {
-		n, err := ParseSize(*doc.MaxOutput)
+		n, err := strutil.ParseSize(*doc.MaxOutput)
 		switch {
 		case err != nil:
 			add("max_output: %v", err)
@@ -498,7 +481,7 @@ func loadFunction(db *Database, settings RealmSettings, name, dir string) (*Func
 		if rl.Limit < 1 {
 			add("rate_limit.limit: must be at least 1")
 		}
-		d, err := ParseDuration(rl.Window)
+		d, err := strutil.ParseDuration(rl.Window)
 		switch {
 		case err != nil:
 			add("rate_limit.window: %v", err)
@@ -528,7 +511,7 @@ func loadFunction(db *Database, settings RealmSettings, name, dir string) (*Func
 			if d.v == "" {
 				continue
 			}
-			v, err := ParseDuration(d.v)
+			v, err := strutil.ParseDuration(d.v)
 			switch {
 			case err != nil:
 				add("retry.%s: %v", d.key, err)

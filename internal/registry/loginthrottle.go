@@ -3,6 +3,8 @@ package registry
 import (
 	"fmt"
 	"time"
+
+	"github.com/fernandezvara/backd/internal/strutil"
 )
 
 // Defaults of login_throttle in realm.yaml: failures are counted per account
@@ -80,7 +82,7 @@ func (d *loginThrottleDoc) apply(s *RealmSettings) []error {
 		if v == nil {
 			return
 		}
-		got, err := ParseDuration(*v)
+		got, err := strutil.ParseDuration(*v)
 		switch {
 		case err != nil:
 			errs = append(errs, fmt.Errorf("login_throttle.%s: %w", key, err))

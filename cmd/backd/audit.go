@@ -13,7 +13,7 @@ import (
 
 	"github.com/fernandezvara/kli"
 
-	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/internal/strutil"
 )
 
 type auditRecord struct {
@@ -70,7 +70,7 @@ func auditQuery(c *kli.CommandContext, q url.Values, now time.Time) (int, error)
 // sinceParam turns --since (an RFC 3339 time, or a duration back from now
 // such as 24h or 7d) into the time the API takes.
 func sinceParam(v string, now time.Time) (string, error) {
-	if d, err := registry.ParseDuration(v); err == nil && d > 0 {
+	if d, err := strutil.ParseDuration(v); err == nil && d > 0 {
 		return now.Add(-d).UTC().Format(time.RFC3339), nil
 	}
 	if _, err := time.Parse(time.RFC3339, v); err == nil {

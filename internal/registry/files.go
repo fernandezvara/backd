@@ -20,6 +20,7 @@ import (
 
 	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/fernandezvara/backd/internal/imaging"
+	"github.com/fernandezvara/backd/internal/strutil"
 )
 
 // File fields (roadmap Phase 10): a collection declares which fields of its
@@ -259,7 +260,7 @@ func parseFiles(path string, data []byte, schema map[string]any, settings RealmS
 
 		if d.MaxSize == "" {
 			add(name, "max_size: is required, such as 10MiB: the largest one file may be")
-		} else if n, err := ParseSize(d.MaxSize); err != nil {
+		} else if n, err := strutil.ParseSize(d.MaxSize); err != nil {
 			add(name, "max_size: %v", err)
 		} else if n < 1 {
 			add(name, "max_size: must be at least 1B")
@@ -329,7 +330,7 @@ func parseFiles(path string, data []byte, schema map[string]any, settings RealmS
 			add(name, "download: must be %s or %s, got %q", DownloadPresigned, DownloadProxy, d.Download)
 		}
 		if d.PresignedTTL != "" {
-			if v, err := ParseDuration(d.PresignedTTL); err != nil {
+			if v, err := strutil.ParseDuration(d.PresignedTTL); err != nil {
 				add(name, "presigned_ttl: %v", err)
 			} else if v < minPresignedTTL || v > maxFilePresignedTL {
 				add(name, "presigned_ttl: must be between %s and %s, got %s", minPresignedTTL, maxFilePresignedTL, d.PresignedTTL)
@@ -338,7 +339,7 @@ func parseFiles(path string, data []byte, schema map[string]any, settings RealmS
 			}
 		}
 		if d.Cache != "" {
-			if v, err := ParseDuration(d.Cache); err != nil {
+			if v, err := strutil.ParseDuration(d.Cache); err != nil {
 				add(name, "cache: %v", err)
 			} else if v <= 0 {
 				add(name, "cache: must be a positive duration, such as 1h")

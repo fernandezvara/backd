@@ -12,13 +12,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
 	"go.yaml.in/yaml/v3"
 
 	"github.com/fernandezvara/backd/internal/email"
+	"github.com/fernandezvara/backd/internal/strutil"
 )
 
 // RealmFile is the name of the required realm settings file.
@@ -644,7 +644,7 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 	}
 
 	if a := doc.Audit; a != nil && a.Retention != nil {
-		d, err := ParseDuration(*a.Retention)
+		d, err := strutil.ParseDuration(*a.Retention)
 		switch {
 		case err != nil:
 			errs = append(errs, fmt.Errorf("audit.retention: %w", err))
@@ -666,7 +666,7 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 		}
 	}
 	if a := doc.AppConfig; a != nil && a.CacheTTL != nil {
-		d, err := ParseDuration(*a.CacheTTL)
+		d, err := strutil.ParseDuration(*a.CacheTTL)
 		switch {
 		case err != nil:
 			errs = append(errs, fmt.Errorf("app_config.cache_ttl: %w", err))
@@ -770,7 +770,7 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 		if !s.AuthEnabled {
 			errs = append(errs, errors.New("functions.log_retention: only applies when auth is enabled (this realm has no system database to store invocation records in)"))
 		} else {
-			d, err := ParseDuration(*fn.LogRetention)
+			d, err := strutil.ParseDuration(*fn.LogRetention)
 			switch {
 			case err != nil:
 				errs = append(errs, fmt.Errorf("functions.log_retention: %w", err))
@@ -785,7 +785,7 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 		if !s.AuthEnabled {
 			errs = append(errs, errors.New("functions.job_retention: only applies when auth is enabled (this realm has no system database to store jobs in)"))
 		} else {
-			d, err := ParseDuration(*fn.JobRetention)
+			d, err := strutil.ParseDuration(*fn.JobRetention)
 			switch {
 			case err != nil:
 				errs = append(errs, fmt.Errorf("functions.job_retention: %w", err))
@@ -932,7 +932,7 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 		if !s.AuthEnabled {
 			errs = append(errs, errors.New("reauth: only applies when auth is enabled"))
 		} else if r.TTL != "" {
-			d, err := ParseDuration(r.TTL)
+			d, err := strutil.ParseDuration(r.TTL)
 			switch {
 			case err != nil:
 				errs = append(errs, fmt.Errorf("reauth.ttl: %w", err))
@@ -962,7 +962,7 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 				if v == "" {
 					return
 				}
-				d, err := ParseDuration(v)
+				d, err := strutil.ParseDuration(v)
 				switch {
 				case err != nil:
 					errs = append(errs, fmt.Errorf("account.%s: %w", key, err))
@@ -1064,7 +1064,7 @@ func appendDuration(errs []error, key string, v *string, dst *time.Duration) []e
 	if v == nil {
 		return errs
 	}
-	d, err := ParseDuration(*v)
+	d, err := strutil.ParseDuration(*v)
 	if err != nil {
 		return append(errs, fmt.Errorf("%s: %w", key, err))
 	}
@@ -1073,23 +1073,6 @@ func appendDuration(errs []error, key string, v *string, dst *time.Duration) []e
 	}
 	*dst = d
 	return errs
-}
-
-// ParseDuration parses a Go duration ("12h", "90m") or a whole number of
-// days ("30d").
-func ParseDuration(v string) (time.Duration, error) {
-	if days, ok := strings.CutSuffix(v, "d"); ok {
-		n, err := strconv.Atoi(days)
-		if err != nil || n < 0 {
-			return 0, fmt.Errorf("invalid duration %q: use a whole number of days (\"30d\") or Go syntax (\"12h\")", v)
-		}
-		return time.Duration(n) * 24 * time.Hour, nil
-	}
-	d, err := time.ParseDuration(v)
-	if err != nil {
-		return 0, fmt.Errorf("invalid duration %q: use a whole number of days (\"30d\") or Go syntax (\"12h\")", v)
-	}
-	return d, nil
 }
 
 // checkOrigin accepts "*" (as the only entry) or a scheme://host[:port]
@@ -1263,7 +1246,7 @@ func parseRedirects(e *EmailSettings, d *emailDoc) []error {
 	add := func(format string, args ...any) { errs = append(errs, fmt.Errorf("email."+format, args...)) }
 	e.RedirectDelay = DefaultRedirectDelay
 	if d.RedirectDelay != "" {
-		dur, err := ParseDuration(d.RedirectDelay)
+		dur, err := strutil.ParseDuration(d.RedirectDelay)
 		switch {
 		case err != nil:
 			add("redirect_delay: %v", err)
