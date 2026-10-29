@@ -49,6 +49,7 @@ from .errors import (
     VerificationRequiredError,
     VersionMismatchError,
 )
+from .files import public_url, version_status
 from .models import (
     AggregateGroup,
     AggregateResult,
@@ -56,17 +57,22 @@ from .models import (
     ConsentChallenge,
     Doc,
     EnrollmentChallenge,
+    FileDetails,
+    FileField,
+    FileLink,
     Identity,
     Me,
     Meta,
     MfaChallenge,
     Page,
+    PreparedUpload,
     Profile,
     ProviderSession,
     Session,
     SessionInfo,
     SignInResult,
     User,
+    VersionState,
 )
 from .oauth import MemoryOAuthStorage, OAuthReturn, OAuthStorage
 from .query import (
@@ -99,6 +105,7 @@ from .query import (
 )
 from .size import SizeFamily, format_bytes, parse_size
 from .storage import FileStorage, MemoryStorage, SlotStorage, TokenStorage
+from .upload import Progress, Upload, UploadSource, part_size_for
 
 __version__ = "0.0.1"
 
@@ -124,6 +131,9 @@ __all__ = [
     "ExpandTooLargeError",
     "FieldEncryptedError",
     "FileConfigStorage",
+    "FileDetails",
+    "FileField",
+    "FileLink",
     "FileStorage",
     "ForbiddenError",
     "IdTakenError",
@@ -152,7 +162,9 @@ __all__ = [
     "OrgRoleRequiresMFAError",
     "Page",
     "PasswordExpiredError",
+    "PreparedUpload",
     "Profile",
+    "Progress",
     "ProviderSession",
     "RealtimeNotEnabledError",
     "Retry",
@@ -171,10 +183,13 @@ __all__ = [
     "TeamError",
     "TokenStorage",
     "TooManySubscriptionsError",
+    "Upload",
+    "UploadSource",
     "User",
     "ValidationError",
     "VerificationRequiredError",
     "VersionMismatchError",
+    "VersionState",
     "Where",
     "__version__",
     "and_",
@@ -202,6 +217,9 @@ __all__ = [
     "not_null",
     "or_",
     "parse_size",
+    "part_size_for",
+    "public_url",
     "search",
     "starts_with",
+    "version_status",
 ]

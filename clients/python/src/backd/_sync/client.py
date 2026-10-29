@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Iterator, Callable, Mapping
 from types import TracebackType
 from typing import Any
 from urllib.parse import urlsplit
@@ -21,6 +21,7 @@ from ..config_storage import ConfigStorage
 from ..errors import BackdError, NetworkError, RetryableError, error_from_response
 from ..oauth import MemoryOAuthStorage, OAuthStorage
 from ..storage import MemoryStorage, SlotStorage, TokenStorage
+from ..upload import Progress, Upload
 from .auth import Auth
 from .config import Config
 from .data import Database
@@ -130,6 +131,32 @@ class Client:
         #: Sign-up, login and sessions.
         self.auth = Auth(self)
         self._expired = self.auth._expired
+        #: How each file field takes files, asked once (``database/collection/field`` to its answer).
+        self._file_fields: dict[str, dict[str, Any]] = {}
+
+    def send_external(
+        self,
+        method: str,
+        url: str,
+        headers: Mapping[str, str],
+        content: Upload,
+        on_progress: Progress | None = None,
+    ) -> httpx.Response:
+        """Sends an upload to an address that is not backd's (a signed link of the storage): the headers the link
+        names, and none of backd's credentials. The answer's body is read."""
+        hdrs = dict(headers)
+        if content.size is not None:
+            hdrs["Content-Length"] = str(content.size)
+        try:
+            req = self._http.build_request(method, url, headers=hdrs, content=_stream(content, on_progress))
+            res = self._http.send(req, stream=True)
+            res.read()
+            res.close()
+        except httpx.TimeoutException as e:
+            raise _network("timeout", "request timed out") from e
+        except httpx.HTTPError as e:
+            raise _network("network_error", f"network error: {e}") from e
+        return res
 
     def db(self, name: str) -> Database:
         """A database of the realm, to reach its collections: ``client.db("main").collection("posts")``."""
@@ -231,9 +258,10 @@ class Client:
         *,
         query: Mapping[str, Any] | None = None,
         body: Any = None,
-        content: bytes | None = None,
+        content: bytes | Upload | None = None,
         content_type: str | None = None,
         headers: Mapping[str, str] | None = None,
+        on_progress: Progress | None = None,
         raw: bool = False,
         auth: bool = True,
         expire: bool = True,
@@ -259,6 +287,7 @@ class Client:
                 reauth=reauth,
                 cache=cache,
                 retry=retry,
+                on_progress=on_progress,
             )
         )
 
@@ -266,7 +295,13 @@ class Client:
         url = endpoint(self.url, self.realm, req.path, req.query)
         headers: dict[str, str] = {"Accept": "*/*" if req.raw else "application/json", **self._headers, **req.headers}
         payload: bytes | None = None
-        if req.content is not None:
+        upload: Upload | None = None
+        if isinstance(req.content, Upload):
+            upload = req.content
+            headers["Content-Type"] = req.content_type or "application/octet-stream"
+            if upload.size is not None:
+                headers["Content-Length"] = str(upload.size)
+        elif req.content is not None:
             payload = req.content
             headers["Content-Type"] = req.content_type or "application/octet-stream"
         elif req.body is not None:
@@ -304,10 +339,13 @@ class Client:
 
         retry = req.retry or self._retry
         attempts = max(0, retry.attempts) if is_safe(req.method, headers) else 0
+        if upload is not None and not upload.replayable:
+            attempts = 0  # a stream can't be sent twice
         attempt = 0
         while True:
             try:
-                http_req = self._http.build_request(req.method, url, headers=headers, content=payload)
+                body: Any = _stream(upload, req.on_progress) if upload is not None else payload
+                http_req = self._http.build_request(req.method, url, headers=headers, content=body)
                 res = self._http.send(http_req, stream=True)
             except httpx.TimeoutException as e:
                 raise _network("timeout", "request timed out") from e
@@ -356,6 +394,16 @@ class Client:
                 attempt += 1
                 continue
             raise err
+
+
+def _stream(upload: Upload, on_progress: Progress | None) -> Iterator[bytes]:
+    """The bytes of an upload, reporting how many have gone."""
+    sent = 0
+    for chunk in upload.chunks():
+        yield chunk
+        sent += len(chunk)
+        if on_progress is not None:
+            on_progress(sent, upload.size)
 
 
 def _network(code: str, message: str) -> NetworkError:

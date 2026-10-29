@@ -6,3 +6,4 @@
 - `client.auth`: sign-up, login and the sign-in steps, MFA, magic links, providers (redirect and ID token), `reauth`/`with_proof`, sessions, the email flows, `client.org` and `on_auth_change`.
 - Collections: `list`, `iterate`, `search`, `aggregate`, `get`, `create`, `replace`, `patch`, `delete`, `restore`, `db.batch`, `in_team`/`in_org`, the query-language helpers, `expand` and `fill_buckets`.
 - The revalidation cache (`If-None-Match`/`304`, LRU by entries and bytes, per credential; `cache_stats`, `clear_cache`, `cache=False` per read) and `client.config` (`load`, `get`, `get_sync`, `view`, `on`, persisted copies through `config_storage`).
+- Files: `files(id, field)` (`list`, `get`, `put`, `delete`, `link`, `version`), `upload_file` (through backd, direct to the bucket, in parts), `prepare_upload`, `download_file` (streams to a path or file, checks the SHA-256), `file_url`, `public_url`, `version_status`, `Upload` and progress callbacks.

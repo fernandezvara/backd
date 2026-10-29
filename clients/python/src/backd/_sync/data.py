@@ -4,11 +4,14 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Iterator, Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast, overload
+from typing import TYPE_CHECKING, Any, BinaryIO, Generic, Literal, TypeVar, cast, overload
 
-from ..models import AggregateResult, BatchOperation, Page
+from ..models import AggregateResult, BatchOperation, FileDetails, FileField, FileLink, Page, PreparedUpload
 from ..query import Where, csv, if_match_value, where_json
+from ..upload import Progress, Upload, UploadSource
+from .files import Files, file_field, file_url, prepare_upload, upload_file
 
 if TYPE_CHECKING:
     from .client import Client
@@ -315,6 +318,90 @@ class Collection(Generic[D]):
             query={"purge": True if purge else None},
             headers=_if_match(if_match),
         )
+
+    # -- files -----------------------------------------------------------------------------
+
+    def files(self, id: str, field: str) -> Files:
+        """The files a document holds in a file field (``files:`` in collection.yaml): ``get``, ``put``, ``delete``,
+        ``link`` and ``version``. They are the ``_files`` routes of the API, under the caller's own rules (the
+        ``update`` rule for ``put`` and ``delete``, ``read`` for ``get`` and ``link``)."""
+        return Files(self._client, self.path, id, field)
+
+    def file_field(self, field: str) -> FileField:
+        """How a file field takes files: ``upload`` (``proxy`` or ``direct``), ``max_size``, ``types``,
+        ``multiple`` and ``max_files``. Asked once and remembered."""
+        return file_field(self._client, self.path, field)
+
+    def upload_file(
+        self,
+        id: str,
+        field: str,
+        file: UploadSource | Upload,
+        *,
+        name: str | None = None,
+        type: str | None = None,
+        if_match: int | str | None = None,
+        on_progress: Progress | None = None,
+    ) -> D:
+        """Uploads a file into a document's file field, whichever way the field takes it (through backd, or
+        straight to the bucket), reporting the bytes sent to ``on_progress(sent, total)``. Returns the updated
+        document. ``file`` is bytes, text, a :class:`pathlib.Path`, a binary file or an :class:`Upload`."""
+        doc = upload_file(
+            self._client, self.path, id, field, file, name=name, type=type, if_match=if_match, on_progress=on_progress
+        )
+        return cast(D, doc)
+
+    def prepare_upload(
+        self,
+        field: str,
+        file: UploadSource | Upload,
+        *,
+        name: str | None = None,
+        type: str | None = None,
+        on_progress: Progress | None = None,
+    ) -> PreparedUpload:
+        """Uploads a file for a document that doesn't exist yet. Name the result in the field when creating it:
+        ``create({"title": …, "receipts": [up["ref"]]})`` (``ref`` is ``{"upload": …, "token": …}``)."""
+        return prepare_upload(self._client, self.path, field, file, name=name, type=type, on_progress=on_progress)
+
+    def file_url(
+        self,
+        id: str,
+        field: str,
+        file_id: str,
+        *,
+        version: str | None = None,
+        file: FileDetails | None = None,
+    ) -> FileLink | None:
+        """A link to a file, to show or open: ``{"url", "expires_at"}``. It works without credentials until it
+        expires, so fetch it when it is needed. With ``version`` it links that made version of an image, or is
+        ``None`` while the version isn't ready. Pass the file's details as ``file`` and the address of a public file
+        is answered without a request (``expires_at`` is ``None``: it never expires)."""
+        return file_url(self._client, self.path, id, field, file_id, version=version, file=file)
+
+    def download_file(
+        self,
+        id: str,
+        field: str,
+        file_id: str,
+        to: str | os.PathLike[str] | BinaryIO,
+        *,
+        version: str | None = None,
+        file: FileDetails | None = None,
+    ) -> int:
+        """Streams a file to a path or an open binary file and returns the bytes written. Pass the file's details
+        as ``file`` to have the SHA-256 of what arrived checked against theirs. To read the bytes yourself, use
+        ``files(id, field).get(file_id)``."""
+        with self.files(id, field).get(file_id, version=version, file=file) as content:
+            return content.save(to)
+
+    def delete_file(self, id: str, field: str, file_id: str, *, if_match: int | str | None = None) -> D:
+        """Removes one file from a document. Returns the updated document."""
+        if not isinstance(file_id, str) or not file_id:
+            raise TypeError(
+                "delete_file: the id of the file to remove is required (files(id, field).delete() clears the field)"
+            )
+        return cast(D, self.files(id, field).delete(file_id, if_match=if_match))
 
     def restore(self, id: str, *, if_match: int | str | None = None) -> D:
         """Brings a soft-deleted document back, as it was, at the next version. :class:`NotFoundError` if it

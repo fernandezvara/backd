@@ -170,6 +170,36 @@ stop = client.config.on("change", lambda paths: print("changed:", paths))
 
 Pass `config_storage=FileConfigStorage(directory)` to start the next run with the last configuration it saw (`MemoryConfigStorage` is the default, and any object with `get`, `set`, `remove` and `all_keys` works). Copies are dropped on sign-out and when another user signs in.
 
+## Files
+
+A file field (`files:` in `collection.yaml`) is read and written through the document. `collection.files(id, field)` has the operations; `upload_file` and friends pick the right way to send.
+
+```python
+from pathlib import Path
+
+posts = client.db("main").collection("posts")
+
+# Upload: through backd (upload: proxy) or straight to the bucket (upload: direct), as the field says.
+doc = posts.upload_file("p1", "cover", Path("cover.jpg"), on_progress=lambda sent, total: print(sent, total))
+
+# Download: stream to a path (written in place only when it all arrived), or read it yourself.
+posts.download_file("p1", "cover", doc["cover"]["id"], to=Path("out.jpg"), file=doc["cover"])
+with posts.files("p1", "cover").get() as content:          # the one file of a single field
+    for chunk in content.iter_bytes():
+        ...
+
+link = posts.file_url("p1", "cover", doc["cover"]["id"])    # {"url": …, "expires_at": …}, works without credentials
+thumb = posts.file_url("p1", "cover", doc["cover"]["id"], version="thumb", file=doc["cover"])   # None until ready
+```
+
+- **What to send** — `Upload(source, name=..., type=...)`, or just the source: bytes, text (sent as UTF-8), a `pathlib.Path`, or a binary file object. Paths and seekable files are read in pieces, never loaded whole, and can be sent again after a `429` or `503`; a pipe can be sent once. `name` and `type` default to the file's own.
+- **Progress** — `on_progress(sent, total)`; `total` is `None` for a stream of unknown size.
+- **Direct uploads** hash the file first (SHA-256, off the event loop in the async client), declare it, send it to the signed link without backd's credentials, and complete. A file above the field's `multipart_above` is declared by the hash of each part and sent in parts, one after the other; a part that fails with a network error or a `5xx` is sent again (four tries), the others are not.
+- **`prepare_upload`** sends a file for a document that doesn't exist yet and returns `ref`: name it in the field of the `create` (`{"cover": [up["ref"]]}`).
+- **Downloads check the checksum** when the file's details are known (`get()` without an id looked them up, or you pass `file=`): a difference raises `BackdError` with code `checksum_mismatch`. A saved path is only replaced when the whole file arrived and matched.
+- **Public files** — pass the file's details as `file=` to `file_url` and the permanent address comes back with no request; `public_url(file, version)` and `version_status(file, "thumb")` do the same from the details a document came with, to show a placeholder while a version is `pending`.
+- **Versions** — `files(id, field).version("thumb").regenerate()`, `.generate(max_width=…)` or `.delete()` wait for a worker and return the version's state.
+
 ## Errors
 
 Every failure is a `BackdError` with `status`, `code`, `message`, `details`, `request_id` and `path`. The subclasses follow the server's error `code`s with the names `backd-js` uses, and a class matches its parents: `except ConflictError` also catches `IdTakenError`, and `except ValidationError` catches `InvalidIdError`.

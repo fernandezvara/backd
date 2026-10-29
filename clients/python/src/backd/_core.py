@@ -12,6 +12,7 @@ from urllib.parse import quote, urlencode
 import httpx
 
 from ._retry import Retry
+from .upload import Progress, Upload
 
 QueryValue = str | int | float | bool | None
 
@@ -40,7 +41,7 @@ class Request:
     #: Sent as JSON.
     body: Any = None
     #: Sent as it is (a file's bytes), instead of ``body``.
-    content: bytes | None = None
+    content: bytes | Upload | None = None
     content_type: str | None = None
     headers: Mapping[str, str] = field(default_factory=dict)
     #: Don't read the answer: it comes back as ``Response.response``, for a file's bytes.
@@ -54,6 +55,8 @@ class Request:
     #: ``False`` skips the revalidation cache for this read.
     cache: bool = True
     retry: Retry | None = None
+    #: Called as an :class:`Upload` is sent.
+    on_progress: Progress | None = None
 
 
 def endpoint(base: str, realm: str, path: list[str], query: Mapping[str, QueryValue] | None = None) -> str:

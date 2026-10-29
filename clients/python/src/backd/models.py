@@ -15,11 +15,15 @@ __all__ = [
     "ConsentRef",
     "Doc",
     "EnrollmentChallenge",
+    "FileDetails",
+    "FileField",
+    "FileLink",
     "Identity",
     "Me",
     "Meta",
     "MfaChallenge",
     "Page",
+    "PreparedUpload",
     "Profile",
     "ProviderSession",
     "ReauthMethod",
@@ -27,6 +31,7 @@ __all__ = [
     "SessionInfo",
     "SignInResult",
     "User",
+    "VersionState",
 ]
 
 ReauthMethod = Literal["totp", "recovery_code", "password", "email_code"]
@@ -269,3 +274,104 @@ class AggregateResult(TypedDict):
     groups: list[AggregateGroup]
     #: How many groups there were before ``limit``.
     total_groups: int
+
+
+# -- files -----------------------------------------------------------------------------------
+
+
+class _FileRequired(TypedDict):
+    #: ``fl_…``.
+    id: str
+    #: The sanitized display name.
+    name: str
+    #: Bytes.
+    size: int
+    #: Detected from the content.
+    type: str
+    #: Hex.
+    sha256: str
+    uploaded_at: str
+
+
+class VersionState(TypedDict, total=False):
+    """One version of an image: ``pending`` (a worker will make it), ``ready`` (made: ``id``, ``size``,
+    ``type``, ``width``, ``height``), ``empty`` (only functions make it, none has yet), ``skipped`` (``reason``
+    is ``not_an_image`` or ``unsupported_format``) or ``failed`` (``reason`` is ``too_large`` or
+    ``decode_error``)."""
+
+    status: Literal["pending", "ready", "empty", "skipped", "failed"]
+    reason: str
+    #: ``fv_…``, once ready.
+    id: str
+    size: int
+    type: str
+    width: int
+    height: int
+    #: What it was made with.
+    params: dict[str, Any]
+    fingerprint: str
+    #: Made with parameters a function gave (``generate``), not the declared ones.
+    custom: bool
+    generated_at: str
+    #: The copy's permanent address, on a public file once it is ready.
+    url: str
+
+
+class FileDetails(_FileRequired, total=False):
+    """What backd keeps of a file in a document's file field."""
+
+    #: Pixels, for an image (as a viewer sees it).
+    width: int
+    height: int
+    #: The state of each version the field declares (``versions:`` in collection.yaml).
+    versions: dict[str, VersionState]
+    #: True for a file of a public field (``public: true``): it is read at ``url``, with no signed link.
+    public: bool
+    #: A public file's name as its address ends with it.
+    key_name: str
+    #: A public file's permanent address, or the signed link of ``file_links=True``.
+    url: str
+    #: When a signed ``url`` stops working (never set on a public file's address).
+    expires_at: str
+
+
+class FileLink(TypedDict):
+    """A link to a file that works without credentials until it expires."""
+
+    url: str
+    #: RFC 3339; ``None`` for the address of a public file, which never expires.
+    expires_at: str | None
+
+
+class _FieldRequired(TypedDict):
+    name: str
+    upload: Literal["proxy", "direct"]
+    download: Literal["presigned", "proxy"]
+    multiple: bool
+    #: 1 for a field that holds one file.
+    max_files: int
+    #: Bytes per file.
+    max_size: int
+    #: Allowed content types; empty allows any.
+    types: list[str]
+
+
+class FileField(_FieldRequired, total=False):
+    """How a file field takes files: to choose between a proxy and a direct upload, and to refuse a file
+    before sending it."""
+
+    #: A direct field that can hold more: files above this many bytes are sent in parts.
+    multipart_above: int
+
+
+class PreparedUpload(TypedDict):
+    """What a pending upload gives back: name ``ref`` in the field of a create, ``put`` or ``patch``."""
+
+    id: str
+    token: str
+    #: ``{"upload": id, "token": token}``: what goes in the document's field.
+    ref: dict[str, str]
+    #: RFC 3339: unused, it expires then.
+    expires_at: str
+    #: What backd stored: ``name``, ``size``, ``type``, ``sha256``.
+    file: dict[str, Any]
