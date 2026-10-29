@@ -74,6 +74,8 @@ type Client struct {
 
 	auth          *Auth
 	cache         *RevalidationCache
+	fieldMu       sync.Mutex
+	fields        map[string]*FileField
 	config        *Config
 	life          context.Context
 	stopLife      context.CancelFunc

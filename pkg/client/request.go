@@ -343,6 +343,8 @@ func readerSize(r io.Reader) int64 {
 	switch v := r.(type) {
 	case interface{ Len() int }:
 		return int64(v.Len())
+	case *io.SectionReader:
+		return v.Size()
 	case *os.File:
 		if fi, err := v.Stat(); err == nil && fi.Mode().IsRegular() {
 			pos, _ := v.Seek(0, io.SeekCurrent)
