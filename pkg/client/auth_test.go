@@ -51,7 +51,7 @@ func (rt *routes) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h := rt.h[key]
 	rt.mu.Unlock()
 	if h == nil {
-		http.Error(w, `{"error":{"code":"not_found","message":"no route `+key+`"}}`, 404)
+		http.Error(w, `{"error":{"code":"not_found","message":"no route `+key+`"}}`, http.StatusNotFound)
 		return
 	}
 	h(w, r, b)
