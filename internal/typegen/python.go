@@ -647,8 +647,8 @@ func (g *pyGen) wrappers(w *strings.Builder, rl *registry.Realm, dbs []string, p
 				if inT == "" {
 					param = "input: Any = None"
 				}
-				switch {
-				case f.Mode == registry.ModeAsync:
+				switch f.Mode {
+				case registry.ModeAsync:
 					g.needCast = true
 					fmt.Fprintf(w, "\n    %s %s(self, %s) -> %s:\n        \"\"\"Calls %s/%s (async: it answers a job; wait() for the output).\"\"\"\n        return cast(%s, %sself.db.fn(%s, input))\n", def, m, param, job, dbName, f.Name, job, aw, pyLit(f.Name))
 				default:
