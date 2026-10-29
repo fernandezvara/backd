@@ -63,14 +63,16 @@ functions-testing-test:
 	$(COMPOSE_TEST) run --rm --entrypoint deno tests test --config examples/config/shelf/main/_functions/deno.json examples/config/shelf/main/_functions/
 	$(COMPOSE_TEST) down -v
 
-# The Shelf's generated types are current: the app's (clients/js/examples/shelf/backd) and each
-# functions project's backd.d.ts. After a schema change: `make shelf-types-update`.
+# The Shelf's generated types are current: the app's (clients/js/examples/shelf/backd), the Go
+# example's (clients/go-examples/shelf/backd) and each functions project's backd.d.ts. After a schema change: `make shelf-types-update`.
 shelf-types:
 	CONFIG_DIR=examples/config go run ./cmd/backd types --realm shelf --out clients/js/examples/shelf/backd --check
 	CONFIG_DIR=examples/config go run ./cmd/backd types --realm shelf --functions --check
+	CONFIG_DIR=examples/config go run ./cmd/backd types --realm shelf --lang go --package backd --out clients/go-examples/shelf/backd --check
 
 shelf-types-update:
 	CONFIG_DIR=examples/config go run ./cmd/backd types --realm shelf --out clients/js/examples/shelf/backd
+	CONFIG_DIR=examples/config go run ./cmd/backd types --realm shelf --lang go --package backd --out clients/go-examples/shelf/backd
 	CONFIG_DIR=examples/config go run ./cmd/backd types --realm shelf --functions
 
 # The admin UI (ui/admin): build it into internal/adminui/dist, where the Go
