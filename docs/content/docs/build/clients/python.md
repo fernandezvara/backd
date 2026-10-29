@@ -16,7 +16,7 @@ The Python client has **no admin API**. Administration is for the operator's own
 
 ## Install
 
-The package is `backd`, on PyPI once the first release is made (see [Releasing](../../contribute/#releasing-the-python-client)); until then install it from the repository:
+The package is `backd`, on PyPI once the first release is made (see [Releasing](../../../contribute/#releasing-the-python-client)); until then install it from the repository:
 
 ```sh
 pip install backd                                                                          # from PyPI
