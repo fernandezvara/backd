@@ -371,12 +371,12 @@ func (f *functions) run(w http.ResponseWriter, r *http.Request, fn *registry.Fun
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(timeout + 30*time.Second))
 	invID := xid.New().String()
 	req := executor.InvokeRequest{
-		Function:  realm + "/" + database + "/" + name,
-		Bundle:    executor.Bundle{SHA256: hash, URL: strings.TrimRight(f.callbackURL, "/") + "/_internal/functions/" + hash},
-		TimeoutMS: timeout.Milliseconds(),
-		MemoryMB:  (fn.Memory + 1<<20 - 1) >> 20,
-		MaxOutput: fn.MaxOutput,
-		Network:   fn.Network,
+		Function:    realm + "/" + database + "/" + name,
+		Bundle:      executor.Bundle{SHA256: hash, URL: strings.TrimRight(f.callbackURL, "/") + "/_internal/functions/" + hash},
+		TimeoutMS:   timeout.Milliseconds(),
+		MemoryBytes: fn.Memory,
+		MaxOutput:   fn.MaxOutput,
+		Network:     fn.Network,
 		Envelope: executor.Envelope{
 			Mode:           fn.Mode,
 			Input:          input,

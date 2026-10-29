@@ -75,7 +75,7 @@ func (f *fixture) request(code string) InvokeRequest {
 	return InvokeRequest{
 		Function:  "shop/app/test",
 		Bundle:    Bundle{SHA256: hash, URL: f.backd.URL + "/_internal/functions/" + hash},
-		TimeoutMS: 5000, MemoryMB: 64, MaxOutput: 1 << 20,
+		TimeoutMS: 5000, MemoryBytes: 64 << 20, MaxOutput: 1 << 20,
 		Envelope: Envelope{Input: json.RawMessage(`{"n": 2}`), RequestID: "req1"},
 	}
 }
@@ -401,5 +401,13 @@ func TestParseResultCarriesSteps(t *testing.T) {
 	}
 	if res := parseResult([]byte(`{"ok":true,"output":1}`)); len(res.Steps) != 0 {
 		t.Errorf("no steps: %+v", res.Steps)
+	}
+}
+
+func TestHeapMiBRoundsUp(t *testing.T) {
+	for in, want := range map[int64]int64{128 << 20: 128, 1: 1, 1<<20 + 1: 2, 32 << 20: 32} {
+		if got := (InvokeRequest{MemoryBytes: in}).HeapMiB(); got != want {
+			t.Errorf("HeapMiB(%d) = %d; want %d", in, got, want)
+		}
 	}
 }

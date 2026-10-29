@@ -9,6 +9,7 @@ Until a stable release is declared, a minor release may have breaking changes; t
 ### Breaking
 
 - **Sizes follow one grammar:** a number and a case-sensitive unit with no space (`512KiB`, `1.5GB`), decimals allowed when the result is a whole number of bytes, in decimal (`KB`...`TB`, powers of 1000) or binary (`KiB`...`TiB`, powers of 1024) units. A function's `memory` takes binary units only (`256MB` is refused: write `256MiB`). The units are explained in [Sizes and units](https://fernandezvara.github.io/backd/docs/build/configuration/#sizes-and-units).
+- **`backd` and `backd executor` must run the same version:** the request to the executor carries `memory_bytes` instead of `memory_mb`.
 
 ### Added
 
