@@ -1,6 +1,6 @@
 COMPOSE_TEST = docker compose -f docker-compose.test.yml
 
-.PHONY: dev dev-examples dev-build dev-down dev-reset dev-logs dev-backd lint build ui ui-test ui-e2e test test-local perf vet lint-api openapi-clients shelf-types shelf-types-update js-test js-package js-integration dart-package dart-integration python-test python-integration functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour shelf-tour-ci example-attacks release-check
+.PHONY: dev dev-examples dev-build dev-down dev-reset dev-logs dev-backd lint build ui ui-test ui-e2e test test-local perf vet lint-api openapi-clients shelf-types shelf-types-update js-test js-package js-integration dart-package dart-integration python-test python-integration python-package functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour shelf-tour-ci example-attacks release-check
 
 build:
 	go build -o bin/backd ./cmd/backd
@@ -67,6 +67,11 @@ python-test:
 python-integration:
 	cd clients/python && python3 -m venv .venv && .venv/bin/pip install -q -e '.[dev]'
 	PYTHON=$(CURDIR)/clients/python/.venv/bin/python clients/python/tests/integration/run.sh
+
+# Python and PyPI (needs Python 3.10+ and network access; see scripts/check-python-package.sh): builds the sdist and
+# the wheel, checks what they hold and uses the wheel from a fresh virtualenv.
+python-package:
+	scripts/check-python-package.sh
 
 # @backd/functions-testing's own tests (needs Deno; the dockerized test
 # image already has it).

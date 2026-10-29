@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "backd"
-version = "0.0.1"
+dynamic = ["version"]
 description = "Python client for backd: auth, sessions and data for services, scripts and notebooks."
 readme = "README.md"
 license = "MIT"
@@ -33,6 +33,9 @@ Source = "https://github.com/fernandezvara/backd/tree/main/clients/python"
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-asyncio>=0.24", "pytest-timeout>=2.3", "ruff>=0.6", "mypy>=1.11", "build", "twine"]
+
+[tool.hatch.version]
+path = "src/backd/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/backd"]
