@@ -283,7 +283,7 @@ type MemberListParams struct {
 // List returns a page of members.
 func (m *OrgMembers) List(ctx context.Context, p MemberListParams, opts ...RequestOption) (*OrgMemberPage, error) {
 	var page OrgMemberPage
-	q := p.PageParams.values()
+	q := p.values()
 	if p.WithoutSSO {
 		q.Set("sso", "false")
 	}
@@ -385,7 +385,7 @@ func (t *OrgTeams) Delete(ctx context.Context, team string, opts ...RequestOptio
 
 // Members returns a page of the members of a team, or of the holders of one of its roles.
 func (t *OrgTeams) Members(ctx context.Context, team string, p TeamMembersParams, opts ...RequestOption) (*OrgTeamMemberPage, error) {
-	q := p.PageParams.values()
+	q := p.values()
 	if p.Role != "" {
 		q.Set("role", p.Role)
 	}

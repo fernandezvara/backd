@@ -242,13 +242,6 @@ func (c *Collection) Subscribe(spec SubscriptionSpec, o SubscribeOptions) (*Live
 	return c.c.Realtime().Subscribe([]SubscriptionSpec{spec}, o)
 }
 
-func (r *Realtime) remove(v *LiveView) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.removeLocked(v)
-	r.scheduleLocked()
-}
-
 func (r *Realtime) removeLocked(v *LiveView) {
 	delete(r.views, v)
 	for _, s := range v.subs {
@@ -1444,4 +1437,38 @@ func (cfg *Config) Live(paths ...string) (stop func()) {
 	cfg.stopLive = stopOnce
 	cfg.lmu.Unlock()
 	return stopOnce
+}
+
+// reread revalidates the held entries that touch the changed paths (all of them with none).
+func (cfg *Config) reread(ctx context.Context, changed []string) {
+	if _, err := cfg.scope(ctx); err != nil {
+		cfg.emitError(err)
+		return
+	}
+	cfg.mu.Lock()
+	keys := make([]string, 0, len(cfg.entries))
+	for k := range cfg.entries {
+		keys = append(keys, k)
+	}
+	cfg.mu.Unlock()
+	for _, key := range keys {
+		if len(changed) > 0 && !touches(key, changed) {
+			continue
+		}
+		cfg.revalidate(key)
+	}
+}
+
+func touches(key string, changed []string) bool {
+	if key == "" {
+		return true
+	}
+	for _, p := range strings.Split(key, ",") {
+		for _, c := range changed {
+			if c == p || strings.HasPrefix(c, p+".") || strings.HasPrefix(p, c+".") {
+				return true
+			}
+		}
+	}
+	return false
 }
