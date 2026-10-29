@@ -99,6 +99,7 @@ type Config struct {
 	next     int
 	onChange map[int]func([]string)
 	onError  map[int]func(error)
+	stopLive func()
 }
 
 type configFetch struct {

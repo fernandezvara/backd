@@ -78,6 +78,7 @@ type Client struct {
 	fields        map[string]*FileField
 	config        *Config
 	push          *Push
+	rt            *Realtime
 	life          context.Context
 	stopLife      context.CancelFunc
 	oauth         OAuthStorage
@@ -144,6 +145,7 @@ func newClient(opts Options, root *Client) (*Client, error) {
 	c.auth = newAuth(c)
 	c.config = newConfig(c, opts.ConfigStorage)
 	c.push = newPush(c)
+	c.rt = newRealtime(c)
 	return c, nil
 }
 
@@ -210,8 +212,9 @@ func (c *Client) Org(ref string) (*Client, error) {
 		return root, nil
 	}
 	root.mu.Lock()
-	defer root.mu.Unlock()
-	if oc, ok := root.orgs[key]; ok {
+	oc, ok := root.orgs[key]
+	root.mu.Unlock()
+	if ok {
 		return oc, nil
 	}
 	slots, ok := root.store.(SlotStorage)
@@ -220,15 +223,20 @@ func (c *Client) Org(ref string) (*Client, error) {
 	}
 	o := root.opts
 	o.Org, o.Storage = key, slots.Slot(key)
-	oc, err := newClient(o, root)
+	made, err := newClient(o, root) // takes the root's lock to register what it closes
 	if err != nil {
 		return nil, err
+	}
+	root.mu.Lock()
+	defer root.mu.Unlock()
+	if oc, ok := root.orgs[key]; ok { // another goroutine made it first
+		return oc, nil
 	}
 	if root.orgs == nil {
 		root.orgs = map[string]*Client{}
 	}
-	root.orgs[key] = oc
-	return oc, nil
+	root.orgs[key] = made
+	return made, nil
 }
 
 // OnClose registers f to run when the client is closed; realtime streams use it to end.
