@@ -104,6 +104,7 @@ class AsyncCollection(Generic[D]):
         file_links: bool = False,
         expand: str | None = None,
         language: str | None = None,
+        cache: bool = True,
     ) -> Page[D]:
         """One page of documents the caller may read.
 
@@ -113,7 +114,8 @@ class AsyncCollection(Generic[D]):
         ``total``; ``file_links`` adds ``url`` and ``expires_at`` to every file; ``expand`` names the references
         to return in ``_expanded`` (build it with :func:`backd.expand`; never sent unless you set it);
         ``deleted`` is ``"only"`` (the trash) or ``"include"`` in a collection with ``soft_delete``;
-        ``language`` is the language a ``$search`` is stemmed in."""
+        ``language`` is the language a ``$search`` is stemmed in; ``cache=False`` skips the client's revalidation
+        cache for this read."""
         query: dict[str, Any] = {
             "where": where_json(where),
             "order_by": csv(order_by),
@@ -127,7 +129,7 @@ class AsyncCollection(Generic[D]):
             "language": language,
             **self._scope(),
         }
-        res = await self._client.request("GET", self.path, query=query)
+        res = await self._client.request("GET", self.path, query=query, cache=cache)
         return _page(res.data)
 
     async def search(
@@ -251,13 +253,14 @@ class AsyncCollection(Generic[D]):
         deleted: Deleted | None = None,
         file_links: bool = False,
         expand: str | None = None,
+        cache: bool = True,
     ) -> D:
         """One document; :class:`NotFoundError` if it doesn't exist or the caller may not read it. A soft-deleted
         document is only found with ``deleted="only"`` or ``"include"``. ``file_links`` adds ``url`` and
         ``expires_at`` to every file the document holds (they expire). ``expand`` returns the declared references
         named in it in ``_expanded``."""
         query = {"deleted": deleted, "file_links": True if file_links else None, "expand": expand}
-        res = await self._client.request("GET", [*self.path, id], query=query)
+        res = await self._client.request("GET", [*self.path, id], query=query, cache=cache)
         return cast(D, res.data)
 
     # -- writes ----------------------------------------------------------------------------

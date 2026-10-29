@@ -142,6 +142,34 @@ posts.restore(doc["id"])
 - **`client.db("main").batch([...])`** applies up to 100 writes across the database's collections in one transaction: all or none.
 - **Teams and organizations** — `posts.in_team("t1")` scopes `list`, `iterate`, `aggregate` and `create` to a team of the session's organization; `in_org("o1")` names the organization of a create made with an admin key.
 
+## Caches
+
+Two caches keep reads cheap. Neither serves anything the server hasn't confirmed.
+
+**The revalidation cache** keeps the last body and `ETag` of each document and list read, in memory. The next read of the same address sends `If-None-Match`, and an unchanged document costs a `304` instead of the body. Every read still goes to the server, which runs the rules, so a document the caller can no longer see is never served from the copy. Entries belong to the credentials they were read with, and a sign-in, a sign-out or an expired session empties the cache. A write to a document drops its entries; reads with `expand`, `file_links` or any `_` path are never kept.
+
+```python
+from backd import CacheOptions, Client
+
+client = Client(url=url, realm="shelf", cache=CacheOptions(max_entries=500, max_bytes=20 * 1024 * 1024))
+client.cache_stats()                    # CacheStats(hits=…, misses=…, entries=…, bytes=…)
+posts.get("p1", cache=False)            # this read skips the cache
+client.clear_cache()
+```
+
+On by default (200 entries, 5 MiB); `cache=False` turns it off. `client.request(...)` returns `from_cache=True` on a read answered from the copy.
+
+**The app configuration** is the realm's flags, switches and limits (`_config`), as the signed-in user's rules allow. `client.config` keeps a copy per realm and user, fresh for the `cache_ttl` the server gave, with no request at all; after that a read returns the copy at once and revalidates it in the background (a task in the async client, a thread in the sync one).
+
+```python
+client.config.load(["features", "maintenance"])           # fetched once, then fresh for cache_ttl
+client.config.get("features.export.enabled")                # from the copy; fetched first if never loaded
+client.config.get_sync("maintenance.enabled", False)      # the copy only, never a request
+stop = client.config.on("change", lambda paths: print("changed:", paths))
+```
+
+Pass `config_storage=FileConfigStorage(directory)` to start the next run with the last configuration it saw (`MemoryConfigStorage` is the default, and any object with `get`, `set`, `remove` and `all_keys` works). Copies are dropped on sign-out and when another user signs in.
+
 ## Errors
 
 Every failure is a `BackdError` with `status`, `code`, `message`, `details`, `request_id` and `path`. The subclasses follow the server's error `code`s with the names `backd-js` uses, and a class matches its parents: `except ConflictError` also catches `IdTakenError`, and `except ValidationError` catches `InvalidIdError`.

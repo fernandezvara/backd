@@ -6,6 +6,8 @@
 from ._async.client import AsyncClient
 from ._retry import Retry
 from ._sync.client import Client
+from .cache import CacheOptions, CacheStats
+from .config_storage import ConfigStorage, FileConfigStorage, MemoryConfigStorage
 from .errors import (
     AggregateNotEnabledError,
     AggregateTooExpensiveError,
@@ -109,7 +111,10 @@ __all__ = [
     "AuthenticationError",
     "BackdError",
     "BatchOperation",
+    "CacheOptions",
+    "CacheStats",
     "Client",
+    "ConfigStorage",
     "ConflictError",
     "ConsentChallenge",
     "ConsentRequiredError",
@@ -118,6 +123,7 @@ __all__ = [
     "ErrorDetail",
     "ExpandTooLargeError",
     "FieldEncryptedError",
+    "FileConfigStorage",
     "FileStorage",
     "ForbiddenError",
     "IdTakenError",
@@ -130,6 +136,7 @@ __all__ = [
     "JobTimeoutError",
     "LastOrgManagerError",
     "Me",
+    "MemoryConfigStorage",
     "MemoryOAuthStorage",
     "MemoryStorage",
     "Meta",

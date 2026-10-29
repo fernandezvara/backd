@@ -9,16 +9,20 @@ import time
 from collections.abc import Callable, Mapping
 from types import TracebackType
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
 from .._sio import sleep
 from .._core import Request, Response, endpoint, is_safe, normalize_org, session_gone
 from .._retry import Retry, backoff
+from ..cache import CacheOptions, CacheStats, Entry, RevalidationCache, cacheable, no_store
+from ..config_storage import ConfigStorage
 from ..errors import BackdError, NetworkError, RetryableError, error_from_response
 from ..oauth import MemoryOAuthStorage, OAuthStorage
 from ..storage import MemoryStorage, SlotStorage, TokenStorage
 from .auth import Auth
+from .config import Config
 from .data import Database
 
 __all__ = ["Client"]
@@ -37,6 +41,10 @@ class Client:
     :param storage: where the session token lives; memory by default.
     :param oauth_storage: where the sign-in with a provider keeps its PKCE verifier between its start and
         its end; memory by default.
+    :param cache: keep the last body and ``ETag`` of document and list reads in memory and revalidate them with
+        ``If-None-Match``, so an unchanged read costs a ``304``. On by default; ``False`` turns it off, a
+        :class:`CacheOptions` sets ``max_entries`` (200) and ``max_bytes`` (5 MiB).
+    :param config_storage: where ``client.config`` keeps its copies between runs; memory only by default.
     :param retry: retries for 429 and 503; off by default.
     :param headers: sent with every call.
     :param transport: an ``httpx`` transport, for tests (``httpx.MockTransport``) and unusual deployments.
@@ -57,6 +65,8 @@ class Client:
         org: str | None = None,
         storage: TokenStorage | None = None,
         oauth_storage: OAuthStorage | None = None,
+        cache: CacheOptions | bool = True,
+        config_storage: ConfigStorage | None = None,
         retry: Retry | None = None,
         headers: Mapping[str, str] | None = None,
         transport: httpx.BaseTransport | None = None,
@@ -76,6 +86,8 @@ class Client:
             "org": org,
             "storage": storage,
             "oauth_storage": oauth_storage,
+            "cache": cache,
+            "config_storage": config_storage,
             "retry": retry,
             "headers": headers,
             "transport": transport,
@@ -107,6 +119,14 @@ class Client:
         self._http: httpx.Client = (
             _root._http if _root is not None else httpx.Client(transport=transport, timeout=timeout)
         )
+        self._cache: RevalidationCache | None = (
+            None if cache is False else RevalidationCache(cache if isinstance(cache, CacheOptions) else None)
+        )
+        #: The realm's app configuration: flags, switches and limits, cached per user.
+        self.config = Config(self, config_storage)
+        # What was read as someone else (or no one) isn't theirs.
+        self.on_credential_change(self.clear_cache)
+        self.on_credential_change(self.config.clear)
         #: Sign-up, login and sessions.
         self.auth = Auth(self)
         self._expired = self.auth._expired
@@ -184,14 +204,25 @@ class Client:
     ) -> None:
         self.close()
 
-    def _credentials(self) -> tuple[str | None, bool]:
-        """The ``Authorization`` value (``None`` for none) and whether a session token was part of it."""
+    def _credentials(self) -> tuple[str | None, bool, str]:
+        """The ``Authorization`` value (``None`` for none), whether a session token was part of it, and the
+        caller as the cache knows it."""
         if self._api_key:
-            return "Bearer " + self._api_key, False
+            return "Bearer " + self._api_key, False, "key:" + self._api_key
         token = self.storage.get()
         if token:
-            return "Bearer " + token, True
-        return None, False
+            return "Bearer " + token, True, "session:" + token
+        return None, False, ""
+
+    def cache_stats(self) -> CacheStats:
+        """How the revalidation cache is doing: reads the server answered ``304`` to (``hits``), cacheable
+        reads that came back in full (``misses``), and what is kept."""
+        return self._cache.stats() if self._cache else CacheStats(0, 0, 0, 0)
+
+    def clear_cache(self) -> None:
+        """Forgets everything the revalidation cache holds."""
+        if self._cache:
+            self._cache.clear()
 
     def request(
         self,
@@ -246,10 +277,30 @@ class Client:
         if req.reauth and self._proof is not None and self._proof[1] > time.time():
             headers["X-Backd-Reauth"] = self._proof[0]
         sent_session = False
+        # The signed-in caller as the cache knows it: entries read as another caller are never reused.
+        owner = ""
         if req.auth:
-            value, sent_session = self._credentials()
+            value, sent_session, owner = self._credentials()
             if value:
                 headers["Authorization"] = value
+
+        # Revalidation: send the tag of the copy we hold, if any.
+        use_cache = req.cache and cacheable(req.method, req.path, req.query, req.raw)
+        cache = self._cache if use_cache else None
+        held: Entry | None = None
+        if cache is not None:
+            cache.scope(owner)
+            # A caller's own If-None-Match is theirs to handle: the 304 goes back to them.
+            if not any(h.lower() == "if-none-match" for h in headers):
+                held = cache.get(url)
+                if held is not None:
+                    headers["If-None-Match"] = held.etag
+        writes_document = (
+            req.method not in ("GET", "HEAD")
+            and len(req.path) == 3
+            and not req.path[0].startswith("_")
+            and not req.path[1].startswith("_")
+        )
 
         retry = req.retry or self._retry
         attempts = max(0, retry.attempts) if is_safe(req.method, headers) else 0
@@ -271,11 +322,29 @@ class Client:
                         "backd: the generated types are out of date with the server: "
                         "run `backd types` and commit the result"
                     )
+            if res.status_code == 304:
+                res.close()
+                if cache is not None and held is not None:
+                    cache.hit()
+                    # The copy we hold is current; its headers (ETag, …) are the ones the 304 repeats.
+                    return Response(200, held.headers, data=_parse(held.body), from_cache=True)
+                # The caller asked with their own If-None-Match: the 304 is their answer.
+                return Response(304, res.headers)
             if res.is_success:
+                if writes_document and self._cache:
+                    self._cache.drop_path(urlsplit(url).path)  # a write changed it: what we hold is stale
                 if req.raw:
                     return Response(res.status_code, res.headers, response=res)
-                data = _read_json(res)
-                return Response(res.status_code, res.headers, data=data)
+                res.read()
+                res.close()
+                if cache is not None:
+                    cache.miss()
+                    etag = res.headers.get("ETag")
+                    if etag and not no_store(res.headers.get("Cache-Control")) and res.content:
+                        cache.set(url, Entry(etag, res.content, res.headers))
+                    else:
+                        cache.delete(url)
+                return Response(res.status_code, res.headers, data=_parse(res.content, res.status_code))
             res.read()
             res.close()
             err = error_from_response(res.status_code, {k.lower(): v for k, v in res.headers.items()}, res.content)
@@ -297,14 +366,12 @@ def _json(body: Any) -> bytes:
     return json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode()
 
 
-def _read_json(res: httpx.Response) -> Any:
-    res.read()
-    res.close()
-    if not res.content:
+def _parse(body: bytes, status: int = 200) -> Any:
+    if not body:
         return None
     try:
-        return json.loads(res.content)
+        return json.loads(body)
     except ValueError as e:
         raise BackdError(
-            "the answer is not the JSON expected: " + str(e), status=res.status_code, code="invalid_response"
+            "the answer is not the JSON expected: " + str(e), status=status, code="invalid_response"
         ) from e
