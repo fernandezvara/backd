@@ -1,6 +1,6 @@
 COMPOSE_TEST = docker compose -f docker-compose.test.yml
 
-.PHONY: dev dev-examples dev-build dev-down dev-reset dev-logs dev-backd lint build ui ui-test ui-e2e test test-local perf vet lint-api openapi-clients shelf-types shelf-types-update js-test js-package js-integration dart-package dart-integration python-test python-integration python-package functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour shelf-tour-ci example-attacks release-check
+.PHONY: dev dev-examples dev-build dev-down dev-reset dev-logs dev-backd lint build ui ui-test ui-e2e test test-local perf vet lint-api openapi-clients shelf-types shelf-types-update js-test js-package js-integration dart-package dart-integration python-test python-integration python-package functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour shelf-tour-ci example-attacks release-check release-tag
 
 build:
 	go build -o bin/backd ./cmd/backd
@@ -212,3 +212,21 @@ release-check:
 # does); stops the stack afterwards. Stop `make example` first.
 example-attacks:
 	scripts/example-ci.sh
+
+# Tags the current commit for the server (and the Go client, which is this
+# module), backd-js, the Dart client and the Python client, and pushes the tags
+# (each starts its own release or publish workflow). Usage:
+#   make release-tag VERSION=v0.9.6
+# Run it on main, up to date with origin, after the release PR is merged.
+release-tag:
+	@test -n "$(VERSION)" || { echo "release-tag: set VERSION, e.g. make release-tag VERSION=v0.9.6" >&2; exit 1; }
+	@echo "$(VERSION)" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$$' || { echo "release-tag: VERSION must look like vX.Y.Z (got '$(VERSION)')" >&2; exit 1; }
+	@test "$$(git rev-parse --abbrev-ref HEAD)" = main || { echo "release-tag: not on main" >&2; exit 1; }
+	@git diff --quiet && git diff --cached --quiet || { echo "release-tag: the working tree has uncommitted changes" >&2; exit 1; }
+	@git fetch --quiet origin main --tags
+	@test "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/main)" || { echo "release-tag: HEAD is not origin/main; pull first" >&2; exit 1; }
+	@for t in $(VERSION) js-$(VERSION) dart-$(VERSION) py-$(VERSION); do \
+		if git rev-parse -q --verify "refs/tags/$$t" >/dev/null; then echo "release-tag: tag $$t already exists" >&2; exit 1; fi; \
+	done
+	@for t in $(VERSION) js-$(VERSION) dart-$(VERSION) py-$(VERSION); do git tag -a "$$t" -m "$$t"; done
+	git push --atomic origin $(VERSION) js-$(VERSION) dart-$(VERSION) py-$(VERSION)

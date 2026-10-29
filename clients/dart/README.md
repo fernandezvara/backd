@@ -97,14 +97,14 @@ desktop app exercising all of it.
 ## Versions
 
 `backd` is released on the **same version as the `backd` server and
-`backd-js`** (`package:backd` 0.9.5 goes with `backd` v0.9.5), so a
+`backd-js`** (`package:backd` 0.9.6 goes with `backd` v0.9.6), so a
 `backd` X.Y always matches the server's X.Y. Before 0.9.1 it was versioned on
 its own as `0.0.x`; a caret on a `0.0.x` version allows nothing newer, so move
-a `backd: ^0.0.5` constraint to `backd: ^0.9.5`.
+a `backd: ^0.0.5` constraint to `backd: ^0.9.6`.
 
 Until a stable release is declared, a minor release may have breaking changes;
 the CHANGELOG lists them first, so read it on upgrades and pin the minor
-(`backd: ^0.9.5` stays within `0.9.x`).
+(`backd: ^0.9.6` stays within `0.9.x`).
 
 ## License
 

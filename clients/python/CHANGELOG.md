@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.9.6
+
+From this version the package is released on the same version as the `backd` server (before, `0.0.x`).
 
 - First version: `Client` and `AsyncClient` with the request pipeline, errors, retries, token storage and the size helpers.
 - `client.auth`: sign-up, login and the sign-in steps, MFA, magic links, providers (redirect and ID token), `reauth`/`with_proof`, sessions, the email flows, `client.org` and `on_auth_change`.
