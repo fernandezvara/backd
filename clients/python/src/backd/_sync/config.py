@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 from .._sio import spawn
+from .._live import ConfigFollower
 from ..config_storage import ConfigStorage
 
 if TYPE_CHECKING:
@@ -67,6 +68,13 @@ def _normalize(paths: list[str] | str | None) -> str:
     return ",".join(sorted({p.strip() for p in items if p.strip()}))
 
 
+def _touches(key: str, changed: list[str]) -> bool:
+    """Whether a request key (comma separated branches; '' is everything) holds any of the changed keys."""
+    if key == "":
+        return True
+    return any(p == c or c.startswith(p + ".") or p.startswith(c + ".") for p in key.split(",") for c in changed)
+
+
 _MAX_AGE = re.compile(r"max-age=(\d+)", re.IGNORECASE)
 
 
@@ -93,7 +101,14 @@ class Config:
         self._owner = ""
         self._lock = threading.RLock()
         self._listeners: list[Callable[[list[str]], None]] = []
-        self._error_listeners: list[Callable[[Exception], None]] = []
+        self._error_listeners: list[Callable[[BaseException], None]] = []
+        self._stop_live: Callable[[], None] | None = None
+        #: Counts the reads sent: the answer to an older one never replaces the answer to a newer one.
+        self._sent = 0
+        self._applied: dict[str, int] = {}
+        # The credentials changed: a followed stream is opened again with the new ones, so it reports what the new user
+        # reads.
+        client.on_credential_change(self._credential_changed)
 
     # -- reading ---------------------------------------------------------------------------
 
@@ -155,6 +170,57 @@ class Config:
                 listeners.remove(listener)
 
         return stop
+
+    def live(self, paths: list[str] | str | None = None) -> Callable[[], None]:
+        """Follows the configuration live: adds a ``_config`` subscription to the client's realtime stream, and when
+        backd says something the user reads changed, reads those branches again. The ``change`` listeners hear of the
+        keys that differ, within the realtime delay instead of ``cache_ttl``. The stream is the one ``client.realtime``
+        keeps (it needs realtime enabled in the deployment). Calling it again replaces the previous call. Errors (the
+        realm has no configuration, realtime is off) go to ``on("error", …)``. Returns a function that stops
+        following.
+
+            client.config.load(["maintenance"])
+            stop = client.config.live(["maintenance"])
+            client.config.on("change", lambda paths: rerender(paths))
+        """
+        if self._stop_live is not None:
+            self._stop_live()
+        branches = [p for p in _normalize(paths).split(",") if p]
+
+        def error(err: BaseException) -> None:
+            if self._stop_live is stop_once:
+                self._stop_live = None
+            self._emit_error(err)
+
+        follower = ConfigFollower(
+            paths=branches,
+            # Whenever the stream opens, what happened before it did was not heard: a conditional read of what is held
+            # closes the gap, and costs a 304 when nothing moved.
+            ready=lambda: spawn(self.reread, []),
+            changed=lambda changed: spawn(self.reread, changed),
+            error=error,
+        )
+        stop = self._client.realtime.follow_config(follower)
+
+        def stop_once() -> None:
+            if self._stop_live is stop_once:
+                self._stop_live = None
+            stop()
+
+        self._stop_live = stop_once
+        return stop_once
+
+    def _credential_changed(self) -> None:
+        if self._stop_live is not None:
+            self._client.realtime.schedule()
+
+    def reread(self, changed: list[str]) -> None:
+        """Reads again what is held of the branches that changed (all of it for none)."""
+        self._scope()
+        for key in list(self._entries):
+            if changed and not _touches(key, changed):
+                continue
+            self.revalidate(key)
 
     # -- keeping it ------------------------------------------------------------------------
 
@@ -237,11 +303,18 @@ class Config:
         owner = self._owner
         held = self._entries.get(key)
         headers = {"If-None-Match": held.etag} if held else {}
+        with self._lock:
+            self._sent += 1
+            sent = self._sent
         res = self._client.request("GET", ["_config"], query={"paths": key or None}, headers=headers, cache=False)
         with self._lock:
             if owner != self._owner:
                 # The user changed while the request was out: what came back is not theirs to keep.
                 return held or _Entry("", {}, "", 0, 0)
+            if sent < self._applied.get(key, 0):
+                # A read sent later has been applied already: this answer is older than what is held.
+                return self._entries.get(key) or held or _Entry("", {}, "", 0, 0)
+            self._applied[key] = sent
             if res.status == 304 and held is not None:
                 held.fetched_at = time.time()
                 m = _MAX_AGE.search(res.headers.get("Cache-Control", ""))
@@ -285,7 +358,7 @@ class Config:
             except Exception:  # a failing listener must not break the client or the other listeners
                 _log.exception("a client.config change listener failed")
 
-    def _emit_error(self, err: Exception) -> None:
+    def _emit_error(self, err: BaseException) -> None:
         for listener in list(self._error_listeners):
             try:
                 listener(err)

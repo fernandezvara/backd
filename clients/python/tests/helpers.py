@@ -74,3 +74,78 @@ class Server:
 
     def paths(self) -> list[str]:
         return [f"{r.method} {r.url.path.removeprefix('/v1/shelf')}" for r in self.calls]
+
+
+class Feed(httpx.SyncByteStream, httpx.AsyncByteStream):
+    """The body of a stream the test writes to as it goes (server-sent events), for either client."""
+
+    def __init__(self) -> None:
+        self._chunks: list[bytes] = []
+        self.closed = False
+
+    def push(self, text: str) -> None:
+        self._chunks.append(text.encode())
+
+    def event(self, name: str, data: Any = None, id: str | None = None) -> None:
+        import json
+
+        head = f"id: {id}\n" if id else ""
+        self.push(f"{head}event: {name}\ndata: {json.dumps({} if data is None else data)}\n\n")
+
+    def end(self) -> None:
+        self.closed = True
+
+    def __iter__(self) -> Any:
+        import time
+
+        while True:
+            if self._chunks:
+                yield self._chunks.pop(0)
+            elif self.closed:
+                return
+            else:
+                time.sleep(0.002)
+
+    async def __aiter__(self) -> Any:
+        import asyncio
+
+        while True:
+            if self._chunks:
+                yield self._chunks.pop(0)
+            elif self.closed:
+                return
+            else:
+                await asyncio.sleep(0.002)
+
+    def close(self) -> None:
+        self.closed = True
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+class Streams:
+    """A fake ``POST /_realtime``: every connection is a new :class:`Feed`, and the requests are remembered."""
+
+    def __init__(self, server: Server) -> None:
+        self.feeds: list[Feed] = []
+        self.bodies: list[Any] = []
+        self.fail: httpx.Response | None = None
+        #: When set, ``fail`` is the answer only to the requests it says yes to (a server refuses what is wrong).
+        self.fail_when: Any = None
+        server.on("POST /_realtime", self._open)
+
+    def _open(self, req: httpx.Request) -> httpx.Response:
+        import json
+
+        body = json.loads(req.content)
+        self.bodies.append(body)
+        if self.fail is not None and (self.fail_when is None or self.fail_when(body)):
+            return self.fail
+        feed = Feed()
+        self.feeds.append(feed)
+        return httpx.Response(200, headers={"Content-Type": "text/event-stream"}, stream=feed)
+
+    @property
+    def feed(self) -> Feed:
+        return self.feeds[-1]

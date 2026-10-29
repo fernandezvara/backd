@@ -4,6 +4,7 @@
 """
 
 from ._async.client import AsyncClient
+from ._live import LiveState, LiveStatus, LiveSubscriptionState, ReferenceSpec, SubscribeOptions, SubscriptionSpec
 from ._retry import Retry
 from ._sync.client import Client
 from .cache import CacheOptions, CacheStats
@@ -173,6 +174,9 @@ __all__ = [
     "JobStep",
     "JobTimeoutError",
     "LastOrgManagerError",
+    "LiveState",
+    "LiveStatus",
+    "LiveSubscriptionState",
     "Me",
     "MemoryConfigStorage",
     "MemoryOAuthStorage",
@@ -204,6 +208,7 @@ __all__ = [
     "Progress",
     "ProviderSession",
     "RealtimeNotEnabledError",
+    "ReferenceSpec",
     "Retry",
     "RetryableError",
     "RoleOrigin",
@@ -218,6 +223,8 @@ __all__ = [
     "SlotStorage",
     "SsoRequiredError",
     "SsoSessionError",
+    "SubscribeOptions",
+    "SubscriptionSpec",
     "TeamError",
     "TokenStorage",
     "TooManySubscriptionsError",

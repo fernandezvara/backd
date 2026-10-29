@@ -30,6 +30,7 @@ from .data import Database
 from .functions import Functions
 from .orgs import Orgs
 from .push import Push
+from .realtime import Realtime
 
 __all__ = ["Client"]
 
@@ -116,12 +117,15 @@ class Client:
         self._expired: Callable[[], None] | None = None
         self._closers: list[Callable[[], None]] = []
         self._closed = False
+        #: The realtime of this client and of the organization clients made from it, to wait for when closing.
+        self._realtimes: list[Any] = []
         self._root = _root
         self._org_clients: dict[str, Client] = {}
         self._credential_hooks: list[Callable[[], None]] = []
         #: The fresh proof of identity ``auth.reauth`` gave: the token and when it stops being good (epoch seconds).
         self._proof: tuple[str, float] | None = None
         self.oauth_storage: OAuthStorage = oauth_storage if oauth_storage is not None else MemoryOAuthStorage()
+        self._timeout = timeout
         self._http: httpx.Client = (
             _root._http if _root is not None else httpx.Client(transport=transport, timeout=timeout)
         )
@@ -145,6 +149,8 @@ class Client:
         self.account = Account(self)
         #: Organizations of the signed-in user: members, teams and invitations.
         self.orgs = Orgs(self)
+        #: Live lists: subscribe to the changes of collections that declare ``realtime: true``.
+        self.realtime = Realtime(self)
         self._expired = self.auth._expired
         #: How each file field takes files, asked once (``database/collection/field`` to its answer).
         self._file_fields: dict[str, dict[str, Any]] = {}
@@ -172,6 +178,36 @@ class Client:
         except httpx.HTTPError as e:
             raise _network("network_error", f"network error: {e}") from e
         return res
+
+    def open_stream(self, path: list[str], body: Any) -> httpx.Response:
+        """Opens a server-sent event stream: a ``POST`` to ``/v1/{realm}/…`` that answers ``text/event-stream``. The
+        answer is returned unread, with no read timeout (a stream may be quiet between heartbeats); a refusal raises
+        the error the API sent."""
+        headers: dict[str, str] = {"Accept": "text/event-stream", "Content-Type": "application/json", **self._headers}
+        if self._types:
+            headers["X-Backd-Types"] = self._types
+        value, sent_session, _ = self._credentials()
+        if value:
+            headers["Authorization"] = value
+        url = endpoint(self.url, self.realm, path)
+        try:
+            req = self._http.build_request(
+                "POST", url, headers=headers, content=_json(body), timeout=httpx.Timeout(self._timeout, read=None)
+            )
+            res = self._http.send(req, stream=True)
+        except httpx.TimeoutException as e:
+            raise _network("timeout", "request timed out") from e
+        except httpx.HTTPError as e:
+            raise _network("network_error", f"network error: {e}") from e
+        if res.is_success:
+            return res
+        res.read()
+        res.close()
+        err = error_from_response(res.status_code, {k.lower(): v for k, v in res.headers.items()}, res.content)
+        err.path = "/".join(path)
+        if session_gone(err.code) and sent_session and self._expired is not None:
+            self._expired()
+        raise err
 
     def open_external(self, method: str, url: str) -> httpx.Response:
         """Opens an address that is not backd's (a signed link) without any of backd's credentials. The answer's body
@@ -246,6 +282,8 @@ class Client:
         closers, root._closers = root._closers, []
         for fn in closers:
             fn()
+        for rt in root._realtimes:
+            rt._join()  # nothing is left running
         root._http.close()
 
     def __enter__(self) -> Client:

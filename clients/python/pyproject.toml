@@ -32,7 +32,7 @@ Issues = "https://github.com/fernandezvara/backd/issues"
 Source = "https://github.com/fernandezvara/backd/tree/main/clients/python"
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6", "mypy>=1.11", "build", "twine"]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "pytest-timeout>=2.3", "ruff>=0.6", "mypy>=1.11", "build", "twine"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/backd"]
@@ -46,6 +46,7 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 pythonpath = ["src"]
 addopts = "-ra"
+timeout = 60  # a hang in the realtime tests fails the test instead of the whole run
 
 [tool.ruff]
 line-length = 120
@@ -54,6 +55,9 @@ extend-exclude = ["src/backd/_sync"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["RUF059"]  # a fixture's unused parts are fine in a test
 
 [tool.mypy]
 strict = true

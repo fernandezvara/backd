@@ -29,6 +29,7 @@ from .data import AsyncDatabase
 from .functions import AsyncFunctions
 from .orgs import AsyncOrgs
 from .push import AsyncPush
+from .realtime import AsyncRealtime
 
 __all__ = ["AsyncClient"]
 
@@ -115,12 +116,15 @@ class AsyncClient:
         self._expired: Callable[[], Awaitable[None]] | None = None
         self._closers: list[Callable[[], None]] = []
         self._closed = False
+        #: The realtime of this client and of the organization clients made from it, to wait for when closing.
+        self._realtimes: list[Any] = []
         self._root = _root
         self._org_clients: dict[str, AsyncClient] = {}
         self._credential_hooks: list[Callable[[], None]] = []
         #: The fresh proof of identity ``auth.reauth`` gave: the token and when it stops being good (epoch seconds).
         self._proof: tuple[str, float] | None = None
         self.oauth_storage: OAuthStorage = oauth_storage if oauth_storage is not None else MemoryOAuthStorage()
+        self._timeout = timeout
         self._http: httpx.AsyncClient = (
             _root._http if _root is not None else httpx.AsyncClient(transport=transport, timeout=timeout)
         )
@@ -144,6 +148,8 @@ class AsyncClient:
         self.account = AsyncAccount(self)
         #: Organizations of the signed-in user: members, teams and invitations.
         self.orgs = AsyncOrgs(self)
+        #: Live lists: subscribe to the changes of collections that declare ``realtime: true``.
+        self.realtime = AsyncRealtime(self)
         self._expired = self.auth._expired
         #: How each file field takes files, asked once (``database/collection/field`` to its answer).
         self._file_fields: dict[str, dict[str, Any]] = {}
@@ -171,6 +177,36 @@ class AsyncClient:
         except httpx.HTTPError as e:
             raise _network("network_error", f"network error: {e}") from e
         return res
+
+    async def open_stream(self, path: list[str], body: Any) -> httpx.Response:
+        """Opens a server-sent event stream: a ``POST`` to ``/v1/{realm}/…`` that answers ``text/event-stream``. The
+        answer is returned unread, with no read timeout (a stream may be quiet between heartbeats); a refusal raises
+        the error the API sent."""
+        headers: dict[str, str] = {"Accept": "text/event-stream", "Content-Type": "application/json", **self._headers}
+        if self._types:
+            headers["X-Backd-Types"] = self._types
+        value, sent_session, _ = await self._credentials()
+        if value:
+            headers["Authorization"] = value
+        url = endpoint(self.url, self.realm, path)
+        try:
+            req = self._http.build_request(
+                "POST", url, headers=headers, content=_json(body), timeout=httpx.Timeout(self._timeout, read=None)
+            )
+            res = await self._http.send(req, stream=True)
+        except httpx.TimeoutException as e:
+            raise _network("timeout", "request timed out") from e
+        except httpx.HTTPError as e:
+            raise _network("network_error", f"network error: {e}") from e
+        if res.is_success:
+            return res
+        await res.aread()
+        await res.aclose()
+        err = error_from_response(res.status_code, {k.lower(): v for k, v in res.headers.items()}, res.content)
+        err.path = "/".join(path)
+        if session_gone(err.code) and sent_session and self._expired is not None:
+            await self._expired()
+        raise err
 
     async def open_external(self, method: str, url: str) -> httpx.Response:
         """Opens an address that is not backd's (a signed link) without any of backd's credentials. The answer's body
@@ -245,6 +281,8 @@ class AsyncClient:
         closers, root._closers = root._closers, []
         for fn in closers:
             fn()
+        for rt in root._realtimes:
+            await rt._join()  # nothing is left running
         await root._http.aclose()
 
     async def __aenter__(self) -> AsyncClient:

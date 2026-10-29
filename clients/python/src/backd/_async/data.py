@@ -7,11 +7,13 @@ import os
 from collections.abc import AsyncIterator, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, BinaryIO, Generic, Literal, TypeVar, cast, overload
 
+from .._live import ReferenceSpec, SubscribeOptions, SubscriptionSpec
 from ..models import AggregateResult, BatchOperation, FileDetails, FileField, FileLink, Page, PreparedUpload
 from ..query import Where, csv, if_match_value, where_json
 from ..upload import Progress, Upload, UploadSource
 from .files import AsyncFiles, file_field, file_url, prepare_upload, upload_file
 from .functions import AsyncJob, call_function
+from .realtime import AsyncLiveView
 
 if TYPE_CHECKING:
     from .client import AsyncClient
@@ -107,6 +109,34 @@ class AsyncCollection(Generic[D]):
         return await call_function(
             self._client, self.path[0], name, input, idempotency_key=idempotency_key, respond_async=respond_async
         )
+
+    def subscribe(
+        self,
+        *,
+        where: Where | None = None,
+        doc: str | None = None,
+        load: Mapping[str, Any] | None = None,
+        references: Mapping[str, ReferenceSpec] | None = None,
+        id: str | None = None,
+        options: SubscribeOptions | None = None,
+    ) -> AsyncLiveView:
+        """Follows this collection live (see ``client.realtime.subscribe``): a list that loads first, then keeps itself
+        current. In a team scope (``in_team``) the subscription filters on it."""
+        filter_: dict[str, Any] = dict(where or {})
+        if self._team is not None:
+            filter_["_meta.team"] = self._team
+        spec: SubscriptionSpec = {"db": self.path[0], "collection": self.path[1]}
+        if id is not None:
+            spec["id"] = id
+        if doc is not None:
+            spec["doc"] = doc
+        elif filter_:
+            spec["where"] = filter_
+        if load is not None:
+            spec["load"] = load
+        if references is not None:
+            spec["references"] = references
+        return self._client.realtime.subscribe([spec], options)
 
     def in_team(self, team: str) -> AsyncCollection[D]:
         """The same collection scoped to a team of the session's organization: ``create`` puts documents in that

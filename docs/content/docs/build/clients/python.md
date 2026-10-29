@@ -249,6 +249,31 @@ The rest of the account-level surface, with the structure of `backd-js`.
   client.account.download_export(ready["id"]).save("export.zip")
   ```
 
+## Realtime
+
+A collection that declares `realtime: true` can be followed live. `client.realtime.subscribe` opens **one stream** for the whole client (`POST /v1/{realm}/_realtime`, parsed by hand over `httpx` streaming), loads each list with normal reads, and keeps it current from the events.
+
+```python
+live = client.db("main").collection("orders").subscribe(
+    where={"status": "open"},
+    load={"sort": "-_meta.created_at", "limit": 50},
+)
+live.on("change", lambda state: render(state.items))      # state.status, .items, .subscriptions, .references
+live.wait_ready(timeout=10)                                  # blocks until the first list has loaded
+...
+live.close()
+```
+
+The async client's view runs as tasks of the running event loop (`await live.wait_ready()`); the sync client's runs in daemon threads, and its listeners are called from those threads, one at a time and outside any lock, so they can read `live.state`.
+
+- **Several subscriptions** — `client.realtime.subscribe([spec, spec, …])` follows several collections or filters in one view; each spec is a dict with `db`, `collection`, and optionally `id`, `where`, `doc` (follow one document), `load` (`sort`, `limit`) and `references`. `state.subscriptions` has each one's items and status. Subscribe with an equality on a grouping field (`_meta.team`) to keep the server's work small; `collection.in_team(...)` adds it for you.
+- **References** — `references={"author": {"field": "author_id", "collection": "users", "fields": ["name"]}}` keeps the referenced documents beside the list in `state.references["author"]`, read in one batched request.
+- **How it stays right** — events that arrive while a list loads wait and are applied after it, ignoring versions that are not newer; a `reset` from the server reloads after a random wait of up to a second (`SubscribeOptions(jitter=…)`), so a reset of many clients doesn't make them all read at once; a dropped stream reconnects with a growing wait (`SubscribeOptions(max_backoff=…)`) and resumes from the last event it saw, starting over from a reload if the server no longer has it; the stream is also reopened when the credential's lifetime ends and when the set of subscriptions changes.
+- **Events** — `on("status", …)` (`connecting`, `live`, `resyncing`, `closed`), `on("reset", …)`, `on("access_lost", …)` (a reload found the caller may no longer read the list; it is empty), and `on("error", …)`. An error ends the view: a refused subscription (`RealtimeNotEnabledError`, `ForbiddenError`, …) ends only the view that asked, and `SessionEndedError` ends them all; sign in again and subscribe again.
+- **Closing** — `live.close()` stops one view; `client.close()` (or `await client.aclose()`) ends every stream and waits for its thread or task: nothing is left running.
+
+`client.config.live(["maintenance"])` follows the [app configuration](#caches) on the same stream: `client.config.on("change", …)` hears of the keys that differ within the realtime delay instead of `cache_ttl`.
+
 ## Errors
 
 Every failure is a `BackdError` with `status`, `code`, `message`, `details`, `request_id` and `path`. The subclasses follow the server's error `code`s with the names `backd-js` uses, and a class matches its parents: `except ConflictError` also catches `IdTakenError`, and `except ValidationError` catches `InvalidIdError`.
@@ -267,4 +292,4 @@ Every failure is a `BackdError` with `status`, `code`, `message`, `details`, `re
 
 ## Sync and async
 
-The async client is the source: the sync client is generated from it, so the two have the same calls and cannot drift. Realtime is the exception, written once for threads and once for tasks.
+The async client is the source: the sync client is generated from it, so the two have the same calls and cannot drift. Realtime is the exception, written once for threads and once for tasks; the rules they share (the state of a live list, the wire format) are written once.
