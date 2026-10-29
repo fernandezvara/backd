@@ -137,7 +137,7 @@ func TestConfigBackgroundErrorsGoToOnError(t *testing.T) {
 	s := &configServer{values: `{"a":1}`, etag: `"e1"`, ttl: 0}
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if fail.Load() {
-			http.Error(w, `{"error":{"code":"unavailable","message":"down"}}`, 503)
+			http.Error(w, `{"error":{"code":"unavailable","message":"down"}}`, http.StatusServiceUnavailable)
 			return
 		}
 		s.handler(w, r)
