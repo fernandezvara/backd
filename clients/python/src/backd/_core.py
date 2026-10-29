@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 from urllib.parse import quote, urlencode
 
@@ -70,6 +72,16 @@ def _query_value(v: QueryValue) -> str:
 def normalize_org(ref: str | None) -> str:
     """An organization as the server compares it: case and surrounding spaces do not matter."""
     return (ref or "").strip().lower()
+
+
+_FRACTION = re.compile(r"\.(\d{1,9})")
+
+
+def parse_time(value: str) -> float:
+    """An RFC 3339 time as epoch seconds (Python 3.10 reads neither ``Z`` nor nanoseconds)."""
+    v = value.strip().replace("Z", "+00:00").replace("z", "+00:00")
+    v = _FRACTION.sub(lambda m: "." + m.group(1)[:6].ljust(6, "0"), v, count=1)
+    return datetime.fromisoformat(v).timestamp()
 
 
 def session_gone(code: str) -> bool:

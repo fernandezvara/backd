@@ -53,6 +53,61 @@ res = client.request("GET", ["main", "posts"], query={"limit": 5})
 print(res.data)
 ```
 
+## Sign up and sign in
+
+`client.auth` has the whole sign-in surface of the other clients. A successful sign-in stores the session token in the client's `storage`; every later call sends it.
+
+```python
+session = client.auth.signup("ada@example.com", "dev-p4ssw0rd!")   # creates the account and signs in
+session = client.auth.login("ada@example.com", "dev-p4ssw0rd!")
+me = client.auth.me()                                               # the user, their identities and sign-in methods
+client.auth.logout()
+```
+
+`signup` and `login` promise a session. When the account has a second step to take, they raise `SecondStepRequiredError` (`code` is `mfa_required`, `mfa_enrollment_required` or `consent_required`, with the `challenge`). `sign_in` returns the step as a value instead, so the code can branch on it:
+
+```python
+from backd import ConsentChallenge, EnrollmentChallenge, MfaChallenge
+
+step = client.auth.sign_in(email, password)
+if isinstance(step, MfaChallenge):                       # step.methods: "totp", "recovery_code"
+    session = client.auth.verify_mfa(step.challenge, "totp", input("code: "))
+elif isinstance(step, EnrollmentChallenge):              # set a second factor up first
+    setup = client.auth.mfa.setup(challenge=step.challenge)
+    done = client.auth.mfa.confirm(setup_id=setup["setup_id"], code=input("code: "), challenge=step.challenge)
+elif isinstance(step, ConsentChallenge):                 # step.consents: [{"name", "version"}]
+    session = client.auth.accept_consents(step.challenge, {c["name"]: c["version"] for c in step.consents})
+else:
+    session = step
+```
+
+A realm that verifies addresses answers a sign-up with `VerificationRequiredError`: the account exists, there is no session yet. A password an administrator expired raises `PasswordExpiredError` (`reset_email_queued` says whether the email with the link was sent).
+
+An **API key** needs no sign-in: pass `api_key=` and every call sends it. Keep it to server-side programs.
+
+### Sensitive actions
+
+Changing the password or the address, deleting the account, unlinking a sign-in method, managing the second factor: the server wants a fresh proof. `client.auth.reauth({"method": "password", "password": ...})` (or `totp`, `recovery_code`, `email_code` after `request_reauth_code()`) gives it, and the client sends it with the sensitive calls while it is good. `with_proof(ask, action)` runs an action and, when the server asks for a proof, calls `ask(methods)` for it and tries the action once more.
+
+### Providers, magic links, organizations
+
+- **A provider by redirect:** `url = client.auth.sign_in_with("google", redirect_to="http://localhost:9000/cb", navigate=webbrowser.open)` starts it and returns the provider's address; the PKCE verifier waits in `oauth_storage` (memory by default; pass an `OAuthStorage` to survive a restart). When the person comes back, `client.auth.complete_sign_in(address)` trades the one-time code for a session, or raises the error the redirect carries (`ConflictError` for `account_exists`, `ForbiddenError` for `signup_closed`, …). `link_provider` adds a provider to the signed-in user. Mobile apps that hold the platform's ID token use `sign_in_with_id_token`.
+- **A magic link:** `client.auth.magic_link.request(email, redirect_to=...)` then `verify_code(code)`, or `complete_sign_in` with the link's address.
+- **Organizations:** `org="acme"` binds the client to an organization, so sign-in goes to `/_auth/orgs/acme/…` and the session is scoped to it. `client.org("acme")` gives the client of one organization for a program signed in to several; each keeps its own token in a slot of the storage (`MemoryStorage` and `FileStorage` have them). `sign_up_with_org` starts a company.
+- **Also:** `mfa` (`status`, `setup`, `confirm`, `disable`, `regenerate_recovery_codes`), `password.set` / `password.remove`, the email flows (`resend_verification`, `verify_email`, `request_password_reset`, `reset_password`, `update_password`, `request_email_change`, `confirm_email_change`, `revert_email_change`, `accept_invitation`), `sessions` / `revoke_session`, `logout_all`, `delete_account`, `update_me`, `providers` / `options`, and `on_auth_change(listener)` for `SIGNED_IN`, `SIGNED_OUT` and `SESSION_EXPIRED`.
+
+### Keeping the session between runs
+
+```python
+from pathlib import Path
+
+from backd import Client, FileStorage
+
+client = Client(url=url, realm="shelf", storage=FileStorage(Path.home() / ".config" / "app" / "session"))
+```
+
+`FileStorage(path)` writes the token to a file readable by its owner only, so a script or a tool stays signed in. Any object with `get`, `set` and `remove` works as a storage.
+
 ## Errors
 
 Every failure is a `BackdError` with `status`, `code`, `message`, `details`, `request_id` and `path`. The subclasses follow the server's error `code`s with the names `backd-js` uses, and a class matches its parents: `except ConflictError` also catches `IdTakenError`, and `except ValidationError` catches `InvalidIdError`.

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import Callable, Mapping
 from types import TracebackType
 from typing import Any
@@ -15,7 +16,9 @@ from .._sio import sleep
 from .._core import Request, Response, endpoint, is_safe, normalize_org, session_gone
 from .._retry import Retry, backoff
 from ..errors import BackdError, NetworkError, RetryableError, error_from_response
-from ..storage import MemoryStorage, TokenStorage
+from ..oauth import MemoryOAuthStorage, OAuthStorage
+from ..storage import MemoryStorage, SlotStorage, TokenStorage
+from .auth import Auth
 
 __all__ = ["Client"]
 
@@ -31,6 +34,8 @@ class Client:
         anything a user's device can read.
     :param org: bind the client to an organization, by id or by the slug people know.
     :param storage: where the session token lives; memory by default.
+    :param oauth_storage: where the sign-in with a provider keeps its PKCE verifier between its start and
+        its end; memory by default.
     :param retry: retries for 429 and 503; off by default.
     :param headers: sent with every call.
     :param transport: an ``httpx`` transport, for tests (``httpx.MockTransport``) and unusual deployments.
@@ -50,12 +55,14 @@ class Client:
         api_key: str | None = None,
         org: str | None = None,
         storage: TokenStorage | None = None,
+        oauth_storage: OAuthStorage | None = None,
         retry: Retry | None = None,
         headers: Mapping[str, str] | None = None,
         transport: httpx.BaseTransport | None = None,
         timeout: float | None = 30.0,
         types: str | None = None,
         on_stale_types: Callable[[], None] | None = None,
+        _root: Client | None = None,
     ) -> None:
         if not url:
             raise TypeError("Client: `url` is required")
@@ -67,6 +74,7 @@ class Client:
             "api_key": api_key,
             "org": org,
             "storage": storage,
+            "oauth_storage": oauth_storage,
             "retry": retry,
             "headers": headers,
             "transport": transport,
@@ -85,33 +93,83 @@ class Client:
         self._types = types
         self._on_stale_types = on_stale_types
         self._stale_reported = False
-        #: Called when the server refuses the session token; ``auth`` sets it.
+        #: Called when the server refuses the session token.
         self._expired: Callable[[], None] | None = None
         self._closers: list[Callable[[], None]] = []
         self._closed = False
-        self._http = httpx.Client(transport=transport, timeout=timeout)
+        self._root = _root
+        self._org_clients: dict[str, Client] = {}
+        self._credential_hooks: list[Callable[[], None]] = []
+        #: The fresh proof of identity ``auth.reauth`` gave: the token and when it stops being good (epoch seconds).
+        self._proof: tuple[str, float] | None = None
+        self.oauth_storage: OAuthStorage = oauth_storage if oauth_storage is not None else MemoryOAuthStorage()
+        self._http: httpx.Client = (
+            _root._http if _root is not None else httpx.Client(transport=transport, timeout=timeout)
+        )
+        #: Sign-up, login and sessions.
+        self.auth = Auth(self)
+        self._expired = self.auth._expired
 
     @property
     def has_api_key(self) -> bool:
         """Whether the client was created with an API key."""
         return bool(self._api_key)
 
+    @property
+    def root(self) -> Client:
+        """The client this one was made from by :meth:`org`, or this client."""
+        return self._root or self
+
+    def org(self, ref: str) -> Client:
+        """The client of one organization, for a program that is signed in to several at once: it has the
+        same address, realm and settings and a token of its own, so its calls reach that organization and no
+        other, and signing out of it leaves the others signed in. The organization is its id or the slug
+        people know; asking again for the same gives the same client. It needs a storage that can keep a
+        token per organization (:class:`MemoryStorage` and :class:`FileStorage` can)."""
+        key = normalize_org(ref)
+        if not key:
+            raise TypeError("client.org: the organization (an id or a slug) is required")
+        root = self.root
+        if root.org_ref == key:
+            return root
+        found = root._org_clients.get(key)
+        if found is None:
+            if not isinstance(root.storage, SlotStorage):
+                raise TypeError(
+                    "client.org: this storage cannot keep a token per organization; use MemoryStorage or FileStorage"
+                )
+            opts = {k: v for k, v in root._opts.items() if k not in ("org", "storage")}
+            found = root._org_clients[key] = Client(**opts, org=key, storage=root.storage.slot(key), _root=root)
+        return found
+
+    def on_credential_change(self, fn: Callable[[], None]) -> None:
+        """Registers ``fn`` to run when the signed-in caller changes (a sign-in, a sign-out, an expired
+        session): whatever was read as the previous caller is not the new one's. The caches use it."""
+        self._credential_hooks.append(fn)
+
+    def _credentials_changed(self) -> None:
+        for fn in list(self._credential_hooks):
+            fn()
+
     def on_close(self, fn: Callable[[], None]) -> None:
         """Registers ``fn`` to run when the client is closed; live views use it to end."""
-        if self._closed:
+        root = self.root
+        if root._closed:
             fn()
         else:
-            self._closers.append(fn)
+            root._closers.append(fn)
 
     def close(self) -> None:
-        """Ends what the client keeps running and releases its connections. Safe to call twice."""
-        if self._closed:
+        """Ends what the client keeps running and releases its connections. Safe to call twice. On the client
+        of an organization it closes the client it was made from."""
+        root = self.root
+        if root._closed:
             return
-        self._closed = True
-        closers, self._closers = self._closers, []
+        root._closed = True
+        closers, root._closers = root._closers, []
         for fn in closers:
             fn()
-        self._http.close()
+        root._http.close()
 
     def __enter__(self) -> Client:
         return self
@@ -180,6 +238,8 @@ class Client:
             headers["Content-Type"] = req.content_type or "application/json"
         if self._types:
             headers["X-Backd-Types"] = self._types
+        if req.reauth and self._proof is not None and self._proof[1] > time.time():
+            headers["X-Backd-Reauth"] = self._proof[0]
         sent_session = False
         if req.auth:
             value, sent_session = self._credentials()

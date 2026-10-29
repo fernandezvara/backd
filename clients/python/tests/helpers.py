@@ -38,3 +38,39 @@ def json_response(status: int, body: Any = None, **headers: str) -> httpx.Respon
 
 def error_response(status: int, code: str, message: str = "nope", **headers: str) -> httpx.Response:
     return httpx.Response(status, json={"error": {"code": code, "message": message}}, headers=headers)
+
+
+class Server:
+    """A fake backd: routes by ``"METHOD /path"`` (after ``/v1/shelf``), remembers what it was asked."""
+
+    def __init__(self) -> None:
+        self.routes: dict[str, Callable[[httpx.Request], httpx.Response] | httpx.Response | Any] = {}
+        self.calls: list[httpx.Request] = []
+
+    def on(self, route: str, answer: Any = None, status: int = 200) -> None:
+        """``answer``: a JSON body, a response, or a function of the request."""
+        self.routes[route] = answer if callable(answer) or isinstance(answer, httpx.Response) else (status, answer)
+
+    def __call__(self, req: httpx.Request) -> httpx.Response:
+        self.calls.append(req)
+        path = req.url.path.removeprefix("/v1/shelf")
+        route = self.routes.get(f"{req.method} {path}")
+        if route is None:
+            return error_response(404, "not_found", f"no route {req.method} {path}")
+        if isinstance(route, httpx.Response):
+            return route
+        if callable(route):
+            return route(req)
+        status, body = route
+        return json_response(status, body)
+
+    def last(self) -> httpx.Request:
+        return self.calls[-1]
+
+    def body(self, index: int = -1) -> Any:
+        import json
+
+        return json.loads(self.calls[index].content)
+
+    def paths(self) -> list[str]:
+        return [f"{r.method} {r.url.path.removeprefix('/v1/shelf')}" for r in self.calls]
