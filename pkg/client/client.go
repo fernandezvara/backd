@@ -42,6 +42,10 @@ type Options struct {
 	Storage TokenStorage
 	// OAuthStorage keeps the pending redirect sign-in (its PKCE verifier) between its start and its end; memory by default.
 	OAuthStorage OAuthStorage
+	// Cache tunes the revalidation cache of document and list reads; on by default.
+	Cache CacheOptions
+	// ConfigStorage keeps the app configuration between runs ([Client.Config]); memory only by default.
+	ConfigStorage ConfigStorage
 	// Retry configures the retries for 429 and 503; off by default.
 	Retry Retry
 	// Headers are sent with every call.
@@ -69,6 +73,10 @@ type Client struct {
 	store  TokenStorage
 
 	auth          *Auth
+	cache         *RevalidationCache
+	config        *Config
+	life          context.Context
+	stopLife      context.CancelFunc
 	oauth         OAuthStorage
 	credHooks     []func()
 	staleReported atomic.Bool
@@ -121,7 +129,17 @@ func newClient(opts Options, root *Client) (*Client, error) {
 	if c.oauth = opts.OAuthStorage; c.oauth == nil {
 		c.oauth = &MemoryOAuthStorage{}
 	}
+	if root != nil {
+		c.life = root.life
+	} else {
+		c.life, c.stopLife = context.WithCancel(context.Background())
+	}
+	if !opts.Cache.Disable {
+		c.cache = NewRevalidationCache(opts.Cache)
+	}
+	c.OnCredentialChange(c.ClearCache) // what was read as someone else (or no one) isn't theirs
 	c.auth = newAuth(c)
+	c.config = newConfig(c, opts.ConfigStorage)
 	return c, nil
 }
 
@@ -139,6 +157,9 @@ func (c *Client) OrgRef() string { return c.org }
 
 // HasAPIKey reports whether the client was created with an API key.
 func (c *Client) HasAPIKey() bool { return c.apiKey != "" }
+
+// Config returns the realm's app configuration: flags, switches and limits, cached per user.
+func (c *Client) Config() *Config { return c.config }
 
 // Auth returns the sign-up, sign-in and session calls.
 func (c *Client) Auth() *Auth { return c.auth }
@@ -228,6 +249,7 @@ func (c *Client) Close() error {
 		return nil
 	}
 	r.isClosed = true
+	r.stopLife()
 	closers := r.closers
 	r.closers = nil
 	r.mu.Unlock()
