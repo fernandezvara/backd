@@ -29,7 +29,7 @@ The fingerprint is the same for every language: they describe the same realm.
 |---|---|
 | `types.d.ts` (`--lang ts`, the default) | The TypeScript types, with a header naming the generator version, the realm and the fingerprint of the types |
 | `types.dart` (`--lang dart`) | The same types for Dart: classes with `fromJson`/`toJson`, plus a `ShopRealm` accessor and an extension on `BackdClient<ShopRealm>` for the [Dart client](../dart/) |
-| `types.go` (`--lang go`) | The same types for Go: structs with JSON tags, string types with constants for enums, constants for the fields of `where` and `order_by`, plus a `ShopRealm` over the Go client (`pkg/client`) with typed collections and function calls. `--package` names the package (`backdtypes` by default) |
+| `types.go` (`--lang go`) | The same types for Go: structs with JSON tags, string types with constants for enums, constants for the fields of `where` and `order_by`, plus a `ShopRealm` over the [Go client](../go/) with typed collections and function calls. `--package` names the package (`backdtypes` by default) |
 | `realm.json` | The fingerprint, the generator version, the config fingerprint and one entry per field, function, setting, template and role: what `--diff` compares |
 
 Everything hangs off one `Realm` interface, addressed by path, so no naming rules are needed:
@@ -123,7 +123,7 @@ Every collection gets a `TypedCollection<D, I, C>` wrapper — reads decode into
 
 ## In Go
 
-For the Go client (`pkg/client`): `--lang go` writes `types.go`, whose `ShopRealm` (named for the realm) binds the types to a `*client.Client`. A document is a struct that embeds `client.Base` (`ID`, `Meta`); `Typed` collections read into it and write the `Input` struct:
+For the [Go client](../go/): `--lang go` writes `types.go`, whose `ShopRealm` (named for the realm) binds the types to a `*client.Client`. A document is a struct that embeds `client.Base` (`ID`, `Meta`); `Typed` collections read into it and write the `Input` struct:
 
 ```go
 import "example.com/app/shopapi"   // generated

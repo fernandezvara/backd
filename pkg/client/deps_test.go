@@ -30,6 +30,9 @@ func TestImportsStandardLibraryOnly(t *testing.T) {
 		for _, imp := range f.Imports {
 			path, _ := strconv.Unquote(imp.Path.Value)
 			first, _, _ := strings.Cut(path, "/")
+			if strings.HasSuffix(name, "_test.go") && path == "github.com/fernandezvara/backd/pkg/client" {
+				continue // the examples import the package they document
+			}
 			if strings.Contains(first, ".") {
 				t.Errorf("%s imports %s: pkg/client may only import the standard library", name, path)
 			}
