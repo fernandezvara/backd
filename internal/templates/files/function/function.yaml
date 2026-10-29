@@ -10,8 +10,8 @@
 # functions (default 10s), up to 24h for async ones (default 15m).
 # timeout: 10s
 
-# Memory for the function's JavaScript heap (32MiB to 4GiB).
-# memory: 128MB
+# Memory for the function's JavaScript heap (32MiB to 4GiB, binary units only).
+# memory: 128MiB
 
 # The largest output accepted (1KiB to 64MiB; 15MiB for async functions).
 # max_output: 1MiB

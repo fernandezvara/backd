@@ -88,7 +88,7 @@ cache:
 
 ## 6. JavaScript client (issue 20.4)
 
-- **Cache:** the last body and `ETag` per URL and session, in memory, bounded (200 entries or 5 MB by default, least recently used dropped first). Only `GET`s of documents and lists are kept; responses with expansions or signed file links are not.
+- **Cache:** the last body and `ETag` per URL and session, in memory, bounded (200 entries or 5 MiB by default, least recently used dropped first). Only `GET`s of documents and lists are kept; responses with expansions or signed file links are not.
 - **In functions:** the client `ctx.db` uses runs with the cache off: an invocation is short and acts as one caller.
 - **Automatic:** `If-None-Match` is sent for cached reads, and on `304` the cached body is returned. For debugging, `client.cacheStats()` reports hits, misses, entries and bytes, and the low-level `client.request()` result says `fromCache`.
 - **Clearing:** on sign-out and user change. After a successful write, the document's entry is dropped; list entries need no marking — every read revalidates anyway (`no-cache`).

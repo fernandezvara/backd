@@ -8,7 +8,7 @@
 /**
  * @typedef {object} CacheOptions
  * @property {number} [maxEntries]  Most entries kept; default 200.
- * @property {number} [maxBytes]    Most bytes of bodies kept; default 5 MB.
+ * @property {number} [maxBytes]    Most bytes of bodies kept; default 5 MiB.
  */
 
 /**

@@ -52,7 +52,7 @@ This inventory is the parity target. Every module of `clients/js/src` is listed 
 | `push.js` | `register`, `devices`, `unregister`, `registerOnLaunch(getToken)`, `subscribeWeb` | `client.push`: `register`, `devices`, `unregister`; `registerOnLaunch` takes a token-provider callback. `subscribeWeb` excluded (browser-only) |
 | `config.js` | `client.config`: `load`, `get`, `getSync`, `on` events, `view`, `fetch`, `revalidate`, persisted copy (`ConfigStorage`), realtime-driven `fresh` updates | `client.config` — same; `ConfigStorage` interface; changes as `Stream`s; in-memory default with optional file/`SharedPreferences` persistence |
 | `realtime.js` | `client.realtime`, `LiveView`: multiplexed `POST /_realtime`, `SubscriptionSpec` (`where`, `doc`, `load`, `references`), `LiveState`, resume tokens, reset/reload with jitter, reconnect backoff, credential-lifetime reconnect | Identical protocol and `LiveView` semantics; SSE parsed by hand from the streamed response; state as `Stream<LiveState>` |
-| `cache.js` | `RevalidationCache`: ETag + body per read, `If-None-Match` → `304`, credential-scoped (`scope`), LRU by entries and bytes, `cacheable()` rules, `stats()` | `RevalidationCache` ported 1:1, same defaults (200 entries, 5 MB) and same `cacheable` rules |
+| `cache.js` | `RevalidationCache`: ETag + body per read, `If-None-Match` → `304`, credential-scoped (`scope`), LRU by entries and bytes, `cacheable()` rules, `stats()` | `RevalidationCache` ported 1:1, same defaults (200 entries, 5 MiB) and same `cacheable` rules |
 | `typed.js` | `createClient<Realm>()`: databases, collections, docs, `where`/`orderBy`, `expand`, aggregations, functions, config paths | `BackdClient<Realm>` with generated Dart types (§12); untyped `Map<String, Object?>` without it |
 
 ## 4. The package (issue 28.1)
@@ -170,7 +170,7 @@ Aggregations and search follow the realm's declarations exactly as in JS: `aggre
 
 ## 7. The caches (issue 28.5)
 
-- **Revalidation cache:** `RevalidationCache` ported verbatim — ETag and body per document/list read, `If-None-Match` on re-reads, `304` replay, credential-scoped (`scope`), LRU bounded by entries (200) and bytes (5 MB), identical `cacheable()` rules (no `_`-paths, no `file_links`, no `expand`), and `client.cacheStats()`. Every read still asks the server; nothing is served stale.
+- **Revalidation cache:** `RevalidationCache` ported verbatim — ETag and body per document/list read, `If-None-Match` on re-reads, `304` replay, credential-scoped (`scope`), LRU bounded by entries (200) and bytes (5 MiB), identical `cacheable()` rules (no `_`-paths, no `file_links`, no `expand`), and `client.cacheStats()`. Every read still asks the server; nothing is served stale.
 - **`_config` cache:** `client.config` keeps the realm's app configuration like `config.js` does: one cached document, `get`/`getSync`/`view`, change events as a `Stream`, realtime-driven invalidation, optional persistence through `ConfigStorage` (file for standalone, `SharedPreferences`-backed for Flutter — supplied by the app).
 
 ## 8. Files (issue 28.6)

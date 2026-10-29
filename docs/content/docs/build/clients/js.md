@@ -327,7 +327,7 @@ createClient({ url, realm, cache: false })                         // no cache a
 createClient({ url, realm, cache: { maxEntries: 50, maxBytes: 1e6 } })  // smaller bounds
 ```
 
-- **Bounded:** 200 entries or 5 MB of bodies by default; the least recently used are dropped first.
+- **Bounded:** 200 entries or 5 MiB of bodies by default; the least recently used are dropped first.
 - **Only document and list reads** are kept. Reads with `fileLinks` (their links expire) and answers marked `no-store` never are.
 - **Per caller:** signing in, signing out or a different session or API key empties the cache, and so does `backd.clearCache()`. A successful write to a document drops its entry.
 - **Functions** reach the API with the cache off.

@@ -45,7 +45,7 @@ import { COOKIE_SESSION, memoryStorage } from './storage.js'
  * @property {RetryOptions} [retry]       Retries for 429/503; off by default.
  * @property {boolean | import('./cache.js').CacheOptions} [cache] Keep the last body and `ETag` of document and list
  *   reads in memory and revalidate them with `If-None-Match`, so an unchanged read costs a `304`. On by default;
- *   `false` turns it off, an object sets `maxEntries` (200) and `maxBytes` (5 MB).
+ *   `false` turns it off, an object sets `maxEntries` (200) and `maxBytes` (5 MiB).
  * @property {import('./config.js').ConfigStorage | false} [configStorage] Where `client.config` keeps its copies between page loads;
  *   `localStorage` in browsers by default (a blocked one falls back to memory), `false` for memory only.
  * @property {typeof fetch} [fetch]       A fetch implementation; the global one by default.

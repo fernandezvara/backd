@@ -37,7 +37,7 @@ storage:
 | `download` | The realm's default for how files are delivered: `presigned` (a redirect to a signed link, the default) or `proxy` (streamed through `backd`). |
 | `presigned_ttl` | How long a signed link works: `10s` to `7d`, default `5m`. |
 | `pending_ttl` | How long an upload nobody attached to a document is kept: `1m` to `7d`, default `1h`. |
-| `quota.realm`, `quota.user` | Optional limits on the bytes documents reference: for the whole realm, and for the documents one user owns. Sizes like `500MiB` or `10GiB`. See [Quotas](#quotas). |
+| `quota.realm`, `quota.user` | Optional limits on the bytes documents reference: for the whole realm, and for the documents one user owns. Sizes like `500MiB` or `10GB` (see [Sizes and units](../../../build/configuration/#sizes-and-units)). See [Quotas](#quotas). |
 
 There is no `path_style` setting (the provider decides how a bucket is addressed) and no `sse` (encryption at rest is the bucket's default). `backd template realm` writes the section commented, with an example for each provider.
 
