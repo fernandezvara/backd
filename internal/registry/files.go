@@ -260,7 +260,7 @@ func parseFiles(path string, data []byte, schema map[string]any, settings RealmS
 
 		if d.MaxSize == "" {
 			add(name, "max_size: is required, such as 10MiB: the largest one file may be")
-		} else if n, err := strutil.ParseSize(d.MaxSize); err != nil {
+		} else if n, err := strutil.ParseSize(d.MaxSize, strutil.SizeBoth, false); err != nil {
 			add(name, "max_size: %v", err)
 		} else if n < 1 {
 			add(name, "max_size: must be at least 1B")
@@ -305,9 +305,9 @@ func parseFiles(path string, data []byte, schema map[string]any, settings RealmS
 			case !settings.Storage.ProviderEntry().SupportsDirectUploads():
 				add(name, "upload: direct needs a provider that verifies a signed SHA-256, which %s doesn't (use proxy)", settings.Storage.Provider)
 			case f.MaxSize > MaxMultipartFileSize:
-				add(name, "max_size: a direct upload is at most 4TiB")
+				add(name, "max_size: a direct upload is at most %s", strutil.FormatSize(MaxMultipartFileSize, strutil.SizeBinary))
 			case f.MaxSize > maxDirectFileSize && !settings.Storage.ProviderEntry().SupportsMultipartUploads():
-				add(name, "max_size: a direct upload is one signed PUT, at most 5GiB, with %s (multipart uploads of larger files need a provider that verifies a SHA-256 per part)", settings.Storage.Provider)
+				add(name, "max_size: a direct upload is one signed PUT, at most %s, with %s (multipart uploads of larger files need a provider that verifies a SHA-256 per part)", strutil.FormatSize(maxDirectFileSize, strutil.SizeBinary), settings.Storage.Provider)
 			default:
 				f.Upload = UploadDirect
 			}

@@ -436,12 +436,12 @@ func loadFunction(db *Database, settings RealmSettings, name, dir string) (*Func
 
 	fn.Memory = DefaultMemory
 	if doc.Memory != nil {
-		n, err := strutil.ParseSize(*doc.Memory)
+		n, err := strutil.ParseSize(*doc.Memory, strutil.SizeBinary, false)
 		switch {
 		case err != nil:
 			add("memory: %v", err)
 		case n < minMemory || n > maxMemory:
-			add("memory: must be between 32MiB and 4GiB, got %s", *doc.Memory)
+			add("memory: must be between %s and %s, got %s", strutil.FormatSize(minMemory, strutil.SizeBinary), strutil.FormatSize(maxMemory, strutil.SizeBinary), *doc.Memory)
 		default:
 			fn.Memory = n
 		}
@@ -453,12 +453,12 @@ func loadFunction(db *Database, settings RealmSettings, name, dir string) (*Func
 		maxOutput = MaxAsyncOutput
 	}
 	if doc.MaxOutput != nil {
-		n, err := strutil.ParseSize(*doc.MaxOutput)
+		n, err := strutil.ParseSize(*doc.MaxOutput, strutil.SizeBoth, false)
 		switch {
 		case err != nil:
 			add("max_output: %v", err)
 		case n < minMaxOutput || n > maxOutput:
-			add("max_output: must be between 1KiB and %dMiB for %s functions, got %s", maxOutput>>20, fn.Mode, *doc.MaxOutput)
+			add("max_output: must be between %s and %s for %s functions, got %s", strutil.FormatSize(minMaxOutput, strutil.SizeBinary), strutil.FormatSize(maxOutput, strutil.SizeBinary), fn.Mode, *doc.MaxOutput)
 		default:
 			fn.MaxOutput = n
 		}

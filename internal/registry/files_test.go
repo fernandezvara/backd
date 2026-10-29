@@ -97,7 +97,7 @@ func TestFileFieldErrors(t *testing.T) {
 		{"max_files range", "files:\n  a: {max_size: 1MB, multiple: true, max_files: 0}\n", "max_files: must be between 1 and 1000"},
 		{"type", "files:\n  a: {max_size: 1MB, types: [png]}\n", "must be a content type"},
 		{"upload mode", "files:\n  a: {max_size: 1MB, upload: ftp}\n", "upload: must be proxy or direct"},
-		{"direct over everything", "files:\n  a: {max_size: 5TiB, upload: direct}\n", "at most 4TiB"},
+		{"direct over everything", "files:\n  a: {max_size: 5TiB, upload: direct}\n", "at most 4 TiB"},
 		{"download", "files:\n  a: {max_size: 1MB, download: cdn}\n", "download: must be presigned or proxy"},
 		{"ttl", "files:\n  a: {max_size: 1MB, presigned_ttl: 8d}\n", "presigned_ttl: must be between"},
 		{"cache without proxy", "files:\n  a: {max_size: 1MB, cache: 1h}\n", "cache: only applies to proxied downloads"},
@@ -305,7 +305,7 @@ func TestDirectUploadsAboveOnePut(t *testing.T) {
 	}
 	do := "roles:\n  staff: {}\nstorage:\n  provider: digitalocean\n  region: ams3\n  bucket: tests-backd\n  prefix: p\n  access_key: secret:K\n  secret_key: secret:S\n"
 	_, err = filesTree(t, "files:\n  a: {max_size: 6GiB, upload: direct}\n", map[string]string{"shop/realm.yaml": do})
-	if err == nil || !strings.Contains(err.Error(), "at most 5GiB, with digitalocean") {
+	if err == nil || !strings.Contains(err.Error(), "at most 5 GiB, with digitalocean") {
 		t.Errorf("digitalocean and 6GiB: %v", err)
 	}
 	if _, err = filesTree(t, "files:\n  a: {max_size: 5GiB, upload: direct}\n", map[string]string{"shop/realm.yaml": do}); err != nil {

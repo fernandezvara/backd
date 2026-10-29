@@ -182,8 +182,8 @@ func TestFunctionErrors(t *testing.T) {
 		{"timeout too short", fn("timeout: 500ms\n"), "timeout: must be between 1s"},
 		{"bad duration", fn("timeout: soon\n"), "timeout: invalid duration"},
 		{"memory unit", fn("memory: 128\n"), `memory: invalid size "128"`},
-		{"memory bounds", fn("memory: 8GiB\n"), "memory: must be between 32MiB and 4GiB"},
-		{"async output cap", fn("mode: async\nmax_output: 16MiB\n"), "max_output: must be between 1KiB and 15MiB for async functions"},
+		{"memory bounds", fn("memory: 8GiB\n"), "memory: must be between 32 MiB and 4 GiB"},
+		{"async output cap", fn("mode: async\nmax_output: 16MiB\n"), "max_output: must be between 1 KiB and 15 MiB for async functions"},
 		{"concurrency", fn("concurrency: 0\n"), "concurrency: must be between 1 and 1000"},
 		{"rate limit", fn("rate_limit: {per: session, limit: 0, window: 2d}\n"), "rate_limit.per: must be user or ip"},
 		{"rate limit limit", fn("rate_limit: {per: user, limit: 0, window: 1m}\n"), "rate_limit.limit: must be at least 1"},
@@ -550,5 +550,19 @@ func TestGeneratedTypesDoNotChangeTheSourceHash(t *testing.T) {
 	}
 	if before != after {
 		t.Error("backd.d.ts changed the source hash")
+	}
+}
+
+func TestFunctionMemoryTakesBinaryUnits(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{{"memory: 256MB\n", "KiB, MiB, GiB, TiB"}, {"max_output: 2MB\n", ""}} {
+		root := functionTree(t, map[string]string{fnPrefix + "f/function.yaml": tc.in, fnPrefix + "f/index.ts": "export default () => 1;\n"})
+		_, err := Load(root)
+		if tc.want == "" {
+			if err != nil {
+				t.Errorf("%q: %v", tc.in, err)
+			}
+		} else if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%q: %v; want %q", tc.in, err, tc.want)
+		}
 	}
 }

@@ -239,7 +239,7 @@ func parseStorage(d *storageDoc, public bool) (*StorageSettings, []error) {
 			if q.value == "" {
 				continue
 			}
-			v, err := strutil.ParseSize(q.value)
+			v, err := strutil.ParseSize(q.value, strutil.SizeBoth, false)
 			switch {
 			case err != nil:
 				add("%s: %v", q.field, err)
