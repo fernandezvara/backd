@@ -246,13 +246,7 @@ func errorFromResponse(res *http.Response) error {
 	if code == "" {
 		code = "http_" + strconv.Itoa(res.StatusCode)
 	}
-	k := codeKinds[code]
-	if k == nil {
-		k = statusKinds[res.StatusCode]
-	}
-	if k == nil {
-		k = kBackd
-	}
+	k := kindFor(code, res.StatusCode)
 	msg := e.Message
 	if msg == "" {
 		msg = http.StatusText(res.StatusCode)
@@ -321,3 +315,14 @@ func newError(status int, code, message string, k *kind) *Error {
 
 // asError finds the *Error in err.
 func asError(err error, target **Error) bool { return errors.As(err, target) }
+
+// kindFor is the class of an error from its code, or from its status when the code has none.
+func kindFor(code string, status int) *kind {
+	if k := codeKinds[code]; k != nil {
+		return k
+	}
+	if k := statusKinds[status]; k != nil {
+		return k
+	}
+	return kBackd
+}
