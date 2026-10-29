@@ -40,6 +40,8 @@ type Options struct {
 	Org string
 	// Storage keeps the session token; memory by default.
 	Storage TokenStorage
+	// OAuthStorage keeps the pending redirect sign-in (its PKCE verifier) between its start and its end; memory by default.
+	OAuthStorage OAuthStorage
 	// Retry configures the retries for 429 and 503; off by default.
 	Retry Retry
 	// Headers are sent with every call.
@@ -66,6 +68,9 @@ type Client struct {
 	retry  Retry
 	store  TokenStorage
 
+	auth          *Auth
+	oauth         OAuthStorage
+	credHooks     []func()
 	staleReported atomic.Bool
 	proof         atomic.Pointer[reauthProof]
 	// expired is called when the server refuses the session token; auth sets it.
@@ -113,6 +118,10 @@ func newClient(opts Options, root *Client) (*Client, error) {
 	if c.store == nil {
 		c.store = NewMemoryStorage()
 	}
+	if c.oauth = opts.OAuthStorage; c.oauth == nil {
+		c.oauth = &MemoryOAuthStorage{}
+	}
+	c.auth = newAuth(c)
 	return c, nil
 }
 
@@ -130,6 +139,26 @@ func (c *Client) OrgRef() string { return c.org }
 
 // HasAPIKey reports whether the client was created with an API key.
 func (c *Client) HasAPIKey() bool { return c.apiKey != "" }
+
+// Auth returns the sign-up, sign-in and session calls.
+func (c *Client) Auth() *Auth { return c.auth }
+
+// OnCredentialChange registers f to run when the signed-in caller changes (a sign-in, a sign-out,
+// an expired session): whatever was read as the previous caller is not the new one's. The caches use it.
+func (c *Client) OnCredentialChange(f func()) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.credHooks = append(c.credHooks, f)
+}
+
+func (c *Client) credentialsChanged() {
+	c.mu.Lock()
+	hooks := append([]func(){}, c.credHooks...)
+	c.mu.Unlock()
+	for _, f := range hooks {
+		f()
+	}
+}
 
 // Storage returns where the client keeps its session token.
 func (c *Client) Storage() TokenStorage { return c.store }
