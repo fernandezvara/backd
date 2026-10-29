@@ -46,7 +46,7 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	// The token lives in the file above: only the first run signs in.
 	if ok, err := c.Auth().HasSession(ctx); err != nil {
