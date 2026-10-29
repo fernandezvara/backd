@@ -204,4 +204,3 @@ func TestDropPathIgnoresTheQuery(t *testing.T) {
 		t.Errorf("%+v", st)
 	}
 }
-
