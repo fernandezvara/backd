@@ -27,6 +27,8 @@ type Response struct {
 	Body io.ReadCloser
 	// Data is the answer's body of any other call.
 	Data []byte
+	// FromCache is true when the server answered 304 and Data is the body kept from an earlier read.
+	FromCache bool
 }
 
 // RequestOption changes one call made with [Client.Do].
