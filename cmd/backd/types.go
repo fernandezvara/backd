@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/token"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -25,8 +26,15 @@ func typesCommand(c *kli.CommandContext) error {
 	if lang == "" {
 		lang = "ts"
 	}
-	if lang != "ts" && lang != "dart" {
-		return fmt.Errorf("unknown --lang %q: ts or dart", lang)
+	if lang != "ts" && lang != "dart" && lang != "go" {
+		return fmt.Errorf("unknown --lang %q: ts, dart or go", lang)
+	}
+	pkg := str(c, "package")
+	if pkg != "" && lang != "go" {
+		return fmt.Errorf("--package is for --lang go")
+	}
+	if pkg != "" && !token.IsIdentifier(pkg) {
+		return fmt.Errorf("--package %q is not a Go package name", pkg)
 	}
 	if flag(c, "functions") {
 		if lang != "ts" {
@@ -38,9 +46,9 @@ func typesCommand(c *kli.CommandContext) error {
 	var gen *typegen.Output
 	var err error
 	if from := str(c, "from"); from != "" {
-		gen, err = typesFromServer(c, from, realm, db, lang)
+		gen, err = typesFromServer(c, from, realm, db, lang, pkg)
 	} else {
-		gen, err = typesFromConfig(c, realm, db, lang)
+		gen, err = typesFromConfig(c, realm, db, lang, pkg)
 	}
 	if err != nil {
 		return err
@@ -50,8 +58,11 @@ func typesCommand(c *kli.CommandContext) error {
 	}
 
 	typesFile := typegen.TypesFile
-	if lang == "dart" {
+	switch lang {
+	case "dart":
 		typesFile = typegen.DartTypesFile
+	case "go":
+		typesFile = typegen.GoTypesFile
 	}
 	typesPath, infoPath := filepath.Join(out, typesFile), filepath.Join(out, typegen.InfoFile)
 	if !check && !diff {
@@ -113,7 +124,7 @@ func typesCommand(c *kli.CommandContext) error {
 	return nil
 }
 
-func typesFromConfig(c *kli.CommandContext, realm, db, lang string) (*typegen.Output, error) {
+func typesFromConfig(c *kli.CommandContext, realm, db, lang, pkg string) (*typegen.Output, error) {
 	dir, err := configDir(c)
 	if err != nil {
 		return nil, err
@@ -122,10 +133,10 @@ func typesFromConfig(c *kli.CommandContext, realm, db, lang string) (*typegen.Ou
 	if err != nil {
 		return nil, fmt.Errorf("invalid config:\n%w", err)
 	}
-	return typegen.Generate(reg, typegen.Options{Realm: realm, Database: db, Lang: lang})
+	return typegen.Generate(reg, typegen.Options{Realm: realm, Database: db, Lang: lang, Package: pkg})
 }
 
-func typesFromServer(c *kli.CommandContext, from, realm, db, lang string) (*typegen.Output, error) {
+func typesFromServer(c *kli.CommandContext, from, realm, db, lang, pkg string) (*typegen.Output, error) {
 	t, err := newTarget(from, realm, c.Getenv, false)
 	if err != nil {
 		return nil, err
@@ -144,6 +155,12 @@ func typesFromServer(c *kli.CommandContext, from, realm, db, lang string) (*type
 			query = url.Values{}
 		}
 		query.Set("lang", lang)
+	}
+	if pkg != "" {
+		if query == nil {
+			query = url.Values{}
+		}
+		query.Set("package", pkg)
 	}
 	if err := t.adm.Types.Get(t.ctx, query, &body); err != nil {
 		return nil, err
