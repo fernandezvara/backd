@@ -416,12 +416,12 @@ func (w *Worker) execute(ctx context.Context, log *slog.Logger, realm string, sv
 		meta.Origin = originHTTP // queued before origins were recorded
 	}
 	req := executor.InvokeRequest{
-		Function:  realm + "/" + job.Database + "/" + job.Function,
-		Bundle:    executor.Bundle{SHA256: hash, URL: strings.TrimRight(w.fns.callbackURL, "/") + "/_internal/functions/" + hash},
-		TimeoutMS: fn.Timeout.Milliseconds(),
-		MemoryMB:  (fn.Memory + 1<<20 - 1) >> 20,
-		MaxOutput: fn.MaxOutput,
-		Network:   fn.Network,
+		Function:    realm + "/" + job.Database + "/" + job.Function,
+		Bundle:      executor.Bundle{SHA256: hash, URL: strings.TrimRight(w.fns.callbackURL, "/") + "/_internal/functions/" + hash},
+		TimeoutMS:   fn.Timeout.Milliseconds(),
+		MemoryBytes: fn.Memory,
+		MaxOutput:   fn.MaxOutput,
+		Network:     fn.Network,
 		Envelope: executor.Envelope{
 			Mode:      fn.Mode,
 			Input:     job.Input,

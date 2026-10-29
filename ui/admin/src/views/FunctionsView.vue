@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Job } from 'backd-js'
+import { formatBytes, Job } from 'backd-js'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppAlert from '@/components/AppAlert.vue'
@@ -103,7 +103,6 @@ const databases = computed(() => {
 })
 const allFunctions = computed(() => databases.value.flatMap((db) => db.functions.map((f) => `${db.name}/${f.name}`)))
 const list = (xs: string[]) => (xs.length ? xs.join(', ') : t('functions.noneValue'))
-const bytes = (n: number) => (n >= 1 << 20 ? `${n / (1 << 20)} MiB` : n >= 1 << 10 ? `${n / (1 << 10)} KiB` : `${n} B`)
 
 // Run by hand.
 const open = ref(false)
@@ -190,7 +189,7 @@ async function run() {
             <AppButton v-if="f.schedule && canInvoke" variant="secondary" class="ml-2" :busy="pausing === `${db.name}/${f.name}`" @click="togglePause(`${db.name}/${f.name}`)">{{ paused[`${db.name}/${f.name}`] ? t('functions.resume.open') : t('functions.pause.open') }}</AppButton>
           </dd>
           <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.limits') }}</dt>
-          <dd>{{ t('functions.timeout') }} {{ prettyDuration(f.timeout) }} · {{ t('functions.memory') }} {{ bytes(f.memory) }} · {{ t('functions.maxOutput') }} {{ bytes(f.max_output) }} · {{ t('functions.concurrency') }} {{ f.concurrency }}</dd>
+          <dd>{{ t('functions.timeout') }} {{ prettyDuration(f.timeout) }} · {{ t('functions.memory') }} {{ formatBytes(f.memory) }} · {{ t('functions.maxOutput') }} {{ formatBytes(f.max_output) }} · {{ t('functions.concurrency') }} {{ f.concurrency }}</dd>
           <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.calls') }}</dt>
           <dd class="font-mono text-xs">{{ list(f.calls) }}</dd>
           <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.secrets') }}</dt>

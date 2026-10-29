@@ -18,6 +18,7 @@ import (
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/executor"
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/internal/strutil"
 	"github.com/fernandezvara/backd/internal/triggers"
 )
 
@@ -614,7 +615,7 @@ func (a *adminAPI) createInvitation(w http.ResponseWriter, r *http.Request) {
 	email, _ := f["email"].(string)
 	var ttl time.Duration
 	if s, ok := f["expires_in"].(string); ok {
-		d, err := registry.ParseDuration(s)
+		d, err := strutil.ParseDuration(s)
 		if err != nil || d <= 0 {
 			writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "expires_in", Reason: "must be a duration such as 7d or 12h"})
 			return
@@ -950,7 +951,7 @@ func (a *adminAPI) createAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s, ok := f["expires_in"].(string); ok {
-		d, err := registry.ParseDuration(s)
+		d, err := strutil.ParseDuration(s)
 		if err != nil || d <= 0 {
 			writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "expires_in", Reason: "must be a duration such as 90d or 12h"})
 			return

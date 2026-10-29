@@ -13,6 +13,7 @@ import (
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/push"
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/internal/strutil"
 )
 
 // Codes of a push that can't be sent.
@@ -205,7 +206,7 @@ func pushMessage(in pushSendInput) (push.Message, error) {
 		d := time.Duration(v * float64(time.Second))
 		m.TTL = &d
 	case string:
-		d, err := registry.ParseDuration(v)
+		d, err := strutil.ParseDuration(v)
 		if err != nil {
 			return m, errors.New("ttl: " + err.Error())
 		}

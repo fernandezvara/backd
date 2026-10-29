@@ -15,8 +15,8 @@ All runtime configuration comes from environment variables. At startup `backd` c
 | `HTTP_ADDR` | no | `:8080` | Listen address |
 | `PROVISION_MODE` | no | `apply` | `apply` creates or updates collections, validators and indexes; `verify` only compares them and refuses to start on differences |
 | `LOG_LEVEL` | no | `info` | `debug`, `info`, `warn` or `error` (case-insensitive) |
-| `MAX_BODY_BYTES` | no | `1048576` | Maximum request body size in bytes; larger bodies get `413` |
-| `BACKD_MAX_UPLOAD_BYTES` | no | `104857600` | Largest file a [proxy upload](../files/transfers/#uploading) may carry (100 MiB). A field's own `max_size` applies as well; the smaller wins |
+| `MAX_BODY_BYTES` | no | `1048576` | Maximum request body size, bytes or a [size](#sizes-and-units) such as `1MiB`; larger bodies get `413` |
+| `BACKD_MAX_UPLOAD_BYTES` | no | `104857600` | Largest file a [proxy upload](../files/transfers/#uploading) may carry (100 MiB), bytes or a [size](#sizes-and-units). A field's own `max_size` applies as well; the smaller wins |
 | `BACKD_IMAGE_MAX_PIXELS` | no | `40000000` | Most pixels (width × height) an image may have to get [versions](../files/file-fields/#image-versions): 40 megapixels. Read from the file's header, so a larger image is refused without being decoded. A field's `max_pixels` may only lower it, and a higher one stops startup |
 | `BACKD_EXPAND_MAX_DEPTH` | no | `2` | Levels of [references](config-dir/#references) an `expand` follows: 1 or 2 |
 | `BACKD_EXPAND_MAX_PATHS` | no | `5` | Entries of one `expand` parameter |
@@ -43,7 +43,7 @@ All runtime configuration comes from environment variables. At startup `backd` c
 | `BACKD_REALTIME_MAX_STREAMS_PER_USER` | no | `5` | Open streams per user or API key (anonymous callers: per address). A realm may lower it |
 | `BACKD_REALTIME_MAX_STREAMS` | no | `10000` | Open realtime streams on this instance |
 | `BACKD_REALTIME_BUFFER` | no | `262144` | Bytes a stream may have waiting to be sent (and at most 1,000 events) before it is reset with `slow_consumer` |
-| `BACKD_REALTIME_MEMORY` | no | `268435456` | Bytes all streams' buffers may hold on this instance; over it, the largest buffers are reset |
+| `BACKD_REALTIME_MEMORY` | no | `268435456` | Bytes (or a [size](#sizes-and-units) such as `256MiB`) all streams' buffers may hold on this instance; over it, the largest buffers are reset |
 | `BACKD_REALTIME_HEARTBEAT` | no | `25s` | How often an idle stream sends a comment so proxies keep it open (at least `1s`) |
 | `BACKD_ADMIN_UI` | no | `false` | `true` serves the admin web interface at `/_ui/` when the binary was built with it (release images are); it needs the admin API on the same instance, or startup fails |
 | `BACKD_ADMIN_UI_IDLE` | no | `30m` | how long the admin interface may sit untouched before it signs out and revokes its session |
@@ -58,6 +58,25 @@ All runtime configuration comes from environment variables. At startup `backd` c
 The pages of this section show YAML in pieces: a snippet of `collection.yaml` assumes the schema fields, roles and secrets it names exist in the rest of the configuration. `backd config check` is the judge of a whole tree. The complete, tested trees are under `examples/config`.
 
 Durations use Go syntax, for example `500ms`, `10s` or `1m30s`.
+
+## Sizes and units
+
+Every limit measured in bytes is written as a number and a unit, with no space between them: `512KiB`, `10MiB`, `1.5GB`. The units come in two families that differ by about 7% at `TB`/`TiB`:
+
+| Family | Units | Each step is |
+|---|---|---|
+| Decimal | `B`, `KB`, `MB`, `GB`, `TB` | 1,000 times the one before: a `KB` is 1,000 bytes |
+| Binary | `B`, `KiB`, `MiB`, `GiB`, `TiB` | 1,024 times the one before: a `KiB` is 1,024 bytes |
+
+- **Both families are accepted** unless a field says otherwise. [`memory`](../functions/reference/) of a function takes binary units only, because the runtime counts in MiB.
+- **Units are case-sensitive** and follow the number directly: `1mb`, `1 MiB` and `1Mib` are refused.
+- **Decimals are fine** (`1.5MiB` is 1,572,864 bytes) as long as the result is a whole number of bytes: `0.1KiB` is refused.
+- **Environment variables** that end in `_BYTES` or `_MEMORY` also take a bare number of bytes: `1048576` and `1MiB` are the same value.
+- **A size is never negative** and has no sign, exponent or thousands separator. Each setting says its smallest value.
+
+{{< hint style="tip" title="Best practice" >}}
+Write binary units (`MiB`, `GiB`) for limits you compare with memory or what a bucket reports, and decimal units (`MB`, `GB`) when matching a provider's price list. What backd prints back (the admin interface and `backd storage usage`) uses binary units.
+{{< /hint >}}
 
 Example:
 

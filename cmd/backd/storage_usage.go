@@ -8,6 +8,8 @@ import (
 	"text/tabwriter"
 
 	"github.com/fernandezvara/kli"
+
+	"github.com/fernandezvara/backd/internal/strutil"
 )
 
 type storageStatus struct {
@@ -89,13 +91,13 @@ func printStorageStatus(w io.Writer, st storageStatus) {
 		reach = "NO: " + st.Reachable.Error
 	}
 	fmt.Fprintf(w, "access keys (%s, %s): %s\nbucket reachable: %s\n", st.AccessKey, st.SecretKey, keys, reach)
-	fmt.Fprintf(w, "\nin use: %s in %d files", humanBytes(st.Usage.Bytes), st.Usage.Files)
+	fmt.Fprintf(w, "\nin use: %s in %d files", strutil.FormatSize(st.Usage.Bytes, strutil.SizeBinary), st.Usage.Files)
 	if st.Quota.Realm != nil {
-		fmt.Fprintf(w, " (%s of the realm's quota of %s)", percent(st.Usage.Bytes, *st.Quota.Realm), humanBytes(*st.Quota.Realm))
+		fmt.Fprintf(w, " (%s of the realm's quota of %s)", percent(st.Usage.Bytes, *st.Quota.Realm), strutil.FormatSize(*st.Quota.Realm, strutil.SizeBinary))
 	}
 	fmt.Fprintln(w)
 	if st.Quota.User != nil {
-		fmt.Fprintf(w, "quota per user: %s\n", humanBytes(*st.Quota.User))
+		fmt.Fprintf(w, "quota per user: %s\n", strutil.FormatSize(*st.Quota.User, strutil.SizeBinary))
 	}
 	if len(st.Usage.Users) > 0 {
 		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
@@ -105,7 +107,7 @@ func printStorageStatus(w io.Writer, st storageStatus) {
 			if st.Quota.User != nil {
 				of = percent(u.Bytes, *st.Quota.User)
 			}
-			fmt.Fprintf(tw, "%s\t%d\t%s\t%s\n", u.UserID, u.Files, humanBytes(u.Bytes), of)
+			fmt.Fprintf(tw, "%s\t%d\t%s\t%s\n", u.UserID, u.Files, strutil.FormatSize(u.Bytes, strutil.SizeBinary), of)
 		}
 		tw.Flush()
 	}
@@ -114,19 +116,6 @@ func printStorageStatus(w io.Writer, st storageStatus) {
 		fmt.Fprintf(w, ", the oldest since %s", *st.Deletions.Oldest)
 	}
 	fmt.Fprintf(w, "\nuploads left unfinished past their time: %d\n", st.StaleUploads)
-}
-
-func humanBytes(n int64) string {
-	const unit = 1024
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-	div, exp := int64(unit), 0
-	for m := n / unit; m >= unit; m /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
 type reconcileReport struct {
@@ -208,15 +197,15 @@ func printReconcile(w io.Writer, rep reconcileReport, labelled bool) {
 	fmt.Fprintf(w, "looked at %d objects: %d referenced by a document, %d younger than 24 hours, %d with an upload record still open, %d not shaped like files\n",
 		rep.Scanned, rep.Referenced, rep.SkippedRecent, rep.SkippedInJournal, rep.Ignored)
 	for _, o := range rep.Orphans {
-		fmt.Fprintf(w, "orphan  %s  %s  %s\n", o.Key, humanBytes(o.Size), o.LastModified)
+		fmt.Fprintf(w, "orphan  %s  %s  %s\n", o.Key, strutil.FormatSize(o.Size, strutil.SizeBinary), o.LastModified)
 	}
 	switch {
 	case len(rep.Orphans) == 0:
 		fmt.Fprintln(w, "no object is unreferenced")
 	case rep.Delete:
-		fmt.Fprintf(w, "deleted %d of %d unreferenced objects (%s)\n", rep.Deleted, len(rep.Orphans), humanBytes(rep.OrphanBytes))
+		fmt.Fprintf(w, "deleted %d of %d unreferenced objects (%s)\n", rep.Deleted, len(rep.Orphans), strutil.FormatSize(rep.OrphanBytes, strutil.SizeBinary))
 	default:
-		fmt.Fprintf(w, "%d unreferenced objects (%s): run again with --delete to remove exactly these\n", len(rep.Orphans), humanBytes(rep.OrphanBytes))
+		fmt.Fprintf(w, "%d unreferenced objects (%s): run again with --delete to remove exactly these\n", len(rep.Orphans), strutil.FormatSize(rep.OrphanBytes, strutil.SizeBinary))
 	}
 }
 

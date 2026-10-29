@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/fernandezvara/backd/internal/storage"
+	"github.com/fernandezvara/backd/internal/strutil"
 )
 
 // Storage defaults and bounds (storage in realm.yaml).
@@ -220,7 +221,7 @@ func parseStorage(d *storageDoc, public bool) (*StorageSettings, []error) {
 		if t.value == "" || (public && t.field == "presigned_ttl") {
 			continue
 		}
-		v, err := ParseDuration(t.value)
+		v, err := strutil.ParseDuration(t.value)
 		switch {
 		case err != nil:
 			add("%s: %v", t.field, err)
@@ -238,7 +239,7 @@ func parseStorage(d *storageDoc, public bool) (*StorageSettings, []error) {
 			if q.value == "" {
 				continue
 			}
-			v, err := ParseSize(q.value)
+			v, err := strutil.ParseSize(q.value, strutil.SizeBoth, false)
 			switch {
 			case err != nil:
 				add("%s: %v", q.field, err)

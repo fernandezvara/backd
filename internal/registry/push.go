@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/fernandezvara/backd/internal/strutil"
 )
 
 // Push notifications (design/push-notifications.md): a realm enables a platform by giving it a
@@ -326,7 +328,7 @@ func parsePush(d *pushDoc) (*PushSettings, []error) {
 		if v == "" {
 			return
 		}
-		t, err := ParseDuration(v)
+		t, err := strutil.ParseDuration(v)
 		switch {
 		case err != nil:
 			add("%s: %v", field, err)
@@ -362,7 +364,7 @@ func parsePush(d *pushDoc) (*PushSettings, []error) {
 			}
 		}
 		if dv.StaleAfter != "" {
-			if t, err := ParseDuration(dv.StaleAfter); err != nil {
+			if t, err := strutil.ParseDuration(dv.StaleAfter); err != nil {
 				add("devices.stale_after: %v", err)
 			} else if t < 24*time.Hour {
 				add("devices.stale_after: must be at least 24h, got %s", dv.StaleAfter)

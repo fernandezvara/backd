@@ -11,6 +11,7 @@ import (
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/internal/strutil"
 )
 
 // apiKey is an API key as the admin API returns it.
@@ -31,7 +32,7 @@ type apiKey struct {
 func keyOptions(c *kli.CommandContext, body map[string]any) error {
 	body["role"] = str(c, "role")
 	if v := str(c, "expires"); v != "" {
-		if d, err := registry.ParseDuration(v); err != nil || d <= 0 {
+		if d, err := strutil.ParseDuration(v); err != nil || d <= 0 {
 			return usageErr(fmt.Errorf("--expires: want a positive duration such as 90d or 12h, got %q", v))
 		}
 		body["expires_in"] = v

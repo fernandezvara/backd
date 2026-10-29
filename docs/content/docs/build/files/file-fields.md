@@ -26,7 +26,7 @@ files:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `max_size` | required | The largest one file may be (`512KiB`, `10MiB`, `1GiB`). Checked while the bytes stream in |
+| `max_size` | required | The largest one file may be, any [size unit](../../configuration/#sizes-and-units) (`512KiB`, `10MiB`, `1GiB`). Checked while the bytes stream in |
 | `types` | any | Allowed content types, `image/png` or a family such as `image/*`. Checked against the type **detected from the file's content**, never the one the client claims. A family never admits SVG, HTML or XML: name them to accept them |
 | `multiple` | `false` | The field is a list of files instead of one |
 | `max_files` | `10` | With `multiple`: how many files the field may hold (1 to 1000) |
@@ -184,13 +184,13 @@ When an upload becomes part of a document, one job per file is queued (origin `b
 
 ### Sizing the worker
 
-Decoding takes memory: about **4 bytes per pixel** of the image, plus the scaled copies. A 40-megapixel photograph needs about 160 MB while it is decoded.
+Decoding takes memory: about **4 bytes per pixel** of the image, plus the scaled copies. A 40-megapixel photograph needs about 160 MiB while it is decoded.
 
 | `BACKD_IMAGE_MAX_PIXELS` | Per image | Two at once |
 |---|---|---|
-| 12 000 000 (a phone photo) | ~50 MB | ~100 MB |
-| 40 000 000 (the default) | ~160 MB | ~320 MB |
-| 100 000 000 | ~400 MB | ~800 MB |
+| 12 000 000 (a phone photo) | ~50 MiB | ~100 MiB |
+| 40 000 000 (the default) | ~160 MiB | ~320 MiB |
+| 100 000 000 | ~400 MiB | ~800 MiB |
 
 Give the worker's container at least twice what the table says for the concurrency you want, since the original is also read and the runtime needs room. By default the concurrency is derived from the container's CPU and memory limits (half the CPUs, and no more than fit in half the memory), and logged at startup as `image versions`; set `BACKD_IMAGE_CONCURRENCY` to choose it. If the worker is undersized, the container is killed for memory, another worker retries the job when the lease lapses, and an image that keeps killing it can be kept out with a lower `BACKD_IMAGE_MAX_PIXELS` or a field's `max_pixels`.
 

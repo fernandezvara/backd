@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/fernandezvara/backd/internal/strutil"
 )
 
 // ConsentsDir is the folder of _realm that holds the consent texts:
@@ -243,7 +245,7 @@ func parseRetention(v string) (time.Duration, error) {
 		}
 		return time.Duration(n) * 365 * 24 * time.Hour, nil
 	}
-	return ParseDuration(v)
+	return strutil.ParseDuration(v)
 }
 
 // loadConsents reads the texts of a realm's consents and checks them: the current

@@ -83,12 +83,12 @@ func (f *functions) dataHook(ctx context.Context, realm, ref string, in dataHook
 	invID := xid.New().String()
 	deadline := f.docs.now().Add(dataHookTimeout)
 	res, err := f.runner.Invoke(ctx, executor.InvokeRequest{
-		Function:  realm + "/" + database + "/" + name,
-		Bundle:    executor.Bundle{SHA256: hash, URL: strings.TrimRight(f.callbackURL, "/") + "/_internal/functions/" + hash},
-		TimeoutMS: dataHookTimeout.Milliseconds(),
-		MemoryMB:  (fn.Memory + 1<<20 - 1) >> 20,
-		MaxOutput: min(fn.MaxOutput, maxDataHook),
-		Network:   fn.Network,
+		Function:    realm + "/" + database + "/" + name,
+		Bundle:      executor.Bundle{SHA256: hash, URL: strings.TrimRight(f.callbackURL, "/") + "/_internal/functions/" + hash},
+		TimeoutMS:   dataHookTimeout.Milliseconds(),
+		MemoryBytes: fn.Memory,
+		MaxOutput:   min(fn.MaxOutput, maxDataHook),
+		Network:     fn.Network,
 		Envelope: executor.Envelope{
 			Mode:      fn.Mode,
 			Input:     input,

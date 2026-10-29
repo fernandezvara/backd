@@ -115,7 +115,7 @@ func TestFunctionCalls(t *testing.T) {
 		t.Fatalf("echo: %d %v %v", code, out, hdr)
 	}
 	req := f.runner.last()
-	if req.Function != "acme/app/echo" || req.TimeoutMS != 10000 || req.MemoryMB != 128 || req.MaxOutput != 1<<20 ||
+	if req.Function != "acme/app/echo" || req.TimeoutMS != 10000 || req.MemoryBytes != 128<<20 || req.MaxOutput != 1<<20 ||
 		!strings.HasPrefix(req.Bundle.URL, "http://backd-internal:8081/_internal/functions/") || len(req.Bundle.SHA256) != 64 {
 		t.Errorf("request: %+v", req)
 	}

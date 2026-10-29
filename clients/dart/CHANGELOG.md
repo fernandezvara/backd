@@ -1,3 +1,7 @@
+## Unreleased
+
+- **`parseSize(text, {family, allowBytes})` and `formatBytes(bytes, {family})`:** read and print sizes with the server's grammar (`parseSize('1.5MiB')` is `1572864`; `formatBytes(1572864)` is `'1.5 MiB'`); `SizeFamily` is `binary`, `decimal` or `both` (the default). A size the field would refuse throws a `FormatException` that says what it takes.
+
 ## 0.9.5
 
 - **Public files:** `publicUrl(file, version)` gives the permanent address of a file in a field with `public: true` (and of a ready version), and `fileUrl(..., file:)` answers it without a request to the server for such a file. `FileLink.expiresAt` is now nullable: a public file's link never expires, so code that reads it must handle `null`. The generated types gain `public`, `key_name` and the version `url`. Needs a backd server with public files (0.9.5).

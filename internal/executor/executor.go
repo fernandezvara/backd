@@ -72,14 +72,17 @@ const (
 
 // InvokeRequest is one invocation, sent by backd.
 type InvokeRequest struct {
-	Function  string   `json:"function"` // <realm>/<database>/<name>, for logs
-	Bundle    Bundle   `json:"bundle"`
-	TimeoutMS int64    `json:"timeout_ms"`
-	MemoryMB  int64    `json:"memory_mb"` // V8 heap
-	MaxOutput int64    `json:"max_output"`
-	Network   []string `json:"network,omitempty"` // host or host:port
-	Envelope  Envelope `json:"envelope"`
+	Function    string   `json:"function"` // <realm>/<database>/<name>, for logs
+	Bundle      Bundle   `json:"bundle"`
+	TimeoutMS   int64    `json:"timeout_ms"`
+	MemoryBytes int64    `json:"memory_bytes"` // V8 heap (see HeapMiB)
+	MaxOutput   int64    `json:"max_output"`
+	Network     []string `json:"network,omitempty"` // host or host:port
+	Envelope    Envelope `json:"envelope"`
 }
+
+// HeapMiB is the memory limit in the unit V8's --max-old-space-size takes: mebibytes, rounded up.
+func (r InvokeRequest) HeapMiB() int64 { return (r.MemoryBytes + 1<<20 - 1) >> 20 }
 
 // Bundle names a function's bundle: backd serves it at URL.
 type Bundle struct {
@@ -346,7 +349,7 @@ func (e *Executor) invoke(ctx context.Context, req InvokeRequest) Result {
 		return Result{Status: StatusBundle, Message: err.Error()}
 	}
 	timeout := time.Duration(req.TimeoutMS) * time.Millisecond
-	if timeout <= 0 || req.MemoryMB <= 0 || req.MaxOutput <= 0 {
+	if timeout <= 0 || req.MemoryBytes <= 0 || req.MaxOutput <= 0 {
 		return Result{Status: StatusError, Message: "invalid limits"}
 	}
 	allow := slicesClone(req.Network)
@@ -441,7 +444,7 @@ func (e *Executor) bundle(ctx context.Context, b Bundle) (string, error) {
 func (e *Executor) run(ctx context.Context, bundle string, req InvokeRequest, timeout time.Duration, allow []string) Result {
 	args := []string{"run", "--no-prompt", "--cached-only", "--no-config", "--no-lock",
 		"--allow-read=" + bundle,
-		fmt.Sprintf("--v8-flags=--max-old-space-size=%d,--single-threaded", req.MemoryMB)}
+		fmt.Sprintf("--v8-flags=--max-old-space-size=%d,--single-threaded", req.HeapMiB())}
 	if len(allow) > 0 {
 		args = append(args, "--allow-net="+strings.Join(allow, ","))
 	}
@@ -499,7 +502,7 @@ func (e *Executor) run(ctx context.Context, bundle string, req InvokeRequest, ti
 	defer deadline.Stop()
 	watch := time.NewTicker(50 * time.Millisecond)
 	defer watch.Stop()
-	rssLimit := req.MemoryMB<<20 + rssOverhead
+	rssLimit := req.MemoryBytes + rssOverhead
 
 	var res Result
 	state := "ready"

@@ -307,7 +307,7 @@ BackdClient(url: url, realm: realm, cache: CacheOptions(enabled: false));       
 BackdClient(url: url, realm: realm, cache: CacheOptions(maxEntries: 50, maxBytes: 1024 * 1024));  // smaller bounds
 ```
 
-- **Bounded:** 200 entries or 5 MB of bodies by default; the least recently used are dropped first.
+- **Bounded:** 200 entries or 5 MiB of bodies by default; the least recently used are dropped first.
 - **Only document and list reads** are kept. Reads with `fileLinks` (their links expire) and answers marked `no-store` never are.
 - **Per caller:** signing in, signing out or a different session or API key empties the cache, and so does `backd.clearCache()`. A successful write to a document drops its entry.
 - **Functions** reach the API with the cache off.
@@ -468,6 +468,7 @@ final info = await docs.fileField('receipts');             // upload, maxSize, t
 - **`deleteFile(id, field, fileId, {ifMatch})`** removes one file. `files(id, field).delete()` clears the field.
 - **`files(id, field)`** is the lower level: `put`, `get` (the bytes), `link`, `delete` and `list`, which is also what a [function](../../files/functions/) uses.
 - **`fileField(field)`** says how the field takes files (asked once, then remembered): to show `max_size` and `types` and refuse a file before sending it.
+- **`parseSize(text, family:, allowBytes:)` and `formatBytes(bytes, family:)`** read and print sizes with the grammar of the server's [sizes and units](../../configuration/#sizes-and-units): `parseSize('1.5MiB')` is `1572864`, `formatBytes(1572864)` is `'1.5 MiB'`. `family` is a `SizeFamily` (`binary`, `decimal` or `both`, the default); a size the field would refuse throws a `FormatException` that says what it takes.
 
 Errors are the client's: `unsupported_file_type` (`415`), `payload_too_large` (`413`), `too_many_files` (`409`), a `NotFoundError` for a document the user can't read, and for a direct upload `upload_failed` when the bucket refuses the file.
 

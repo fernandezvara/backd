@@ -33,7 +33,7 @@ curl -X POST "$API/v1/acme/app/people/$ID/_files/avatar?name=ada.png" \
 - Every upload is a change to the document: it bumps `_meta.version` and accepts `If-Match` (`412` when the document moved).
 - Before any byte is read, backd checks the document is readable, `If-Match`, the `update` rule and `max_files` (`409 too_many_files`). The size is checked while streaming (`413`), and the type from the first bytes (`415 unsupported_file_type`). SVG and other active formats are only accepted when a field lists them.
 - A field with `upload: direct` answers `409 upload_mode_mismatch`: its files go through [direct uploads](#direct-uploads).
-- Bodies stream: they never sit in memory, and large files go to the bucket in parts. `BACKD_MAX_UPLOAD_BYTES` (default 100 MiB) caps what a proxy upload may be; a field's effective limit is the smaller of it and `max_size`. It replaces `MAX_BODY_BYTES` for upload requests only.
+- Bodies stream: they never sit in memory, and large files go to the bucket in parts. `BACKD_MAX_UPLOAD_BYTES` (default 100 MiB; bytes or a [size](../../configuration/#sizes-and-units)) caps what a proxy upload may be; a field's effective limit is the smaller of it and `max_size`. It replaces `MAX_BODY_BYTES` for upload requests only.
 
 ## Creating a document with its files
 

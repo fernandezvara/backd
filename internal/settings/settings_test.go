@@ -360,3 +360,34 @@ func TestLoadEnv(t *testing.T) {
 		t.Errorf("a name with a space: %v", err)
 	}
 }
+
+func TestByteSettingsTakeUnits(t *testing.T) {
+	base := map[string]string{"CONFIG_DIR": "/cfg", "MONGO_URI": "mongodb://m"}
+	with := func(k, v string) map[string]string {
+		m := map[string]string{k: v}
+		for bk, bv := range base {
+			m[bk] = bv
+		}
+		return m
+	}
+	for in, want := range map[string]int64{"1048576": 1 << 20, "1MiB": 1 << 20, "2MB": 2_000_000, "1.5KiB": 1536} {
+		if s, err := Load(env(with("MAX_BODY_BYTES", in))); err != nil || s.MaxBodyBytes != want {
+			t.Errorf("MAX_BODY_BYTES=%s: %v %d", in, err, s.MaxBodyBytes)
+		}
+		if s, err := Load(env(with("BACKD_MAX_UPLOAD_BYTES", in))); err != nil || s.MaxUploadBytes != want {
+			t.Errorf("BACKD_MAX_UPLOAD_BYTES=%s: %v %d", in, err, s.MaxUploadBytes)
+		}
+	}
+	for _, in := range []string{"0", "0MiB", "-5", "1.5", "1mb", "lots"} {
+		if _, err := Load(env(with("MAX_BODY_BYTES", in))); err == nil || !strings.Contains(err.Error(), "MAX_BODY_BYTES") {
+			t.Errorf("MAX_BODY_BYTES=%s accepted: %v", in, err)
+		}
+	}
+	l, err := RealtimeLimitsFrom(env(map[string]string{"BACKD_REALTIME_MEMORY": "512MiB"}))
+	if err != nil || l.Memory != 512<<20 {
+		t.Errorf("BACKD_REALTIME_MEMORY=512MiB: %v %d", err, l.Memory)
+	}
+	if _, err := RealtimeLimitsFrom(env(map[string]string{"BACKD_REALTIME_MEMORY": "0"})); err == nil {
+		t.Error("BACKD_REALTIME_MEMORY=0 accepted")
+	}
+}

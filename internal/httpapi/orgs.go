@@ -12,6 +12,7 @@ import (
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage"
+	"github.com/fernandezvara/backd/internal/strutil"
 )
 
 // Organizations (design/organizations.md): /v1/{realm}/_orgs for the signed-in user, and
@@ -716,7 +717,7 @@ func invitationInput(w http.ResponseWriter, r *http.Request) (auth.InvitationInp
 	in.Send, _ = f["send"].(bool)
 	in.MaxUses, _ = f["max_uses"].(int)
 	if s, ok := f["expires_in"].(string); ok {
-		d, err := registry.ParseDuration(s)
+		d, err := strutil.ParseDuration(s)
 		if err != nil {
 			writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "expires_in", Reason: err.Error()})
 			return auth.InvitationInput{}, false

@@ -171,7 +171,7 @@ class BackdClient<R> {
   /// - [cache] keeps the last body and `ETag` of document and list reads in
   ///   memory and revalidates them with `If-None-Match`, so an unchanged read
   ///   costs a `304`. On by default; [CacheOptions.enabled] `false` turns it
-  ///   off, and `maxEntries`/`maxBytes` set the bounds (200, 5 MB).
+  ///   off, and `maxEntries`/`maxBytes` set the bounds (200, 5 MiB).
   /// - [configStorage] is where `client.config` keeps its copies between
   ///   runs; memory only when not given.
   /// - [transport] sends the requests: the `HttpClient`-backed transport by

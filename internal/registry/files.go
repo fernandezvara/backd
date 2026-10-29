@@ -20,6 +20,7 @@ import (
 
 	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/fernandezvara/backd/internal/imaging"
+	"github.com/fernandezvara/backd/internal/strutil"
 )
 
 // File fields (roadmap Phase 10): a collection declares which fields of its
@@ -259,7 +260,7 @@ func parseFiles(path string, data []byte, schema map[string]any, settings RealmS
 
 		if d.MaxSize == "" {
 			add(name, "max_size: is required, such as 10MiB: the largest one file may be")
-		} else if n, err := ParseSize(d.MaxSize); err != nil {
+		} else if n, err := strutil.ParseSize(d.MaxSize, strutil.SizeBoth, false); err != nil {
 			add(name, "max_size: %v", err)
 		} else if n < 1 {
 			add(name, "max_size: must be at least 1B")
@@ -304,9 +305,9 @@ func parseFiles(path string, data []byte, schema map[string]any, settings RealmS
 			case !settings.Storage.ProviderEntry().SupportsDirectUploads():
 				add(name, "upload: direct needs a provider that verifies a signed SHA-256, which %s doesn't (use proxy)", settings.Storage.Provider)
 			case f.MaxSize > MaxMultipartFileSize:
-				add(name, "max_size: a direct upload is at most 4TiB")
+				add(name, "max_size: a direct upload is at most %s", strutil.FormatSize(MaxMultipartFileSize, strutil.SizeBinary))
 			case f.MaxSize > maxDirectFileSize && !settings.Storage.ProviderEntry().SupportsMultipartUploads():
-				add(name, "max_size: a direct upload is one signed PUT, at most 5GiB, with %s (multipart uploads of larger files need a provider that verifies a SHA-256 per part)", settings.Storage.Provider)
+				add(name, "max_size: a direct upload is one signed PUT, at most %s, with %s (multipart uploads of larger files need a provider that verifies a SHA-256 per part)", strutil.FormatSize(maxDirectFileSize, strutil.SizeBinary), settings.Storage.Provider)
 			default:
 				f.Upload = UploadDirect
 			}
@@ -329,7 +330,7 @@ func parseFiles(path string, data []byte, schema map[string]any, settings RealmS
 			add(name, "download: must be %s or %s, got %q", DownloadPresigned, DownloadProxy, d.Download)
 		}
 		if d.PresignedTTL != "" {
-			if v, err := ParseDuration(d.PresignedTTL); err != nil {
+			if v, err := strutil.ParseDuration(d.PresignedTTL); err != nil {
 				add(name, "presigned_ttl: %v", err)
 			} else if v < minPresignedTTL || v > maxFilePresignedTL {
 				add(name, "presigned_ttl: must be between %s and %s, got %s", minPresignedTTL, maxFilePresignedTL, d.PresignedTTL)
@@ -338,7 +339,7 @@ func parseFiles(path string, data []byte, schema map[string]any, settings RealmS
 			}
 		}
 		if d.Cache != "" {
-			if v, err := ParseDuration(d.Cache); err != nil {
+			if v, err := strutil.ParseDuration(d.Cache); err != nil {
 				add(name, "cache: %v", err)
 			} else if v <= 0 {
 				add(name, "cache: must be a positive duration, such as 1h")
