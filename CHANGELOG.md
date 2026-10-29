@@ -15,7 +15,7 @@ Until a stable release is declared, a minor release may have breaking changes; t
 
 - **Environment variables with a size** (`MAX_BODY_BYTES`, `BACKD_MAX_UPLOAD_BYTES`, `BACKD_REALTIME_MEMORY`) take a unit as well as a bare number of bytes: `1MiB` and `1048576` are the same value.
 - **`backd-js`:** `parseSize(text, { family, allowBytes })` and `formatBytes(bytes, family)` read and print sizes with the server's grammar. The admin interface prints every size with `formatBytes` (`1.5 KiB`, `5 MiB`: no trailing `.0`).
-- **Go client (`pkg/client`, in progress):** `client.New(Options)` with the request pipeline (`Do`), retries of `429`/`503`, the `*client.Error` types and sentinels (`ErrNotFound`, `ErrConflict`, …), token storage in memory or in a file, per-organization clients and `ParseSize`/`FormatSize`. It uses the standard library only.
+- **Go client (`pkg/client`, in progress):** `client.New(Options)` with the request pipeline (`Do`), retries of `429`/`503`, the `*client.Error` types and sentinels (`ErrNotFound`, `ErrConflict`, …), token storage in memory or in a file, per-organization clients and `ParseSize`/`FormatSize`; `Auth()` has sign-up and sign-in (the `SignIn` step machine, second factor, magic link, sign-in with a provider by redirect or identity token), re-authentication, sessions and the account flows. It uses the standard library only.
 - **`backd storage usage`** prints sizes with at most two decimals (`1.5 KiB`, `5 MiB`) and stops at `TiB`.
 
 ## 0.9.5

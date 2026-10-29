@@ -172,8 +172,8 @@ func (e *Error) Is(target error) bool {
 
 // ConsentRef names a consent and the version it asks for.
 type ConsentRef struct {
-	Name    string
-	Version string
+	Name    string `json:"name"`
+	Version string `json:"version"`
 }
 
 // ConsentRequiredError is the answer to a call that needs consents the user hasn't accepted.
