@@ -157,6 +157,17 @@ blog__main.posts
 shop__orders.items
 ```
 
+### Upgrading to v0.9.5
+
+v0.9.5 adds [public files](../build/files/public-files/). Nothing changes for a realm that doesn't use them: the configuration, the data and the provisioned indexes stay as they are, and `backd provision` has nothing new to do. What changes:
+
+1. **A file field can be `public: true`,** with a second, independent `public_storage:` in `realm.yaml` (its own provider, bucket, keys and the `url` browsers read from). A realm without `public_storage:` that declares a public field fails the configuration check. Read the [security notes](../build/files/security/) first: anyone with a public file's address can read it, and the bucket's public readability is yours to set up.
+2. **Regenerate the types** (`backd types`, and `backd types --functions`): every file in a realm with files gains `public` and `key_name`, and a version gains `url`. Committed `types.d.ts`, `types.dart` and `backd.d.ts` files show a diff; a CI check with `--check` fails until they are regenerated.
+3. **`backd storage check` and `reconcile` take `--storage private|public`** (private by default, as before), and `--direct` takes `--public-storage-key` and `--public-storage-secret`. The same choice exists as `?storage=public` / the `storage` body field in the admin API.
+4. **Exports and imports carry public files.** An import checks each one like an upload (type, extension, name, metadata) before publishing it, and refuses a picture that stripping would change.
+5. **`FileLink.expiresAt` is nullable in `package:backd`** (a public file's link never expires): handle `null` when you read it.
+6. **Move the clients with the server.** `backd-js` and `package:backd` are released on the same version: `0.9.5` (for Dart, `backd: ^0.9.5`).
+
 ### Upgrading to v0.9.4
 
 v0.9.4 changes nothing in the configuration, the data or the provisioned indexes: run `backd provision` as usual, there is nothing new for it. What changes:

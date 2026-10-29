@@ -64,7 +64,7 @@ In Grafana, the *Processes* dashboard shows the API, the workers, the executor a
 | `make dev-logs` | Follows the logs; `S=worker` for one service. |
 | `make dev-backd ARGS='…'` | Runs the `backd` command line in the API container, for example `bootstrap`. |
 
-`BACKD_VERSION` pins the images (`BACKD_VERSION=v0.9.4 make dev-build`); the default is `latest`. The stack is for localhost and development: dev mode, fixed dev-only tokens and an open Grafana. Never use it for a deployment (see [Production deployment](../../operate/production/)).
+`BACKD_VERSION` pins the images (`BACKD_VERSION=v0.9.5 make dev-build`); the default is `latest`. The stack is for localhost and development: dev mode, fixed dev-only tokens and an open Grafana. Never use it for a deployment (see [Production deployment](../../operate/production/)).
 
 To test the stack against a build of your checkout instead of a release, use the version `local`. `make dev-build` builds the executor image from the checkout (a snapshot of the Go code at that moment: run it again after you change code) and pulls the other images:
 
