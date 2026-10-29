@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -255,5 +256,30 @@ func TestCloseRunsClosersOnce(t *testing.T) {
 	c.Close()
 	if n != 1 {
 		t.Errorf("closer ran %d times", n)
+	}
+}
+
+type mappedError struct{ error }
+
+func (m mappedError) Unwrap() error { return m.error }
+
+func TestMapErrorAndErrorPath(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		io.WriteString(w, `{"error":{"code":"not_found","message":"no"}}`)
+	}, func(o *Options) {
+		o.MapError = func(err error) error { return mappedError{fmt.Errorf("hint: %w", err)} }
+	})
+	_, err := c.Do(bg, "GET", []string{"_admin", "jobs"}, nil, nil)
+	var m mappedError
+	var e *Error
+	if !errors.As(err, &m) || !errors.Is(err, ErrNotFound) || !errors.As(err, &e) || e.Path != "_admin/jobs" || !strings.HasPrefix(err.Error(), "hint: ") {
+		t.Errorf("%#v", err)
+	}
+	// without a mapper the error is the client's own, with its path
+	c2 := newTestClient(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNotFound) })
+	_, err = c2.Do(bg, "GET", []string{"a", "b"}, nil, nil)
+	if !errors.As(err, &e) || e.Path != "a/b" {
+		t.Errorf("%#v", err)
 	}
 }

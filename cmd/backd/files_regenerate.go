@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"net/url"
 	"time"
 
 	"github.com/fernandezvara/kli"
@@ -30,7 +29,7 @@ func filesRegenerate(c *kli.CommandContext) error {
 	var started struct {
 		ID string `json:"id"`
 	}
-	if err := t.call("POST", "_admin/files/versions/regenerate", nil, body, &started); err != nil {
+	if err := t.adm.Files.RegenerateVersions(t.ctx, body, &started); err != nil {
 		var ae *apiError
 		if errors.As(err, &ae) && ae.Code == "regenerate_running" {
 			return fmt.Errorf("a regeneration of this field is already running: follow it with `backd functions jobs --realm %s`, or cancel it with `backd functions cancel --realm %s --job <id>`", t.realm, t.realm)
@@ -46,7 +45,7 @@ func filesRegenerate(c *kli.CommandContext) error {
 	last := ""
 	for {
 		var job jobRecord
-		if err := t.call("GET", "_admin/jobs/"+url.PathEscape(started.ID), nil, nil, &job); err != nil {
+		if err := t.adm.Jobs.Get(t.ctx, started.ID, &job); err != nil {
 			return err
 		}
 		if p := job.Progress; p != nil {

@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/fernandezvara/kli"
+
+	"github.com/fernandezvara/backd/pkg/client"
 )
 
 // `backd account …` manages the signed-in user's own sign-in security through the API with the
@@ -32,14 +34,8 @@ func accountMFAStatus(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	var st struct {
-		Available         bool     `json:"available"`
-		Enabled           bool     `json:"enabled"`
-		Methods           []string `json:"methods"`
-		RecoveryCodesLeft int      `json:"recovery_codes_left"`
-		Required          bool     `json:"required"`
-	}
-	if err := t.call("GET", "_auth/mfa", nil, nil, &st); err != nil {
+	st, err := t.cl.Auth().MFA.Status(t.ctx)
+	if err != nil {
 		return err
 	}
 	switch {
@@ -74,24 +70,18 @@ func accountMFAEnable(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	var setup struct {
-		SetupID string `json:"setup_id"`
-		Secret  string `json:"secret"`
-		URI     string `json:"otpauth_uri"`
-	}
-	if _, err := t.callHeaders("POST", "_auth/mfa/totp/setup", nil, nil, &setup, proof); err != nil {
+	setup, err := t.cl.Auth().MFA.Setup(t.ctx, "", withProof(proof)...)
+	if err != nil {
 		return err
 	}
-	showSetup(uio, setup.URI, setup.Secret)
-	var out struct {
-		RecoveryCodes []string `json:"recovery_codes"`
-	}
+	showSetup(uio, setup.OtpauthURI, setup.Secret)
+	var out *client.MFAConfirmResult
 	for tries := 0; ; tries++ {
 		code, err := readLine(uio, "Code shown by the app, to confirm")
 		if err != nil {
 			return err
 		}
-		_, err = t.callHeaders("POST", "_auth/mfa/totp/confirm", nil, map[string]string{"setup_id": setup.SetupID, "code": code}, &out, proof)
+		out, err = t.cl.Auth().MFA.Confirm(t.ctx, client.MFAConfirmInput{SetupID: setup.SetupID, Code: code}, withProof(proof)...)
 		var ae *apiError
 		if err == nil {
 			break
@@ -119,7 +109,7 @@ func accountMFADisable(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	if _, err := t.callHeaders("DELETE", "_auth/mfa/totp", nil, nil, nil, proof); err != nil {
+	if err := t.cl.Auth().MFA.Disable(t.ctx, withProof(proof)...); err != nil {
 		return err
 	}
 	fmt.Fprintln(uio.stdout, "two-step verification is off")
@@ -136,13 +126,11 @@ func accountRecoveryCodes(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	var out struct {
-		RecoveryCodes []string `json:"recovery_codes"`
-	}
-	if _, err := t.callHeaders("POST", "_auth/mfa/recovery-codes", nil, nil, &out, proof); err != nil {
+	codes, err := t.cl.Auth().MFA.RegenerateRecoveryCodes(t.ctx, withProof(proof)...)
+	if err != nil {
 		return err
 	}
 	fmt.Fprintln(uio.stderr, "the earlier recovery codes no longer work")
-	showRecoveryCodes(uio, out.RecoveryCodes)
+	showRecoveryCodes(uio, codes)
 	return nil
 }

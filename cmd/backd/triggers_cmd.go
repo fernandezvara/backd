@@ -67,7 +67,7 @@ func triggersStatus(c *kli.CommandContext) error {
 		return err
 	}
 	var st triggerStatus
-	if err := t.call("GET", "_admin/triggers/status", nil, nil, &st); err != nil {
+	if err := t.adm.Triggers.Status(t.ctx, &st); err != nil {
 		return err
 	}
 	if flag(c, "json") {
@@ -124,7 +124,7 @@ func triggersGaps(c *kli.CommandContext) error {
 		q.Set("all", "true")
 	}
 	var out struct{ Items []triggerGap }
-	if err := t.call("GET", "_admin/triggers/gaps", q, nil, &out); err != nil {
+	if err := t.adm.Triggers.Gaps(t.ctx, q, &out); err != nil {
 		return err
 	}
 	if flag(c, "json") {
@@ -156,7 +156,7 @@ func triggersResolve(c *kli.CommandContext) error {
 		ID         string `json:"id"`
 		ResolvedAt string `json:"resolved_at"`
 	}
-	if err := t.call("POST", "_admin/triggers/gaps/"+url.PathEscape(str(c, "id"))+"/resolve", nil, nil, &out); err != nil {
+	if err := t.adm.Triggers.ResolveGap(t.ctx, str(c, "id"), &out); err != nil {
 		return err
 	}
 	fmt.Fprintf(c.Stdout(), "gap %s resolved at %s\n", out.ID, out.ResolvedAt)

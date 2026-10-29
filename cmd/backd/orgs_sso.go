@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 	"text/tabwriter"
 
@@ -24,14 +23,6 @@ type connectionRow struct {
 	RedirectPath    string   `json:"redirect_path"`
 }
 
-func ssoPath(id, provider string) string {
-	p := "_admin/orgs/" + url.PathEscape(id) + "/sso"
-	if provider != "" {
-		p += "/" + url.PathEscape(provider)
-	}
-	return p
-}
-
 func orgsSSO(c *kli.CommandContext) error {
 	t, err := targetOf(c, false)
 	if err != nil {
@@ -40,7 +31,7 @@ func orgsSSO(c *kli.CommandContext) error {
 	var out struct {
 		Items []connectionRow `json:"items"`
 	}
-	if err := t.call("GET", ssoPath(str(c, "id"), ""), nil, nil, &out); err != nil {
+	if err := t.adm.Orgs.SSOList(t.ctx, str(c, "id"), &out); err != nil {
 		return err
 	}
 	io := ioOf(c)
@@ -98,7 +89,7 @@ func orgsSSOSet(c *kli.CommandContext) error {
 		body["client_secret"] = secret
 	}
 	var row connectionRow
-	if err := t.call("PUT", ssoPath(str(c, "id"), str(c, "provider")), nil, body, &row); err != nil {
+	if err := t.adm.Orgs.SSOSet(t.ctx, str(c, "id"), str(c, "provider"), body, &row); err != nil {
 		return err
 	}
 	io := ioOf(c)
@@ -116,7 +107,7 @@ func orgsSSORequiredOff(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	if err := t.call("PATCH", "_admin/orgs/"+url.PathEscape(str(c, "id")), nil, map[string]any{"sso_required": false}, nil); err != nil {
+	if err := t.adm.Orgs.Patch(t.ctx, str(c, "id"), map[string]any{"sso_required": false}, nil); err != nil {
 		return err
 	}
 	fmt.Fprintf(ioOf(c).stdout, "%s no longer requires its sign-in connection\n", str(c, "id"))
@@ -128,7 +119,7 @@ func orgsSSODelete(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	if err := t.call("DELETE", ssoPath(str(c, "id"), str(c, "provider")), nil, nil, nil); err != nil {
+	if err := t.adm.Orgs.SSODelete(t.ctx, str(c, "id"), str(c, "provider")); err != nil {
 		return err
 	}
 	fmt.Fprintf(ioOf(c).stdout, "%s connection of %s removed\n", str(c, "provider"), str(c, "id"))

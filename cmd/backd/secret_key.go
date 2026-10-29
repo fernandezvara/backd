@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 
 	"github.com/fernandezvara/kli"
 )
@@ -45,7 +44,7 @@ func secretCreate(c *kli.CommandContext) error {
 		Fingerprint string `json:"fingerprint"`
 		Key         string `json:"key"`
 	}
-	if _, err := t.callHeaders("POST", "_admin/secrets", nil, body, &out, proof); err != nil {
+	if err := t.adm.Secrets.Create(t.ctx, body, &out, withProof(proof)...); err != nil {
 		var ae *apiError
 		if flag(c, "skip-existing") && errors.As(err, &ae) && ae.Status == 409 {
 			fmt.Fprintf(uio.stderr, "Key %s exists already: left as it is.\n", name)
@@ -69,7 +68,7 @@ func secretCreate(c *kli.CommandContext) error {
 // keyIsHeld tells whether the realm has a key with that name, for a delete that needs a proof.
 func keyIsHeld(t *target, name string) (bool, error) {
 	var page struct{ Items []secret }
-	if err := t.call("GET", "_admin/secrets", url.Values{}, nil, &page); err != nil {
+	if err := t.adm.Secrets.List(t.ctx, &page); err != nil {
 		return false, err
 	}
 	for _, s := range page.Items {
@@ -123,7 +122,7 @@ func secretRotate(c *kli.CommandContext) error {
 		Rewrapped   int    `json:"rewrapped"`
 		Key         string `json:"key"`
 	}
-	if _, err := t.callHeaders("POST", "_admin/secrets/"+url.PathEscape(name)+"/rotate", nil, body, &out, proof); err != nil {
+	if err := t.adm.Secrets.Rotate(t.ctx, name, body, &out, withProof(proof)...); err != nil {
 		return err
 	}
 	if flag(c, "json") {

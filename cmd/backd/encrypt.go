@@ -81,7 +81,7 @@ func encryptStatus(c *kli.CommandContext) error {
 		return err
 	}
 	var out encryptionStatus
-	if err := t.call("GET", "_admin/encryption", q, nil, &out); err != nil {
+	if err := t.adm.Encryption.Status(t.ctx, q, &out); err != nil {
 		return err
 	}
 	if flag(c, "json") {
@@ -148,7 +148,7 @@ func encryptRekey(c *kli.CommandContext) error {
 	var out struct {
 		Generation int `json:"generation"`
 	}
-	if _, err := t.callHeaders("POST", "_admin/encryption/rekey", nil, body, &out, proof); err != nil {
+	if err := t.adm.Encryption.Rekey(t.ctx, body, &out, withProof(proof)...); err != nil {
 		return err
 	}
 	fmt.Fprintf(uio.stdout, "%s/%s.%s: new data key, generation %d. Values written from now on use it; run `backd encrypt migrate` to seal the existing ones with it.\n",
@@ -181,7 +181,7 @@ func encryptMigrate(c *kli.CommandContext) error {
 	var started struct {
 		ID string `json:"id"`
 	}
-	if _, err := t.callHeaders("POST", "_admin/encryption/migrate", nil, body, &started, proof); err != nil {
+	if err := t.adm.Encryption.Migrate(t.ctx, body, &started, withProof(proof)...); err != nil {
 		var ae *apiError
 		if errors.As(err, &ae) && ae.Status == 409 {
 			return fmt.Errorf("%s: follow it with `backd functions jobs --realm %s`, or cancel it with `backd functions cancel`", ae.Message, t.realm)
@@ -196,7 +196,7 @@ func encryptMigrate(c *kli.CommandContext) error {
 	last := ""
 	for {
 		var job jobRecord
-		if err := t.call("GET", "_admin/jobs/"+url.PathEscape(started.ID), nil, nil, &job); err != nil {
+		if err := t.adm.Jobs.Get(t.ctx, started.ID, &job); err != nil {
 			return err
 		}
 		if p := job.Progress; p != nil && p.Message != nil && *p.Message != last {

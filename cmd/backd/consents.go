@@ -23,7 +23,7 @@ func consentsNotify(c *kli.CommandContext) error {
 		return err
 	}
 	var res consentNotice
-	if err := t.call("POST", "_admin/consents/notify", nil, map[string]any{"consent": str(c, "consent")}, &res); err != nil {
+	if err := t.adm.Consents.Notify(t.ctx, map[string]any{"consent": str(c, "consent")}, &res); err != nil {
 		return err
 	}
 	if flag(c, "json") {
@@ -51,7 +51,7 @@ func consentsRecord(c *kli.CommandContext) error {
 		} `json:"items"`
 	}
 	email := str(c, "email")
-	if err := t.call("GET", "_admin/users", url.Values{"email": {email}}, nil, &page); err != nil {
+	if err := t.adm.Users.List(t.ctx, url.Values{"email": {email}}, &page); err != nil {
 		return err
 	}
 	if len(page.Items) == 0 {
@@ -68,7 +68,7 @@ func consentsRecord(c *kli.CommandContext) error {
 		Evidence string `json:"evidence"`
 		At       string `json:"at"`
 	}
-	if err := t.call("POST", "_admin/users/"+url.PathEscape(page.Items[0].ID)+"/consents", nil, body, &out); err != nil {
+	if err := t.adm.Users.AcceptConsents(t.ctx, page.Items[0].ID, body, &out); err != nil {
 		return err
 	}
 	fmt.Fprintf(c.Stdout(), "recorded: %s %s %s for %s (evidence: %s)\n", out.Action, out.Consent, out.Version, page.Items[0].Email, out.Evidence)

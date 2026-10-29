@@ -52,7 +52,7 @@ func secretSet(c *kli.CommandContext) error {
 	if org != "" {
 		body["org"] = org
 	}
-	if err := t.call("PUT", "_admin/secrets/"+url.PathEscape(name), nil, body, nil); err != nil {
+	if err := t.adm.Secrets.Put(t.ctx, name, body); err != nil {
 		return err
 	}
 	fmt.Fprintf(c.Stdout(), "secret %q set\n", secretRef(database+orgScope(org), name))
@@ -66,7 +66,7 @@ func secretList(c *kli.CommandContext) error {
 	}
 	defer closeT()
 	var page struct{ Items []secret }
-	if err := t.call("GET", "_admin/secrets", nil, nil, &page); err != nil {
+	if err := t.adm.Secrets.List(t.ctx, &page); err != nil {
 		return err
 	}
 	tw := tabwriter.NewWriter(c.Stdout(), 0, 0, 2, ' ', 0)
@@ -111,7 +111,7 @@ func secretDelete(c *kli.CommandContext) error {
 			return err
 		}
 	}
-	if _, err := t.callHeaders("DELETE", "_admin/secrets/"+url.PathEscape(name), q, nil, nil, proof); err != nil {
+	if err := t.adm.Secrets.Delete(t.ctx, name, q, withProof(proof)...); err != nil {
 		if errors.As(err, &ae) && ae.Status == 404 {
 			return fmt.Errorf("no secret named %q", secretRef(database+orgScope(org), name))
 		}
