@@ -44,14 +44,14 @@ include = ["src", "tests", "README.md", "LICENSE", "CHANGELOG.md", "pyproject.to
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-pythonpath = ["src"]
+pythonpath = ["src", "examples/shelf"]
 addopts = "-ra"
 timeout = 60  # a hang in the realtime tests fails the test instead of the whole run
 
 [tool.ruff]
 line-length = 120
 src = ["src", "tests"]
-extend-exclude = ["src/backd/_sync"]
+extend-exclude = ["src/backd/_sync", "examples/shelf/shelf_types"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
@@ -62,4 +62,6 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 [tool.mypy]
 strict = true
 python_version = "3.10"
-files = ["src", "tests", "scripts"]
+files = ["src", "tests", "scripts", "examples"]
+mypy_path = "src:examples/shelf"
+explicit_package_bases = true

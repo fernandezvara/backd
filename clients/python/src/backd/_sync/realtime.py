@@ -226,6 +226,7 @@ class Realtime(RealtimeBase):
         """Ends every view and the stream (the client was closed), and waits for the threads: none is left running."""
         self._closing.set()
         with self.lock:
+            self.closed = True
             timer, self._timer = self._timer, None
             views = list(self.views)
             self.gen += 1

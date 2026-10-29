@@ -1151,6 +1151,10 @@ func TestContract(t *testing.T) {
 	}
 	req("GET", ad+"/types?lang=dart", "", key, 200)
 	req("GET", ad+"/types?lang=go&package=not-a-name", "", key, 400)
+	if pyTypes := req("GET", ad+"/types?lang=python", "", key, 200); !strings.Contains(fmt.Sprint(pyTypes["types"]), "from __future__ import annotations") {
+		t.Errorf("lang=python: %v", pyTypes["types"])
+	}
+	req("GET", ad+"/types?lang=python&package=x", "", key, 400)
 	req("GET", ad+"/types?package=acmeapi", "", key, 400)
 	req("GET", ad+"/types?lang=rust", "", key, 400)
 	adminSpec := req("GET", ad+"/openapi.json", "", key, 200)

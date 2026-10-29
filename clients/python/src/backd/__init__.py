@@ -4,9 +4,15 @@
 """
 
 from ._async.client import AsyncClient
+from ._async.data import AsyncCollection, AsyncDatabase
+from ._async.functions import AsyncJob
+from ._async.realtime import AsyncLiveView
 from ._live import LiveState, LiveStatus, LiveSubscriptionState, ReferenceSpec, SubscribeOptions, SubscriptionSpec
 from ._retry import Retry
 from ._sync.client import Client
+from ._sync.data import Collection, Database
+from ._sync.functions import Job
+from ._sync.realtime import LiveView
 from .cache import CacheOptions, CacheStats
 from .config_storage import ConfigStorage, FileConfigStorage, MemoryConfigStorage
 from .errors import (
@@ -135,12 +141,17 @@ __all__ = [
     "AggregateResult",
     "AggregateTooExpensiveError",
     "AsyncClient",
+    "AsyncCollection",
+    "AsyncDatabase",
+    "AsyncJob",
+    "AsyncLiveView",
     "AuthenticationError",
     "BackdError",
     "BatchOperation",
     "CacheOptions",
     "CacheStats",
     "Client",
+    "Collection",
     "ConfigStorage",
     "ConflictError",
     "ConsentChallenge",
@@ -149,6 +160,7 @@ __all__ = [
     "ConsentState",
     "ConsentText",
     "DataExport",
+    "Database",
     "Device",
     "DeviceInput",
     "Doc",
@@ -169,6 +181,7 @@ __all__ = [
     "InvalidExpandError",
     "InvalidIdError",
     "InvalidResumeTokenError",
+    "Job",
     "JobData",
     "JobResult",
     "JobStep",
@@ -177,6 +190,7 @@ __all__ = [
     "LiveState",
     "LiveStatus",
     "LiveSubscriptionState",
+    "LiveView",
     "Me",
     "MemoryConfigStorage",
     "MemoryOAuthStorage",

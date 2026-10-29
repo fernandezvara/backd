@@ -202,6 +202,7 @@ class AsyncRealtime(RealtimeBase):
     def _close(self) -> None:
         """Ends every view and the stream (the client was closed)."""
         with self.lock:
+            self.closed = True
             views = list(self.views)
             self.gen += 1
             if self._task is not None:

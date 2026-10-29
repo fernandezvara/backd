@@ -550,6 +550,7 @@ class RealtimeBase:
         self.gen = 0
         self.ready = False
         self.running = False
+        self.closed = False
         self.config: ConfigFollower | None = None
 
     @property
@@ -594,6 +595,8 @@ class RealtimeBase:
         """
         if not specs:
             raise TypeError("realtime.subscribe: at least one subscription is required")
+        if self.closed:
+            raise RuntimeError("realtime.subscribe: the client is closed")
         with self.lock:
             view = self._new_view(options or SubscribeOptions())
             names: set[str] = set()

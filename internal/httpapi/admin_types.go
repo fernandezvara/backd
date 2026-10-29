@@ -35,8 +35,8 @@ func (a *adminAPI) openapi(w http.ResponseWriter, r *http.Request) {
 func (a *adminAPI) types(w http.ResponseWriter, r *http.Request) {
 	realm := chi.URLParam(r, "realm")
 	lang := r.URL.Query().Get("lang")
-	if lang != "" && lang != "ts" && lang != "dart" && lang != "go" {
-		writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "unknown lang "+strconv.Quote(lang)+": ts, dart or go")
+	if lang != "" && lang != "ts" && lang != "dart" && lang != "go" && lang != "python" {
+		writeError(w, r, http.StatusBadRequest, codeInvalidQuery, "unknown lang "+strconv.Quote(lang)+": ts, dart, go or python")
 		return
 	}
 	pkg := r.URL.Query().Get("package")

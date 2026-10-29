@@ -26,8 +26,8 @@ func typesCommand(c *kli.CommandContext) error {
 	if lang == "" {
 		lang = "ts"
 	}
-	if lang != "ts" && lang != "dart" && lang != "go" {
-		return fmt.Errorf("unknown --lang %q: ts, dart or go", lang)
+	if lang != "ts" && lang != "dart" && lang != "go" && lang != "python" {
+		return fmt.Errorf("unknown --lang %q: ts, dart, go or python", lang)
 	}
 	pkg := str(c, "package")
 	if pkg != "" && lang != "go" {
@@ -63,6 +63,8 @@ func typesCommand(c *kli.CommandContext) error {
 		typesFile = typegen.DartTypesFile
 	case "go":
 		typesFile = typegen.GoTypesFile
+	case "python":
+		typesFile = typegen.PythonTypesFile
 	}
 	typesPath, infoPath := filepath.Join(out, typesFile), filepath.Join(out, typegen.InfoFile)
 	if !check && !diff {

@@ -29,3 +29,15 @@ jobs:
         run: mypy
       - name: Test
         run: pytest
+
+  generated-types:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: The example's types match the config
+        run: go run ./cmd/backd types --realm shelf --lang python --out clients/python/examples/shelf/shelf_types --check
+        env:
+          CONFIG_DIR: examples/config

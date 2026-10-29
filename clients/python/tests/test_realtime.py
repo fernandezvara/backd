@@ -605,10 +605,8 @@ async def test_closing_the_client_leaves_nothing_running(mode: str) -> None:
         assert len(asyncio.all_tasks()) < before  # the stream's task and the loads are gone
     await asyncio.sleep(0.05)
     assert len(streams.feeds) == 1  # and nothing reconnects
-    # a view made after the close is closed at once
-    late = c.realtime.subscribe([SPEC], NO_JITTER) if mode == "async" else None
-    if late is not None:
-        await asyncio.sleep(0.05)
+    with pytest.raises(RuntimeError, match="client is closed"):
+        c.realtime.subscribe([SPEC], NO_JITTER)
 
 
 async def test_organization_clients_are_closed_with_the_root(mode: str) -> None:

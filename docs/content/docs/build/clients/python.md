@@ -274,6 +274,21 @@ The async client's view runs as tasks of the running event loop (`await live.wai
 
 `client.config.live(["maintenance"])` follows the [app configuration](#caches) on the same stream: `client.config.on("change", …)` hears of the keys that differ within the realtime delay instead of `cache_ttl`.
 
+## Generated types
+
+`backd types --lang python` turns a realm's config into `types.py` — a `TypedDict` for every document, write input, function input and output and the app configuration, `Literal` types for enums, classes of constants for the fields a `where` or an `order_by` may name, and typed wrappers of the client — and `realm.json` with the same fingerprint every language shares (`--check` and `--diff` work as for the others). See [Generated types](../types/#in-python) for what is generated.
+
+```python
+from shelf_api.types import MainAssetsFields, MainAssetsInput, ShelfRealm
+
+shelf = ShelfRealm(Client(url=url, realm="shelf", api_key=key, types=FINGERPRINT))   # FINGERPRINT: realm.json's fingerprint
+page = shelf.main.assets.list(order_by=MainAssetsFields.META_CREATED_AT_DESC)
+new: MainAssetsInput = {"kind": "note", "title": "Hello"}
+shelf.main.assets.create(new)
+```
+
+`types=` (the fingerprint in `realm.json`) is for development builds: the client sends it as `X-Backd-Types`, and when the config has moved on the server answers `X-Backd-Types-Stale` and the client logs one warning.
+
 ## Errors
 
 Every failure is a `BackdError` with `status`, `code`, `message`, `details`, `request_id` and `path`. The subclasses follow the server's error `code`s with the names `backd-js` uses, and a class matches its parents: `except ConflictError` also catches `IdTakenError`, and `except ValidationError` catches `InvalidIdError`.

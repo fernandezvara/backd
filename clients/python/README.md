@@ -10,7 +10,7 @@ with Client(url="http://localhost:8080", realm="shelf", api_key=key) as backd:
 ```
 
 `AsyncClient` has the same calls with `async with` and `await`. One runtime dependency: [`httpx`](https://www.python-httpx.org/).
-Python 3.10 or later. The client is under construction (milestone 38); the docs page lists what exists.
+Python 3.10 or later. The client is under construction (milestone 38); the [docs page](https://fernandezvara.github.io/backd/docs/build/clients/python/) lists what exists. `backd types --lang python` generates `TypedDict`s and typed wrappers for a realm.
 
 The admin API is not part of the client, for the same reason it isn't in the JavaScript, Dart and Go clients.
 
