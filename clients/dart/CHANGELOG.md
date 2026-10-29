@@ -1,3 +1,7 @@
+## 0.9.6
+
+- **`parseSize(text, {family, allowBytes})` and `formatBytes(bytes, family)`** read and print sizes with the server's grammar (`512KiB`, `1.5GB`), tested against the same vectors as `backd-js` and the server. Needs no new server feature; goes with `backd` v0.9.6.
+
 ## Unreleased
 
 - **`parseSize(text, {family, allowBytes})` and `formatBytes(bytes, {family})`:** read and print sizes with the server's grammar (`parseSize('1.5MiB')` is `1572864`; `formatBytes(1572864)` is `'1.5 MiB'`); `SizeFamily` is `binary`, `decimal` or `both` (the default). A size the field would refuse throws a `FormatException` that says what it takes.

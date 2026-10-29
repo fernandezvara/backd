@@ -19,7 +19,7 @@
 # your editor. The API and the worker are separate services; WORKERS=3 make dev starts three.
 #
 # Images: ghcr.io/fernandezvara/backd-executor:${BACKD_VERSION} (latest by default; pin with
-# BACKD_VERSION=v0.9.5) runs backd, the worker, the executor and egress. It is the executor
+# BACKD_VERSION=v0.9.6) runs backd, the worker, the executor and egress. It is the executor
 # image because it has Deno, which dev mode needs to bundle functions on change; the
 # deployment image (backd, distroless) has none. Do not use this stack for a deployment.
 #

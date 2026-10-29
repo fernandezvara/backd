@@ -1,10 +1,10 @@
 # Changelog
 
-All notable changes to `backd` and to its JavaScript client `backd-js`, which are released on the same version from 0.8.2, and to its Dart client `package:backd`, from 0.9.1 (its own changes are also in `clients/dart/CHANGELOG.md`). The upgrade notes, with what needs your action, are in the documentation under [Operations → Upgrading](https://fernandezvara.github.io/backd/docs/operate/); the notes of every release are on the [releases page](https://github.com/fernandezvara/backd/releases).
+All notable changes to `backd` and to its JavaScript client `backd-js`, which are released on the same version from 0.8.2, and to its Dart client `package:backd`, from 0.9.1 (its own changes are also in `clients/dart/CHANGELOG.md`), and to its Python client `backd` on PyPI, from 0.9.6 (also in `clients/python/CHANGELOG.md`). The Go client is the `pkg/client` package of this module and goes with the release tag. The upgrade notes, with what needs your action, are in the documentation under [Operations → Upgrading](https://fernandezvara.github.io/backd/docs/operate/); the notes of every release are on the [releases page](https://github.com/fernandezvara/backd/releases).
 
 Until a stable release is declared, a minor release may have breaking changes; they are listed first.
 
-## Unreleased
+## 0.9.6
 
 ### Breaking
 

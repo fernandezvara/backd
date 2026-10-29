@@ -157,6 +157,16 @@ blog__main.posts
 shop__orders.items
 ```
 
+### Upgrading to v0.9.6
+
+v0.9.6 changes nothing in the data or the provisioned indexes: run `backd provision` as usual. What changes:
+
+1. **Sizes follow one grammar.** A number and a case-sensitive unit with no space (`512KiB`, `1.5GB`); decimal units are powers of 1000, binary ones of 1024. A function's `memory` takes binary units only: `256MB` is refused, write `256MiB`. Run `backd config check` on your configuration before deploying. See [Sizes and units](../build/configuration/#sizes-and-units).
+2. **`backd` and `backd executor` must run the same version.** The request to the executor carries `memory_bytes` instead of `memory_mb`: upgrade both together, or an older executor refuses the limit.
+3. **Environment variables with a size** (`MAX_BODY_BYTES`, `BACKD_MAX_UPLOAD_BYTES`, `BACKD_REALTIME_MEMORY`) accept a unit as well as a number of bytes; existing values keep working.
+4. **New clients.** `backd types --lang go` and `--lang python` generate types for the [Go client](../build/clients/go/) (`pkg/client`) and the [Python client](../build/clients/python/) (`backd` on PyPI). Existing languages are unchanged.
+5. **Move the clients with the server.** `backd-js`, `package:backd` and the Python `backd` are released on the same version: `0.9.6` (for Dart, `backd: ^0.9.6`).
+
 ### Upgrading to v0.9.5
 
 v0.9.5 adds [public files](../build/files/public-files/). Nothing changes for a realm that doesn't use them: the configuration, the data and the provisioned indexes stay as they are, and `backd provision` has nothing new to do. What changes:

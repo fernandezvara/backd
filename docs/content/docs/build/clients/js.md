@@ -16,7 +16,7 @@ npm install backd-js
 
 It has no dependencies, needs no build step and works with any bundler. Without one, import it in a browser with an [import map](https://developer.mozilla.org/docs/Web/HTML/Element/script/type/importmap) pointing at the package's `src/index.js` (from a CDN such as `https://cdn.jsdelivr.net/npm/backd-js/src/index.js`, or from your own server), as the [example app](#example-app) does.
 
-The client is released on the same version as the server (`backd-js` 0.9.5 goes with `backd` v0.9.5). Versions of `backd-js` before 0.2 were an unrelated, older library.
+The client is released on the same version as the server (`backd-js` 0.9.6 goes with `backd` v0.9.6). Versions of `backd-js` before 0.2 were an unrelated, older library.
 
 ## Example app
 
