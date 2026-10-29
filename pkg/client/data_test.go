@@ -101,7 +101,7 @@ func TestIterateSkipsWhenThereIsNoCursor(t *testing.T) {
 
 func TestIterateStopsOnErrorsAndOnBreak(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, `{"error":{"code":"forbidden","message":"no"}}`, 403)
+		http.Error(w, `{"error":{"code":"forbidden","message":"no"}}`, http.StatusForbidden)
 	})
 	for _, err := range c.DB("main").Collection("posts").Iterate(bg, Query{}) {
 		if !errors.Is(err, ErrForbidden) {
@@ -169,7 +169,7 @@ func TestWrites(t *testing.T) {
 
 func TestVersionMismatch(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, `{"error":{"code":"version_mismatch","message":"moved on"}}`, 412)
+		http.Error(w, `{"error":{"code":"version_mismatch","message":"moved on"}}`, http.StatusPreconditionFailed)
 	})
 	_, err := c.DB("main").Collection("posts").Replace(bg, "x", Doc{}, WithIfMatch(1))
 	if !errors.Is(err, ErrVersionMismatch) {
