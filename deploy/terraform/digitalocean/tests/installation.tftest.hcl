@@ -509,3 +509,13 @@ run "push_credential_expiry_is_in_seconds" {
     error_message = "30 days are 2592000 seconds"
   }
 }
+
+run "a_space_key_cannot_be_fullaccess" {
+  command = plan
+
+  variables {
+    spaces_key_permission = "fullaccess"
+  }
+
+  expect_failures = [var.spaces_key_permission]
+}

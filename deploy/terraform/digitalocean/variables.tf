@@ -259,13 +259,13 @@ variable "public_cors_origins" {
 }
 
 variable "spaces_key_permission" {
-  description = "What each Space's key may do on its Space: read, readwrite or fullaccess. backd needs to put, get, head, delete and list, which `readwrite` gives."
+  description = "What each Space's key may do on its Space: read or readwrite (DigitalOcean refuses fullaccess on a key bound to one Space). backd needs to put, get, head, delete and list, which `readwrite` gives."
   type        = string
   default     = "readwrite"
 
   validation {
-    condition     = contains(["read", "readwrite", "fullaccess"], var.spaces_key_permission)
-    error_message = "spaces_key_permission must be read, readwrite or fullaccess."
+    condition     = contains(["read", "readwrite"], var.spaces_key_permission)
+    error_message = "spaces_key_permission must be read or readwrite: DigitalOcean refuses fullaccess on a key bound to one Space."
   }
 }
 
