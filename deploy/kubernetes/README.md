@@ -7,6 +7,7 @@ The Helm chart of backd (`backd/`), the scripts around it, and the design behind
 | `backd/` | The chart: workloads, Services, disruption budgets, network policies and the provisioning Job |
 | `scripts/registry-prune.sh` | Keeps the newest tags of a registry repository and starts garbage collection |
 | `scripts/admin-allow.sh` | Changes who may reach the admin host, in place |
+| `pipeline/` | The configuration image's `Dockerfile`, an example GitHub Actions workflow (`release.yml`), `values.example.yaml` and the guard against realms without authentication |
 | `../../scripts/check-chart.sh` | `helm lint`, `helm template` for every `backd/ci/*.yaml`, `kubeconform` and the invariants of `scripts/test-chart.py` |
 
 ## The workloads
@@ -84,3 +85,19 @@ deploy/kubernetes/scripts/admin-allow.sh --show
 The script patches the Middleware and keeps the list in the ConfigMap `backd-admin-allow`, which the chart reads on every `helm upgrade` and which **wins over the values** (the values only seed the first install), so a release does not undo your change. It refuses `0.0.0.0/0`, `::/0` and any `/0`, and an address without a prefix.
 
 If your address changed and the admin host refuses you, you are not locked out of the cluster: the list concerns HTTP to that host only, and `kubectl` and Terraform use the Kubernetes and DigitalOcean APIs. Run the script with your cluster credentials, or reach the admin instance directly with `kubectl port-forward svc/backd-admin 8081:8080 -n backd`.
+
+## The release pipeline
+
+The configuration lives in its own repository (`config/` is `CONFIG_DIR`, as in [Deploying config](../../docs/content/docs/operate/deploying.md)). `pipeline/release.yml` is an example workflow for it: on a tag `release-<anything>` it
+
+1. refuses a realm with `auth: disabled` (`pipeline/check-no-auth-disabled.sh`: such a realm has no authentication and this installation has a public address);
+2. builds the configuration image from `pipeline/Dockerfile`: the functions are bundled in a stage on the released executor image (which has the Deno this backd release runs functions with) and `backd config check` runs there and again in the final image, so **an invalid configuration fails the build and nothing is pushed**; the final image is the released `backd` image plus `/config`, with no Deno and no shell;
+3. pushes it to the registry as `<registry>/<name>:<tag>` (the git tag; one repository is enough, so it works on the Starter tier);
+4. runs `helm upgrade --install --atomic --wait` with `image.tag=<tag>`: the provisioning hook runs first with the new image, the rollout is the restart, and a rollout that does not become ready rolls back;
+5. prunes old tags (`scripts/registry-prune.sh`, never the running one).
+
+The chart, the Dockerfile and the scripts are checked out from the backd release in `BACKD_VERSION`, so the configuration repository holds only `config/`, `deploy/values.yaml` (start from `pipeline/values.example.yaml`) and the workflow. The variables and the secret it needs are listed at the top of `release.yml`; the job runs in a protected `production` environment, so a person can approve each release.
+
+**Rollback:** run the workflow on the previous tag, or `helm rollback backd <revision> -n backd --wait` (the provisioning Job runs first, with the old image). The registry keeps the last ten tags.
+
+**The `auth: disabled` guard** is a step, not a setting: if you are certain a realm without authentication belongs in this installation (it does not belong on the internet), remove the step on purpose and say why in the commit. Nothing else in the pipeline checks it.

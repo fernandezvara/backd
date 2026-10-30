@@ -49,6 +49,10 @@ for values in "$chart"/ci/*.yaml; do
     -ignore-missing-schemas - < "$out/$name.yaml"
 done
 
+# The values the pipeline's example hands the chart render.
+helm_run template backd "$chart" -f deploy/kubernetes/pipeline/values.example.yaml \
+  --set image.repository=registry.example.com/acme/acme --set image.tag=release-1 >/dev/null
+
 # A chart that needs values it wasn't given must say so instead of rendering something half-made.
 if helm_run template backd "$chart" >/dev/null 2>"$out/err"; then
   echo "check-chart: the chart rendered without image.repository" >&2
