@@ -22,6 +22,27 @@ mock_provider "digitalocean" {
     }
   }
 
+  mock_resource "digitalocean_database_cluster" {
+    defaults = {
+      id          = "00000000-0000-0000-0000-000000000003"
+      private_uri = "mongodb+srv://doadmin:adminpw@private-db.example/admin?tls=true&authSource=admin&replicaSet=acme-mongo"
+      user        = "doadmin"
+      password    = "adminpw"
+    }
+  }
+
+  mock_resource "digitalocean_database_user" {
+    defaults = {
+      password = "app pw/1"
+    }
+  }
+
+  mock_data "digitalocean_database_ca" {
+    defaults = {
+      certificate = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----"
+    }
+  }
+
   mock_data "digitalocean_kubernetes_versions" {
     defaults = {
       latest_version = "1.33.1-do.0"
@@ -137,5 +158,94 @@ run "the_kubeconfig_is_an_output" {
   assert {
     condition     = output.cluster_name == "acme"
     error_message = "the cluster is named after the installation"
+  }
+}
+
+run "database_defaults_to_one_node" {
+  command = apply
+
+  assert {
+    condition     = digitalocean_database_cluster.mongo.engine == "mongodb" && digitalocean_database_cluster.mongo.node_count == 1 && digitalocean_database_cluster.mongo.size == "db-s-1vcpu-2gb"
+    error_message = "the default is one node of db-s-1vcpu-2gb"
+  }
+
+  assert {
+    condition     = !strcontains(local.mongo_uri, "w=majority")
+    error_message = "a one-node cluster has no majority to wait for"
+  }
+}
+
+run "database_takes_three_nodes" {
+  command = apply
+
+  variables {
+    database_nodes = 3
+    database_size  = "db-s-2vcpu-4gb"
+  }
+
+  assert {
+    condition     = digitalocean_database_cluster.mongo.node_count == 3 && digitalocean_database_cluster.mongo.size == "db-s-2vcpu-4gb"
+    error_message = "database_nodes and database_size are used"
+  }
+
+  assert {
+    condition     = strcontains(local.mongo_uri, "&w=majority")
+    error_message = "three nodes write to a majority"
+  }
+}
+
+run "database_refuses_two_nodes" {
+  command = plan
+
+  variables {
+    database_nodes = 2
+  }
+
+  expect_failures = [var.database_nodes]
+}
+
+run "database_size_is_validated" {
+  command = plan
+
+  variables {
+    database_size = "s-2vcpu-4gb"
+  }
+
+  expect_failures = [var.database_size]
+}
+
+run "database_is_open_to_the_cluster_only" {
+  command = plan
+
+  assert {
+    condition     = length(digitalocean_database_firewall.mongo.rule) == 1 && one(digitalocean_database_firewall.mongo.rule).type == "k8s"
+    error_message = "the only trusted source is the cluster"
+  }
+}
+
+run "database_extra_addresses_are_added" {
+  command = plan
+
+  variables {
+    database_allowed_cidrs = ["203.0.113.7/32"]
+  }
+
+  assert {
+    condition     = length(digitalocean_database_firewall.mongo.rule) == 2
+    error_message = "an allowed address adds a rule"
+  }
+}
+
+run "uris_carry_the_ca_and_escape_the_password" {
+  command = apply
+
+  assert {
+    condition     = startswith(output.mongo_uri, "mongodb+srv://backd:app%20pw%2F1@private-db.example/admin?") && strcontains(output.mongo_uri, "&tlsCAFile=/etc/backd/tls/ca.pem")
+    error_message = "the app URI has the user, the escaped password and the CA path: ${nonsensitive(output.mongo_uri)}"
+  }
+
+  assert {
+    condition     = startswith(nonsensitive(output.mongo_admin_uri), "mongodb+srv://doadmin:adminpw@")
+    error_message = "the admin URI is doadmin's"
   }
 }
