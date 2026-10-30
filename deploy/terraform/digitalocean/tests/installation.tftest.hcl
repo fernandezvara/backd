@@ -249,3 +249,12 @@ run "uris_carry_the_ca_and_escape_the_password" {
     error_message = "the admin URI is doadmin's"
   }
 }
+
+run "the_firewall_and_the_nodes_share_a_tag_made_first" {
+  command = plan
+
+  assert {
+    condition     = digitalocean_tag.nodes.name == "acme-nodes" && contains(digitalocean_firewall.nodes.tags, "acme-nodes") && contains(digitalocean_kubernetes_cluster.main.node_pool[0].tags, "acme-nodes")
+    error_message = "the nodes and the firewall use the tag Terraform makes, so the firewall can be created before the nodes exist"
+  }
+}
