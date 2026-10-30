@@ -13,6 +13,9 @@ resource "digitalocean_kubernetes_cluster" "main" {
   vpc_uuid = digitalocean_vpc.main.id
   tags     = local.tags
 
+  # The cluster pulls from the installation's registry with no credential to manage.
+  registry_integration = true
+
   ha            = var.ha_control_plane
   auto_upgrade  = var.kubernetes_auto_upgrade
   surge_upgrade = true
@@ -39,6 +42,8 @@ resource "digitalocean_kubernetes_cluster" "main" {
       allowed_addresses = var.control_plane_allowed_cidrs
     }
   }
+
+  depends_on = [digitalocean_container_registry.main]
 
   lifecycle {
     # A version bump is done by the maintenance window or on purpose; a newer "latest" must not

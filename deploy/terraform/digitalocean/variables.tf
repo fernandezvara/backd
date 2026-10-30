@@ -285,3 +285,44 @@ variable "abort_incomplete_uploads_days" {
   type        = number
   default     = 7
 }
+
+# ---------------------------------------------------------------- the container registry
+
+variable "registry_tier" {
+  description = "starter (one repository, 500 MiB, free), basic (five repositories, 5 GiB, about $5 a month) or professional (unlimited repositories, 100 GiB, about $20). One repository is enough for one installation: releases are tags of it."
+  type        = string
+  default     = "basic"
+
+  validation {
+    condition     = contains(["starter", "basic", "professional"], var.registry_tier)
+    error_message = "registry_tier must be starter, basic or professional."
+  }
+}
+
+variable "registry_name" {
+  description = "Name of the registry (unique across DigitalOcean: 1 to 63 characters, lower-case letters, digits and hyphens). Unset: the name of the installation."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.registry_name == null || can(regex("^[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$", var.registry_name))
+    error_message = "registry_name must be 2 to 63 characters: lower-case letters, digits and hyphens, not starting or ending with a hyphen."
+  }
+}
+
+variable "registry_region" {
+  description = "Region of the registry (nyc3, sfo3, ams3, sgp1, fra1, syd1). Unset: the region of the installation."
+  type        = string
+  default     = null
+}
+
+variable "registry_push_credential_days" {
+  description = "Days the credential the pipeline pushes with stays valid. 0: the provider's default (practically no expiry). Replace it with `terraform apply -replace=digitalocean_container_registry_docker_credentials.push`."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.registry_push_credential_days >= 0 && floor(var.registry_push_credential_days) == var.registry_push_credential_days
+    error_message = "registry_push_credential_days is a whole number of days, 0 or more."
+  }
+}
