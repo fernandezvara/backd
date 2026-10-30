@@ -124,3 +124,68 @@ variable "spaces_secret_key" {
   default     = null
   sensitive   = true
 }
+
+# ---------------------------------------------------------------- the managed MongoDB
+
+variable "database_nodes" {
+  description = "1 (one node: no failover, and a maintenance window is downtime) or 3 (a primary and two standby nodes). DigitalOcean offers nothing in between. Going from 1 to 3 later is a change of this value."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = contains([1, 3], var.database_nodes)
+    error_message = "database_nodes must be 1 (one node) or 3 (a primary and two standby nodes): DigitalOcean's MongoDB has no other size."
+  }
+}
+
+variable "database_size" {
+  description = "Size slug of each database node: db-s-1vcpu-1gb, db-s-1vcpu-2gb, db-s-2vcpu-4gb, db-s-4vcpu-8gb, db-s-6vcpu-16gb, db-s-8vcpu-32gb or db-s-16vcpu-64gb. Three nodes cost three times one."
+  type        = string
+  default     = "db-s-1vcpu-2gb"
+
+  validation {
+    condition     = can(regex("^db-s-[0-9]+vcpu-[0-9]+gb$", var.database_size))
+    error_message = "database_size must be a managed database size slug such as db-s-1vcpu-2gb."
+  }
+}
+
+variable "database_version" {
+  description = "MongoDB major version (the versions DigitalOcean offers are in the control panel and in `doctl databases options versions mongodb`). It can only go up: DigitalOcean upgrades a cluster one major version at a time and never downgrades."
+  type        = string
+  default     = "8"
+}
+
+variable "database_storage_mib" {
+  description = "Disk of each node in MiB. Unset: the size's default."
+  type        = number
+  default     = null
+}
+
+variable "database_maintenance_day" {
+  description = "Day of the database maintenance window (monday ... sunday)."
+  type        = string
+  default     = "sunday"
+}
+
+variable "database_maintenance_hour" {
+  description = "Hour (UTC, HH:MM:SS) the database maintenance window starts."
+  type        = string
+  default     = "03:00:00"
+}
+
+variable "database_ca" {
+  description = "Optional CA certificate (PEM) the pods verify the managed MongoDB against, in place of the system roots. DigitalOcean's MongoDB presents a Let's Encrypt certificate, so leave it unset."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.database_ca == null ? true : strcontains(var.database_ca, "BEGIN CERTIFICATE")
+    error_message = "database_ca must be a PEM certificate (the PEM text, starting with -----BEGIN CERTIFICATE-----)."
+  }
+}
+
+variable "database_allowed_cidrs" {
+  description = "Addresses besides the cluster that may connect to the database (for example your own, to restore a backup). Empty: the cluster only."
+  type        = list(string)
+  default     = []
+}
