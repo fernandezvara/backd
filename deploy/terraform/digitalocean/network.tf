@@ -5,6 +5,12 @@ locals {
   tags     = ["backd", "backd-${var.install}"]
 }
 
+# The tag is made here, not left to the node pool: a firewall can only be created for a tag that
+# exists, and DigitalOcean makes a pool's tags only when its nodes exist.
+resource "digitalocean_tag" "nodes" {
+  name = local.node_tag
+}
+
 resource "digitalocean_vpc" "main" {
   name        = "${var.install}-vpc"
   region      = var.region
@@ -20,7 +26,7 @@ resource "digitalocean_vpc" "main" {
 # network policies and the egress proxy.
 resource "digitalocean_firewall" "nodes" {
   name = "${var.install}-nodes"
-  tags = [local.node_tag]
+  tags = [digitalocean_tag.nodes.name]
 
   inbound_rule {
     protocol         = "tcp"
