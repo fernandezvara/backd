@@ -2,7 +2,7 @@
 
 - **Issues:** design #815 (39.1); Terraform #816–#822 (39.2–39.8); Helm chart #823–#825 (39.9–39.11); docs and CI #826 (39.12). Milestone `39-kubernetes-digitalocean`.
 - **Status:** proposal, under review. Nothing is built.
-- **Related:** the [production reference](../deploy/production/README.md) and its docs page (Operate → Production deployment), which this design maps onto Kubernetes; [Deploying config](../docs/content/docs/operate/deploying.md); [change-feed.md](../docs/content/docs/operate/change-feed.md) (realtime in production); [file-storage.md](./file-storage.md) and [public-files.md](./public-files.md).
+- **Related:** the [production reference](../deploy/production/README.md) and its docs page (Operate → Production deployment → Docker Compose), which this design maps onto Kubernetes; [Deploying config](../docs/content/docs/operate/deploying.md); [change-feed.md](../docs/content/docs/operate/change-feed.md) (realtime in production); [file-storage.md](./file-storage.md) and [public-files.md](./public-files.md).
 
 ## 1. The idea
 

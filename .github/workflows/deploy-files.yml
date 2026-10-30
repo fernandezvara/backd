@@ -1,0 +1,75 @@
+name: Deployment files
+
+# Terraform and the Helm chart for backd on Kubernetes (deploy/terraform, deploy/kubernetes). No
+# cloud account is needed: Terraform is checked with the providers mocked.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "deploy/terraform/**"
+      - "deploy/kubernetes/**"
+      - "scripts/check-terraform.sh"
+      - "scripts/check-chart.sh"
+      - "scripts/test-chart.py"
+      - ".github/workflows/deploy-files.yml"
+  pull_request:
+    paths:
+      - "deploy/terraform/**"
+      - "deploy/kubernetes/**"
+      - "scripts/check-terraform.sh"
+      - "scripts/check-chart.sh"
+      - "scripts/test-chart.py"
+      - ".github/workflows/deploy-files.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~>1.9"
+          terraform_wrapper: false
+      # fmt -check, init -backend=false, validate, and terraform test with mocked providers.
+      - run: scripts/check-terraform.sh
+
+  chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v4
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: pip install pyyaml
+      - name: Install kubeconform
+        run: |
+          curl -fsSL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+          sudo mv kubeconform /usr/local/bin/
+      # helm lint --strict and template for every values file, kubeconform, and the invariants.
+      - run: scripts/check-chart.sh
+      - name: The ClusterIssuer chart of the Terraform
+        run: |
+          helm lint --strict deploy/terraform/digitalocean/charts/cluster-issuer --set email=ops@example.com
+          helm template x deploy/terraform/digitalocean/charts/cluster-issuer --set email=ops@example.com >/dev/null
+
+  scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: pip install pyyaml
+      - run: sh deploy/kubernetes/scripts/test-registry-prune.sh
+      - run: sh deploy/kubernetes/scripts/test-admin-allow.sh
+      - run: sh deploy/kubernetes/pipeline/test-check-no-auth-disabled.sh
+      - run: python3 deploy/kubernetes/pipeline/test-pipeline.py
+      - name: Lint the example workflow
+        run: |
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color deploy/kubernetes/pipeline/release.yml

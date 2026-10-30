@@ -70,7 +70,7 @@ network: [api.stripe.com]
 | `memory` | Enforced: the JavaScript heap, plus the process's resident memory (heap + about 130 MiB) |
 | `max_output` | Enforced |
 | `invoke`, `admin`, input and output schemas | Enforced |
-| `network` | Enforced by the allowlist and `backd egress` together (see [above](../network/#egress-the-network-allowlist-completed)); the third layer, network placement, is proven by a test harness and wired into the [production reference](../../../operate/production/#functions-executor-egress-and-worker) — reproduce it yourself if you assemble your own deployment instead |
+| `network` | Enforced by the allowlist and `backd egress` together (see [above](../network/#egress-the-network-allowlist-completed)); the third layer, network placement, is proven by a test harness and wired into the [production reference](../../../operate/production/docker-compose/#functions-executor-egress-and-worker) — reproduce it yourself if you assemble your own deployment instead |
 | `secrets` | Enforced: values are encrypted at rest, admin-managed, cached briefly and delivered only as `ctx.secrets` (see [Secrets](../secrets/)) |
 | `concurrency`, `functions.max_concurrency` | Enforced, per instance (see [Concurrency limits](../calling/#concurrency-limits)) |
 | `schedule` | Enforced by workers: one run per scheduled time across any number of them (see [Scheduled functions](../cron/)) |
