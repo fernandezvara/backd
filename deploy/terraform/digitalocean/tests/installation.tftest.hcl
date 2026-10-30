@@ -433,3 +433,13 @@ run "realm_storage_snippet_names_both_spaces" {
     error_message = "the snippet has storage: and public_storage:"
   }
 }
+
+run "a_space_key_cannot_be_fullaccess" {
+  command = plan
+
+  variables {
+    spaces_key_permission = "fullaccess"
+  }
+
+  expect_failures = [var.spaces_key_permission]
+}
