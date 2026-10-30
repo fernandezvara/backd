@@ -57,14 +57,7 @@ terraform init -backend-config=backend.hcl
 terraform apply
 ```
 
-The first apply ends with a warning that `database_ca` is not set. DigitalOcean's API has no CA certificate for a MongoDB cluster, so you give it: open the database in the control panel, download the CA certificate (Connection details), and apply again:
-
-```sh
-export TF_VAR_database_ca="$(cat ca-certificate.crt)"
-terraform apply            # only updates the Secret the pods read
-```
-
-Without it the connection string leaves out the CA and the pods cannot verify the database (they are never told to skip the check).
+The database needs no CA file: DigitalOcean's MongoDB presents a Let's Encrypt certificate, which the pods verify against the system roots (the check is never skipped). Set `database_ca` only if you front the database with a CA of your own.
 
 Set `acme_staging = true` for the first run (certificates browsers do not trust, with far higher limits) and switch it off once everything works. The apply takes ten to fifteen minutes, most of it the cluster and the database.
 
@@ -74,7 +67,7 @@ Set `acme_staging = true` for the first run (certificates browsers do not trust,
 | `node_size`, `node_count`, `node_min` + `node_max` | The workers, or autoscaling between two numbers |
 | `database_nodes` | `1`, or `3` for a primary and two standby nodes; nothing in between |
 | `database_size`, `database_version` | The size of each database node, and the MongoDB version |
-| `database_ca` | The database's CA certificate, downloaded from the control panel after the first apply |
+| `database_ca` | Optional CA (PEM) to verify the database with instead of the system roots; leave unset on DigitalOcean |
 | `buckets` | `private`, or `private_and_public` (the second Space holds the files of `public: true` fields) |
 | `private_bucket_name`, `public_bucket_name` | The names of the Spaces (unique per region) |
 | `public_cdn`, `assets_host` | A CDN in front of the public Space, optionally under your own name |

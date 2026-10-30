@@ -52,7 +52,7 @@ The bootstrap's own state is local (`bootstrap/terraform.tfstate`, gitignored) a
 
 `mongo_uri` and `mongo_admin_uri` are sensitive outputs (they go into the cluster's Secrets in a later step) and `mongo_ca` is the certificate the pods trust (mounted at `/etc/backd/tls/ca.pem`, which the URIs name).
 
-**The CA.** The pods verify the database's TLS certificate against its CA, and DigitalOcean's API has no CA for a MongoDB cluster (it answers "CA not found"), so you give it: the cluster has to exist first. The first `terraform apply` runs without `database_ca` and warns; then download the certificate from the database's page in the control panel (Connection details > CA certificate) and apply again: `export TF_VAR_database_ca="$(cat ca-certificate.crt)"; terraform apply` (it only updates the Secret). Without the CA the connection string leaves out `tlsCAFile` and the pods fail to verify the database: they are never told to skip the check.
+**The CA.** None is needed: DigitalOcean's MongoDB presents a Let's Encrypt certificate that the pods verify against the system roots, so the connection string says `tls=true` and the check is never skipped. `database_ca` (PEM) is an optional override for a CA of your own.
 
 **The database user.** The user `backd` is created and never updated in place (`ignore_changes`): the provider's update call is refused by DigitalOcean for a MongoDB user.
 
