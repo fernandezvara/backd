@@ -150,9 +150,9 @@ variable "database_size" {
 }
 
 variable "database_version" {
-  description = "MongoDB major version (the versions DigitalOcean offers are in the control panel and in `doctl databases options versions mongodb`)."
+  description = "MongoDB major version (the versions DigitalOcean offers are in the control panel and in `doctl databases options versions mongodb`). It can only go up: DigitalOcean upgrades a cluster one major version at a time and never downgrades."
   type        = string
-  default     = "7"
+  default     = "8"
 }
 
 variable "database_storage_mib" {
