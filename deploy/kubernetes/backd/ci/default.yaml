@@ -4,3 +4,7 @@ image:
   tag: "2026-10-30-1"
 networkPolicy:
   databaseCIDR: 10.30.0.0/16
+ingress:
+  hosts: {api: api.example.com, admin: admin.example.com}
+  admin:
+    allowedCIDRs: ["203.0.113.7/32", "2001:db8::/48"]

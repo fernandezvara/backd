@@ -10,3 +10,5 @@ networkPolicy:
 podDisruptionBudget:
   enabled: false
 spreadOverNodes: false
+ingress:
+  enabled: false
