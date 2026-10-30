@@ -5,3 +5,8 @@
 !*.tfvars.example
 backend.hcl
 crash.log
+# Saved plans hold the whole state, secrets included.
+*.tfplan
+tfplan
+plan.txt
+plan.*
