@@ -173,6 +173,17 @@ variable "database_maintenance_hour" {
   default     = "03:00:00"
 }
 
+variable "database_ca" {
+  description = "The CA certificate of the managed MongoDB (PEM), which the pods use to verify it. Unset: it is asked of DigitalOcean's API; if the API answers \"CA not found\" (it did right after a cluster was created), download it from the database page of the control panel (Connection details > CA certificate) and pass it here, for example TF_VAR_database_ca=\"$(cat ca-certificate.crt)\"."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.database_ca == null ? true : strcontains(var.database_ca, "BEGIN CERTIFICATE")
+    error_message = "database_ca must be a PEM certificate (the text of the file DigitalOcean's control panel gives, starting with -----BEGIN CERTIFICATE-----)."
+  }
+}
+
 variable "database_allowed_cidrs" {
   description = "Addresses besides the cluster that may connect to the database (for example your own, to restore a backup). Empty: the cluster only."
   type        = list(string)
