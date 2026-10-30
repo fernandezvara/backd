@@ -1,0 +1,82 @@
+# Values of the Traefik chart, rendered by addons.tf (design/kubernetes.md §5). Traefik is the
+# ingress controller: it ends TLS (certificates from cert-manager), redirects HTTP to HTTPS, and
+# applies the per-route limits the Helm chart of backd declares as Middlewares.
+deployment:
+  replicas: ${replicas}
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: traefik
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 384Mi
+
+ingressClass:
+  enabled: true
+  isDefaultClass: true
+
+providers:
+  kubernetesCRD:
+    enabled: true
+    # A route may only use Middlewares of its own namespace.
+    allowCrossNamespace: false
+  kubernetesIngress:
+    enabled: true
+
+ports:
+  web:
+    # Plain HTTP only redirects.
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+    # The load balancer sends the PROXY protocol, so the client's address is not lost in a TCP
+    # proxy. Only the private network (where the load balancer is) may say so.
+    proxyProtocol:
+      trustedIPs: ${trusted_ips}
+    forwardedHeaders:
+      trustedIPs: []
+  websecure:
+    proxyProtocol:
+      trustedIPs: ${trusted_ips}
+    # X-Forwarded-For is never believed from a client: Traefik sets it from the connection.
+    forwardedHeaders:
+      trustedIPs: []
+    transport:
+      respondingTimeouts:
+        # Realtime streams are held open for as long as a session lasts, so there is no write
+        # deadline; a request is read within ten minutes (uploads of large files).
+        readTimeout: 600s
+        writeTimeout: 0s
+        idleTimeout: 180s
+
+service:
+  annotations:
+    service.beta.kubernetes.io/do-loadbalancer-name: ${lb_name}
+    service.beta.kubernetes.io/do-loadbalancer-size-slug: ${lb_size}
+    service.beta.kubernetes.io/do-loadbalancer-algorithm: ${lb_algorithm}
+    service.beta.kubernetes.io/do-loadbalancer-protocol: tcp
+    service.beta.kubernetes.io/do-loadbalancer-enable-proxy-protocol: "true"
+    # With the PROXY protocol a pod that reaches the public address from inside the cluster would
+    # skip the load balancer and send a request without the header. Naming the host makes
+    # Kubernetes send it through the load balancer too.
+    service.beta.kubernetes.io/do-loadbalancer-hostname: ${lb_hostname}
+    service.beta.kubernetes.io/do-loadbalancer-disable-lets-encrypt-dns-records: "true"
+  spec:
+    # The client's address reaches Traefik, and only nodes with a Traefik pod pass the load
+    # balancer's health check.
+    externalTrafficPolicy: Local

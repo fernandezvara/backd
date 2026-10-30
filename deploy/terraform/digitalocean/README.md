@@ -5,7 +5,7 @@ Builds what a backd installation needs on DigitalOcean (design: [`design/kuberne
 | Directory | What it builds |
 |---|---|
 | `bootstrap/` | The private, versioned Space that holds the state of everything else, and a key bound to it |
-| `.` | The installation itself (grows with each step): `network.tf` (private network, node firewall), `cluster.tf` (the DOKS cluster), `database.tf` (the managed MongoDB), `spaces.tf` (the Spaces), `registry.tf` (the container registry) |
+| `.` | The installation itself (grows with each step): `network.tf` (private network, node firewall), `cluster.tf` (the DOKS cluster), `database.tf` (the managed MongoDB), `spaces.tf` (the Spaces), `registry.tf` (the container registry), `addons.tf` (Traefik), `loadbalancer.tf`, `dns.tf` |
 
 ## First step: the state bucket
 
@@ -37,7 +37,7 @@ The bootstrap's own state is local (`bootstrap/terraform.tfstate`, gitignored) a
 
 `install` names the installation (every resource and tag carries it). `node_size`, `node_count` (or `node_min` and `node_max` for autoscaling), `ha_control_plane`, `kubernetes_version_prefix` and the maintenance window are variables; the defaults are two nodes of 2 vCPU / 4 GB and a standard (free) control plane.
 
-- The nodes have no open port to the internet: the firewall `<install>-nodes` allows inbound traffic from the private network only (the load balancer joins it in a later step). DigitalOcean keeps a firewall of its own on every cluster for what Kubernetes needs; the rules of both add up.
+- The nodes have no open port to the internet: the firewall `<install>-nodes` allows inbound traffic from the private network only (the load balancer is in it, so it reaches the nodes from inside). DigitalOcean keeps a firewall of its own on every cluster for what Kubernetes needs; the rules of both add up.
 - `control_plane_allowed_cidrs` restricts the Kubernetes API to the addresses you list. Empty leaves it reachable with the cluster's credentials only; set it once you know your addresses (and your pipeline's).
 - A newer Kubernetes version never plans an upgrade of a running cluster (`ignore_changes = [version]`): upgrades come from the maintenance window (`kubernetes_auto_upgrade`) or from you.
 - `terraform output -raw kubeconfig > kubeconfig.yaml` gives the credentials for `kubectl` and `helm`.
@@ -73,4 +73,14 @@ The bootstrap's own state is local (`bootstrap/terraform.tfstate`, gitignored) a
 - **Pulling:** the cluster is integrated with the registry (`registry_integration`), so pods pull with no credential to manage.
 - **Pushing:** `terraform output -raw registry_push_credentials` is a Docker config that can push; store it as a CI secret. It does not expire unless `registry_push_credential_days` says so; replace it with `terraform apply -replace=digitalocean_container_registry_docker_credentials.push`.
 - **Old releases fill the registry** (about ten releases of a 50 MiB image fill Starter). `deploy/kubernetes/scripts/registry-prune.sh <repository> [keep]` keeps the newest tags (10 by default), deletes the rest and starts the registry's garbage collection, which is what actually frees the space (`DRY_RUN=1` lists what it would delete; `KEEP_TAGS="r12 r11"` protects tags, for example the one that is running). The pipeline of a later step runs it after a successful rollout.
+
+## Traffic: the load balancer and DNS
+
+The installation has **one load balancer**. It is requested by the Service of the ingress controller (**Traefik**; ingress-nginx was retired in March 2026), so its size and algorithm are the variables `lb_size` and `lb_algorithm`, and Terraform reads it back by name (`<install>-ingress`) for the DNS records and the nodes' firewall. It forwards TCP with the PROXY protocol, so Traefik ends TLS and still sees the client's address; Traefik trusts that header only from the private network. The Service has `externalTrafficPolicy: Local`: a node without a Traefik pod fails the load balancer's health check and gets no traffic (`ingress_replicas` pods, spread over nodes).
+
+- `domain` must already exist on DigitalOcean DNS (Networking > Domains) and its name servers must point there; the plan fails with "not found" when it does not.
+- `api_host` and `admin_host` (names inside the domain, different from each other) get an A record each, pointing at the load balancer (`dns_ttl`). With `public_cdn` and `assets_host`, the assets name is a CNAME of the CDN.
+- The records for TLS challenges are made by cert-manager (a later step).
+- Destroying the installation removes the load balancer with Traefik's release.
+- **Cost:** `lb-small` is about $12 a month; the add-on adds nothing else.
 
