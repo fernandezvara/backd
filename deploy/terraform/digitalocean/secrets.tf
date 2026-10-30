@@ -55,7 +55,7 @@ resource "kubernetes_secret" "mongo" {
   data = {
     MONGO_URI       = local.mongo_uri
     MONGO_ADMIN_URI = local.mongo_admin_uri
-    "ca.pem"        = data.digitalocean_database_ca.mongo.certificate
+    "ca.pem"        = local.mongo_ca
   }
 }
 
