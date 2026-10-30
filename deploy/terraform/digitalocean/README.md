@@ -54,6 +54,10 @@ The bootstrap's own state is local (`bootstrap/terraform.tfstate`, gitignored) a
 
 **The CA.** The pods verify the database's TLS certificate against its CA. Terraform asks DigitalOcean's API for it; if the API answers "CA not found" (it did right after a cluster was created, and may for MongoDB), download the certificate from the database page of the control panel (Connection details > CA certificate) and pass its text as `database_ca`: `export TF_VAR_database_ca="$(cat ca-certificate.crt)"`.
 
+**The CA.** The pods verify the database's TLS certificate against its CA, and DigitalOcean's API has no CA for a MongoDB cluster (it answers "CA not found"), so you give it: the cluster has to exist first. The first `terraform apply` runs without `database_ca` and warns; then download the certificate from the database's page in the control panel (Connection details > CA certificate) and apply again: `export TF_VAR_database_ca="$(cat ca-certificate.crt)"; terraform apply` (it only updates the Secret). Without the CA the connection string leaves out `tlsCAFile` and the pods fail to verify the database: they are never told to skip the check.
+
+**The database user.** The user `backd` is created and never updated in place (`ignore_changes`): the provider's update call is refused by DigitalOcean for a MongoDB user.
+
 ## The Spaces
 
 `buckets = "private"` makes one Space (`private_bucket_name`) for the private files; `"private_and_public"` adds a second (`public_bucket_name`) for the files of fields with `public: true`. Names are yours and unique per region; the plan fails with a message when the public one is missing or equals the private one.
@@ -113,3 +117,4 @@ Copy `BACKD_SECRETS_KEY` to a password manager once (`terraform output` does not
 **The state is sensitive.** It holds every generated secret, both database URIs and the Spaces keys: keep it in the private bucket of the bootstrap step and give the state key to as few people as possible. A Kubernetes Secret is only base64: anyone who can `get secrets` in the namespace can read these, so keep that right to the people who run the installation.
 
 A full example of the variables is in `terraform.tfvars.example`.
+
