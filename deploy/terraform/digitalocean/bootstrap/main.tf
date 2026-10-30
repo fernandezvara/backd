@@ -18,8 +18,11 @@ resource "digitalocean_spaces_bucket" "state" {
 resource "digitalocean_spaces_key" "state" {
   name = "${var.state_bucket_name}-terraform"
 
+  # DigitalOcean accepts "fullaccess" only on a key for every bucket (an empty bucket name), so a
+  # key bound to this one bucket is "readwrite": get, put, delete and list, which is all the
+  # state backend does.
   grant {
     bucket     = digitalocean_spaces_bucket.state.name
-    permission = "fullaccess"
+    permission = "readwrite"
   }
 }
