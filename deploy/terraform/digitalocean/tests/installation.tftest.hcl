@@ -1,6 +1,8 @@
 # Offline: the provider is mocked, nothing is created.
 mock_provider "helm" {}
 
+mock_provider "kubernetes" {}
+
 mock_provider "digitalocean" {
   mock_data "digitalocean_loadbalancer" {
     defaults = {
@@ -91,6 +93,8 @@ variables {
   domain              = "example.com"
   api_host            = "api.example.com"
   admin_host          = "admin.example.com"
+  acme_email          = "ops@example.com"
+  dns_token           = "dns-token"
   database_ca         = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----"
 }
 
@@ -634,6 +638,101 @@ run "the_node_firewall_needs_nothing_that_is_unknown_at_plan" {
   assert {
     condition     = alltrue([for r in digitalocean_firewall.nodes.inbound_rule : length(coalesce(r.source_load_balancer_uids, [])) == 0])
     error_message = "no inbound rule may name the load balancer: it does not exist at plan time"
+  }
+}
+
+run "cert_manager_answers_dns_challenges_with_its_own_token" {
+  command = plan
+
+  assert {
+    condition     = kubernetes_secret.dns_token.metadata[0].namespace == "cert-manager" && helm_release.cert_manager.version == "v1.21.3"
+    error_message = "the DNS token lives in cert-manager's namespace and the chart is pinned"
+  }
+
+  assert {
+    condition     = strcontains(helm_release.cluster_issuer.values[0], "acme-v02.api.letsencrypt.org") && strcontains(helm_release.cluster_issuer.values[0], "ops@example.com")
+    error_message = "the issuer uses Let's Encrypt production and the email"
+  }
+}
+
+run "staging_issuer_when_asked" {
+  command = plan
+
+  variables {
+    acme_staging = true
+  }
+
+  assert {
+    condition     = strcontains(helm_release.cluster_issuer.values[0], "acme-staging-v02")
+    error_message = "acme_staging selects the staging service"
+  }
+}
+
+run "acme_email_and_dns_token_are_validated" {
+  command = plan
+
+  variables {
+    acme_email = "not an email"
+    dns_token  = ""
+  }
+
+  expect_failures = [var.acme_email, var.dns_token]
+}
+
+run "the_namespace_is_restricted" {
+  command = plan
+
+  assert {
+    condition     = kubernetes_namespace.backd.metadata[0].name == "backd" && kubernetes_namespace.backd.metadata[0].labels["pod-security.kubernetes.io/enforce"] == "restricted"
+    error_message = "backd's namespace enforces the restricted pod security standard"
+  }
+}
+
+run "the_secrets_hold_what_the_chart_reads" {
+  command = apply
+
+  assert {
+    condition = alltrue([for k in ["BACKD_SECRETS_KEY", "BACKD_EXECUTOR_TOKEN", "BACKD_CALLBACK_KEY", "BACKD_EGRESS_KEY", "BACKD_METRICS_TOKEN"] :
+    contains(keys(kubernetes_secret.keys.data), k) && length(kubernetes_secret.keys.data[k]) >= 32])
+    error_message = "backd-keys has the five keys, each at least 32 characters (the minimum backd accepts)"
+  }
+
+  assert {
+    condition     = length(distinct(values(nonsensitive(kubernetes_secret.keys.data)))) == 5
+    error_message = "the five keys differ"
+  }
+
+  assert {
+    condition     = contains(keys(kubernetes_secret.mongo.data), "MONGO_URI") && contains(keys(kubernetes_secret.mongo.data), "MONGO_ADMIN_URI") && contains(keys(kubernetes_secret.mongo.data), "ca.pem")
+    error_message = "backd-mongo has both URIs and the CA"
+  }
+
+  assert {
+    condition     = kubernetes_secret.registry.type == "kubernetes.io/dockerconfigjson" && contains(keys(kubernetes_secret.registry.data), ".dockerconfigjson")
+    error_message = "backd-registry is a Docker config Secret"
+  }
+}
+
+run "the_install_configmap_describes_the_installation" {
+  command = apply
+
+  assert {
+    condition     = kubernetes_config_map.install.data["BACKD_URL"] == "https://api.example.com" && kubernetes_config_map.install.data["BACKD_DEPLOYMENT_ID"] == "acme" && kubernetes_config_map.install.data["BACKD_ENV"] == "production" && kubernetes_config_map.install.data["PRIVATE_BUCKET"] == "acme-files"
+    error_message = "the ConfigMap names the URL, the deployment, the environment and the bucket"
+  }
+
+  assert {
+    condition     = !contains(keys(kubernetes_config_map.install.data), "PUBLIC_BUCKET")
+    error_message = "no public bucket, no entry for it"
+  }
+}
+
+run "no_secret_is_in_the_configmap" {
+  command = apply
+
+  assert {
+    condition     = alltrue([for v in values(kubernetes_config_map.install.data) : !strcontains(v, "password") && !strcontains(v, "token") && !startswith(v, "mongodb")])
+    error_message = "the ConfigMap holds no credential"
   }
 }
 

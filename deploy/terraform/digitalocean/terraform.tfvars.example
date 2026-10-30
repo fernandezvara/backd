@@ -1,0 +1,40 @@
+# Copy to terraform.tfvars (gitignored) and fill in. Credentials are NOT here: export
+# DIGITALOCEAN_TOKEN, SPACES_ACCESS_KEY_ID, SPACES_SECRET_ACCESS_KEY (and the state bucket's
+# AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY) in your shell.
+
+install = "acme"
+region  = "fra1"
+
+# --- the cluster (defaults: two nodes of 2 vCPU / 4 GB, standard control plane)
+# node_size        = "s-2vcpu-4gb"
+# node_count       = 2
+# node_min         = 2          # with node_max: autoscaling
+# node_max         = 4
+# ha_control_plane = false
+# control_plane_allowed_cidrs = ["203.0.113.7/32"]   # once you know your addresses
+
+# --- the managed MongoDB (1, or 3 = a primary and two standby nodes)
+database_nodes = 1
+# database_size  = "db-s-1vcpu-2gb"
+
+# --- files: one private Space, or a private and a public one
+buckets             = "private"          # or "private_and_public"
+private_bucket_name = "acme-files"
+# public_bucket_name  = "acme-public"
+# public_cdn          = true
+# assets_host         = "assets.example.com"
+# private_cors_origins = ["https://app.example.com"]
+
+# --- the registry (starter works: one repository is enough)
+registry_tier = "basic"
+
+# --- names: the domain must already be on DigitalOcean DNS
+domain     = "example.com"
+api_host   = "api.example.com"
+admin_host = "admin.example.com"
+# lb_size  = "lb-small"
+
+# --- certificates
+acme_email   = "ops@example.com"
+acme_staging = true                       # switch off after the first successful run
+# dns_token goes in TF_VAR_dns_token: a DigitalOcean token with write access to Domains only

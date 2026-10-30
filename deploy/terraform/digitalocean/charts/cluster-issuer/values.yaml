@@ -1,0 +1,10 @@
+# Installed by deploy/terraform/digitalocean (addons.tf) after cert-manager is ready.
+name: letsencrypt
+email: ""
+# https://acme-staging-v02.api.letsencrypt.org/directory for tests: it issues certificates
+# browsers do not trust, and has far higher limits.
+server: https://acme-v02.api.letsencrypt.org/directory
+# The Secret in cert-manager's namespace that holds the DigitalOcean API token.
+tokenSecret:
+  name: digitalocean-dns
+  key: access-token
