@@ -435,6 +435,16 @@ run "realm_storage_snippet_names_both_spaces" {
   }
 }
 
+run "a_space_key_cannot_be_fullaccess" {
+  command = plan
+
+  variables {
+    spaces_key_permission = "fullaccess"
+  }
+
+  expect_failures = [var.spaces_key_permission]
+}
+
 run "the_firewall_and_the_nodes_share_a_tag_made_first" {
   command = plan
 
