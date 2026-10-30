@@ -66,7 +66,8 @@ variable "node_max" {
   default     = null
 
   validation {
-    condition     = (var.node_min == null) == (var.node_max == null) && (var.node_min == null || (var.node_min >= 1 && var.node_min <= var.node_max))
+    # A conditional, not && and ||: older Terraform evaluates both sides of those, and compares null.
+    condition     = var.node_min == null ? var.node_max == null : (var.node_max == null ? false : (var.node_min >= 1 && var.node_min <= var.node_max))
     error_message = "node_min and node_max are set together, and 1 <= node_min <= node_max."
   }
 }
