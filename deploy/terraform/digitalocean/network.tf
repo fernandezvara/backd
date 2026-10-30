@@ -13,7 +13,8 @@ resource "digitalocean_vpc" "main" {
 }
 
 # The nodes accept nothing from the internet: only the private network answers them (the load
-# balancer is in it), and a rule for the load balancer itself is added with it. DigitalOcean
+# balancer is in it: it reaches the nodes' ports and health checks from inside it, so no rule
+# names the load balancer, which does not exist when this is planned). DigitalOcean
 # also keeps a firewall of its own on every cluster for the traffic Kubernetes needs; the rules
 # of both add up, and this one never opens a port to the world. The nodes can reach out (image
 # pulls, DNS, Let's Encrypt, Spaces): what a function may reach is decided in the cluster, by
@@ -37,13 +38,6 @@ resource "digitalocean_firewall" "nodes" {
   inbound_rule {
     protocol         = "icmp"
     source_addresses = [digitalocean_vpc.main.ip_range]
-  }
-
-  # The load balancer reaches the nodes' ports (traffic and health checks).
-  inbound_rule {
-    protocol                  = "tcp"
-    port_range                = "30000-32767"
-    source_load_balancer_uids = [data.digitalocean_loadbalancer.ingress.id]
   }
 
   outbound_rule {
