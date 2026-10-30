@@ -24,3 +24,10 @@ workerConcurrency: 20
 networkPolicy:
   databaseCIDR: 10.30.0.0/16
   monitoringNamespace: monitoring
+ingress:
+  hosts: {api: api.example.com, admin: admin.example.com}
+  admin:
+    allowedCIDRs: ["203.0.113.7/32"]
+  limits:
+    api: {average: 50, period: 1s, burst: 100}
+  hstsSeconds: 31536000
