@@ -135,6 +135,6 @@ Records hold client IP addresses and user ids, which are personal data in many j
 ## Append-only
 
 - No endpoint or command changes or deletes records.
-- In the [production reference](../../production/#least-privilege-provisioning), `backd`'s own database user may only read and insert into the `audit` collection, so not even a compromised `backd` process can rewrite history.
+- In the [production reference](../../production/docker-compose/#least-privilege-provisioning), `backd`'s own database user may only read and insert into the `audit` collection, so not even a compromised `backd` process can rewrite history.
 - Records are stored in the realm's [system database](../../#realm-system-databases) and included in its [backups](../../backup/).
 - The trail doesn't cover direct access to MongoDB: people with database credentials can do anything. Keep those credentials to the provisioning step, as the production reference does.

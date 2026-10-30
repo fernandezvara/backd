@@ -21,7 +21,7 @@ Functions add up to four kinds of process. All are the same `backd` binary (the 
 **`backd executor` runs only on Linux**: it enforces each function's CPU time, memory and process group with Linux features, and on Windows or macOS it refuses to start and says so, rather than run functions without limits. Use the `backd-executor` container image (or WSL2 on Windows). `serve`, `worker`, `egress` and the command line run on any system, pointing `BACKD_EXECUTOR_URL` at an executor.
 {{< /hint >}}
 
-The smallest useful deployment is `backd serve --with-worker` plus an executor (add egress once a function declares `network`). The [production reference](../production/#functions-executor-egress-and-worker) runs them as separate services with the executor on a network of its own, and the project template's `compose.yaml` runs the same set for local development.
+The smallest useful deployment is `backd serve --with-worker` plus an executor (add egress once a function declares `network`). The [production reference](../production/docker-compose/#functions-executor-egress-and-worker) runs them as separate services with the executor on a network of its own, and the project template's `compose.yaml` runs the same set for local development.
 
 ## Sizing
 

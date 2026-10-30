@@ -1,15 +1,15 @@
 ---
-title: "Deploying on DigitalOcean"
+title: "DigitalOcean"
 description: "From an empty account to a running installation: Terraform builds the cluster, the managed MongoDB, the Spaces, the registry, the load balancer and the DNS records; a pipeline deploys the configuration."
 icon: "cloud"
-weight: 312
+weight: 10
 toc: true
 ---
 
-This is the path from an empty DigitalOcean account to a running `backd`: **Terraform** builds the infrastructure (a Kubernetes cluster, a managed MongoDB, one or two Spaces, a container registry, a load balancer and the DNS records) and creates the secrets, and a **pipeline** in your configuration repository builds the image of your configuration and deploys it with the [Helm chart](../kubernetes/). The files are in `deploy/terraform/digitalocean` and `deploy/kubernetes` of the repository; the reasoning is in `design/kubernetes.md`.
+This is the path from an empty DigitalOcean account to a running `backd`: **Terraform** builds the infrastructure (a Kubernetes cluster, a managed MongoDB, one or two Spaces, a container registry, a load balancer and the DNS records) and creates the secrets, and a **pipeline** in your configuration repository builds the image of your configuration and deploys it with the [Helm chart](../../kubernetes/). The files are in `deploy/terraform/digitalocean` and `deploy/kubernetes` of the repository; the reasoning is in `design/kubernetes.md`.
 
 {{< hint style="warning" >}}
-A realm with `auth: disabled` has no authentication and this installation has a public address. The example pipeline refuses to build such a configuration; do not remove that step to make a demo work. See the [security model](../administration/security/).
+A realm with `auth: disabled` has no authentication and this installation has a public address. The example pipeline refuses to build such a configuration; do not remove that step to make a demo work. See the [security model](../../../administration/security/).
 {{< /hint >}}
 
 ## What you get, and what it costs
@@ -31,7 +31,7 @@ The choices that change the price: `database_nodes = 3` (a primary and two stand
 - A domain on DigitalOcean DNS (Networking > Domains), with its name servers pointing there.
 - A second API token for cert-manager with write access to **Domains only**.
 - Terraform 1.9 or later, `kubectl` and `helm`.
-- A repository for your configuration (`config/` is `CONFIG_DIR`, as in [Deploying config](../deploying/)).
+- A repository for your configuration (`config/` is `CONFIG_DIR`, as in [Deploying config](../../../deploying/)).
 
 ## 1. The state bucket
 
@@ -80,7 +80,7 @@ Nothing on the nodes is reachable from the internet: the firewall allows only th
 
 ## 3. The first release
 
-Put the pipeline in your configuration repository ([Kubernetes](../kubernetes/#the-release-pipeline)): `deploy/kubernetes/pipeline/release.yml` as `.github/workflows/release.yml`, and `deploy/values.yaml` from `values.example.yaml` with the values Terraform printed. Set the repository variables and the secret the workflow lists (`terraform output registry_endpoint`, `cluster_name`, and a token for the pipeline), then tag:
+Put the pipeline in your configuration repository ([Kubernetes](../../kubernetes/#the-release-pipeline)): `deploy/kubernetes/pipeline/release.yml` as `.github/workflows/release.yml`, and `deploy/values.yaml` from `values.example.yaml` with the values Terraform printed. Set the repository variables and the secret the workflow lists (`terraform output registry_endpoint`, `cluster_name`, and a token for the pipeline), then tag:
 
 ```sh
 git tag release-2026-10-30-1 && git push origin release-2026-10-30-1
@@ -101,20 +101,20 @@ backd secret set --realm shop --name STORAGE_SECRET_KEY --url https://admin.exam
 backd storage check --realm shop --url https://admin.example.com
 ```
 
-`terraform output -raw realm_storage` prints the `storage:` (and `public_storage:`) section for the realm's `realm.yaml`. The admin host answers only from the addresses you gave in `ingress.admin.allowedCIDRs`; see [Kubernetes](../kubernetes/#who-may-reach-the-admin-host) for changing them.
+`terraform output -raw realm_storage` prints the `storage:` (and `public_storage:`) section for the realm's `realm.yaml`. The admin host answers only from the addresses you gave in `ingress.admin.allowedCIDRs`; see [Kubernetes](../../kubernetes/#who-may-reach-the-admin-host) for changing them.
 
 ## Changing the installation
 
 - **From one database node to three:** set `database_nodes = 3` and apply. DigitalOcean adds the standby nodes to the same cluster, the connection string gains `w=majority`, and the new URI reaches the pods with the next rollout. The configuration and the data do not change.
 - **A bigger cluster:** change `node_size` or `node_count` and apply.
 - **A new configuration:** tag the configuration repository. A rollback is the previous tag, or `helm rollback`.
-- **A new backd release:** change `BACKD_VERSION` in the workflow's variables and tag; read the *Upgrading* section of [Operate](../#upgrading-to-v096) first.
+- **A new backd release:** change `BACKD_VERSION` in the workflow's variables and tag; read the *Upgrading* section of [Operate](../../../#upgrading-to-v096) first.
 - **Destroying it:** `terraform destroy` removes the infrastructure. The Spaces are never emptied by Terraform: if they hold files the destroy stops until you empty them yourself, and the state bucket from step 1 is yours to remove.
 
 ## What DigitalOcean does not allow
 
 {{< hint style="warning" title="A weaker database posture than the Compose reference" >}}
-DigitalOcean's managed MongoDB has no custom roles and no access control lists, and every user it creates gets the permissions of `doadmin`. The [production reference](../production/#least-privilege-provisioning) gives `backd` a user that can read and write documents and nothing else; here the user `backd` serves with can do whatever the provisioning user can, and the audit and invocation history collections are not append-only. `PROVISION_MODE=verify` still stops a pod from changing the schema on its own, but the database would let it. What keeps the database closed is the network: no public path, the cluster as its only trusted source, and network policies that let only the `backd` pods connect to it.
+DigitalOcean's managed MongoDB has no custom roles and no access control lists, and every user it creates gets the permissions of `doadmin`. The [production reference](../../docker-compose/#least-privilege-provisioning) gives `backd` a user that can read and write documents and nothing else; here the user `backd` serves with can do whatever the provisioning user can, and the audit and invocation history collections are not append-only. `PROVISION_MODE=verify` still stops a pod from changing the schema on its own, but the database would let it. What keeps the database closed is the network: no public path, the cluster as its only trusted source, and network policies that let only the `backd` pods connect to it.
 {{< /hint >}}
 
 The other limits worth knowing: a Spaces key reaches every prefix of its Space (use a Space per installation), and a one-node database has no failover and goes down for its maintenance window.
