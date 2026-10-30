@@ -15,6 +15,18 @@ mock_provider "digitalocean" {
     }
   }
 
+  mock_resource "digitalocean_container_registry" {
+    defaults = {
+      endpoint = "registry.digitalocean.com/acme"
+    }
+  }
+
+  mock_resource "digitalocean_container_registry_docker_credentials" {
+    defaults = {
+      docker_credentials = "{\"auths\":{}}"
+    }
+  }
+
   mock_resource "digitalocean_vpc" {
     defaults = {
       id       = "00000000-0000-0000-0000-000000000002"
@@ -432,6 +444,70 @@ run "realm_storage_snippet_names_both_spaces" {
   assert {
     condition     = strcontains(output.realm_storage, "bucket: acme-files") && strcontains(output.realm_storage, "public_storage:") && strcontains(output.realm_storage, "url: https://acme-public.fra1.digitaloceanspaces.com")
     error_message = "the snippet has storage: and public_storage:"
+  }
+}
+
+run "registry_defaults_to_basic_named_after_the_install" {
+  command = plan
+
+  assert {
+    condition     = digitalocean_container_registry.main.subscription_tier_slug == "basic" && digitalocean_container_registry.main.name == "acme"
+    error_message = "the default is a Basic registry named after the installation"
+  }
+}
+
+run "registry_takes_the_starter_tier" {
+  command = plan
+
+  variables {
+    registry_tier = "starter"
+    registry_name = "acme-registry"
+  }
+
+  assert {
+    condition     = digitalocean_container_registry.main.subscription_tier_slug == "starter" && digitalocean_container_registry.main.name == "acme-registry"
+    error_message = "registry_tier and registry_name are used"
+  }
+}
+
+run "registry_tier_is_validated" {
+  command = plan
+
+  variables {
+    registry_tier = "enterprise"
+  }
+
+  expect_failures = [var.registry_tier]
+}
+
+run "the_cluster_pulls_through_the_integration" {
+  command = plan
+
+  assert {
+    condition     = digitalocean_kubernetes_cluster.main.registry_integration
+    error_message = "the cluster is integrated with the registry"
+  }
+}
+
+run "the_pull_credential_cannot_push_and_the_push_one_can" {
+  command = plan
+
+  assert {
+    condition     = digitalocean_container_registry_docker_credentials.push.write && !digitalocean_container_registry_docker_credentials.pull.write
+    error_message = "the pipeline pushes; the cluster side only reads"
+  }
+}
+
+run "push_credential_expiry_is_in_seconds" {
+  command = plan
+
+  variables {
+    registry_push_credential_days = 30
+  }
+
+  assert {
+    condition     = digitalocean_container_registry_docker_credentials.push.expiry_seconds == 2592000
+    error_message = "30 days are 2592000 seconds"
   }
 }
 
