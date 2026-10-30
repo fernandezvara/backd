@@ -88,18 +88,12 @@ mock_provider "digitalocean" {
 variables {
   install             = "acme"
   private_bucket_name = "acme-files"
-<<<<<<< HEAD
   domain              = "example.com"
   api_host            = "api.example.com"
   admin_host          = "admin.example.com"
-<<<<<<< HEAD
   acme_email          = "ops@example.com"
   dns_token           = "dns-token"
-=======
-=======
   database_ca         = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----"
->>>>>>> k8s-6
->>>>>>> k8s-7
 }
 
 run "defaults_are_two_small_nodes" {
