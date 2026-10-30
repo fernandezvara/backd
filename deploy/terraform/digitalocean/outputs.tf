@@ -42,3 +42,64 @@ output "mongo_ca" {
   description = "The CA certificate of the managed MongoDB (PEM)."
   value       = local.mongo_ca
 }
+
+output "spaces_private" {
+  description = "The Space for the private files."
+  value = {
+    bucket   = digitalocean_spaces_bucket.private.name
+    region   = local.spaces_region
+    endpoint = local.spaces_url
+  }
+}
+
+output "spaces_public" {
+  description = "The Space for the public files (null when buckets is private): `url` is where browsers read them."
+  value = local.has_public ? {
+    bucket   = digitalocean_spaces_bucket.public[0].name
+    region   = local.spaces_region
+    endpoint = local.spaces_url
+    url      = local.public_url
+  } : null
+}
+
+output "spaces_private_key" {
+  description = "The key of the private Space: the realm secrets STORAGE_ACCESS_KEY and STORAGE_SECRET_KEY (`backd secret set`)."
+  value = {
+    access_key = digitalocean_spaces_key.private.access_key
+    secret_key = digitalocean_spaces_key.private.secret_key
+  }
+  sensitive = true
+}
+
+output "spaces_public_key" {
+  description = "The key of the public Space: the realm secrets PUBLIC_STORAGE_ACCESS_KEY and PUBLIC_STORAGE_SECRET_KEY."
+  value = local.has_public ? {
+    access_key = digitalocean_spaces_key.public[0].access_key
+    secret_key = digitalocean_spaces_key.public[0].secret_key
+  } : null
+  sensitive = true
+}
+
+output "realm_storage" {
+  description = "The `storage:` (and `public_storage:`) section for the realm's realm.yaml: `terraform output -raw realm_storage`. Pick a different prefix per installation sharing a Space."
+  value = <<-EOT
+    storage:
+      provider: digitalocean
+      region: ${local.spaces_region}
+      bucket: ${digitalocean_spaces_bucket.private.name}
+      prefix: ${var.install}
+      access_key: secret:STORAGE_ACCESS_KEY
+      secret_key: secret:STORAGE_SECRET_KEY
+    ${local.has_public ? <<-PUB
+    public_storage:
+      provider: digitalocean
+      region: ${local.spaces_region}
+      bucket: ${var.public_bucket_name}
+      prefix: ${var.install}
+      access_key: secret:PUBLIC_STORAGE_ACCESS_KEY
+      secret_key: secret:PUBLIC_STORAGE_SECRET_KEY
+      url: ${local.public_url}
+    PUB
+: ""}
+  EOT
+}
