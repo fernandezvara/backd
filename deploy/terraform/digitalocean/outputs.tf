@@ -40,7 +40,7 @@ output "mongo_admin_uri" {
 
 output "mongo_ca" {
   description = "The CA certificate of the managed MongoDB (PEM)."
-  value       = data.digitalocean_database_ca.mongo.certificate
+  value       = local.mongo_ca
 }
 
 output "spaces_private" {
