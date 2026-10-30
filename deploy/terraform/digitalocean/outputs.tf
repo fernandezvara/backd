@@ -103,3 +103,19 @@ output "realm_storage" {
 : ""}
   EOT
 }
+
+output "registry_name" {
+  description = "The registry."
+  value       = digitalocean_container_registry.main.name
+}
+
+output "registry_endpoint" {
+  description = "Where images are pushed and pulled: registry.digitalocean.com/<name>. The configuration image of an installation is <endpoint>/<install>:<release>."
+  value       = digitalocean_container_registry.main.endpoint
+}
+
+output "registry_push_credentials" {
+  description = "The Docker config (JSON) the pipeline logs in with: it can push. Store it as a CI secret."
+  value       = digitalocean_container_registry_docker_credentials.push.docker_credentials
+  sensitive   = true
+}

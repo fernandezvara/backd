@@ -5,7 +5,7 @@ Builds what a backd installation needs on DigitalOcean (design: [`design/kuberne
 | Directory | What it builds |
 |---|---|
 | `bootstrap/` | The private, versioned Space that holds the state of everything else, and a key bound to it |
-| `.` | The installation itself (grows with each step): `network.tf` (private network, node firewall), `cluster.tf` (the DOKS cluster), `database.tf` (the managed MongoDB), `spaces.tf` (the Spaces) |
+| `.` | The installation itself (grows with each step): `network.tf` (private network, node firewall), `cluster.tf` (the DOKS cluster), `database.tf` (the managed MongoDB), `spaces.tf` (the Spaces), `registry.tf` (the container registry) |
 
 ## First step: the state bucket
 
@@ -61,3 +61,11 @@ The bootstrap's own state is local (`bootstrap/terraform.tfstate`, gitignored) a
 - **Keys:** one per Space, bound to it, so the private key cannot touch the public Space and the other way round (`spaces_key_permission`, `readwrite` by default). They are sensitive outputs (`spaces_private_key`, `spaces_public_key`) and become **realm secrets** (`backd secret set STORAGE_ACCESS_KEY`, ...), not pod environment: backd stores them encrypted in MongoDB.
 - `terraform output -raw realm_storage` prints the `storage:` and `public_storage:` sections for the realm's `realm.yaml`. A key reaches every prefix of its Space, so use a Space per installation, or accept it.
 - Spaces are never emptied by Terraform (`force_destroy = false`): destroying an installation with files in them fails until you empty them yourself. Unfinished multipart uploads are removed after `abort_incomplete_uploads_days`.
+
+## The registry
+
+`registry_tier` is `starter` (one repository, 500 MiB, free), `basic` (the default: five repositories, 5 GiB) or `professional` (unlimited, 100 GiB). One repository is enough for an installation on every tier: the pipeline pushes the configuration image as `<registry endpoint>/<install>:<release>`, and the executor and egress images come from `ghcr.io`. `registry_name` (unique across DigitalOcean, the installation's name by default) and `registry_region` are variables.
+
+- **Pulling:** the cluster is integrated with the registry (`registry_integration`), so pods pull with no credential to manage.
+- **Pushing:** `terraform output -raw registry_push_credentials` is a Docker config that can push; store it as a CI secret. It does not expire unless `registry_push_credential_days` says so; replace it with `terraform apply -replace=digitalocean_container_registry_docker_credentials.push`.
+- **Old releases fill the registry** (about ten releases of a 50 MiB image fill Starter). `deploy/kubernetes/scripts/registry-prune.sh <repository> [keep]` keeps the newest tags (10 by default), deletes the rest and starts the registry's garbage collection, which is what actually frees the space (`DRY_RUN=1` lists what it would delete; `KEEP_TAGS="r12 r11"` protects tags, for example the one that is running). The pipeline of a later step runs it after a successful rollout.
