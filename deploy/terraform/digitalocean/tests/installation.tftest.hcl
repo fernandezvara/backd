@@ -36,10 +36,12 @@ mock_provider "digitalocean" {
 
   mock_resource "digitalocean_database_cluster" {
     defaults = {
-      id          = "00000000-0000-0000-0000-000000000003"
-      private_uri = "mongodb+srv://doadmin:adminpw@private-db.example/admin?tls=true&authSource=admin&replicaSet=acme-mongo"
-      user        = "doadmin"
-      password    = "adminpw"
+      id = "00000000-0000-0000-0000-000000000003"
+      # The host of private_uri is deliberately the public one: the URIs must use private_host.
+      private_uri  = "mongodb+srv://doadmin:adminpw@db.example/admin?tls=true&authSource=admin&replicaSet=acme-mongo"
+      private_host = "private-db.example"
+      user         = "doadmin"
+      password     = "adminpw"
     }
   }
 
