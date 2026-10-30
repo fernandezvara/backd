@@ -39,6 +39,18 @@ mock_provider "digitalocean" {
     }
   }
 
+  mock_resource "digitalocean_spaces_bucket" {
+    defaults = {
+      bucket_domain_name = "acme-public.fra1.digitaloceanspaces.com"
+    }
+  }
+
+  mock_resource "digitalocean_cdn" {
+    defaults = {
+      endpoint = "acme-public.fra1.cdn.digitaloceanspaces.com"
+    }
+  }
+
   mock_data "digitalocean_kubernetes_versions" {
     defaults = {
       latest_version = "1.33.1-do.0"
@@ -47,8 +59,9 @@ mock_provider "digitalocean" {
 }
 
 variables {
-  install     = "acme"
-  database_ca = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----"
+  install             = "acme"
+  private_bucket_name = "acme-files"
+  database_ca         = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----"
 }
 
 run "defaults_are_two_small_nodes" {
@@ -249,6 +262,187 @@ run "uris_carry_the_ca_and_escape_the_password" {
     condition     = startswith(nonsensitive(output.mongo_admin_uri), "mongodb+srv://doadmin:adminpw@")
     error_message = "the admin URI is doadmin's"
   }
+}
+
+run "one_private_space_by_default" {
+  command = plan
+
+  assert {
+    condition     = digitalocean_spaces_bucket.private.acl == "private" && length(digitalocean_spaces_bucket.public) == 0 && length(digitalocean_spaces_key.public) == 0
+    error_message = "the default is one private Space and no public one"
+  }
+
+  assert {
+    condition     = output.spaces_public == null
+    error_message = "no public Space: no output for it"
+  }
+}
+
+run "the_private_space_has_a_key_of_its_own" {
+  command = plan
+
+  assert {
+    condition     = one(digitalocean_spaces_key.private.grant).bucket == "acme-files" && one(digitalocean_spaces_key.private.grant).permission == "readwrite"
+    error_message = "the private key is bound to the private Space"
+  }
+}
+
+run "private_cors_only_when_origins_are_given" {
+  command = plan
+
+  assert {
+    condition     = length(digitalocean_spaces_bucket_cors_configuration.private) == 0
+    error_message = "no origins, no CORS rule"
+  }
+}
+
+run "private_cors_carries_the_upload_headers" {
+  command = plan
+
+  variables {
+    private_cors_origins = ["https://app.example.com"]
+  }
+
+  assert {
+    condition     = contains(one(digitalocean_spaces_bucket_cors_configuration.private[0].cors_rule).allowed_headers, "x-amz-checksum-sha256") && contains(one(digitalocean_spaces_bucket_cors_configuration.private[0].cors_rule).allowed_methods, "PUT")
+    error_message = "direct uploads need PUT and the checksum header"
+  }
+}
+
+run "two_spaces_make_a_public_one_nobody_can_list" {
+  command = plan
+
+  variables {
+    buckets            = "private_and_public"
+    public_bucket_name = "acme-public"
+  }
+
+  assert {
+    condition     = digitalocean_spaces_bucket.public[0].acl == "private"
+    error_message = "the public Space is not public-read: that ACL allows listing"
+  }
+
+  assert {
+    condition     = jsondecode(digitalocean_spaces_bucket_policy.public[0].policy).Statement[0].Action == ["s3:GetObject"]
+    error_message = "the policy allows reading objects and nothing else"
+  }
+
+  assert {
+    condition     = one(digitalocean_spaces_key.public[0].grant).bucket == "acme-public"
+    error_message = "the public key is bound to the public Space"
+  }
+}
+
+run "the_public_space_needs_a_name" {
+  command = plan
+
+  variables {
+    buckets = "private_and_public"
+  }
+
+  expect_failures = [var.public_bucket_name]
+}
+
+run "the_spaces_need_different_names" {
+  command = plan
+
+  variables {
+    buckets            = "private_and_public"
+    public_bucket_name = "acme-files"
+  }
+
+  expect_failures = [var.public_bucket_name]
+}
+
+run "bucket_names_are_validated" {
+  command = plan
+
+  variables {
+    private_bucket_name = "Acme_Files"
+  }
+
+  expect_failures = [var.private_bucket_name]
+}
+
+run "public_url_without_a_cdn_is_the_space" {
+  command = apply
+
+  variables {
+    buckets            = "private_and_public"
+    public_bucket_name = "acme-public"
+  }
+
+  assert {
+    condition     = output.spaces_public.url == "https://acme-public.fra1.digitaloceanspaces.com"
+    error_message = "without a CDN the files are read from the Space"
+  }
+}
+
+run "public_url_through_the_cdn_endpoint" {
+  command = apply
+
+  variables {
+    buckets            = "private_and_public"
+    public_bucket_name = "acme-public"
+    public_cdn         = true
+  }
+
+  assert {
+    condition     = output.spaces_public.url == "https://acme-public.fra1.cdn.digitaloceanspaces.com" && length(digitalocean_certificate.assets) == 0
+    error_message = "a CDN without a host uses the CDN's own address and needs no certificate"
+  }
+}
+
+run "public_url_through_the_cdn_host" {
+  command = apply
+
+  variables {
+    buckets            = "private_and_public"
+    public_bucket_name = "acme-public"
+    public_cdn         = true
+    assets_host        = "assets.example.com"
+  }
+
+  assert {
+    condition     = output.spaces_public.url == "https://assets.example.com" && length(digitalocean_certificate.assets) == 1 && digitalocean_cdn.public[0].custom_domain == "assets.example.com"
+    error_message = "a CDN host serves the files and gets a certificate"
+  }
+}
+
+run "assets_host_needs_the_cdn" {
+  command = plan
+
+  variables {
+    buckets            = "private_and_public"
+    public_bucket_name = "acme-public"
+    assets_host        = "assets.example.com"
+  }
+
+  expect_failures = [var.assets_host]
+}
+
+run "realm_storage_snippet_names_both_spaces" {
+  command = apply
+
+  variables {
+    buckets            = "private_and_public"
+    public_bucket_name = "acme-public"
+  }
+
+  assert {
+    condition     = strcontains(output.realm_storage, "bucket: acme-files") && strcontains(output.realm_storage, "public_storage:") && strcontains(output.realm_storage, "url: https://acme-public.fra1.digitaloceanspaces.com")
+    error_message = "the snippet has storage: and public_storage:"
+  }
+}
+
+run "a_space_key_cannot_be_fullaccess" {
+  command = plan
+
+  variables {
+    spaces_key_permission = "fullaccess"
+  }
+
+  expect_failures = [var.spaces_key_permission]
 }
 
 run "the_firewall_and_the_nodes_share_a_tag_made_first" {
