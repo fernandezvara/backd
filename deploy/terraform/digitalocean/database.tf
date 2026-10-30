@@ -64,7 +64,10 @@ locals {
   # reused for both users: same hosts and options, different credentials.
   mongo_private_uri = digitalocean_database_cluster.mongo.private_uri
   mongo_scheme      = split("://", local.mongo_private_uri)[0]
-  mongo_tail        = regex("^[a-z+]+://[^@]+@(.+)$", local.mongo_private_uri)[0]
+  # The host comes from private_host, not from the URI: for MongoDB the provider's private_uri
+  # carried the public name, which resolves to addresses the pods cannot reach (the database only
+  # accepts the cluster over the VPC). Only the database and the options are taken from the URI.
+  mongo_tail = "${digitalocean_database_cluster.mongo.private_host}${regex("^[a-z+]+://[^@]+@[^/?]+(.*)$", local.mongo_private_uri)[0]}"
 
   # The CA is mounted at this path by the chart (the contract in design/kubernetes.md §7).
   # w=majority only means something with standby nodes.
