@@ -1,0 +1,104 @@
+# An example workflow for the configuration repository of a backd installation on Kubernetes
+# (design/kubernetes.md §4): copy it to .github/workflows/release.yml.
+#
+# A tag `release-<anything>` (or a manual run on a tag) checks the configuration, builds the image
+# of it, pushes it to the DigitalOcean registry and upgrades the chart to it. The image tag is the
+# git tag, so a rollback is deploying the previous tag again (or `helm rollback`).
+#
+# It needs, in the repository (Settings -> Secrets and variables -> Actions):
+#   secrets    DIGITALOCEAN_ACCESS_TOKEN   a token that can push to the registry and read the cluster
+#   variables  BACKD_VERSION               the backd release the configuration is for, e.g. v0.9.6
+#              REGISTRY_ENDPOINT           registry.digitalocean.com/<registry>   (terraform output registry_endpoint)
+#              IMAGE_NAME                  the repository in it, e.g. acme            (the installation's name)
+#              CLUSTER_NAME                the cluster                              (terraform output cluster_name)
+#   and a file deploy/values.yaml with the chart's values for this installation (see values.example.yaml).
+name: Release configuration
+
+on:
+  push:
+    tags: ["release-*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  NAMESPACE: backd
+  KEEP_RELEASES: "10"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # A protected environment asks for approval before production changes.
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+
+      # The chart, the Dockerfile and the scripts come from the backd release the configuration is
+      # for, so they are always the ones that go with it.
+      - uses: actions/checkout@v7
+        with:
+          repository: fernandezvara/backd
+          ref: ${{ vars.BACKD_VERSION }}
+          path: backd-src
+
+      # A realm with `auth: disabled` has no authentication and must never be on the internet.
+      # This installation has a public address. Removing this step is the one way to override
+      # it: do it on purpose and say why in the commit.
+      - name: Refuse realms without authentication
+        run: backd-src/deploy/kubernetes/pipeline/check-no-auth-disabled.sh config
+
+      - name: Release name
+        id: release
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          case "$tag" in *[!A-Za-z0-9._-]*) echo "the tag $tag has characters an image tag cannot have" >&2; exit 1 ;; esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "image=${{ vars.REGISTRY_ENDPOINT }}/${{ vars.IMAGE_NAME }}" >> "$GITHUB_OUTPUT"
+
+      - uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Log in to the registry
+        run: doctl registry login --expiry-seconds 1800
+
+      # Checks the configuration and bundles the functions inside the build: an invalid one
+      # fails here and nothing is pushed.
+      - name: Build the configuration image
+        run: |
+          docker build \
+            -f backd-src/deploy/kubernetes/pipeline/Dockerfile \
+            --build-arg BACKD_VERSION=${{ vars.BACKD_VERSION }} \
+            -t "${{ steps.release.outputs.image }}:${{ steps.release.outputs.tag }}" .
+
+      - name: Push the image
+        run: docker push "${{ steps.release.outputs.image }}:${{ steps.release.outputs.tag }}"
+
+      - uses: azure/setup-helm@v4
+
+      - name: Connect to the cluster
+        run: doctl kubernetes cluster kubeconfig save "${{ vars.CLUSTER_NAME }}"
+
+      # The provisioning hook runs first, with the new image; if the rollout does not become ready
+      # in time, --atomic rolls back (and the hook provisions the old configuration again).
+      - name: Upgrade the chart
+        run: |
+          helm upgrade --install backd backd-src/deploy/kubernetes/backd \
+            --namespace "$NAMESPACE" \
+            -f deploy/values.yaml \
+            --set image.repository="${{ steps.release.outputs.image }}" \
+            --set image.tag="${{ steps.release.outputs.tag }}" \
+            --set releaseImages.tag="${{ vars.BACKD_VERSION }}" \
+            --atomic --wait --timeout 10m
+
+      # Old releases fill the registry (Starter holds 500 MiB). The running one is never deleted.
+      - name: Prune old releases
+        run: |
+          KEEP_TAGS="${{ steps.release.outputs.tag }}" \
+            backd-src/deploy/kubernetes/scripts/registry-prune.sh "${{ vars.IMAGE_NAME }}" "$KEEP_RELEASES"
