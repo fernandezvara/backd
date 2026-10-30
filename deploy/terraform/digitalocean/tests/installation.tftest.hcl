@@ -732,3 +732,13 @@ run "no_secret_is_in_the_configmap" {
     error_message = "the ConfigMap holds no credential"
   }
 }
+
+run "a_space_key_cannot_be_fullaccess" {
+  command = plan
+
+  variables {
+    spaces_key_permission = "fullaccess"
+  }
+
+  expect_failures = [var.spaces_key_permission]
+}
