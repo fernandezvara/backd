@@ -443,3 +443,44 @@ run "a_space_key_cannot_be_fullaccess" {
 
   expect_failures = [var.spaces_key_permission]
 }
+
+run "the_firewall_and_the_nodes_share_a_tag_made_first" {
+  command = plan
+
+  assert {
+    condition     = digitalocean_tag.nodes.name == "acme-nodes" && contains(digitalocean_firewall.nodes.tags, "acme-nodes") && contains(digitalocean_kubernetes_cluster.main.node_pool[0].tags, "acme-nodes")
+    error_message = "the nodes and the firewall use the tag Terraform makes, so the firewall can be created before the nodes exist"
+  }
+}
+
+run "the_ca_comes_from_the_api_by_default" {
+  command = plan
+
+  assert {
+    condition     = length(data.digitalocean_database_ca.mongo) == 1
+    error_message = "without database_ca the CA is read from the API"
+  }
+}
+
+run "the_ca_can_be_given_when_the_api_has_none" {
+  command = apply
+
+  variables {
+    database_ca = "-----BEGIN CERTIFICATE-----\nMIIB-given\n-----END CERTIFICATE-----"
+  }
+
+  assert {
+    condition     = length(data.digitalocean_database_ca.mongo) == 0 && strcontains(output.mongo_ca, "MIIB-given")
+    error_message = "a given CA is used and the API is not asked"
+  }
+}
+
+run "the_ca_must_be_a_certificate" {
+  command = plan
+
+  variables {
+    database_ca = "not a certificate"
+  }
+
+  expect_failures = [var.database_ca]
+}

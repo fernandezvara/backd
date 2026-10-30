@@ -24,7 +24,7 @@ resource "digitalocean_kubernetes_cluster" "main" {
     auto_scale = local.autoscale
     min_nodes  = var.node_min
     max_nodes  = var.node_max
-    tags       = [local.node_tag]
+    tags       = [digitalocean_tag.nodes.name]
   }
 
   maintenance_policy {
