@@ -629,12 +629,14 @@ run "ingress_keeps_the_client_address_and_the_one_load_balancer" {
   }
 }
 
-run "the_node_firewall_names_the_load_balancer" {
+run "the_node_firewall_needs_nothing_that_is_unknown_at_plan" {
   command = plan
 
+  # A rule that named the load balancer (made later, by Traefik's Service) put an unknown value in a
+  # list, which DigitalOcean's provider rejects with "Null value found in list".
   assert {
-    condition     = anytrue([for r in digitalocean_firewall.nodes.inbound_rule : length(coalesce(r.source_load_balancer_uids, [])) > 0])
-    error_message = "the load balancer reaches the nodes' ports"
+    condition     = alltrue([for r in digitalocean_firewall.nodes.inbound_rule : length(coalesce(r.source_load_balancer_uids, [])) == 0])
+    error_message = "no inbound rule may name the load balancer: it does not exist at plan time"
   }
 }
 
