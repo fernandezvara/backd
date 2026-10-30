@@ -5,7 +5,7 @@ Builds what a backd installation needs on DigitalOcean (design: [`design/kuberne
 | Directory | What it builds |
 |---|---|
 | `bootstrap/` | The private, versioned Space that holds the state of everything else, and a key bound to it |
-| `.` | The installation itself (grows with each step): `network.tf` (private network, node firewall), `cluster.tf` (the DOKS cluster), `database.tf` (the managed MongoDB), `spaces.tf` (the Spaces), `registry.tf` (the container registry), `addons.tf` (Traefik), `loadbalancer.tf`, `dns.tf` |
+| `.` | The installation itself (grows with each step): `network.tf` (private network, node firewall), `cluster.tf` (the DOKS cluster), `database.tf` (the managed MongoDB), `spaces.tf` (the Spaces), `registry.tf` (the container registry), `addons.tf` (Traefik), `loadbalancer.tf`, `dns.tf`, `secrets.tf` (the namespace, generated secrets and the objects the chart reads) |
 
 ## First step: the state bucket
 
@@ -83,4 +83,36 @@ The installation has **one load balancer**. It is requested by the Service of th
 - The records for TLS challenges are made by cert-manager (a later step).
 - Destroying the installation removes the load balancer with Traefik's release.
 - **Cost:** `lb-small` is about $12 a month; the add-on adds nothing else.
+
+## Certificates and the objects the chart reads
+
+cert-manager is installed with a Let's Encrypt `ClusterIssuer` (`letsencrypt`) that answers DNS-01 challenges on DigitalOcean DNS, so a certificate needs no open port and wildcards work. `dns_token` (use `TF_VAR_dns_token`) is a DigitalOcean API token with write access to **Domains only**; it lives in a Secret in cert-manager's namespace. Use `acme_staging = true` for the first tries (untrusted certificates, far higher limits), then switch it off.
+
+Terraform creates the namespace (`namespace`, `backd` by default; pod security `restricted` is enforced) and **everything the Helm chart reads**, so the pipeline that installs the chart holds only the cluster's credentials:
+
+| Object | Keys | Source |
+|---|---|---|
+| Secret `backd-mongo` | `MONGO_URI` (user `backd`), `MONGO_ADMIN_URI` (`doadmin`, for the provisioning Job only), `ca.pem` | the managed MongoDB |
+| Secret `backd-keys` | `BACKD_SECRETS_KEY`, `BACKD_EXECUTOR_TOKEN`, `BACKD_CALLBACK_KEY`, `BACKD_EGRESS_KEY`, `BACKD_METRICS_TOKEN` (48 characters each) | `random_password` |
+| Secret `backd-registry` | `.dockerconfigjson` (read-only pull credential) | the registry |
+| ConfigMap `backd-install` | `BACKD_URL`, `BACKD_ENV`, `BACKD_DEPLOYMENT_ID`, the hosts, the registry endpoint, the Spaces endpoint, region and buckets, `PUBLIC_URL`, the private network's range | the variables and outputs |
+
+The Spaces keys are not here: backd keeps them as **realm secrets** in MongoDB (`terraform output spaces_private_key`, then `backd secret set`).
+
+### Rotating a generated secret
+
+`terraform apply -replace=random_password.<name>` makes a new value and updates `backd-keys`; the pods read it at start, so restart the workloads that use it (`kubectl rollout restart deployment -n backd ...` or the next release).
+
+| Replace | Restart | First |
+|---|---|---|
+| `executor_token` | `backd`, `backd-admin`, `backd-realtime`, `worker` and `executor` together | — (requests fail between the first and the last restart) |
+| `callback_key`, `egress_key`, `metrics_token` | every workload that has it | — |
+| `secrets_key` | every `backd` workload | **`backd secret rotate-key` first** (it re-encrypts the secrets stored in MongoDB with `BACKD_SECRETS_KEY` and `BACKD_SECRETS_NEW_KEY`); replacing the key without it makes every stored secret unreadable |
+| the registry push credential | — | `-replace=digitalocean_container_registry_docker_credentials.push`, then update the CI secret |
+
+Copy `BACKD_SECRETS_KEY` to a password manager once (`terraform output` does not print it; read it with `kubectl get secret backd-keys -n backd -o jsonpath='{.data.BACKD_SECRETS_KEY}' | base64 -d`): the state holds it, and losing the state without a copy makes the stored secrets unrecoverable.
+
+**The state is sensitive.** It holds every generated secret, both database URIs and the Spaces keys: keep it in the private bucket of the bootstrap step and give the state key to as few people as possible. A Kubernetes Secret is only base64: anyone who can `get secrets` in the namespace can read these, so keep that right to the people who run the installation.
+
+A full example of the variables is in `terraform.tfvars.example`.
 

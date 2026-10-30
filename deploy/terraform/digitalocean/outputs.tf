@@ -137,3 +137,13 @@ output "hostnames" {
     assets = var.assets_host != "" ? var.assets_host : null
   }
 }
+
+output "namespace" {
+  description = "The Kubernetes namespace of backd, with the Secrets and the ConfigMap the Helm chart reads."
+  value       = kubernetes_namespace.backd.metadata[0].name
+}
+
+output "cluster_issuer" {
+  description = "The cert-manager ClusterIssuer for the installation's certificates."
+  value       = local.cluster_issuer
+}

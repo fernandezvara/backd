@@ -23,3 +23,58 @@ resource "helm_release" "traefik" {
     lb_hostname  = var.api_host
   })]
 }
+
+# ---------------------------------------------------------------- certificates
+
+resource "helm_release" "cert_manager" {
+  name             = "cert-manager"
+  repository       = "https://charts.jetstack.io"
+  chart            = "cert-manager"
+  version          = var.cert_manager_chart_version
+  namespace        = "cert-manager"
+  create_namespace = true
+  wait             = true
+  timeout          = 600
+
+  values = [yamlencode({
+    crds       = { enabled = true }
+    prometheus = { enabled = false }
+  })]
+}
+
+# The token cert-manager answers DNS-01 challenges with.
+resource "kubernetes_secret" "dns_token" {
+  metadata {
+    name      = "digitalocean-dns"
+    namespace = "cert-manager"
+  }
+
+  data = {
+    "access-token" = var.dns_token
+  }
+
+  depends_on = [helm_release.cert_manager]
+}
+
+# The ClusterIssuer is a custom resource of cert-manager's, so it is installed by a chart of its
+# own after cert-manager is ready (a manifest would need the cluster at plan time).
+resource "helm_release" "cluster_issuer" {
+  name      = "cluster-issuer"
+  chart     = "${path.module}/charts/cluster-issuer"
+  namespace = "cert-manager"
+  wait      = true
+
+  values = [yamlencode({
+    name   = local.cluster_issuer
+    email  = var.acme_email
+    server = var.acme_staging ? "https://acme-staging-v02.api.letsencrypt.org/directory" : "https://acme-v02.api.letsencrypt.org/directory"
+    tokenSecret = {
+      name = kubernetes_secret.dns_token.metadata[0].name
+      key  = "access-token"
+    }
+  })]
+}
+
+locals {
+  cluster_issuer = "letsencrypt"
+}

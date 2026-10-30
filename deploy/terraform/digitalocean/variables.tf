@@ -418,3 +418,60 @@ variable "traefik_chart_version" {
   type        = string
   default     = "42.1.3"
 }
+
+# ---------------------------------------------------------------- certificates and the cluster's objects
+
+variable "acme_email" {
+  description = "Email Let's Encrypt writes to about your certificates (expiry warnings)."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", var.acme_email))
+    error_message = "acme_email must be an email address."
+  }
+}
+
+variable "acme_staging" {
+  description = "Use Let's Encrypt's staging service: certificates browsers do not trust, with much higher limits. Use it for the first tries, then switch it off."
+  type        = bool
+  default     = false
+}
+
+variable "dns_token" {
+  description = "A DigitalOcean API token cert-manager uses to answer the DNS-01 challenge. Create one with write access to Domains only: it is stored in the cluster, in cert-manager's namespace."
+  type        = string
+  sensitive   = true
+
+  validation {
+    condition     = length(var.dns_token) > 0
+    error_message = "dns_token is required: cert-manager needs it to issue certificates."
+  }
+}
+
+variable "cert_manager_chart_version" {
+  description = "Version of the cert-manager Helm chart (https://charts.jetstack.io)."
+  type        = string
+  default     = "v1.21.3"
+}
+
+variable "namespace" {
+  description = "Kubernetes namespace of backd: the Secrets below live in it and the Helm chart is installed into it."
+  type        = string
+  default     = "backd"
+
+  validation {
+    condition     = can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", var.namespace))
+    error_message = "namespace must be a Kubernetes namespace name."
+  }
+}
+
+variable "environment" {
+  description = "What this installation is for (BACKD_ENV): production, staging... (1 to 32 characters: a-z, 0-9, hyphen)."
+  type        = string
+  default     = "production"
+
+  validation {
+    condition     = can(regex("^[a-z0-9][a-z0-9-]{0,31}$", var.environment))
+    error_message = "environment must be 1 to 32 characters: lower-case letters, digits and hyphens."
+  }
+}
