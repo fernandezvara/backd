@@ -152,6 +152,45 @@ def main(out):
     check(set(svc) == {"backd", "backd-realtime", "backd-admin", "executor", "egress"}, f"Services: {sorted(svc)}")
     check(all(s["spec"]["type"] == "ClusterIP" for s in svc.values()), "no Service is exposed outside the cluster")
 
+    # --- the ingress
+    api = named(default, "IngressRoute", "backd-api")
+    admin = named(default, "IngressRoute", "backd-admin")
+    middlewares = {d["metadata"]["name"] for d in by_kind(default, "Middleware")}
+    for route in [api, admin]:
+        check(route["spec"]["entryPoints"] == ["websecure"], "routes use the TLS entry point only")
+        for r in route["spec"]["routes"]:
+            for m in r.get("middlewares", []):
+                check(m["name"] in middlewares, f"{route['metadata']['name']} uses a middleware that does not exist: {m['name']}")
+            check("backd-hsts" in [m["name"] for m in r.get("middlewares", [])], "every route sets HSTS")
+    check(api["spec"]["tls"]["secretName"] == "backd-api-tls" and admin["spec"]["tls"]["secretName"] == "backd-admin-tls", "both hosts have a certificate")
+    certs = {d["spec"]["secretName"]: d for d in by_kind(default, "Certificate")}
+    check(certs["backd-api-tls"]["spec"]["dnsNames"] == ["api.example.com"] and certs["backd-admin-tls"]["spec"]["dnsNames"] == ["admin.example.com"], "certificates name the hosts")
+    check(all(c["spec"]["issuerRef"]["name"] == "letsencrypt" for c in certs.values()), "certificates come from the ClusterIssuer")
+    for r in api["spec"]["routes"]:
+        check(r["match"].startswith("Host(`api.example.com`)"), f"a public route not bound to the API host: {r['match']}")
+        check("/v1/" in r["match"] or "/v1/" in r["match"].replace("^/v1/", "/v1/"), f"a public route outside /v1/: {r['match']}")
+        check("_ui" not in r["match"] and "_admin" not in r["match"] and "healthz" not in r["match"] and "metrics" not in r["match"], f"a public route to an internal path: {r['match']}")
+        names = [m["name"] for m in r["middlewares"]]
+        svc = r["services"][0]["name"]
+        if "_realtime" in r["match"]:
+            check(svc == "backd-realtime" and not any(n.startswith("backd-limit") for n in names), "realtime goes to the realtime pods with no limit on how long it lasts")
+        else:
+            check(svc == "backd", f"{r['match']} must go to the public pods")
+            check("backd-limit-api" in names and "backd-limit-concurrent" in names, f"{r['match']} needs the general limits")
+        if "_files" in r["match"]:
+            check("backd-limit-body" not in names, "files have no body limit at the edge")
+        elif "_realtime" not in r["match"]:
+            check("backd-limit-body" in names, f"{r['match']} needs the body limit")
+        if "_auth" in r["match"]:
+            check(names.index("backd-limit-auth") < names.index("backd-limit-api"), "the strict limit comes before the general one")
+    (arule,) = admin["spec"]["routes"]
+    check(arule["match"] == "Host(`admin.example.com`)" and arule["services"][0]["name"] == "backd-admin", "the admin host goes to backd-admin")
+    check(arule["middlewares"][0]["name"] == "backd-admin-allow", "the allowlist is the first middleware of the admin host")
+    check(named(default, "Middleware", "backd-admin-allow")["spec"]["ipAllowList"]["sourceRange"] == ["203.0.113.7/32", "2001:db8::/48"], "the allowlist comes from the values")
+    check(named(default, "Middleware", "backd-limit-api")["spec"]["rateLimit"] == {"average": 20, "period": "1s", "burst": 40}, "default API limit")
+    check(named(scaled, "Middleware", "backd-limit-api")["spec"]["rateLimit"]["average"] == 50, "limits are values")
+    check(not by_kind(small, "IngressRoute") and not by_kind(small, "Middleware"), "ingress.enabled=false renders no route")
+
     print("test-chart: ok")
 
 

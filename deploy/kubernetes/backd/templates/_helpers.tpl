@@ -135,3 +135,17 @@ valueFrom:
   mountPath: /etc/backd/tls
   readOnly: true
 {{- end }}
+
+{{/*
+The addresses that may reach the admin host, as a YAML list. The ConfigMap that
+deploy/kubernetes/scripts/admin-allow.sh keeps wins when it exists (so a later `helm upgrade` does not
+undo a change made with the script); the values seed the first install. Empty if neither has one.
+*/}}
+{{- define "backd.adminAllowedCIDRs" -}}
+{{- $cidrs := .Values.ingress.admin.allowedCIDRs -}}
+{{- $cm := lookup "v1" "ConfigMap" .Release.Namespace "backd-admin-allow" -}}
+{{- if and $cm $cm.data (index $cm.data "allowedCIDRs") -}}
+{{- $cidrs = splitList "," (index $cm.data "allowedCIDRs") -}}
+{{- end -}}
+{{- toYaml $cidrs -}}
+{{- end }}

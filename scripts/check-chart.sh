@@ -56,5 +56,12 @@ if helm_run template backd "$chart" >/dev/null 2>"$out/err"; then
 fi
 grep -q "image.repository is required" "$out/err" || { echo "check-chart: the missing-image error is not clear:" >&2; cat "$out/err" >&2; exit 1; }
 
+# The admin host is never opened to everyone: no allowlist, no chart.
+if helm_run template backd "$chart" -f "$chart/ci/default.yaml" --set 'ingress.admin.allowedCIDRs=null' >/dev/null 2>"$out/err"; then
+  echo "check-chart: the chart rendered with an empty admin allowlist" >&2
+  exit 1
+fi
+grep -q "ingress.admin.allowedCIDRs is required" "$out/err" || { echo "check-chart: the empty-allowlist error is not clear:" >&2; cat "$out/err" >&2; exit 1; }
+
 python3 scripts/test-chart.py "$out"
 echo "check-chart: ok"

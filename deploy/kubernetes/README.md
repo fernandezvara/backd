@@ -6,6 +6,7 @@ The Helm chart of backd (`backd/`), the scripts around it, and the design behind
 |---|---|
 | `backd/` | The chart: workloads, Services, disruption budgets, network policies and the provisioning Job |
 | `scripts/registry-prune.sh` | Keeps the newest tags of a registry repository and starts garbage collection |
+| `scripts/admin-allow.sh` | Changes who may reach the admin host, in place |
 | `../../scripts/check-chart.sh` | `helm lint`, `helm template` for every `backd/ci/*.yaml`, `kubeconform` and the invariants of `scripts/test-chart.py` |
 
 ## The workloads
@@ -62,3 +63,24 @@ A PodDisruptionBudget (`maxUnavailable: 1`) exists for each component with more 
 - `trustedProxies` is the private ranges: safe because only the ingress controller's pods can reach backd.
 
 `scripts/check-chart.sh` verifies these properties against the rendered chart.
+
+## Traffic in
+
+Traefik (installed by the Terraform; ingress-nginx was retired in March 2026) ends TLS with certificates cert-manager issues for the two hosts, and the chart declares what it does with each request (`ingress.enabled`, on by default; `ingress.hosts.api` and `ingress.hosts.admin` are the `API_HOST` and `ADMIN_HOST` of the install ConfigMap):
+
+- **The public host** routes `/v1/` only (`/_ui/`, `/healthz`, `/readyz` and `/metrics` are not reachable from outside). Limits are per client address and are the numbers of the Compose reference's nginx, in `ingress.limits`: 20 requests a second with a burst of 40 for everything, 10 a minute with a burst of 5 for sign-up, login and the account flows (before the general one), 2 a second with a burst of 5 for calling a function, 20 simultaneous requests, and a 1 MiB body (not for files, whose limits are backd's). HTTP is redirected to HTTPS and every response carries HSTS.
+- **Realtime** (`POST /v1/{realm}/_realtime`) goes to the `backd-realtime` pods, the only ones reading the change stream, and has no limit on how long it lasts.
+- **The admin host** goes to `backd-admin` (the admin API and the interface at `/_ui/`) **from the allowed addresses only**, checked before anything else.
+
+### Who may reach the admin host
+
+`ingress.admin.allowedCIDRs` is required on the first install (`--set 'ingress.admin.allowedCIDRs={203.0.113.7/32}'`): the chart refuses to render with an empty list, so the host is never opened to everyone. To change it later without a release:
+
+```sh
+deploy/kubernetes/scripts/admin-allow.sh 203.0.113.7/32,198.51.100.0/24
+deploy/kubernetes/scripts/admin-allow.sh --show
+```
+
+The script patches the Middleware and keeps the list in the ConfigMap `backd-admin-allow`, which the chart reads on every `helm upgrade` and which **wins over the values** (the values only seed the first install), so a release does not undo your change. It refuses `0.0.0.0/0`, `::/0` and any `/0`, and an address without a prefix.
+
+If your address changed and the admin host refuses you, you are not locked out of the cluster: the list concerns HTTP to that host only, and `kubectl` and Terraform use the Kubernetes and DigitalOcean APIs. Run the script with your cluster credentials, or reach the admin instance directly with `kubectl port-forward svc/backd-admin 8081:8080 -n backd`.

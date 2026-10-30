@@ -112,3 +112,35 @@ spreadOverNodes: true
 
 nodeSelector: {}
 tolerations: []
+
+# ---------------------------------------------------------------- traffic in (Traefik)
+# Traefik ends TLS (certificates from cert-manager), applies the limits below per client address
+# and routes by host. The public host serves /v1/ only; the admin host reaches backd-admin from
+# the allowed addresses only.
+ingress:
+  enabled: true
+  # The cert-manager ClusterIssuer (CLUSTER_ISSUER of the install ConfigMap).
+  clusterIssuer: letsencrypt
+  hosts:
+    api: ""     # required: API_HOST of the install ConfigMap, for example api.example.com
+    admin: ""   # required: ADMIN_HOST, for example admin.example.com
+  admin:
+    # Addresses (CIDRs) that may reach the admin host, e.g. ["203.0.113.7/32"]. Required on the
+    # first install and never empty: the host is not opened to everyone. Once the allowlist has been
+    # changed with deploy/kubernetes/scripts/admin-allow.sh, the ConfigMap it keeps is the source of
+    # truth and this value is only the seed.
+    allowedCIDRs: []
+  # Browsers only use HTTPS for these hosts for this long.
+  hstsSeconds: 63072000
+  # Limits per client address (the numbers of the Compose reference's nginx).
+  limits:
+    # Everything under /v1/.
+    api: {average: 20, period: 1s, burst: 40}
+    # Sign-up, login and the account flows (what hashes a password or sends an email).
+    auth: {average: 10, period: 1m, burst: 5}
+    # Calling a function.
+    functions: {average: 2, period: 1s, burst: 5}
+    # Simultaneous requests from one address (not applied to realtime streams).
+    concurrentRequests: 20
+    # Largest request body at the edge, except for files (backd's own limits apply to those).
+    maxBodyBytes: 1048576
