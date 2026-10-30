@@ -1,0 +1,26 @@
+# Every number set, monitoring on, extra environment.
+image:
+  repository: registry.example.com/acme/acme
+  tag: "2026-10-30-2"
+releaseImages:
+  tag: v0.9.6
+replicas:
+  default: 3
+  backd: 6
+  backdRealtime: 3
+  backdAdmin: 2
+  worker: 4
+  executor: 4
+  egress: 2
+executor:
+  maxProcesses: 20
+resources:
+  executor:
+    requests: {cpu: "1", memory: 2Gi}
+    limits: {cpu: "4", memory: 5Gi}
+env:
+  BACKD_AGGREGATE_TIME: 10s
+workerConcurrency: 20
+networkPolicy:
+  databaseCIDR: 10.30.0.0/16
+  monitoringNamespace: monitoring

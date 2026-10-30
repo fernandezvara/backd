@@ -1,0 +1,53 @@
+{{- $ctx := dict "root" . "component" "provision" }}
+# `backd provision` with the new image, before any pod of the release starts (and before a
+# rollback starts the old ones): the serving pods run in verify mode and refuse a database that
+# differs from their configuration or was provisioned with another one. It is the only pod with
+# the administrative database user.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: backd-provision
+  labels:
+    {{- include "backd.labels" $ctx | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade,pre-rollback
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "backd.labels" $ctx | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- include "backd.podSecurityContext" (dict "uid" .Values.runAsUser) | nindent 8 }}
+      containers:
+        - name: provision
+          image: {{ include "backd.configImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: [provision]
+          env:
+            - name: CONFIG_DIR
+              value: /config
+            - name: LOG_LEVEL
+              value: {{ .Values.logLevel | quote }}
+            - name: MONGO_URI
+              {{- include "backd.fromSecret" (dict "name" .Values.secrets.mongo "key" "MONGO_ADMIN_URI") | nindent 14 }}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: "1", memory: 256Mi}
+          securityContext:
+            {{- include "backd.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            {{- include "backd.mongoCAMount" . | nindent 12 }}
+      volumes:
+        {{- include "backd.mongoCAVolume" . | nindent 8 }}

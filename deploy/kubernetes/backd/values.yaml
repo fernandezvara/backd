@@ -1,0 +1,114 @@
+# backd on Kubernetes. Design: design/kubernetes.md. The objects the chart reads (Secrets and a
+# ConfigMap) are made by the Terraform of deploy/terraform/<provider>; this chart creates none of
+# them. Use one namespace per installation: the Services have fixed names.
+
+# The configuration image: backd plus the realm tree and the built functions, made and pushed by
+# the pipeline (deploy/kubernetes/pipeline). A release is a new tag; the rollout is the restart.
+image:
+  repository: ""   # required: <registry>/<name>, for example registry.digitalocean.com/acme/acme
+  tag: ""          # required: the release
+  pullPolicy: IfNotPresent
+
+# Images of the project's releases, for the pods that never read the configuration (the executor
+# and egress). The tag defaults to the chart's appVersion.
+releaseImages:
+  backd: ghcr.io/fernandezvara/backd
+  executor: ghcr.io/fernandezvara/backd-executor
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: backd-registry
+
+# What Terraform created in the namespace.
+secrets:
+  mongo: backd-mongo     # MONGO_URI, MONGO_ADMIN_URI, ca.pem
+  keys: backd-keys       # BACKD_SECRETS_KEY, BACKD_EXECUTOR_TOKEN, BACKD_CALLBACK_KEY, BACKD_EGRESS_KEY, BACKD_METRICS_TOKEN
+install: backd-install   # ConfigMap: BACKD_URL, BACKD_ENV, BACKD_DEPLOYMENT_ID, ...
+
+# Pods of each component. `default` is used by every component that doesn't name its own number
+# (null = use the default).
+replicas:
+  default: 2
+  backd: null
+  backdRealtime: 2
+  backdAdmin: 1
+  worker: 1
+  executor: null
+  egress: 1
+
+resources:
+  backd:
+    requests: {cpu: 250m, memory: 256Mi}
+    limits: {cpu: "2", memory: 512Mi}
+  backdRealtime:
+    requests: {cpu: 250m, memory: 256Mi}
+    limits: {cpu: "2", memory: 512Mi}
+  backdAdmin:
+    requests: {cpu: 100m, memory: 192Mi}
+    limits: {cpu: "1", memory: 512Mi}
+  worker:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: "1", memory: 256Mi}
+  # EXECUTOR_MAX_PROCESSES functions at once, each its `memory` (128 MiB by default) plus about
+  # 130 MiB: raise the three together.
+  executor:
+    requests: {cpu: 250m, memory: 1Gi}
+    limits: {cpu: "2", memory: 2560Mi}
+  egress:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: "1", memory: 128Mi}
+
+executor:
+  maxProcesses: 10
+  # The Deno image's user.
+  runAsUser: 1993
+
+# The user of the backd images (distroless "nonroot").
+runAsUser: 65532
+
+logLevel: info
+workerConcurrency: 10
+maxBodyBytes: 1MiB
+
+# The addresses X-Forwarded-For is believed from: the private ranges, which is safe because a
+# network policy lets only the ingress controller's pods reach backd.
+trustedProxies: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7
+
+# More environment for every backd process (see Configuration -> Environment variables), for
+# example BACKD_AGGREGATE_TIME or BACKD_IMAGE_CONCURRENCY. Never put a secret here.
+env: {}
+
+# How long a pod gets to finish its requests: more than SHUTDOWN_TIMEOUT (15s).
+terminationGracePeriodSeconds: 30
+
+networkPolicy:
+  enabled: true
+  # The namespace and labels of the ingress controller's pods: the only source of traffic to
+  # backd's API.
+  ingress:
+    namespace: traefik
+    podLabels:
+      app.kubernetes.io/name: traefik
+  # The private network the managed MongoDB is on (the `DATABASE_CIDR` of the install ConfigMap).
+  databaseCIDR: ""     # required while networkPolicy.enabled
+  databasePort: 27017
+  # The namespace Prometheus runs in, to scrape :9090. Empty: nothing scrapes.
+  monitoringNamespace: ""
+  # Never reachable from backd's or the functions' outbound rules (the egress proxy adds its own
+  # refusals).
+  privateRanges:
+    - 10.0.0.0/8
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+    - 169.254.0.0/16
+    - 100.64.0.0/10
+
+podDisruptionBudget:
+  enabled: true
+
+# Spread the pods of a component over nodes.
+spreadOverNodes: true
+
+nodeSelector: {}
+tolerations: []

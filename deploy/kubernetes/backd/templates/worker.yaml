@@ -1,0 +1,66 @@
+{{- $ctx := dict "root" . "component" "worker" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  labels:
+    {{- include "backd.labels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ include "backd.replicas" (dict "root" . "key" "worker") }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "backd.selector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "backd.labels" $ctx | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- include "backd.podSecurityContext" (dict "uid" .Values.runAsUser) | nindent 8 }}
+      {{- include "backd.scheduling" $ctx | nindent 6 }}
+      containers:
+        - name: worker
+          image: {{ include "backd.configImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # Async jobs and cron. It does not run the trigger dispatcher: only `serve` does.
+          args: [worker]
+          ports:
+            - {name: metrics, containerPort: 9090}
+          env:
+            {{- include "backd.env.common" . | nindent 12 }}
+            {{- include "backd.env.mongo" . | nindent 12 }}
+            - name: WORKER_CONCURRENCY
+              value: {{ .Values.workerConcurrency | quote }}
+            - name: BACKD_EXECUTOR_URL
+              value: http://executor:9100
+            - name: BACKD_EXECUTOR_TOKEN
+              {{- include "backd.fromSecret" (dict "name" .Values.secrets.keys "key" "BACKD_EXECUTOR_TOKEN") | nindent 14 }}
+            - name: BACKD_CALLBACK_URL
+              value: http://backd:8081
+            - name: BACKD_CALLBACK_KEY
+              {{- include "backd.fromSecret" (dict "name" .Values.secrets.keys "key" "BACKD_CALLBACK_KEY") | nindent 14 }}
+            - name: BACKD_SECRETS_KEY
+              {{- include "backd.fromSecret" (dict "name" .Values.secrets.keys "key" "BACKD_SECRETS_KEY") | nindent 14 }}
+            # Push notifications reach their providers through egress, like a function's calls.
+            - name: EXECUTOR_PROXY
+              value: http://egress:3128
+            - name: BACKD_EGRESS_KEY
+              {{- include "backd.fromSecret" (dict "name" .Values.secrets.keys "key" "BACKD_EGRESS_KEY") | nindent 14 }}
+          livenessProbe:
+            tcpSocket: {port: metrics}
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources.worker | nindent 12 }}
+          securityContext:
+            {{- include "backd.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            {{- include "backd.mongoCAMount" . | nindent 12 }}
+      volumes:
+        {{- include "backd.mongoCAVolume" . | nindent 8 }}
