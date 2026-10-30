@@ -28,8 +28,8 @@ run "key_is_bound_to_the_bucket" {
   command = plan
 
   assert {
-    condition     = length(digitalocean_spaces_key.state.grant) == 1 && digitalocean_spaces_key.state.grant[0].permission == "fullaccess"
-    error_message = "the state key has one grant: the state bucket"
+    condition     = length(digitalocean_spaces_key.state.grant) == 1 && digitalocean_spaces_key.state.grant[0].permission == "readwrite" && digitalocean_spaces_key.state.grant[0].bucket == "acme-backd-state"
+    error_message = "the state key has one grant, on the state bucket, and readwrite: DigitalOcean refuses fullaccess on one bucket"
   }
 }
 
