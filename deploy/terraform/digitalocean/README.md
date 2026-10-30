@@ -5,7 +5,7 @@ Builds what a backd installation needs on DigitalOcean (design: [`design/kuberne
 | Directory | What it builds |
 |---|---|
 | `bootstrap/` | The private, versioned Space that holds the state of everything else, and a key bound to it |
-| `.` | The installation itself (grows with each step): `network.tf` (private network, node firewall), `cluster.tf` (the DOKS cluster), `database.tf` (the managed MongoDB) |
+| `.` | The installation itself (grows with each step): `network.tf` (private network, node firewall), `cluster.tf` (the DOKS cluster), `database.tf` (the managed MongoDB), `spaces.tf` (the Spaces) |
 
 ## First step: the state bucket
 
@@ -51,3 +51,13 @@ The bootstrap's own state is local (`bootstrap/terraform.tfstate`, gitignored) a
 **What DigitalOcean does not allow.** There are no custom roles and no ACLs, and every user gets the permissions of `doadmin`, so the user backd serves with (`backd`) can do what the provisioning user can. The production reference gives backd's user document access only; this installation cannot. What keeps the database closed is the network: no public path, the cluster as the only trusted source, and the network policies of the Helm chart that let only backd's pods connect to it. `PROVISION_MODE=verify` still stops a pod from changing the schema on its own, but the database would let it.
 
 `mongo_uri` and `mongo_admin_uri` are sensitive outputs (they go into the cluster's Secrets in a later step) and `mongo_ca` is the certificate the pods trust (mounted at `/etc/backd/tls/ca.pem`, which the URIs name).
+
+## The Spaces
+
+`buckets = "private"` makes one Space (`private_bucket_name`) for the private files; `"private_and_public"` adds a second (`public_bucket_name`) for the files of fields with `public: true`. Names are yours and unique per region; the plan fails with a message when the public one is missing or equals the private one.
+
+- **Private:** never public, no CDN. `private_cors_origins` adds the CORS rule browsers need for direct uploads and signed downloads (`PUT` and the `Content-Type` and `x-amz-checksum-sha256` headers); empty means uploads go through backd only.
+- **Public:** the Space stays `private` to the ACL (`public-read` would let anyone list it) and a bucket policy allows `s3:GetObject` to anyone, so a file can be read at its address and the Space cannot be listed. `public_cdn` puts DigitalOcean's CDN in front; with `assets_host` (a name in a domain on DigitalOcean DNS) the files are served from that name over HTTPS with a Let's Encrypt certificate, else from the CDN's own address. `spaces_public.url` is the address for `public_storage.url`.
+- **Keys:** one per Space, bound to it, so the private key cannot touch the public Space and the other way round (`spaces_key_permission`, `readwrite` by default). They are sensitive outputs (`spaces_private_key`, `spaces_public_key`) and become **realm secrets** (`backd secret set STORAGE_ACCESS_KEY`, ...), not pod environment: backd stores them encrypted in MongoDB.
+- `terraform output -raw realm_storage` prints the `storage:` and `public_storage:` sections for the realm's `realm.yaml`. A key reaches every prefix of its Space, so use a Space per installation, or accept it.
+- Spaces are never emptied by Terraform (`force_destroy = false`): destroying an installation with files in them fails until you empty them yourself. Unfinished multipart uploads are removed after `abort_incomplete_uploads_days`.

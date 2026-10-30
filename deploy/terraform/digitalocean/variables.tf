@@ -177,3 +177,99 @@ variable "database_allowed_cidrs" {
   type        = list(string)
   default     = []
 }
+
+# ---------------------------------------------------------------- Spaces (the files)
+
+variable "buckets" {
+  description = "`private` makes one Space for the private files; `private_and_public` makes a second one for public files (a file field with public: true), readable by anyone who has an address and never listable."
+  type        = string
+  default     = "private"
+
+  validation {
+    condition     = contains(["private", "private_and_public"], var.buckets)
+    error_message = "buckets must be \"private\" (one Space) or \"private_and_public\" (two)."
+  }
+}
+
+variable "private_bucket_name" {
+  description = "Name of the Space for the private files (3 to 63 characters: lower-case letters, digits and hyphens). Names are unique per region across all accounts."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", var.private_bucket_name))
+    error_message = "private_bucket_name must be 3 to 63 characters: lower-case letters, digits and hyphens, not starting or ending with a hyphen."
+  }
+}
+
+variable "public_bucket_name" {
+  description = "Name of the Space for the public files. Required when buckets is private_and_public; it is part of the address of every public file unless a CDN with assets_host is used."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.public_bucket_name == "" || can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", var.public_bucket_name))
+    error_message = "public_bucket_name must be 3 to 63 characters: lower-case letters, digits and hyphens, not starting or ending with a hyphen."
+  }
+
+  validation {
+    condition     = var.buckets != "private_and_public" || var.public_bucket_name != ""
+    error_message = "public_bucket_name is required when buckets is \"private_and_public\"."
+  }
+
+  validation {
+    condition     = var.public_bucket_name == "" || var.public_bucket_name != var.private_bucket_name
+    error_message = "the public and the private Space need different names."
+  }
+}
+
+variable "spaces_region" {
+  description = "Region of the Spaces. Unset: the region of the installation."
+  type        = string
+  default     = null
+}
+
+variable "public_cdn" {
+  description = "Put DigitalOcean's CDN in front of the public Space. With assets_host the files are served from that name over HTTPS (a certificate is issued); without it, from the CDN's own address."
+  type        = bool
+  default     = false
+}
+
+variable "assets_host" {
+  description = "Hostname for the public files through the CDN (for example assets.example.com), in a domain that is on DigitalOcean DNS. Needs public_cdn."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.assets_host == "" || var.public_cdn
+    error_message = "assets_host needs public_cdn = true."
+  }
+}
+
+variable "private_cors_origins" {
+  description = "Origins of the browsers that upload straight to the private Space or read from it (direct uploads, signed downloads): for example [\"https://app.example.com\"]. Empty: no CORS rule, so only uploads through backd work."
+  type        = list(string)
+  default     = []
+}
+
+variable "public_cors_origins" {
+  description = "Origins that may read the public Space from a browser. The default lets any page show the files."
+  type        = list(string)
+  default     = ["*"]
+}
+
+variable "spaces_key_permission" {
+  description = "What each Space's key may do on its Space: read, readwrite or fullaccess. backd needs to put, get, head, delete and list, which `readwrite` gives."
+  type        = string
+  default     = "readwrite"
+
+  validation {
+    condition     = contains(["read", "readwrite", "fullaccess"], var.spaces_key_permission)
+    error_message = "spaces_key_permission must be read, readwrite or fullaccess."
+  }
+}
+
+variable "abort_incomplete_uploads_days" {
+  description = "Days after which an unfinished multipart upload is removed, so abandoned parts don't cost storage."
+  type        = number
+  default     = 7
+}
