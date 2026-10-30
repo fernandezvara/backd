@@ -61,12 +61,6 @@ mock_provider "digitalocean" {
     }
   }
 
-  mock_data "digitalocean_database_ca" {
-    defaults = {
-      certificate = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----"
-    }
-  }
-
   mock_data "digitalocean_kubernetes_versions" {
     defaults = {
       latest_version = "1.33.1-do.0"
@@ -77,6 +71,7 @@ mock_provider "digitalocean" {
 variables {
   install             = "acme"
   private_bucket_name = "acme-files"
+  database_ca         = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----"
 }
 
 run "defaults_are_two_small_nodes" {
@@ -263,6 +258,10 @@ run "database_extra_addresses_are_added" {
 
 run "uris_carry_the_ca_and_escape_the_password" {
   command = apply
+
+  variables {
+    database_ca = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----"
+  }
 
   assert {
     condition     = startswith(output.mongo_uri, "mongodb+srv://backd:app%20pw%2F1@private-db.example/admin?") && strcontains(output.mongo_uri, "&tlsCAFile=/etc/backd/tls/ca.pem")
@@ -529,16 +528,27 @@ run "the_firewall_and_the_nodes_share_a_tag_made_first" {
   }
 }
 
-run "the_ca_comes_from_the_api_by_default" {
-  command = plan
+run "no_ca_leaves_the_option_out_and_the_check_warns" {
+  command = apply
+
+  variables {
+    database_ca = null
+  }
+
+  expect_failures = [check.database_ca]
 
   assert {
-    condition     = length(data.digitalocean_database_ca.mongo) == 1
-    error_message = "without database_ca the CA is read from the API"
+    condition     = !strcontains(nonsensitive(output.mongo_uri), "tlsCAFile") && strcontains(nonsensitive(output.mongo_uri), "tls=true")
+    error_message = "without the CA the URI does not name a file that is not there, and still requires TLS"
+  }
+
+  assert {
+    condition     = output.mongo_ca == ""
+    error_message = "no CA is invented"
   }
 }
 
-run "the_ca_can_be_given_when_the_api_has_none" {
+run "a_given_ca_is_named_in_the_uri_and_the_output" {
   command = apply
 
   variables {
@@ -546,8 +556,8 @@ run "the_ca_can_be_given_when_the_api_has_none" {
   }
 
   assert {
-    condition     = length(data.digitalocean_database_ca.mongo) == 0 && strcontains(output.mongo_ca, "MIIB-given")
-    error_message = "a given CA is used and the API is not asked"
+    condition     = strcontains(output.mongo_ca, "MIIB-given") && strcontains(nonsensitive(output.mongo_uri), "tlsCAFile=/etc/backd/tls/ca.pem")
+    error_message = "a given CA is in the output and the URI points at the mounted file"
   }
 }
 
