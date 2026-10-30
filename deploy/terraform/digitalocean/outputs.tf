@@ -119,3 +119,21 @@ output "registry_push_credentials" {
   value       = digitalocean_container_registry_docker_credentials.push.docker_credentials
   sensitive   = true
 }
+
+output "load_balancer_ip" {
+  description = "The address of the load balancer (the A records of api_host and admin_host point to it)."
+  value       = data.digitalocean_loadbalancer.ingress.ip
+}
+
+output "load_balancer_id" {
+  value = data.digitalocean_loadbalancer.ingress.id
+}
+
+output "hostnames" {
+  description = "The names of the installation."
+  value = {
+    api    = var.api_host
+    admin  = var.admin_host
+    assets = var.assets_host != "" ? var.assets_host : null
+  }
+}

@@ -1,5 +1,20 @@
 # Offline: the provider is mocked, nothing is created.
+mock_provider "helm" {}
+
 mock_provider "digitalocean" {
+  mock_data "digitalocean_loadbalancer" {
+    defaults = {
+      id = "00000000-0000-0000-0000-0000000000lb"
+      ip = "203.0.113.10"
+    }
+  }
+
+  mock_data "digitalocean_domain" {
+    defaults = {
+      id = "example.com"
+    }
+  }
+
   mock_resource "digitalocean_kubernetes_cluster" {
     defaults = {
       id = "00000000-0000-0000-0000-000000000001"
@@ -77,6 +92,9 @@ mock_provider "digitalocean" {
 variables {
   install             = "acme"
   private_bucket_name = "acme-files"
+  domain              = "example.com"
+  api_host            = "api.example.com"
+  admin_host          = "admin.example.com"
 }
 
 run "defaults_are_two_small_nodes" {
@@ -507,5 +525,111 @@ run "push_credential_expiry_is_in_seconds" {
   assert {
     condition     = digitalocean_container_registry_docker_credentials.push.expiry_seconds == 2592000
     error_message = "30 days are 2592000 seconds"
+  }
+}
+
+run "dns_points_the_names_at_the_load_balancer" {
+  command = apply
+
+  assert {
+    condition     = digitalocean_record.api.name == "api" && digitalocean_record.api.value == "203.0.113.10" && digitalocean_record.admin.name == "admin" && digitalocean_record.admin.value == "203.0.113.10"
+    error_message = "api and admin are A records of the load balancer's address"
+  }
+
+  assert {
+    condition     = digitalocean_record.api.ttl == 300 && length(digitalocean_record.assets) == 0
+    error_message = "the TTL defaults to 300 and there is no assets record without a CDN host"
+  }
+}
+
+run "the_domain_itself_is_the_at_record" {
+  command = apply
+
+  variables {
+    api_host = "example.com"
+  }
+
+  assert {
+    condition     = digitalocean_record.api.name == "@"
+    error_message = "the domain itself is @"
+  }
+}
+
+run "assets_is_a_cname_of_the_cdn" {
+  command = apply
+
+  variables {
+    buckets            = "private_and_public"
+    public_bucket_name = "acme-public"
+    public_cdn         = true
+    assets_host        = "assets.example.com"
+  }
+
+  assert {
+    condition     = digitalocean_record.assets[0].type == "CNAME" && digitalocean_record.assets[0].name == "assets" && endswith(digitalocean_record.assets[0].value, ".")
+    error_message = "the assets name is a CNAME of the CDN endpoint, written as a full name"
+  }
+}
+
+run "hosts_must_be_inside_the_domain" {
+  command = plan
+
+  variables {
+    api_host = "api.other.org"
+  }
+
+  expect_failures = [var.api_host]
+}
+
+run "admin_and_api_are_different_names" {
+  command = plan
+
+  variables {
+    admin_host = "api.example.com"
+  }
+
+  expect_failures = [var.admin_host]
+}
+
+run "lb_size_is_validated" {
+  command = plan
+
+  variables {
+    lb_size = "lb-huge"
+  }
+
+  expect_failures = [var.lb_size]
+}
+
+run "ingress_keeps_the_client_address_and_the_one_load_balancer" {
+  command = plan
+
+  variables {
+    lb_size      = "lb-medium"
+    lb_algorithm = "least_connections"
+  }
+
+  assert {
+    condition     = strcontains(helm_release.traefik.values[0], "do-loadbalancer-name: acme-ingress") && strcontains(helm_release.traefik.values[0], "do-loadbalancer-size-slug: lb-medium") && strcontains(helm_release.traefik.values[0], "do-loadbalancer-algorithm: least_connections")
+    error_message = "the Service asks for the load balancer the variables describe"
+  }
+
+  assert {
+    condition     = strcontains(helm_release.traefik.values[0], "do-loadbalancer-enable-proxy-protocol: \"true\"") && strcontains(helm_release.traefik.values[0], "externalTrafficPolicy: Local") && strcontains(helm_release.traefik.values[0], "do-loadbalancer-hostname: api.example.com")
+    error_message = "the PROXY protocol, Local traffic and the hostname keep the client's address"
+  }
+
+  assert {
+    condition     = strcontains(helm_release.traefik.values[0], "10.30.0.0/16") && !strcontains(helm_release.traefik.values[0], "0.0.0.0/0")
+    error_message = "only the private network may send the PROXY protocol"
+  }
+}
+
+run "the_node_firewall_names_the_load_balancer" {
+  command = plan
+
+  assert {
+    condition     = anytrue([for r in digitalocean_firewall.nodes.inbound_rule : length(coalesce(r.source_load_balancer_uids, [])) > 0])
+    error_message = "the load balancer reaches the nodes' ports"
   }
 }

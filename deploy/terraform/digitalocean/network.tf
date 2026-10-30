@@ -39,6 +39,13 @@ resource "digitalocean_firewall" "nodes" {
     source_addresses = [digitalocean_vpc.main.ip_range]
   }
 
+  # The load balancer reaches the nodes' ports (traffic and health checks).
+  inbound_rule {
+    protocol                  = "tcp"
+    port_range                = "30000-32767"
+    source_load_balancer_uids = [data.digitalocean_loadbalancer.ingress.id]
+  }
+
   outbound_rule {
     protocol              = "tcp"
     port_range            = "1-65535"
