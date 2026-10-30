@@ -654,14 +654,12 @@ run "the_firewall_and_the_nodes_share_a_tag_made_first" {
   }
 }
 
-run "no_ca_leaves_the_option_out_and_the_check_warns" {
+run "no_ca_leaves_the_option_out_and_the_system_roots_verify" {
   command = apply
 
   variables {
     database_ca = null
   }
-
-  expect_failures = [check.database_ca]
 
   assert {
     condition     = !strcontains(nonsensitive(output.mongo_uri), "tlsCAFile") && strcontains(nonsensitive(output.mongo_uri), "tls=true")
