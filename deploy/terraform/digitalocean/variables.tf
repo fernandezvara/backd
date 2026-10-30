@@ -174,13 +174,13 @@ variable "database_maintenance_hour" {
 }
 
 variable "database_ca" {
-  description = "The CA certificate of the managed MongoDB (PEM), which the pods use to verify it. DigitalOcean's API has none for MongoDB: download it from the database's page in the control panel (Connection details > CA certificate) after the first apply, and apply again with TF_VAR_database_ca=\"$(cat ca-certificate.crt)\". Until then the pods cannot verify the database."
+  description = "Optional CA certificate (PEM) the pods verify the managed MongoDB against, in place of the system roots. DigitalOcean's MongoDB presents a Let's Encrypt certificate, so leave it unset."
   type        = string
   default     = null
 
   validation {
     condition     = var.database_ca == null ? true : strcontains(var.database_ca, "BEGIN CERTIFICATE")
-    error_message = "database_ca must be a PEM certificate (the text of the file DigitalOcean's control panel gives, starting with -----BEGIN CERTIFICATE-----)."
+    error_message = "database_ca must be a PEM certificate (the PEM text, starting with -----BEGIN CERTIFICATE-----)."
   }
 }
 
