@@ -52,6 +52,10 @@ The bootstrap's own state is local (`bootstrap/terraform.tfstate`, gitignored) a
 
 `mongo_uri` and `mongo_admin_uri` are sensitive outputs (they go into the cluster's Secrets in a later step) and `mongo_ca` is the certificate the pods trust (mounted at `/etc/backd/tls/ca.pem`, which the URIs name).
 
+**The CA.** The pods verify the database's TLS certificate against its CA, and DigitalOcean's API has no CA for a MongoDB cluster (it answers "CA not found"), so you give it: the cluster has to exist first. The first `terraform apply` runs without `database_ca` and warns; then download the certificate from the database's page in the control panel (Connection details > CA certificate) and apply again: `export TF_VAR_database_ca="$(cat ca-certificate.crt)"; terraform apply` (it only updates the Secret). Without the CA the connection string leaves out `tlsCAFile` and the pods fail to verify the database: they are never told to skip the check.
+
+**The database user.** The user `backd` is created and never updated in place (`ignore_changes`): the provider's update call is refused by DigitalOcean for a MongoDB user.
+
 ## The Spaces
 
 `buckets = "private"` makes one Space (`private_bucket_name`) for the private files; `"private_and_public"` adds a second (`public_bucket_name`) for the files of fields with `public: true`. Names are yours and unique per region; the plan fails with a message when the public one is missing or equals the private one.
@@ -61,5 +65,3 @@ The bootstrap's own state is local (`bootstrap/terraform.tfstate`, gitignored) a
 - **Keys:** one per Space, bound to it, so the private key cannot touch the public Space and the other way round (`spaces_key_permission`: `readwrite` by default, or `read`; DigitalOcean refuses `fullaccess` on a key bound to one Space). They are sensitive outputs (`spaces_private_key`, `spaces_public_key`) and become **realm secrets** (`backd secret set STORAGE_ACCESS_KEY`, ...), not pod environment: backd stores them encrypted in MongoDB.
 - `terraform output -raw realm_storage` prints the `storage:` and `public_storage:` sections for the realm's `realm.yaml`. A key reaches every prefix of its Space, so use a Space per installation, or accept it.
 - Spaces are never emptied by Terraform (`force_destroy = false`): destroying an installation with files in them fails until you empty them yourself. Unfinished multipart uploads are removed after `abort_incomplete_uploads_days`.
-
-**The CA.** The pods verify the database's TLS certificate against its CA. Terraform asks DigitalOcean's API for it; if the API answers "CA not found" (it did right after a cluster was created, and may for MongoDB), download the certificate from the database page of the control panel (Connection details > CA certificate) and pass its text as `database_ca`: `export TF_VAR_database_ca="$(cat ca-certificate.crt)"`.
