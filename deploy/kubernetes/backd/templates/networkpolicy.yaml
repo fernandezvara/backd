@@ -1,0 +1,252 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $np := .Values.networkPolicy }}
+{{- $db := required "networkPolicy.databaseCIDR is required while networkPolicy.enabled: the private network of the managed MongoDB (DATABASE_CIDR of the install ConfigMap)" $np.databaseCIDR }}
+{{- $labels := dict "app.kubernetes.io/part-of" "backd" }}
+# Nothing is allowed unless a policy below says so (design/kubernetes.md §3, §5): the pods that
+# serve the API are reached by the ingress controller only; MongoDB is reached by the pods that
+# need it only (not the executor, which runs functions, nor egress); the executor reaches backd's
+# internal listener and egress and nothing else; egress alone reaches the internet.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backd-default-deny
+  labels:
+    {{- include "backd.labels" (dict "root" . "component" "network") | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# Names are resolved by the cluster's DNS (the managed MongoDB's SRV record, Spaces).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backd-allow-dns
+  labels:
+    {{- include "backd.labels" (dict "root" . "component" "network") | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+# The ingress controller reaches the API, the realtime and the admin pods on the http port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backd-allow-ingress
+  labels:
+    {{- include "backd.labels" (dict "root" . "component" "network") | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/component, operator: In, values: [backd, backd-realtime, backd-admin]}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.ingress.namespace }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $np.ingress.podLabels | nindent 14 }}
+      ports:
+        - {protocol: TCP, port: 8080}
+---
+# backd's internal listener: bundles for the executor, and the data routes functions call back
+# on (egress carries the calls that name backd).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backd-allow-internal
+  labels:
+    {{- include "backd.labels" (dict "root" . "component" "network") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      backd.fernandezvara.dev/serves: "true"
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - {key: app.kubernetes.io/component, operator: In, values: [executor, egress]}
+      ports:
+        - {protocol: TCP, port: 8081}
+---
+# The executor is called by the pods that run functions.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backd-allow-to-executor
+  labels:
+    {{- include "backd.labels" (dict "root" . "component" "network") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: executor
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - {key: app.kubernetes.io/component, operator: In, values: [backd, backd-realtime, backd-admin, worker]}
+      ports:
+        - {protocol: TCP, port: 9100}
+---
+# Egress is called by the executor and by the worker (push notifications).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backd-allow-to-egress
+  labels:
+    {{- include "backd.labels" (dict "root" . "component" "network") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: egress
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - {key: app.kubernetes.io/component, operator: In, values: [executor, worker]}
+      ports:
+        - {protocol: TCP, port: 3128}
+---
+# The pods that need the database, and the object storage, identity providers and the like on
+# 443 (never a private address). The provisioning Job is one of them.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backd-allow-database-and-https
+  labels:
+    {{- include "backd.labels" (dict "root" . "component" "network") | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/component, operator: In, values: [backd, backd-realtime, backd-admin, worker, provision]}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: {{ $db }}
+      ports:
+        - {protocol: TCP, port: {{ $np.databasePort }}}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              {{- toYaml $np.privateRanges | nindent 14 }}
+      ports:
+        - {protocol: TCP, port: 443}
+---
+# The pods that call the executor, egress or each other.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backd-allow-from-serving-to-functions
+  labels:
+    {{- include "backd.labels" (dict "root" . "component" "network") | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/component, operator: In, values: [backd, backd-realtime, backd-admin, worker]}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: executor
+      ports:
+        - {protocol: TCP, port: 9100}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: egress
+      ports:
+        - {protocol: TCP, port: 3128}
+---
+# The executor reaches backd's internal listener and egress, and nothing else: no route to
+# MongoDB, to the object storage or to the internet.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backd-executor-egress
+  labels:
+    {{- include "backd.labels" (dict "root" . "component" "network") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: executor
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              backd.fernandezvara.dev/serves: "true"
+      ports:
+        - {protocol: TCP, port: 8081}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: egress
+      ports:
+        - {protocol: TCP, port: 3128}
+---
+# The egress proxy: backd's internal listener, and the internet except private ranges (the
+# functions' declared hosts are enforced by the proxy itself).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backd-egress-egress
+  labels:
+    {{- include "backd.labels" (dict "root" . "component" "network") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: egress
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              backd.fernandezvara.dev/serves: "true"
+      ports:
+        - {protocol: TCP, port: 8081}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              {{- toYaml $np.privateRanges | nindent 14 }}
+{{- if $np.monitoringNamespace }}
+---
+# Prometheus scrapes the metrics port of every process.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backd-allow-metrics
+  labels:
+    {{- include "backd.labels" (dict "root" . "component" "network") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: backd
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.monitoringNamespace }}
+      ports:
+        - {protocol: TCP, port: 9090}
+{{- end }}
+{{- end }}

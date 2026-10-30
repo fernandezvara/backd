@@ -1,0 +1,12 @@
+# One of everything, no policies, no disruption budgets: a development cluster.
+image:
+  repository: registry.example.com/acme/acme
+  tag: "dev"
+replicas:
+  default: 1
+  backdRealtime: 1
+networkPolicy:
+  enabled: false
+podDisruptionBudget:
+  enabled: false
+spreadOverNodes: false

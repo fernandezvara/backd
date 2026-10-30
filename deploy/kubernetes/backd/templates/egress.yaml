@@ -1,0 +1,86 @@
+{{- $ctx := dict "root" . "component" "egress" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: egress
+  labels:
+    {{- include "backd.labels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ include "backd.replicas" (dict "root" . "key" "egress") }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "backd.selector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "backd.labels" $ctx | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- include "backd.podSecurityContext" (dict "uid" .Values.runAsUser) | nindent 8 }}
+      {{- include "backd.scheduling" $ctx | nindent 6 }}
+      containers:
+        - name: egress
+          # The only way out for functions and push: it refuses private and link-local
+          # addresses, except backd's internal listener. The released image: it needs no
+          # configuration.
+          image: {{ include "backd.egressImage" . }}
+          imagePullPolicy: {{ .Values.releaseImages.pullPolicy }}
+          args: [egress]
+          ports:
+            - {name: egress, containerPort: 3128}
+            - {name: metrics, containerPort: 9090}
+          env:
+            - name: BACKD_EGRESS_KEY
+              {{- include "backd.fromSecret" (dict "name" .Values.secrets.keys "key" "BACKD_EGRESS_KEY") | nindent 14 }}
+            - name: EGRESS_ALLOW_PRIVATE
+              value: "backd:8081"
+            - name: LOG_LEVEL
+              value: {{ .Values.logLevel | quote }}
+            - name: METRICS_ADDR
+              value: ":9090"
+            - name: METRICS_TOKEN
+              {{- include "backd.fromSecret" (dict "name" .Values.secrets.keys "key" "BACKD_METRICS_TOKEN") | nindent 14 }}
+          livenessProbe:
+            tcpSocket: {port: egress}
+            periodSeconds: 10
+          readinessProbe:
+            tcpSocket: {port: egress}
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.resources.egress | nindent 12 }}
+          securityContext:
+            {{- include "backd.containerSecurityContext" . | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: egress
+  labels:
+    {{- include "backd.labels" $ctx | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "backd.selector" $ctx | nindent 4 }}
+  ports:
+    - {name: egress, port: 3128, targetPort: egress}
+{{- if and (gt (int (include "backd.replicas" (dict "root" . "key" "egress"))) 1) .Values.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: egress
+  labels:
+    {{- include "backd.labels" $ctx | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "backd.selector" $ctx | nindent 6 }}
+{{- end }}
