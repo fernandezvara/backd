@@ -326,3 +326,95 @@ variable "registry_push_credential_days" {
     error_message = "registry_push_credential_days is a whole number of days, 0 or more."
   }
 }
+
+# ---------------------------------------------------------------- traffic: load balancer and DNS
+
+variable "domain" {
+  description = "The domain the installation's names are in. It must already exist on DigitalOcean DNS (Networking > Domains) and its name servers must point there."
+  type        = string
+
+  validation {
+    condition     = can(regex("^([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,}$", var.domain))
+    error_message = "domain must be a domain name such as example.com."
+  }
+}
+
+variable "api_host" {
+  description = "Hostname of the public API (for example api.example.com), in `domain`. It is backd's BACKD_URL."
+  type        = string
+
+  validation {
+    condition     = can(regex("^([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,}$", var.api_host))
+    error_message = "api_host must be a hostname such as api.example.com."
+  }
+
+  validation {
+    condition     = var.api_host == var.domain || endswith(var.api_host, ".${var.domain}")
+    error_message = "api_host must be the domain or a name inside it."
+  }
+}
+
+variable "admin_host" {
+  description = "Hostname of the administration API and interface (for example admin.example.com), in `domain`. It is reachable from admin_allowed_cidrs only."
+  type        = string
+
+  validation {
+    condition     = can(regex("^([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,}$", var.admin_host))
+    error_message = "admin_host must be a hostname such as admin.example.com."
+  }
+
+  validation {
+    condition     = var.admin_host == var.domain || endswith(var.admin_host, ".${var.domain}")
+    error_message = "admin_host must be the domain or a name inside it."
+  }
+
+  validation {
+    condition     = var.admin_host != var.api_host
+    error_message = "admin_host and api_host must be different names."
+  }
+}
+
+variable "dns_ttl" {
+  description = "TTL, in seconds, of the records the installation creates."
+  type        = number
+  default     = 300
+}
+
+variable "lb_size" {
+  description = "Size of the load balancer: lb-small (10,000 simultaneous connections), lb-medium (50,000) or lb-large (100,000). Each is a different price."
+  type        = string
+  default     = "lb-small"
+
+  validation {
+    condition     = contains(["lb-small", "lb-medium", "lb-large"], var.lb_size)
+    error_message = "lb_size must be lb-small, lb-medium or lb-large."
+  }
+}
+
+variable "lb_algorithm" {
+  description = "How the load balancer picks a node: round_robin or least_connections (better for long-lived realtime streams)."
+  type        = string
+  default     = "round_robin"
+
+  validation {
+    condition     = contains(["round_robin", "least_connections"], var.lb_algorithm)
+    error_message = "lb_algorithm must be round_robin or least_connections."
+  }
+}
+
+variable "ingress_replicas" {
+  description = "Pods of the ingress controller. Two, on different nodes, survive the loss of one."
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.ingress_replicas >= 1 && floor(var.ingress_replicas) == var.ingress_replicas
+    error_message = "ingress_replicas must be a whole number, 1 or more."
+  }
+}
+
+variable "traefik_chart_version" {
+  description = "Version of the Traefik Helm chart (https://traefik.github.io/charts)."
+  type        = string
+  default     = "42.1.3"
+}
