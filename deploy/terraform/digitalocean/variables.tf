@@ -174,7 +174,7 @@ variable "database_maintenance_hour" {
 }
 
 variable "database_ca" {
-  description = "The CA certificate of the managed MongoDB (PEM), which the pods use to verify it. Unset: it is asked of DigitalOcean's API; if the API answers \"CA not found\" (it did right after a cluster was created), download it from the database page of the control panel (Connection details > CA certificate) and pass it here, for example TF_VAR_database_ca=\"$(cat ca-certificate.crt)\"."
+  description = "The CA certificate of the managed MongoDB (PEM), which the pods use to verify it. DigitalOcean's API has none for MongoDB: download it from the database's page in the control panel (Connection details > CA certificate) after the first apply, and apply again with TF_VAR_database_ca=\"$(cat ca-certificate.crt)\". Until then the pods cannot verify the database."
   type        = string
   default     = null
 
