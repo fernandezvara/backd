@@ -1,0 +1,10 @@
+# What `terraform output backend_config` prints in bootstrap/. Save it as backend.hcl (gitignored).
+bucket                      = "acme-backd-state"
+key                         = "backd/terraform.tfstate"
+region                      = "us-east-1" # not used by Spaces, but required by the backend
+endpoints                   = { s3 = "https://fra1.digitaloceanspaces.com" }
+skip_credentials_validation = true
+skip_requesting_account_id  = true
+skip_metadata_api_check     = true
+skip_region_validation      = true
+skip_s3_checksum            = true
