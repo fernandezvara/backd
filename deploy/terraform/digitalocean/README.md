@@ -79,3 +79,5 @@ The installation has **one load balancer**. It is requested by the Service of th
 - The records for TLS challenges are made by cert-manager (a later step).
 - Destroying the installation removes the load balancer with Traefik's release.
 - **Cost:** `lb-small` is about $12 a month; the add-on adds nothing else.
+
+**The CA.** The pods verify the database's TLS certificate against its CA. Terraform asks DigitalOcean's API for it; if the API answers "CA not found" (it did right after a cluster was created, and may for MongoDB), download the certificate from the database page of the control panel (Connection details > CA certificate) and pass its text as `database_ca`: `export TF_VAR_database_ca="$(cat ca-certificate.crt)"`.

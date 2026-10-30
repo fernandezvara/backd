@@ -47,11 +47,16 @@ resource "digitalocean_database_user" "app" {
   name       = "backd"
 }
 
+# The CA, from the variable when it is given, else from the API (which answered "CA not found"
+# right after a cluster was created).
 data "digitalocean_database_ca" "mongo" {
+  count      = var.database_ca == null ? 1 : 0
   cluster_id = digitalocean_database_cluster.mongo.id
 }
 
 locals {
+  mongo_ca = var.database_ca != null ? var.database_ca : data.digitalocean_database_ca.mongo[0].certificate
+
   # The connection string of the cluster ("mongodb+srv://doadmin:...@host/admin?...") is
   # reused for both users: same hosts and options, different credentials.
   mongo_private_uri = digitalocean_database_cluster.mongo.private_uri
