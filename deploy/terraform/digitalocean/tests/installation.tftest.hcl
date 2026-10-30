@@ -633,3 +633,13 @@ run "the_node_firewall_names_the_load_balancer" {
     error_message = "the load balancer reaches the nodes' ports"
   }
 }
+
+run "a_space_key_cannot_be_fullaccess" {
+  command = plan
+
+  variables {
+    spaces_key_permission = "fullaccess"
+  }
+
+  expect_failures = [var.spaces_key_permission]
+}
