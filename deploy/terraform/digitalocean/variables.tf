@@ -10,6 +10,40 @@ variable "install" {
   }
 }
 
+variable "project_name" {
+  description = "Name of the DigitalOcean project that holds the installation (shown in the control panel). Terraform creates it and puts the cluster, the database, the Spaces, the load balancer and the domain in it. Unset: the same as `install`."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.project_name == null ? true : length(trimspace(var.project_name)) >= 1 && length(var.project_name) <= 175
+    error_message = "project_name must be 1 to 175 characters."
+  }
+}
+
+variable "project_description" {
+  description = "Description of the project."
+  type        = string
+  default     = "backd"
+}
+
+variable "project_purpose" {
+  description = "What the project is for, as DigitalOcean asks it: one of its listed purposes (for example \"Service or API\", \"Web Application\", \"Just trying out DigitalOcean\") or any text starting with \"Other: \"."
+  type        = string
+  default     = "Service or API"
+}
+
+variable "project_environment" {
+  description = "The environment label of the project: Development, Staging or Production."
+  type        = string
+  default     = "Production"
+
+  validation {
+    condition     = contains(["Development", "Staging", "Production"], var.project_environment)
+    error_message = "project_environment must be Development, Staging or Production."
+  }
+}
+
 variable "region" {
   description = "Region of the cluster, the database and the load balancer (for example fra1, ams3, nyc3, sfo3, sgp1, syd1, lon1)."
   type        = string
