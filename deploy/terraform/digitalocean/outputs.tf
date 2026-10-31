@@ -1,3 +1,8 @@
+output "project_id" {
+  description = "The DigitalOcean project that holds the installation."
+  value       = digitalocean_project.main.id
+}
+
 output "cluster_id" {
   description = "The Kubernetes cluster."
   value       = digitalocean_kubernetes_cluster.main.id

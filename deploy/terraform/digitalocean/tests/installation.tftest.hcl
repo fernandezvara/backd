@@ -795,3 +795,54 @@ run "the_ca_must_be_a_certificate" {
 
   expect_failures = [var.database_ca]
 }
+
+run "the_project_holds_the_installation" {
+  command = apply
+
+  variables {
+    project_name = "Acme backd"
+  }
+
+  assert {
+    condition     = digitalocean_project.main.name == "Acme backd" && digitalocean_project.main.environment == "Production" && digitalocean_project.main.purpose == "Service or API"
+    error_message = "the project takes its name from project_name, with the documented defaults"
+  }
+
+  assert {
+    condition     = length(digitalocean_project.main.resources) == 5
+    error_message = "the cluster, the database, the private Space, the load balancer and the domain are in the project"
+  }
+}
+
+run "the_project_is_named_after_the_install_by_default" {
+  command = plan
+
+  assert {
+    condition     = digitalocean_project.main.name == "acme"
+    error_message = "without project_name the project is named like the installation"
+  }
+}
+
+run "the_public_space_is_in_the_project_too" {
+  command = apply
+
+  variables {
+    buckets            = "private_and_public"
+    public_bucket_name = "acme-public"
+  }
+
+  assert {
+    condition     = length(digitalocean_project.main.resources) == 6
+    error_message = "the public Space joins the project when it exists"
+  }
+}
+
+run "the_environment_must_be_one_digitalocean_knows" {
+  command = plan
+
+  variables {
+    project_environment = "Prod"
+  }
+
+  expect_failures = [var.project_environment]
+}

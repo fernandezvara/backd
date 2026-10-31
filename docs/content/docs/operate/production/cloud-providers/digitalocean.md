@@ -64,6 +64,7 @@ Set `acme_staging = true` for the first run (certificates browsers do not trust,
 | Variable | What it changes |
 |---|---|
 | `install` | The name of everything (prefixes, tags, `BACKD_DEPLOYMENT_ID`) |
+| `project_name`, `project_environment`, `project_purpose` | The DigitalOcean project Terraform creates for the installation (default name: `install`; environment `Production`) |
 | `node_size`, `node_count`, `node_min` + `node_max` | The workers, or autoscaling between two numbers |
 | `database_nodes` | `1`, or `3` for a primary and two standby nodes; nothing in between |
 | `database_size`, `database_version` | The size of each database node, and the MongoDB version |
@@ -75,6 +76,8 @@ Set `acme_staging = true` for the first run (certificates browsers do not trust,
 | `domain`, `api_host`, `admin_host` | Where the installation answers |
 | `lb_size`, `lb_algorithm` | The load balancer |
 | `control_plane_allowed_cidrs`, `database_allowed_cidrs` | Extra restrictions on the Kubernetes API and the database |
+
+Terraform creates a DigitalOcean project (`project_name`) and puts the cluster, the database, the Spaces, the load balancer and the domain in it, so they appear together in the control panel. The domain is moved into it from wherever it was; the network, the registry and the CDN cannot belong to a project and stay outside.
 
 Nothing on the nodes is reachable from the internet: the firewall allows only the private network, the database accepts only the cluster, and the Spaces and the registry are private.
 
@@ -109,7 +112,7 @@ backd storage check --realm shop --url https://admin.example.com
 - **A bigger cluster:** change `node_size` or `node_count` and apply.
 - **A new configuration:** tag the configuration repository. A rollback is the previous tag, or `helm rollback`.
 - **A new backd release:** change `BACKD_VERSION` in the workflow's variables and tag; read the *Upgrading* section of [Operate](../../../#upgrading-to-v096) first.
-- **Destroying it:** `terraform destroy` removes the infrastructure. The Spaces are never emptied by Terraform: if they hold files the destroy stops until you empty them yourself, and the state bucket from step 1 is yours to remove.
+- **Destroying it:** `terraform destroy` removes the infrastructure and the project. The domain, which existed before, goes back to your default project with its records. The Spaces are never emptied by Terraform: if they hold files the destroy stops until you empty them yourself, and the state bucket from step 1 is yours to remove.
 
 ## What DigitalOcean does not allow
 
