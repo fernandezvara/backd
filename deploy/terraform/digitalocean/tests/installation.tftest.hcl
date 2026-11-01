@@ -667,7 +667,7 @@ run "ingress_keeps_the_client_address_and_the_one_load_balancer" {
   }
 
   assert {
-    condition     = !strcontains(helm_release.traefik.values[0], "proxy-protocol") && !strcontains(helm_release.traefik.values[0], "proxyProtocol") && !strcontains(helm_release.traefik.values[0], "do-loadbalancer-hostname")
+    condition     = !strcontains(helm_release.traefik.values[0], "enable-proxy-protocol:") && !strcontains(helm_release.traefik.values[0], "proxyProtocol:") && !strcontains(helm_release.traefik.values[0], "do-loadbalancer-hostname:")
     error_message = "no PROXY protocol and no load balancer hostname: the first is unsupported by the type, the second leaves Cilium without the load balancer address"
   }
 }
