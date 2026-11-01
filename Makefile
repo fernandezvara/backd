@@ -228,5 +228,5 @@ release-tag:
 	@for t in $(VERSION) js-$(VERSION) dart-$(VERSION) py-$(VERSION); do \
 		if git rev-parse -q --verify "refs/tags/$$t" >/dev/null; then echo "release-tag: tag $$t already exists" >&2; exit 1; fi; \
 	done
-	@for t in $(VERSION) js-$(VERSION) dart-$(VERSION) py-$(VERSION); do git tag -a "$$t" -m "$$t"; done
+	@for t in $(VERSION) js-$(VERSION) dart-$(VERSION) py-$(VERSION); do git tag -s -a "$$t" -m "$$t"; done
 	git push --atomic origin $(VERSION) js-$(VERSION) dart-$(VERSION) py-$(VERSION)
