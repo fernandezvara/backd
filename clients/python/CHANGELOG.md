@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.7
+
+No changes; released on the same version as the `backd` server.
+
 ## 0.9.6
 
 From this version the package is released on the same version as the `backd` server (before, `0.0.x`).

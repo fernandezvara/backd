@@ -15,6 +15,7 @@ All runtime configuration comes from environment variables. At startup `backd` c
 | `HTTP_ADDR` | no | `:8080` | Listen address |
 | `PROVISION_MODE` | no | `apply` | `apply` creates or updates collections, validators and indexes; `verify` only compares them and refuses to start on differences |
 | `LOG_LEVEL` | no | `info` | `debug`, `info`, `warn` or `error` (case-insensitive) |
+| `BACKD_MONGO_DEBUG` | no | off | `1` or `true` logs every MongoDB server heartbeat (the address the driver contacts, ok or failed), to see which cluster members it discovers and reaches. Diagnostics only; leave it off otherwise |
 | `MAX_BODY_BYTES` | no | `1048576` | Maximum request body size, bytes or a [size](#sizes-and-units) such as `1MiB`; larger bodies get `413` |
 | `BACKD_MAX_UPLOAD_BYTES` | no | `104857600` | Largest file a [proxy upload](../files/transfers/#uploading) may carry (100 MiB), bytes or a [size](#sizes-and-units). A field's own `max_size` applies as well; the smaller wins |
 | `BACKD_IMAGE_MAX_PIXELS` | no | `40000000` | Most pixels (width × height) an image may have to get [versions](../files/file-fields/#image-versions): 40 megapixels. Read from the file's header, so a larger image is refused without being decoded. A field's `max_pixels` may only lower it, and a higher one stops startup |

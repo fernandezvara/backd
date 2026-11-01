@@ -29,6 +29,9 @@ func ConnectFeed(ctx context.Context, uri string) (*mongo.Client, error) {
 		opts.SetReadPreference(readpref.SecondaryPreferred())
 	}
 	opts.SetMaxPoolSize(8)
+	if m := debugServerMonitor(); m != nil {
+		opts.SetServerMonitor(m)
+	}
 	client, err := mongo.Connect(opts)
 	if err != nil {
 		return nil, fmt.Errorf("mongodb: %w", err)

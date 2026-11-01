@@ -1,3 +1,7 @@
+## 0.9.7
+
+No changes; released on the same version as the `backd` server.
+
 ## 0.9.6
 
 - **`parseSize(text, {family, allowBytes})` and `formatBytes(bytes, family)`** read and print sizes with the server's grammar (`512KiB`, `1.5GB`), tested against the same vectors as `backd-js` and the server. Needs no new server feature; goes with `backd` v0.9.6.
