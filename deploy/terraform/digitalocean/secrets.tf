@@ -106,6 +106,9 @@ resource "kubernetes_config_map" "install" {
       SPACES_REGION       = local.spaces_region
       PRIVATE_BUCKET      = digitalocean_spaces_bucket.private.name
       DATABASE_CIDR       = digitalocean_vpc.main.ip_range
+      # Read by the chart on `helm upgrade` (mongo.hostAliases overrides it): the public names the
+      # database advertises, resolved to its private addresses inside the pods.
+      MONGO_HOST_ALIASES = jsonencode(local.mongo_host_aliases)
     },
     local.has_public ? {
       PUBLIC_BUCKET = var.public_bucket_name

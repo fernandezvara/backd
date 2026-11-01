@@ -59,6 +59,8 @@ terraform apply
 
 The database needs no CA file: DigitalOcean's MongoDB presents a Let's Encrypt certificate, which the pods verify against the system roots (the check is never skipped). Set `database_ca` only if you front the database with a CA of your own.
 
+The pods connect to the database over the private network only. The database nevertheless advertises its members under their public names, which the network policy does not allow; Terraform reads the private address of each member from DNS and the chart makes the public names resolve to them inside the pods (see [Network policies](../../kubernetes/#network-policies)). With one node this is exact; with three, the public and private names are paired in name order, which has not been checked on a real cluster. Run `terraform init` after updating: the configuration now also uses the `dns` provider.
+
 Set `acme_staging = true` for the first run (certificates browsers do not trust, with far higher limits) and switch it off once everything works. The apply takes ten to fifteen minutes, most of it the cluster and the database.
 
 | Variable | What it changes |

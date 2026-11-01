@@ -152,3 +152,8 @@ output "cluster_issuer" {
   description = "The cert-manager ClusterIssuer for the installation's certificates."
   value       = local.cluster_issuer
 }
+
+output "mongo_host_aliases" {
+  description = "The public names the database advertises for its members, with the private address each resolves to inside the pods (the chart's mongo.hostAliases; the backd-install ConfigMap carries it too)."
+  value       = local.mongo_host_aliases
+}

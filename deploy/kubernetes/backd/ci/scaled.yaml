@@ -21,6 +21,10 @@ resources:
 env:
   BACKD_AGGREGATE_TIME: 10s
 workerConcurrency: 20
+mongo:
+  hostAliases:
+    - ip: 10.30.0.2
+      hostnames: [backd-demo-mongo-2a8e6f36.mongo.ondigitalocean.com]
 networkPolicy:
   databaseCIDR: 10.30.0.0/16
   monitoringNamespace: monitoring

@@ -149,3 +149,24 @@ undo a change made with the script); the values seed the first install. Empty if
 {{- end -}}
 {{- toYaml $cidrs -}}
 {{- end }}
+
+{{/*
+The hostAliases of the pods that connect to the database, as a YAML list; empty if there are none.
+DigitalOcean's MongoDB tells the driver to use the members' PUBLIC names, which the network policy
+(rightly) does not let the pods reach; the aliases make those names resolve to the members' private
+addresses, inside the pods only. mongo.hostAliases wins; otherwise the ones Terraform keeps in the
+backd-install ConfigMap (MONGO_HOST_ALIASES, JSON) are used when the release is installed or upgraded
+(`helm template` cannot read the cluster, so it renders none).
+*/}}
+{{- define "backd.mongoHostAliases" -}}
+{{- $aliases := .Values.mongo.hostAliases -}}
+{{- if not $aliases -}}
+{{- $cm := lookup "v1" "ConfigMap" .Release.Namespace "backd-install" -}}
+{{- if and $cm $cm.data (index $cm.data "MONGO_HOST_ALIASES") -}}
+{{- $aliases = fromJsonArray (index $cm.data "MONGO_HOST_ALIASES") -}}
+{{- end -}}
+{{- end -}}
+{{- if $aliases -}}
+{{- toYaml $aliases -}}
+{{- end -}}
+{{- end }}
