@@ -23,6 +23,14 @@ resources:
   limits:
     memory: 384Mi
 
+# The dashboard, on Traefik's internal entry point only: that port is not in the Service, so it is
+# reached with `kubectl -n traefik port-forward deploy/traefik 9000:8080` (then /dashboard/) by
+# whoever has access to the cluster, and never from the internet.
+ingressRoute:
+  dashboard:
+    enabled: true
+    entryPoints: ["traefik"]
+
 ingressClass:
   enabled: true
   isDefaultClass: true
