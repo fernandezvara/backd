@@ -84,4 +84,43 @@ locals {
 
   mongo_uri       = "${local.mongo_scheme}://${digitalocean_database_user.app.name}:${local.mongo_app_password}@${local.mongo_tail}${local.mongo_options}"
   mongo_admin_uri = "${local.mongo_scheme}://${digitalocean_database_cluster.mongo.user}:${local.mongo_admin_password}@${local.mongo_tail}${local.mongo_options}"
+
+  # DigitalOcean's MongoDB answers the driver with the PUBLIC names of its members, whatever the
+  # URI says (the driver replaces the seeds with the replica set's own list), and the pods are not
+  # allowed to reach public addresses on 27017. The way out is to make those names resolve to the
+  # members' private addresses inside the pods (the chart's `mongo.hostAliases`). The names are in
+  # the SRV records of the public host and of private_host, in DNS that answers anywhere.
+  mongo_public_members  = sort([for r in data.dns_srv_record_set.public_members.srv : trimsuffix(r.target, ".")])
+  mongo_private_members = sort([for r in data.dns_srv_record_set.private_members.srv : trimsuffix(r.target, ".")])
+
+  # One entry per member, the i-th public name with the i-th private address. With one node there
+  # is nothing to pair; with three the pairing is by name order and has not been seen on a real
+  # cluster (design/kubernetes.md).
+  mongo_host_aliases = [
+    for i, name in local.mongo_public_members : {
+      ip        = data.dns_a_record_set.private_member[i].addrs[0]
+      hostnames = [name]
+    }
+  ]
+}
+
+data "dns_srv_record_set" "public_members" {
+  service = "_mongodb._tcp.${digitalocean_database_cluster.mongo.host}"
+}
+
+data "dns_srv_record_set" "private_members" {
+  service = "_mongodb._tcp.${digitalocean_database_cluster.mongo.private_host}"
+}
+
+data "dns_a_record_set" "private_member" {
+  count = var.database_nodes
+  # try(): a wrong number of members is reported by the precondition below, not by an index error.
+  host = try(local.mongo_private_members[count.index], "missing.invalid")
+
+  lifecycle {
+    precondition {
+      condition     = length(local.mongo_public_members) == var.database_nodes && length(local.mongo_private_members) == var.database_nodes
+      error_message = "The DNS lists ${length(local.mongo_public_members)} public and ${length(local.mongo_private_members)} private members for the database, and database_nodes is ${var.database_nodes}: the host aliases that keep the pods on the private network cannot be built."
+    }
+  }
 }

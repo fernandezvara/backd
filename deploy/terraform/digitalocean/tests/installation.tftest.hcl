@@ -3,6 +3,21 @@ mock_provider "helm" {}
 
 mock_provider "kubernetes" {}
 
+# The members of the database as DNS lists them: one node, public name and private name.
+mock_provider "dns" {
+  mock_data "dns_srv_record_set" {
+    defaults = {
+      srv = [{ priority = 0, weight = 5, port = 27017, target = "member-a.mongo.example." }]
+    }
+  }
+
+  mock_data "dns_a_record_set" {
+    defaults = {
+      addrs = ["10.30.0.2"]
+    }
+  }
+}
+
 mock_provider "digitalocean" {
   mock_data "digitalocean_loadbalancer" {
     defaults = {
@@ -222,6 +237,28 @@ run "database_defaults_to_one_node" {
 run "database_takes_three_nodes" {
   command = apply
 
+  override_data {
+    target = data.dns_srv_record_set.public_members
+    values = {
+      srv = [
+        { priority = 0, weight = 5, port = 27017, target = "pub-a.mongo.example." },
+        { priority = 0, weight = 5, port = 27017, target = "pub-b.mongo.example." },
+        { priority = 0, weight = 5, port = 27017, target = "pub-c.mongo.example." },
+      ]
+    }
+  }
+
+  override_data {
+    target = data.dns_srv_record_set.private_members
+    values = {
+      srv = [
+        { priority = 0, weight = 5, port = 27017, target = "priv-a.mongo.example." },
+        { priority = 0, weight = 5, port = 27017, target = "priv-b.mongo.example." },
+        { priority = 0, weight = 5, port = 27017, target = "priv-c.mongo.example." },
+      ]
+    }
+  }
+
   variables {
     database_nodes = 3
     database_size  = "db-s-2vcpu-4gb"
@@ -235,6 +272,11 @@ run "database_takes_three_nodes" {
   assert {
     condition     = strcontains(local.mongo_uri, "&w=majority")
     error_message = "three nodes write to a majority"
+  }
+
+  assert {
+    condition     = length(local.mongo_host_aliases) == 3
+    error_message = "every member gets an alias"
   }
 }
 
@@ -845,4 +887,28 @@ run "the_environment_must_be_one_digitalocean_knows" {
   }
 
   expect_failures = [var.project_environment]
+}
+
+run "the_pods_resolve_the_advertised_names_to_private_addresses" {
+  command = apply
+
+  assert {
+    condition     = local.mongo_host_aliases == [{ ip = "10.30.0.2", hostnames = ["member-a.mongo.example"] }]
+    error_message = "the public member name maps to the private address (no trailing dot)"
+  }
+
+  assert {
+    condition     = jsondecode(kubernetes_config_map.install.data["MONGO_HOST_ALIASES"])[0].ip == "10.30.0.2"
+    error_message = "the aliases reach the chart through the backd-install ConfigMap"
+  }
+}
+
+run "the_aliases_need_one_member_per_node" {
+  command = apply
+
+  variables {
+    database_nodes = 3
+  }
+
+  expect_failures = [data.dns_a_record_set.private_member]
 }

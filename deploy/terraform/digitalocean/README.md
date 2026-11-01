@@ -48,6 +48,8 @@ The bootstrap's own state is local (`bootstrap/terraform.tfstate`, gitignored) a
 
 **Going from one node to three** is a change of `database_nodes` in the variables and `terraform apply`: DigitalOcean adds the two standby nodes to the same cluster, the connection string gains `w=majority`, and the new `MONGO_URI` reaches the pods with the next rollout. Nothing in the configuration or the data changes.
 
+**Private path to the members.** The database advertises its members under public names; `mongo_host_aliases` pairs each with its private address (read from DNS with the `dns` provider) so the chart can make those names resolve privately inside the pods. See the DigitalOcean guide.
+
 **What DigitalOcean does not allow.** There are no custom roles and no ACLs, and every user gets the permissions of `doadmin`, so the user backd serves with (`backd`) can do what the provisioning user can. The production reference gives backd's user document access only; this installation cannot. What keeps the database closed is the network: no public path, the cluster as the only trusted source, and the network policies of the Helm chart that let only backd's pods connect to it. `PROVISION_MODE=verify` still stops a pod from changing the schema on its own, but the database would let it.
 
 `mongo_uri` and `mongo_admin_uri` are sensitive outputs (they go into the cluster's Secrets in a later step) and `mongo_ca` is the certificate the pods trust (mounted at `/etc/backd/tls/ca.pem`, which the URIs name).

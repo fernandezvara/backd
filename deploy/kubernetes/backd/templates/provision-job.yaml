@@ -28,6 +28,10 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- with (include "backd.mongoHostAliases" .) }}
+      hostAliases:
+        {{- . | nindent 8 }}
+      {{- end }}
       securityContext:
         {{- include "backd.podSecurityContext" (dict "uid" .Values.runAsUser) | nindent 8 }}
       containers:
