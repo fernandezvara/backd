@@ -80,6 +80,8 @@ The bootstrap's own state is local (`bootstrap/terraform.tfstate`, gitignored) a
 
 The installation has **one load balancer**. It is requested by the Service of the ingress controller (**Traefik**; ingress-nginx was retired in March 2026), so its size and algorithm are the variables `lb_size` and `lb_algorithm`, and Terraform reads it back by name (`<install>-ingress`) for the DNS records and the nodes' firewall. It is a DigitalOcean **network load balancer**: it passes TCP through unchanged, so Traefik ends TLS and the client's address arrives as the connection's source (no PROXY protocol). The Service must not name a load balancer hostname: that leaves only a hostname in its status, Cilium then never programs the load balancer's address and every connection times out. The Service has `externalTrafficPolicy: Local`: a node without a Traefik pod fails the load balancer's health check and gets no traffic (`ingress_replicas` pods, spread over nodes).
 
+The Traefik dashboard has a route on Traefik's internal entry point, which is not in the Service: `kubectl -n traefik port-forward deploy/traefik 9000:8080` and open `http://localhost:9000/dashboard/` (the trailing slash matters). It is never reachable from the internet.
+
 - `domain` must already exist on DigitalOcean DNS (Networking > Domains) and its name servers must point there; the plan fails with "not found" when it does not.
 - `api_host` and `admin_host` (names inside the domain, different from each other) get an A record each, pointing at the load balancer (`dns_ttl`). With `public_cdn` and `assets_host`, the assets name is a CNAME of the CDN.
 - The records for TLS challenges are made by cert-manager (a later step).

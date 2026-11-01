@@ -672,6 +672,20 @@ run "ingress_keeps_the_client_address_and_the_one_load_balancer" {
   }
 }
 
+run "the_dashboard_is_on_the_internal_entry_point_only" {
+  command = plan
+
+  assert {
+    condition     = strcontains(helm_release.traefik.values[0], "dashboard:\n    enabled: true\n    entryPoints: [\"traefik\"]")
+    error_message = "the dashboard route exists and uses only the internal entry point"
+  }
+
+  assert {
+    condition     = !strcontains(helm_release.traefik.values[0], "entryPoints: [\"websecure\"") && !strcontains(helm_release.traefik.values[0], "entryPoints: [\"web\"")
+    error_message = "the dashboard is never on a public entry point"
+  }
+}
+
 run "the_node_firewall_needs_nothing_that_is_unknown_at_plan" {
   command = plan
 
