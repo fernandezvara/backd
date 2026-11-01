@@ -662,13 +662,13 @@ run "ingress_keeps_the_client_address_and_the_one_load_balancer" {
   }
 
   assert {
-    condition     = strcontains(helm_release.traefik.values[0], "do-loadbalancer-enable-proxy-protocol: \"true\"") && strcontains(helm_release.traefik.values[0], "externalTrafficPolicy: Local") && strcontains(helm_release.traefik.values[0], "do-loadbalancer-hostname: api.example.com")
-    error_message = "the PROXY protocol, Local traffic and the hostname keep the client's address"
+    condition     = strcontains(helm_release.traefik.values[0], "do-loadbalancer-type: REGIONAL_NETWORK") && strcontains(helm_release.traefik.values[0], "externalTrafficPolicy: Local")
+    error_message = "a network load balancer with Local traffic keeps the client's address"
   }
 
   assert {
-    condition     = strcontains(helm_release.traefik.values[0], "10.30.0.0/16") && !strcontains(helm_release.traefik.values[0], "0.0.0.0/0")
-    error_message = "only the private network may send the PROXY protocol"
+    condition     = !strcontains(helm_release.traefik.values[0], "proxy-protocol") && !strcontains(helm_release.traefik.values[0], "proxyProtocol") && !strcontains(helm_release.traefik.values[0], "do-loadbalancer-hostname")
+    error_message = "no PROXY protocol and no load balancer hostname: the first is unsupported by the type, the second leaves Cilium without the load balancer address"
   }
 }
 

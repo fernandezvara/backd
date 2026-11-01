@@ -16,11 +16,9 @@ resource "helm_release" "traefik" {
 
   values = [templatefile("${path.module}/values/traefik.yaml.tftpl", {
     replicas     = var.ingress_replicas
-    trusted_ips  = jsonencode([digitalocean_vpc.main.ip_range])
     lb_name      = local.lb_name
     lb_size      = var.lb_size
     lb_algorithm = var.lb_algorithm
-    lb_hostname  = var.api_host
   })]
 }
 
