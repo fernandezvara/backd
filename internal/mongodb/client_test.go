@@ -26,3 +26,20 @@ func TestConnectTopology(t *testing.T) {
 		t.Errorf("standalone server: %v, want ErrStandalone", err)
 	}
 }
+
+func TestDebugServerMonitor(t *testing.T) {
+	t.Setenv("BACKD_MONGO_DEBUG", "")
+	if debugServerMonitor() != nil {
+		t.Error("unset: want nil")
+	}
+	t.Setenv("BACKD_MONGO_DEBUG", "0")
+	if debugServerMonitor() != nil {
+		t.Error("0: want nil")
+	}
+	for _, v := range []string{"1", "true", "TRUE"} {
+		t.Setenv("BACKD_MONGO_DEBUG", v)
+		if debugServerMonitor() == nil {
+			t.Errorf("%s: want a monitor", v)
+		}
+	}
+}

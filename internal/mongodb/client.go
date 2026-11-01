@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"os"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -19,6 +22,9 @@ func Connect(ctx context.Context, uri string, monitor ...*event.CommandMonitor) 
 	opts := options.Client().ApplyURI(uri)
 	if len(monitor) > 0 && monitor[0] != nil {
 		opts.SetMonitor(monitor[0])
+	}
+	if m := debugServerMonitor(); m != nil {
+		opts.SetServerMonitor(m)
 	}
 	client, err := mongo.Connect(opts)
 	if err != nil {
@@ -40,6 +46,26 @@ func Connect(ctx context.Context, uri string, monitor ...*event.CommandMonitor) 
 // ErrStandalone means MongoDB isn't a replica set member (or a sharded
 // cluster's router), so transactions aren't available.
 var ErrStandalone = errors.New("mongodb: the server is a standalone instance; backd needs a replica set (a single node is fine): start mongod with --replSet and run rs.initiate(), then add ?replicaSet=<name> to MONGO_URI")
+
+// debugServerMonitor logs which servers the driver heartbeats, when
+// BACKD_MONGO_DEBUG is 1 or true. Nil otherwise.
+func debugServerMonitor() *event.ServerMonitor {
+	switch strings.ToLower(os.Getenv("BACKD_MONGO_DEBUG")) {
+	case "1", "true":
+		return &event.ServerMonitor{
+			ServerHeartbeatStarted: func(e *event.ServerHeartbeatStartedEvent) {
+				log.Printf("mongodb: heartbeat -> %s (awaited=%v)", e.ConnectionID, e.Awaited)
+			},
+			ServerHeartbeatSucceeded: func(e *event.ServerHeartbeatSucceededEvent) {
+				log.Printf("mongodb: heartbeat ok <- %s (%s)", e.ConnectionID, e.Duration)
+			},
+			ServerHeartbeatFailed: func(e *event.ServerHeartbeatFailedEvent) {
+				log.Printf("mongodb: heartbeat FAILED <- %s: %v", e.ConnectionID, e.Failure)
+			},
+		}
+	}
+	return nil
+}
 
 // checkTopology refuses standalone servers: backd's atomic batch writes and
 // later features rely on transactions, which need a replica set.
