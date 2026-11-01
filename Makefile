@@ -216,10 +216,10 @@ example-attacks:
 # Tags the current commit for the server (and the Go client, which is this
 # module), backd-js, the Dart client and the Python client, and pushes the tags
 # (each starts its own release or publish workflow). Usage:
-#   make release-tag VERSION=v0.9.6
+#   make release-tag VERSION=v0.9.7
 # Run it on main, up to date with origin, after the release PR is merged.
 release-tag:
-	@test -n "$(VERSION)" || { echo "release-tag: set VERSION, e.g. make release-tag VERSION=v0.9.6" >&2; exit 1; }
+	@test -n "$(VERSION)" || { echo "release-tag: set VERSION, e.g. make release-tag VERSION=v0.9.7" >&2; exit 1; }
 	@echo "$(VERSION)" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$$' || { echo "release-tag: VERSION must look like vX.Y.Z (got '$(VERSION)')" >&2; exit 1; }
 	@test "$$(git rev-parse --abbrev-ref HEAD)" = main || { echo "release-tag: not on main" >&2; exit 1; }
 	@git diff --quiet && git diff --cached --quiet || { echo "release-tag: the working tree has uncommitted changes" >&2; exit 1; }

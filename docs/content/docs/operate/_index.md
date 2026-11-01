@@ -157,6 +157,10 @@ blog__main.posts
 shop__orders.items
 ```
 
+### Upgrading to v0.9.7
+
+v0.9.7 changes nothing in the data, the provisioned indexes or the configuration: run `backd provision` as usual. It adds [`BACKD_MONGO_DEBUG`](../build/configuration/), a diagnostics switch that is off by default. The clients move to `0.9.7` with the server (for Dart, `backd: ^0.9.7`).
+
 ### Upgrading to v0.9.6
 
 v0.9.6 changes nothing in the data or the provisioned indexes: run `backd provision` as usual. What changes:

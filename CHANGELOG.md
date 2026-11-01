@@ -4,6 +4,12 @@ All notable changes to `backd` and to its JavaScript client `backd-js`, which ar
 
 Until a stable release is declared, a minor release may have breaking changes; they are listed first.
 
+## 0.9.7
+
+### Added
+
+- **`BACKD_MONGO_DEBUG`:** `1` or `true` logs every MongoDB server heartbeat (the address the driver contacts, ok or failed), to see which cluster members it discovers and reaches. Diagnostics only; off by default.
+
 ## 0.9.6
 
 ### Breaking
