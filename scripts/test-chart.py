@@ -111,6 +111,7 @@ def main(out):
     jenv = {e["name"]: e for e in job["spec"]["template"]["spec"]["containers"][0]["env"]}
     check(jenv["MONGO_URI"]["valueFrom"]["secretKeyRef"]["key"] == "MONGO_ADMIN_URI", "provisioning uses the administrative user")
     check("PROVISION_MODE" not in jenv, "provisioning applies, it does not verify")
+    check(jenv["BACKD_SECRETS_KEY"]["valueFrom"]["secretKeyRef"]["key"] == "BACKD_SECRETS_KEY", "provisioning gets the secrets key (functions declare secrets)")
 
     # --- replicas: the default, the overrides
     rep = lambda docs, name: named(docs, "Deployment", name)["spec"]["replicas"]
