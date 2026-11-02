@@ -5,7 +5,7 @@ Builds what a backd installation needs on DigitalOcean (design: [`design/kuberne
 | Directory | What it builds |
 |---|---|
 | `bootstrap/` | The private, versioned Space that holds the state of everything else, and a key bound to it |
-| `.` | The installation itself (grows with each step): `network.tf` (private network, node firewall), `cluster.tf` (the DOKS cluster), `database.tf` (the managed MongoDB), `spaces.tf` (the Spaces), `registry.tf` (the container registry), `addons.tf` (Traefik), `loadbalancer.tf`, `dns.tf`, `secrets.tf` (the namespace, generated secrets and the objects the chart reads) |
+| `.` | The installation itself (grows with each step): `network.tf` (private network, node firewall), `cluster.tf` (the DOKS cluster), `database.tf` (the managed MongoDB), `spaces.tf` (the Spaces), `registry.tf` (the container registry), `addons.tf` (Traefik), `loadbalancer.tf`, `dns.tf`, `project.tf` (the DigitalOcean project), `secrets.tf` (the namespace, generated secrets and the objects the chart reads) |
 
 ## First step: the state bucket
 
@@ -35,7 +35,7 @@ The bootstrap's own state is local (`bootstrap/terraform.tfstate`, gitignored) a
 
 ## The cluster
 
-`install` names the installation (every resource and tag carries it). `node_size`, `node_count` (or `node_min` and `node_max` for autoscaling), `ha_control_plane`, `kubernetes_version_prefix` and the maintenance window are variables; the defaults are two nodes of 2 vCPU / 4 GB and a standard (free) control plane.
+`install` names the installation (every resource and tag carries it). `project_name` (default: `install`) names the DigitalOcean project Terraform creates (`project.tf`) and puts the cluster, the database, the Spaces, the load balancer and the domain in; the domain is moved into it from its current project and returns to the default one on destroy. The VPC, the registry and the CDN cannot belong to a project. `node_size`, `node_count` (or `node_min` and `node_max` for autoscaling), `ha_control_plane`, `kubernetes_version_prefix` and the maintenance window are variables; the defaults are two nodes of 2 vCPU / 4 GB and a standard (free) control plane.
 
 - The nodes have no open port to the internet: the firewall `<install>-nodes` allows inbound traffic from the private network only (the load balancer is in it, so it reaches the nodes from inside). DigitalOcean keeps a firewall of its own on every cluster for what Kubernetes needs; the rules of both add up.
 - `control_plane_allowed_cidrs` restricts the Kubernetes API to the addresses you list. Empty leaves it reachable with the cluster's credentials only; set it once you know your addresses (and your pipeline's).
@@ -48,11 +48,13 @@ The bootstrap's own state is local (`bootstrap/terraform.tfstate`, gitignored) a
 
 **Going from one node to three** is a change of `database_nodes` in the variables and `terraform apply`: DigitalOcean adds the two standby nodes to the same cluster, the connection string gains `w=majority`, and the new `MONGO_URI` reaches the pods with the next rollout. Nothing in the configuration or the data changes.
 
+**Private path to the members.** The database advertises its members under public names; `mongo_host_aliases` pairs each with its private address (read from DNS with the `dns` provider) so the chart can make those names resolve privately inside the pods. See the DigitalOcean guide.
+
 **What DigitalOcean does not allow.** There are no custom roles and no ACLs, and every user gets the permissions of `doadmin`, so the user backd serves with (`backd`) can do what the provisioning user can. The production reference gives backd's user document access only; this installation cannot. What keeps the database closed is the network: no public path, the cluster as the only trusted source, and the network policies of the Helm chart that let only backd's pods connect to it. `PROVISION_MODE=verify` still stops a pod from changing the schema on its own, but the database would let it.
 
 `mongo_uri` and `mongo_admin_uri` are sensitive outputs (they go into the cluster's Secrets in a later step) and `mongo_ca` is the certificate the pods trust (mounted at `/etc/backd/tls/ca.pem`, which the URIs name).
 
-**The CA.** The pods verify the database's TLS certificate against its CA, and DigitalOcean's API has no CA for a MongoDB cluster (it answers "CA not found"), so you give it: the cluster has to exist first. The first `terraform apply` runs without `database_ca` and warns; then download the certificate from the database's page in the control panel (Connection details > CA certificate) and apply again: `export TF_VAR_database_ca="$(cat ca-certificate.crt)"; terraform apply` (it only updates the Secret). Without the CA the connection string leaves out `tlsCAFile` and the pods fail to verify the database: they are never told to skip the check.
+**The CA.** None is needed: DigitalOcean's MongoDB presents a Let's Encrypt certificate that the pods verify against the system roots, so the connection string says `tls=true` and the check is never skipped. `database_ca` (PEM) is an optional override for a CA of your own.
 
 **The database user.** The user `backd` is created and never updated in place (`ignore_changes`): the provider's update call is refused by DigitalOcean for a MongoDB user.
 
@@ -76,7 +78,9 @@ The bootstrap's own state is local (`bootstrap/terraform.tfstate`, gitignored) a
 
 ## Traffic: the load balancer and DNS
 
-The installation has **one load balancer**. It is requested by the Service of the ingress controller (**Traefik**; ingress-nginx was retired in March 2026), so its size and algorithm are the variables `lb_size` and `lb_algorithm`, and Terraform reads it back by name (`<install>-ingress`) for the DNS records and the nodes' firewall. It forwards TCP with the PROXY protocol, so Traefik ends TLS and still sees the client's address; Traefik trusts that header only from the private network. The Service has `externalTrafficPolicy: Local`: a node without a Traefik pod fails the load balancer's health check and gets no traffic (`ingress_replicas` pods, spread over nodes).
+The installation has **one load balancer**. It is requested by the Service of the ingress controller (**Traefik**; ingress-nginx was retired in March 2026), so its size and algorithm are the variables `lb_size` and `lb_algorithm`, and Terraform reads it back by name (`<install>-ingress`) for the DNS records and the nodes' firewall. It is a DigitalOcean **network load balancer**: it passes TCP through unchanged, so Traefik ends TLS and the client's address arrives as the connection's source (no PROXY protocol). The Service must not name a load balancer hostname: that leaves only a hostname in its status, Cilium then never programs the load balancer's address and every connection times out. The Service has `externalTrafficPolicy: Local`: a node without a Traefik pod fails the load balancer's health check and gets no traffic (`ingress_replicas` pods, spread over nodes).
+
+The Traefik dashboard has a route on Traefik's internal entry point, which is not in the Service: `kubectl -n traefik port-forward deploy/traefik 9000:8080` and open `http://localhost:9000/dashboard/` (the trailing slash matters). It is never reachable from the internet.
 
 - `domain` must already exist on DigitalOcean DNS (Networking > Domains) and its name servers must point there; the plan fails with "not found" when it does not.
 - `api_host` and `admin_host` (names inside the domain, different from each other) get an A record each, pointing at the load balancer (`dns_ttl`). With `public_cdn` and `assets_host`, the assets name is a CNAME of the CDN.

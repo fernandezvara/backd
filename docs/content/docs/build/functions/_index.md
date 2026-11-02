@@ -88,5 +88,5 @@ This function, and every other one quoted in this section, is in [`examples/conf
 - **Background work:** [Async jobs](jobs/) (including how to know a job finished) and [Scheduled functions](cron/) (when to use cron).
 - **Recipes:** the [Cookbook](cookbook/) has six complete, tested examples.
 - **Reference:** [`function.yaml`](reference/), [Secrets](secrets/), [Outbound network](network/), [Build, dev and test](testing/), [Function logs](logs/).
-- **Operating it:** [Executor, workers and egress](../../operate/functions-runtime/), and the [production reference deployment](../../operate/production/#functions-executor-egress-and-worker).
+- **Operating it:** [Executor, workers and egress](../../operate/functions-runtime/), and the [production reference deployment](../../operate/production/docker-compose/#functions-executor-egress-and-worker).
 - **Worked examples with commentary:** the [blog example](../examples/blog/#a-server-side-function-stats)'s `stats` function is the smallest possible one; [Expenses with functions](../examples/expenses-with-functions/) is a complete small app built around five functions, compared side by side with a version that doesn't use them.

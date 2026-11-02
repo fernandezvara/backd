@@ -20,6 +20,15 @@ releaseImages:
 imagePullSecrets:
   - name: backd-registry
 
+# DigitalOcean's MongoDB advertises its members under public names. These aliases make those names
+# resolve to the members' private addresses inside the pods that use the database, so the connection
+# stays on the private network. Left empty, the chart uses MONGO_HOST_ALIASES of the backd-install
+# ConfigMap (Terraform's `mongo_host_aliases` output) when it can read the cluster.
+mongo:
+  hostAliases: []
+  # - ip: 10.30.0.2
+  #   hostnames: [backd-demo-mongo-2a8e6f36.mongo.ondigitalocean.com]
+
 # What Terraform created in the namespace.
 secrets:
   mongo: backd-mongo     # MONGO_URI, MONGO_ADMIN_URI, ca.pem

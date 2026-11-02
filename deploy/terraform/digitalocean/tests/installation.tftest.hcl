@@ -3,6 +3,21 @@ mock_provider "helm" {}
 
 mock_provider "kubernetes" {}
 
+# The members of the database as DNS lists them: one node, public name and private name.
+mock_provider "dns" {
+  mock_data "dns_srv_record_set" {
+    defaults = {
+      srv = [{ priority = 0, weight = 5, port = 27017, target = "member-a.mongo.example." }]
+    }
+  }
+
+  mock_data "dns_a_record_set" {
+    defaults = {
+      addrs = ["10.30.0.2"]
+    }
+  }
+}
+
 mock_provider "digitalocean" {
   mock_data "digitalocean_loadbalancer" {
     defaults = {
@@ -222,6 +237,28 @@ run "database_defaults_to_one_node" {
 run "database_takes_three_nodes" {
   command = apply
 
+  override_data {
+    target = data.dns_srv_record_set.public_members
+    values = {
+      srv = [
+        { priority = 0, weight = 5, port = 27017, target = "pub-a.mongo.example." },
+        { priority = 0, weight = 5, port = 27017, target = "pub-b.mongo.example." },
+        { priority = 0, weight = 5, port = 27017, target = "pub-c.mongo.example." },
+      ]
+    }
+  }
+
+  override_data {
+    target = data.dns_srv_record_set.private_members
+    values = {
+      srv = [
+        { priority = 0, weight = 5, port = 27017, target = "priv-a.mongo.example." },
+        { priority = 0, weight = 5, port = 27017, target = "priv-b.mongo.example." },
+        { priority = 0, weight = 5, port = 27017, target = "priv-c.mongo.example." },
+      ]
+    }
+  }
+
   variables {
     database_nodes = 3
     database_size  = "db-s-2vcpu-4gb"
@@ -235,6 +272,11 @@ run "database_takes_three_nodes" {
   assert {
     condition     = strcontains(local.mongo_uri, "&w=majority")
     error_message = "three nodes write to a majority"
+  }
+
+  assert {
+    condition     = length(local.mongo_host_aliases) == 3
+    error_message = "every member gets an alias"
   }
 }
 
@@ -620,13 +662,27 @@ run "ingress_keeps_the_client_address_and_the_one_load_balancer" {
   }
 
   assert {
-    condition     = strcontains(helm_release.traefik.values[0], "do-loadbalancer-enable-proxy-protocol: \"true\"") && strcontains(helm_release.traefik.values[0], "externalTrafficPolicy: Local") && strcontains(helm_release.traefik.values[0], "do-loadbalancer-hostname: api.example.com")
-    error_message = "the PROXY protocol, Local traffic and the hostname keep the client's address"
+    condition     = strcontains(helm_release.traefik.values[0], "do-loadbalancer-type: REGIONAL_NETWORK") && strcontains(helm_release.traefik.values[0], "externalTrafficPolicy: Local")
+    error_message = "a network load balancer with Local traffic keeps the client's address"
   }
 
   assert {
-    condition     = strcontains(helm_release.traefik.values[0], "10.30.0.0/16") && !strcontains(helm_release.traefik.values[0], "0.0.0.0/0")
-    error_message = "only the private network may send the PROXY protocol"
+    condition     = !strcontains(helm_release.traefik.values[0], "enable-proxy-protocol:") && !strcontains(helm_release.traefik.values[0], "proxyProtocol:") && !strcontains(helm_release.traefik.values[0], "do-loadbalancer-hostname:")
+    error_message = "no PROXY protocol and no load balancer hostname: the first is unsupported by the type, the second leaves Cilium without the load balancer address"
+  }
+}
+
+run "the_dashboard_is_on_the_internal_entry_point_only" {
+  command = plan
+
+  assert {
+    condition     = strcontains(helm_release.traefik.values[0], "dashboard:\n    enabled: true\n    entryPoints: [\"traefik\"]")
+    error_message = "the dashboard route exists and uses only the internal entry point"
+  }
+
+  assert {
+    condition     = !strcontains(helm_release.traefik.values[0], "entryPoints: [\"websecure\"") && !strcontains(helm_release.traefik.values[0], "entryPoints: [\"web\"")
+    error_message = "the dashboard is never on a public entry point"
   }
 }
 
@@ -794,4 +850,79 @@ run "the_ca_must_be_a_certificate" {
   }
 
   expect_failures = [var.database_ca]
+}
+
+run "the_project_holds_the_installation" {
+  command = apply
+
+  variables {
+    project_name = "Acme backd"
+  }
+
+  assert {
+    condition     = digitalocean_project.main.name == "Acme backd" && digitalocean_project.main.environment == "Production" && digitalocean_project.main.purpose == "Service or API"
+    error_message = "the project takes its name from project_name, with the documented defaults"
+  }
+
+  assert {
+    condition     = length(digitalocean_project.main.resources) == 5
+    error_message = "the cluster, the database, the private Space, the load balancer and the domain are in the project"
+  }
+}
+
+run "the_project_is_named_after_the_install_by_default" {
+  command = plan
+
+  assert {
+    condition     = digitalocean_project.main.name == "acme"
+    error_message = "without project_name the project is named like the installation"
+  }
+}
+
+run "the_public_space_is_in_the_project_too" {
+  command = apply
+
+  variables {
+    buckets            = "private_and_public"
+    public_bucket_name = "acme-public"
+  }
+
+  assert {
+    condition     = length(digitalocean_project.main.resources) == 6
+    error_message = "the public Space joins the project when it exists"
+  }
+}
+
+run "the_environment_must_be_one_digitalocean_knows" {
+  command = plan
+
+  variables {
+    project_environment = "Prod"
+  }
+
+  expect_failures = [var.project_environment]
+}
+
+run "the_pods_resolve_the_advertised_names_to_private_addresses" {
+  command = apply
+
+  assert {
+    condition     = local.mongo_host_aliases == [{ ip = "10.30.0.2", hostnames = ["member-a.mongo.example"] }]
+    error_message = "the public member name maps to the private address (no trailing dot)"
+  }
+
+  assert {
+    condition     = jsondecode(kubernetes_config_map.install.data["MONGO_HOST_ALIASES"])[0].ip == "10.30.0.2"
+    error_message = "the aliases reach the chart through the backd-install ConfigMap"
+  }
+}
+
+run "the_aliases_need_one_member_per_node" {
+  command = apply
+
+  variables {
+    database_nodes = 3
+  }
+
+  expect_failures = [data.dns_a_record_set.private_member]
 }

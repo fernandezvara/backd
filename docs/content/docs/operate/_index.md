@@ -13,6 +13,8 @@ This section is for the **operator**: whoever deploys, secures, monitors, backs 
 | Task | Page |
 |---|---|
 | Deploy for real: TLS, MongoDB, rate limits | [Production deployment](production/) |
+| Run it on Docker Compose or Kubernetes | [Docker Compose](production/docker-compose/), [Kubernetes](production/kubernetes/) |
+| Build it on a cloud provider | [Cloud providers](production/cloud-providers/), starting with [DigitalOcean](production/cloud-providers/digitalocean/) |
 | Run the functions executor, egress and workers | [Executor, workers and egress](functions-runtime/) |
 | Package and promote the config | [Deploying config](deploying/) |
 | Check before exposing it | [Hardening checklist](checklist/) and the [security model](administration/security/) |
@@ -45,7 +47,7 @@ export MONGO_URI='mongodb://localhost:27017/?replicaSet=rs0'
 
 - The member's `host` is the address clients use to reach it: `localhost:27017` for a server on your machine, the service name (such as `mongo:27017`) inside a compose network.
 - `replicaSet=rs0` in `MONGO_URI` names the set. Without it, the driver still discovers the set from the host you give.
-- With authentication, a replica set also needs a key file (`--keyFile`), even with one node. The [production reference](production/#mongodb-with-authentication-and-tls) shows how.
+- With authentication, a replica set also needs a key file (`--keyFile`), even with one node. The [production reference](production/docker-compose/#mongodb-with-authentication-and-tls) shows how.
 - `make dev`, `make example` and the test setups start a single-node replica set and initiate it from the container's health check.
 
 ### Upgrading an existing standalone server
@@ -141,7 +143,7 @@ The service's MongoDB user doesn't need to create collections, change validators
 In production, run `backd provision` once per release with an admin URI and start every instance with `PROVISION_MODE=verify` and a user that can only read and write the configured collections. A compromised instance then can't change validators, indexes or collections.
 {{< /hint >}}
 
-Grant collections rather than MongoDB's built-in `readWrite` role on whole databases: `readWrite` also allows creating, dropping and re-indexing collections, and MongoDB lets `insert` on a database create any collection in it. The [production reference](production/#least-privilege-provisioning) automates all three steps.
+Grant collections rather than MongoDB's built-in `readWrite` role on whole databases: `readWrite` also allows creating, dropping and re-indexing collections, and MongoDB lets `insert` on a database create any collection in it. The [production reference](production/docker-compose/#least-privilege-provisioning) automates all three steps.
 
 `backd databases` needs only `CONFIG_DIR`. It prints every data database (`<realm>__<database>`) and the system database (`<realm>___system`) of every realm with `auth: enabled`. With `--collections`, it prints every collection as `<database>.<collection>`, including the system collections:
 
@@ -305,7 +307,7 @@ v0.7.0 adds the [admin web interface](administration/admin-ui/), a [read-only ad
 1. **`admin: true` and admin API keys now reach documents.** The new [admin data route](administration/admin/#data) (`/v1/{realm}/_admin/data/…`) lists, reads and changes documents **past the collection's access rules**, and it belongs to every `admin: true` role and every admin API key. Writes are audited without their content; reads are not (they carry the actor in the access log). Before upgrading, look at who holds those roles and keys: give people who don't need documents an area list (`admin: [users, invitations]`), which doesn't include the new `data` area, and keep admin keys to the tooling that needs them.
 2. **Two new areas.** An area list can now also name `data` and `config`; a role that lists areas and doesn't name them doesn't get them. `config` shows what the instance runs for the realm (`GET /_admin/config`) and every read-only level has it.
 3. **The read-only level is new.** `admin: read` (or `[read, secrets]`) reads every area except users and data, which a realm opts in to with `admin.read_access.users` and `admin.read_access.data` (both `false` by default). `GET /_admin/whoami` tells a client what the signed-in level may do.
-4. **The admin API can be switched off per instance:** `BACKD_ADMIN_API=false` leaves every `/_admin` route out (`404`). The [production reference](production/#admin-api) now splits a public `backd` (no admin API) from an internal `backd-admin`, and the CLI's `BACKD_URL` points at the internal one: if you built on `deploy/production`, compare your compose file with it.
+4. **The admin API can be switched off per instance:** `BACKD_ADMIN_API=false` leaves every `/_admin` route out (`404`). The [production reference](production/docker-compose/#admin-api) now splits a public `backd` (no admin API) from an internal `backd-admin`, and the CLI's `BACKD_URL` points at the internal one: if you built on `deploy/production`, compare your compose file with it.
 5. **The admin web interface is off by default.** `BACKD_ADMIN_UI=true` serves it at `/_ui/` from an instance that also has the admin API (the combination with `BACKD_ADMIN_API=false` stops startup); `BACKD_ADMIN_UI_IDLE` (default `30m`) signs an idle administrator out. Release images and binaries embed it; a binary built from source needs `make ui` (Node) first, and without it `/_ui/` answers `404` and startup warns. Serve it only from the internal instance, and read its [security review](administration/admin-ui/#security-review) and the [hardening checklist](checklist/) first.
 6. **Smaller changes:** `GET /_admin/users` takes `q` (a search of at most 254 characters), `GET /_admin/users/{id}/sessions` and `DELETE …/sessions/{session_id}` list and end a user's sessions. The example stack serves `/_ui/` and has an `adminui` realm for it.
 7. **The JavaScript client is 0.6.0** (`npm install backd-js@latest`): `admin.whoami()`, `admin.config()`, `admin.data(database, collection)`, `admin.users.sessions()` and `revokeSession()`, the `q` search on `admin.users.list()` and the `origin` filter on `admin.jobs.list()`. It works with a v0.6.0 server for everything that existed before.
@@ -405,7 +407,7 @@ Give your process manager a stop grace period longer than `SHUTDOWN_TIMEOUT`:
 
 ### Rate limiting and abuse
 
-`backd` doesn't limit request rates, except for [failed logins](../build/auth/sessions/#brute-force-protection). Put a reverse proxy, API gateway or CDN in front of it and limit there (the [production reference](production/#rate-limits) has a tested nginx configuration):
+`backd` doesn't limit request rates, except for [failed logins](../build/auth/sessions/#brute-force-protection). Put a reverse proxy, API gateway or CDN in front of it and limit there (the [production reference](production/docker-compose/#rate-limits) has a tested nginx configuration):
 
 - **Sign-up:** in realms with `signup: open`, limit `POST /v1/{realm}/_auth/signup` per client address, or use `signup: invite`.
 - **Public data:** collections whose `read` rule lets anonymous callers in can be scraped; limit or cache them.
@@ -421,9 +423,9 @@ Password hashing is bounded by `PASSWORD_HASH_CONCURRENCY` whatever the traffic:
 TRUSTED_PROXIES=172.30.80.10
 ```
 
-List networks only if every address in them is one of your proxies. Whole private ranges such as `10.0.0.0/8` would let any other container or host in them forge `X-Forwarded-For` (see [client addresses](production/#client-addresses) in the production reference).
+List networks only if every address in them is one of your proxies. Whole private ranges such as `10.0.0.0/8` would let any other container or host in them forge `X-Forwarded-For` (see [client addresses](production/docker-compose/#client-addresses) in the production reference).
 
 - `X-Forwarded-For` is only believed when the connection comes from a trusted proxy. Otherwise clients could pick any address they like.
 - The client is the right-most address in `X-Forwarded-For` that isn't a trusted proxy. Entries further left were supplied by the client and are ignored.
-- The proxy in front of `backd` must overwrite `X-Forwarded-For` with the address it sees, unless it trusts a load balancer in front of it. The [production reference](production/#client-addresses) shows how. The local stacks (`make dev`, `make example`) trust all private ranges for convenience: don't copy that.
+- The proxy in front of `backd` must overwrite `X-Forwarded-For` with the address it sees, unless it trusts a load balancer in front of it. The [production reference](production/docker-compose/#client-addresses) shows how. The local stacks (`make dev`, `make example`) trust all private ranges for convenience: don't copy that.
 - Without `TRUSTED_PROXIES`, `backd` uses the connection's address. Behind a proxy, all clients then share one counter, and a flood of failures from anyone slows down logins for everyone behind that proxy.

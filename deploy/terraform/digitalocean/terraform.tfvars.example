@@ -5,6 +5,11 @@
 install = "acme"
 region  = "fra1"
 
+# The DigitalOcean project Terraform creates for everything below (default: the same as install).
+project_name = "acme backd"
+# project_environment = "Production"   # Development, Staging or Production
+# project_purpose     = "Service or API"
+
 # --- the cluster (defaults: two nodes of 2 vCPU / 4 GB, standard control plane)
 # node_size        = "s-2vcpu-4gb"
 # node_count       = 2

@@ -111,6 +111,7 @@ def main(out):
     jenv = {e["name"]: e for e in job["spec"]["template"]["spec"]["containers"][0]["env"]}
     check(jenv["MONGO_URI"]["valueFrom"]["secretKeyRef"]["key"] == "MONGO_ADMIN_URI", "provisioning uses the administrative user")
     check("PROVISION_MODE" not in jenv, "provisioning applies, it does not verify")
+    check(jenv["BACKD_SECRETS_KEY"]["valueFrom"]["secretKeyRef"]["key"] == "BACKD_SECRETS_KEY", "provisioning gets the secrets key (functions declare secrets)")
 
     # --- replicas: the default, the overrides
     rep = lambda docs, name: named(docs, "Deployment", name)["spec"]["replicas"]
@@ -122,6 +123,15 @@ def main(out):
     pdbs = {d["metadata"]["name"] for d in by_kind(default, "PodDisruptionBudget")}
     check(pdbs == {"backd", "backd-realtime", "executor"}, f"PodDisruptionBudgets: {pdbs}")
     check(not by_kind(small, "PodDisruptionBudget"), "no PodDisruptionBudget in the small values")
+
+    # --- the names the database advertises resolve to its private addresses, in the pods that use it
+    for name in SERVING + ["worker"]:
+        aliases = named(scaled, "Deployment", name)["spec"]["template"]["spec"].get("hostAliases")
+        check(aliases == [{"ip": "10.30.0.2", "hostnames": ["backd-demo-mongo-2a8e6f36.mongo.ondigitalocean.com"]}], f"{name} gets mongo.hostAliases")
+        check("hostAliases" not in named(default, "Deployment", name)["spec"]["template"]["spec"], f"{name} has no aliases unless there are some")
+    for name in ("executor", "egress"):
+        check("hostAliases" not in named(scaled, "Deployment", name)["spec"]["template"]["spec"], f"{name} does not connect to the database")
+    check(named(scaled, "Job", "backd-provision")["spec"]["template"]["spec"]["hostAliases"][0]["ip"] == "10.30.0.2", "the provisioning job gets mongo.hostAliases")
 
     # --- scaled values reach the pods
     check(env_of(named(scaled, "Deployment", "backd"))["BACKD_AGGREGATE_TIME"]["value"] == "10s", "env reaches the backd pods")

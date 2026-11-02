@@ -23,6 +23,14 @@ resources:
   limits:
     memory: 384Mi
 
+# The dashboard, on Traefik's internal entry point only: that port is not in the Service, so it is
+# reached with `kubectl -n traefik port-forward deploy/traefik 9000:8080` (then /dashboard/) by
+# whoever has access to the cluster, and never from the internet.
+ingressRoute:
+  dashboard:
+    enabled: true
+    entryPoints: ["traefik"]
+
 ingressClass:
   enabled: true
   isDefaultClass: true
@@ -44,15 +52,11 @@ ports:
           to: websecure
           scheme: https
           permanent: true
-    # The load balancer sends the PROXY protocol, so the client's address is not lost in a TCP
-    # proxy. Only the private network (where the load balancer is) may say so.
-    proxyProtocol:
-      trustedIPs: ${trusted_ips}
+    # The client's address arrives as the connection's source (a network load balancer does not
+    # proxy), so nothing is believed from a header.
     forwardedHeaders:
       trustedIPs: []
   websecure:
-    proxyProtocol:
-      trustedIPs: ${trusted_ips}
     # X-Forwarded-For is never believed from a client: Traefik sets it from the connection.
     forwardedHeaders:
       trustedIPs: []
@@ -70,12 +74,12 @@ service:
     service.beta.kubernetes.io/do-loadbalancer-size-slug: ${lb_size}
     service.beta.kubernetes.io/do-loadbalancer-algorithm: ${lb_algorithm}
     service.beta.kubernetes.io/do-loadbalancer-protocol: tcp
-    service.beta.kubernetes.io/do-loadbalancer-enable-proxy-protocol: "true"
-    # With the PROXY protocol a pod that reaches the public address from inside the cluster would
-    # skip the load balancer and send a request without the header. Naming the host makes
-    # Kubernetes send it through the load balancer too.
-    service.beta.kubernetes.io/do-loadbalancer-hostname: ${lb_hostname}
-    service.beta.kubernetes.io/do-loadbalancer-disable-lets-encrypt-dns-records: "true"
+    # A network load balancer: it passes packets through unchanged, so the client's address
+    # reaches the node (with externalTrafficPolicy: Local) and there is no PROXY protocol. Do not
+    # add `do-loadbalancer-hostname` or the PROXY protocol: the first leaves only a hostname in
+    # the Service status, so Cilium never programs the load balancer's address and every
+    # connection times out; the second is not supported by this type.
+    service.beta.kubernetes.io/do-loadbalancer-type: REGIONAL_NETWORK
   spec:
     # The client's address reaches Traefik, and only nodes with a Traefik pod pass the load
     # balancer's health check.
