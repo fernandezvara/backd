@@ -46,6 +46,9 @@ spec:
               value: {{ .Values.logLevel | quote }}
             - name: MONGO_URI
               {{- include "backd.fromSecret" (dict "name" .Values.secrets.mongo "key" "MONGO_ADMIN_URI") | nindent 14 }}
+            # Provisioning checks the secrets that functions declare against the stored ones.
+            - name: BACKD_SECRETS_KEY
+              {{- include "backd.fromSecret" (dict "name" .Values.secrets.keys "key" "BACKD_SECRETS_KEY") | nindent 14 }}
           resources:
             requests: {cpu: 100m, memory: 128Mi}
             limits: {cpu: "1", memory: 256Mi}
