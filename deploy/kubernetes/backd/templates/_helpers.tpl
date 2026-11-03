@@ -136,6 +136,19 @@ valueFrom:
   readOnly: true
 {{- end }}
 
+{{/* The root filesystem is read-only; /tmp is where the image versions, the function bundles and the
+configuration checks keep their temporary files. */}}
+{{- define "backd.tmpVolume" -}}
+- name: tmp
+  emptyDir:
+    sizeLimit: 1Gi
+{{- end }}
+
+{{- define "backd.tmpMount" -}}
+- name: tmp
+  mountPath: /tmp
+{{- end }}
+
 {{/*
 The addresses that may reach the admin host, as a YAML list. The ConfigMap that
 deploy/kubernetes/scripts/admin-allow.sh keeps wins when it exists (so a later `helm upgrade` does not

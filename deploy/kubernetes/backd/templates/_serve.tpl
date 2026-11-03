@@ -101,8 +101,10 @@ spec:
             {{- include "backd.containerSecurityContext" . | nindent 12 }}
           volumeMounts:
             {{- include "backd.mongoCAMount" . | nindent 12 }}
+            {{- include "backd.tmpMount" . | nindent 12 }}
       volumes:
         {{- include "backd.mongoCAVolume" $root | nindent 8 }}
+        {{- include "backd.tmpVolume" $root | nindent 8 }}
 ---
 apiVersion: v1
 kind: Service
