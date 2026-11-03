@@ -123,7 +123,7 @@ spec:
         - {protocol: TCP, port: 3128}
 ---
 # The pods that need the database, and the object storage, identity providers and the like on
-# 443 (never a private address). The provisioning Job is one of them.
+# 443 (never a private address, except storageCIDRs). The provisioning Job is one of them.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -148,6 +148,18 @@ spec:
               {{- toYaml $np.privateRanges | nindent 14 }}
       ports:
         - {protocol: TCP, port: 443}
+    {{- $storage := include "backd.storageCIDRs" . | fromYamlArray }}
+    {{- if $storage }}
+    # Object storage reached at a private address (DigitalOcean Spaces inside a VPC): these
+    # addresses only, on 443.
+    - to:
+        {{- range $storage }}
+        - ipBlock:
+            cidr: {{ . }}
+        {{- end }}
+      ports:
+        - {protocol: TCP, port: 443}
+    {{- end }}
 ---
 # The pods that call the executor, egress or each other.
 apiVersion: networking.k8s.io/v1

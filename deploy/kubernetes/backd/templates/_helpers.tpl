@@ -170,3 +170,23 @@ backd-install ConfigMap (MONGO_HOST_ALIASES, JSON) are used when the release is 
 {{- toYaml $aliases -}}
 {{- end -}}
 {{- end }}
+
+{{/*
+The private addresses the object storage is reached at, one per line; empty if there are none.
+DigitalOcean's resolver answers Spaces names inside a VPC with a private address (the last host of
+the VPC range), which the 443 rule must not exclude. networkPolicy.storageCIDRs wins; otherwise
+SPACES_PRIVATE_CIDR of the backd-install ConfigMap is used when the release is installed or
+upgraded (`helm template` cannot read the cluster, so it renders none).
+*/}}
+{{- define "backd.storageCIDRs" -}}
+{{- $cidrs := .Values.networkPolicy.storageCIDRs -}}
+{{- if not $cidrs -}}
+{{- $cm := lookup "v1" "ConfigMap" .Release.Namespace "backd-install" -}}
+{{- if and $cm $cm.data (index $cm.data "SPACES_PRIVATE_CIDR") -}}
+{{- $cidrs = list (index $cm.data "SPACES_PRIVATE_CIDR") -}}
+{{- end -}}
+{{- end -}}
+{{- if $cidrs -}}
+{{- toYaml $cidrs -}}
+{{- end -}}
+{{- end }}

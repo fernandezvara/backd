@@ -102,6 +102,10 @@ networkPolicy:
   # The private network the managed MongoDB is on (the `DATABASE_CIDR` of the install ConfigMap).
   databaseCIDR: ""     # required while networkPolicy.enabled
   databasePort: 27017
+  # The private addresses the object storage is reached at, opened on 443 (DigitalOcean's resolver
+  # answers Spaces names inside a VPC with the last host of the VPC range). Empty: the chart uses
+  # SPACES_PRIVATE_CIDR of the install ConfigMap on install/upgrade, and none otherwise.
+  storageCIDRs: []
   # The namespace Prometheus runs in, to scrape :9090. Empty: nothing scrapes.
   monitoringNamespace: ""
   # Never reachable from backd's or the functions' outbound rules (the egress proxy adds its own

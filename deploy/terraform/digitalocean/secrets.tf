@@ -106,6 +106,9 @@ resource "kubernetes_config_map" "install" {
       SPACES_REGION       = local.spaces_region
       PRIVATE_BUCKET      = digitalocean_spaces_bucket.private.name
       DATABASE_CIDR       = digitalocean_vpc.main.ip_range
+      # Inside the VPC the cluster's resolver answers the Spaces names with this private address
+      # (the last host of the range); the chart opens 443 to it, and only to it.
+      SPACES_PRIVATE_CIDR = "${cidrhost(digitalocean_vpc.main.ip_range, -2)}/32"
       # Read by the chart on `helm upgrade` (mongo.hostAliases overrides it): the public names the
       # database advertises, resolved to its private addresses inside the pods.
       MONGO_HOST_ALIASES = jsonencode(local.mongo_host_aliases)

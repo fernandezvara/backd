@@ -917,6 +917,15 @@ run "the_pods_resolve_the_advertised_names_to_private_addresses" {
   }
 }
 
+run "the_chart_opens_the_private_address_spaces_resolves_to" {
+  command = apply
+
+  assert {
+    condition     = kubernetes_config_map.install.data["SPACES_PRIVATE_CIDR"] == "10.30.255.254/32"
+    error_message = "inside the VPC the Spaces names resolve to the last host of the range; the chart opens 443 to it"
+  }
+}
+
 run "the_aliases_need_one_member_per_node" {
   command = apply
 
