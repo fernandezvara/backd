@@ -267,7 +267,7 @@ func TestAppleClientSecret(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	jws, err := jose.ParseSigned(secret, []jose.SignatureAlgorithm{jose.ES256})
+	jws, err := jose.ParseSignedCompact(secret, []jose.SignatureAlgorithm{jose.ES256})
 	if err != nil {
 		t.Fatal(err)
 	}

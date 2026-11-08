@@ -332,7 +332,7 @@ func (s *Service) Subject(ctx context.Context, p *registry.Provider, idToken str
 // check verifies an ID token's signature, expiry, issuer and audience.
 func (s *Service) check(ctx context.Context, p *registry.Provider, idToken string, native bool) (idClaims, error) {
 	bad := func(why string) (idClaims, error) { return idClaims{}, fmt.Errorf("%w: %s", ErrInvalidToken, why) }
-	jws, err := jose.ParseSigned(idToken, []jose.SignatureAlgorithm{jose.RS256, jose.ES256})
+	jws, err := jose.ParseSignedCompact(idToken, []jose.SignatureAlgorithm{jose.RS256, jose.ES256})
 	if err != nil || len(jws.Signatures) != 1 {
 		return bad("not a signed token")
 	}
