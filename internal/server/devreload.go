@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/fernandezvara/backd/internal/devreport"
 	"github.com/fernandezvara/backd/internal/functions"
 	"github.com/fernandezvara/backd/internal/mongodb"
 	"github.com/fernandezvara/backd/internal/registry"
@@ -62,7 +63,7 @@ type reloader struct {
 	onReload []func(reloadEvent)
 
 	mu     sync.Mutex
-	errors []string
+	errors []devreport.Problem
 	files  map[string]string // snapshot of CONFIG_DIR at the last attempt
 }
 
@@ -82,13 +83,13 @@ func newReloader(a *App, public, internal *swapHandler) *reloader {
 }
 
 // Errors are why the last reload failed; empty when the running config is the files' config.
-func (r *reloader) Errors() []string {
+func (r *reloader) Errors() []devreport.Problem {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return slices.Clone(r.errors)
 }
 
-func (r *reloader) setErrors(errs []string) {
+func (r *reloader) setErrors(errs []devreport.Problem) {
 	r.mu.Lock()
 	r.errors = errs
 	r.mu.Unlock()
@@ -122,8 +123,9 @@ func (r *reloader) Poll(ctx context.Context) {
 	r.files = now
 	ev, err := r.reload(ctx, changed)
 	if err != nil {
-		logProblems(r.app.log, "dev mode: the config change was not applied; the previous config keeps running", problemsOf(err, r.app.cfg.ConfigDir), nil)
-		r.setErrors(strings.Split(strings.TrimSpace(err.Error()), "\n"))
+		problems := devreport.Of(err, r.app.cfg.ConfigDir)
+		devreport.Log(r.app.log, "dev mode: the config change was not applied; the previous config keeps running", problems, nil)
+		r.setErrors(problems)
 		return
 	}
 	r.setErrors(nil)
@@ -140,10 +142,10 @@ func (r *reloader) reload(ctx context.Context, changed []string) (*reloadEvent, 
 	cur := r.app
 	reg, err := registry.Load(cur.cfg.ConfigDir)
 	if err != nil {
-		return nil, fmt.Errorf(configPrefix+"%w", err)
+		return nil, fmt.Errorf(devreport.ConfigPrefix+"%w", err)
 	}
 	if err := r.build(ctx, reg); err != nil {
-		return nil, buildError{err}
+		return nil, devreport.BuildError{Err: err}
 	}
 	fp, err := checkLoaded(reg, cur.cfg, cur.log)
 	if err != nil {
@@ -278,7 +280,7 @@ func followConfig(ctx context.Context, cur *App, interval time.Duration) *App {
 		}
 		reg, fp, err := loadConfig(cur.cfg, cur.log)
 		if err != nil {
-			logProblems(cur.log, "dev mode: the config change is not applied yet; the worker keeps running the previous config (it tries again until it loads)", problemsOf(err, cur.cfg.ConfigDir), seen)
+			devreport.Log(cur.log, "dev mode: the config change is not applied yet; the worker keeps running the previous config (it tries again until it loads)", devreport.Of(err, cur.cfg.ConfigDir), seen)
 			continue
 		}
 		pending = false

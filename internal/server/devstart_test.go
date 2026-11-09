@@ -1,11 +1,8 @@
 package server
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -20,83 +17,11 @@ import (
 	"github.com/rs/xid"
 
 	"github.com/fernandezvara/backd/internal/cmdtest"
+	"github.com/fernandezvara/backd/internal/devreport"
 	"github.com/fernandezvara/backd/internal/mongodb"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/settings"
 )
-
-func TestProblemsOfAConfig(t *testing.T) {
-	root := cmdtest.Write(t, map[string]string{
-		"app/realm.yaml":                 "signup: open\nbogus: 1\n",
-		"app/main/notes/schema.json":     "{bad json",
-		"app/main/tasks/schema.json":     "{}",
-		"app/main/tasks/collection.yaml": "rules:\n  read: user ==\n",
-	})
-	_, err := registry.Load(root)
-	if err == nil {
-		t.Fatal("the config loaded")
-	}
-	got := problemsOf(fmt.Errorf(configPrefix+"%w", err), root)
-	want := map[string]Problem{
-		"app/realm.yaml":                 {Kind: ProblemConfig, Line: 2},
-		"app/main/notes/schema.json":     {Kind: ProblemConfig},
-		"app/main/tasks/collection.yaml": {Kind: ProblemRules},
-	}
-	if len(got) != len(want) {
-		t.Fatalf("problems = %+v", got)
-	}
-	for _, p := range got {
-		w, ok := want[p.File]
-		if !ok || p.Kind != w.Kind || p.Line != w.Line {
-			t.Errorf("problem %+v, want %+v for %s", p, w, p.File)
-		}
-		if strings.Contains(p.Message, root) || !strings.Contains(p.Hint, p.File) {
-			t.Errorf("message %q or hint %q", p.Message, p.Hint)
-		}
-	}
-}
-
-func TestProblemsOfABuild(t *testing.T) {
-	out := "error: The module's source code could not be parsed: Expected ';', '}' or <eof> at file:///config/app/main/_functions/hello/index.ts:3:7\n\n    const x y = 1;\n          ~"
-	err := buildError{fmt.Errorf("app/main: %w", fmt.Errorf("function hello: %w", errors.New("deno bundle failed:\n"+out+"\n")))}
-	got := problemsOf(err, "/somewhere/else")
-	if len(got) != 1 {
-		t.Fatalf("problems = %+v", got)
-	}
-	p := got[0]
-	if p.Kind != ProblemBuild || p.File != "app/main/_functions/hello/index.ts" || p.Line != 3 || p.Output != out ||
-		p.Message != "app/main: function hello: deno bundle failed" || !strings.Contains(p.Hint, "builds it again") {
-		t.Errorf("problem = %+v", p)
-	}
-	// Without a source line, the function's folder.
-	err = buildError{errors.New("app/main: function hello: deno bundle failed:\nerror: something else")}
-	if p := problemsOf(err, "/x")[0]; p.File != "app/main/_functions/hello" || p.Line != 0 {
-		t.Errorf("problem = %+v", p)
-	}
-}
-
-func TestLogProblemsOncePerProblem(t *testing.T) {
-	var buf bytes.Buffer
-	log := slog.New(slog.NewJSONHandler(&buf, nil))
-	ps := []Problem{{Kind: ProblemConfig, File: "a/realm.yaml", Line: 2, Message: "bad", Hint: "fix"}, {Kind: ProblemBuild, Message: "b", Output: "deno says", Hint: "fix"}}
-	seen := map[string]bool{}
-	logProblems(log, "waiting", ps, seen)
-	logProblems(log, "waiting", ps, seen)
-	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("records: %s", buf.String())
-	}
-	var rec map[string]any
-	if err := json.Unmarshal([]byte(lines[0]), &rec); err != nil {
-		t.Fatal(err)
-	}
-	if rec["level"] != "ERROR" || rec["kind"] != "config" || rec["file"] != "a/realm.yaml" || rec["line"] != float64(2) || rec["error"] != "bad" || rec["hint"] != "fix" {
-		t.Errorf("record = %v", rec)
-	}
-	if !strings.Contains(lines[1], `"output":"deno says"`) {
-		t.Errorf("build record = %s", lines[1])
-	}
-}
 
 func TestDevPreflight(t *testing.T) {
 	withFns := cmdtest.Write(t, map[string]string{"app/main/_functions/hello/function.yaml": "mode: sync\n"})
@@ -139,7 +64,7 @@ func TestWaitForConfigLoadsOnTheFirstFixingChange(t *testing.T) {
 	}
 	done := make(chan string)
 	go func() {
-		_, fp, err := waitForConfig(context.Background(), dir, log, errors.New("broken"), load, false)
+		_, fp, err := waitForConfig(context.Background(), dir, log, boardOf(dir, errors.New("broken")), load, false)
 		if err != nil {
 			fp = err.Error()
 		}
@@ -254,6 +179,21 @@ func TestDevServeWaitsForAConfigThatLoads(t *testing.T) {
 	if !strings.Contains(logs.String(), `"output":`) {
 		t.Errorf("no Deno output in the report:\n%s", logs.String())
 	}
+	read := func(path string) (int, string) {
+		res, err := http.Get("http://" + addr + path)
+		if err != nil {
+			return 0, err.Error()
+		}
+		defer res.Body.Close()
+		b, _ := io.ReadAll(res.Body)
+		return res.StatusCode, string(b)
+	}
+	if code, body := read("/v1/" + realm + "/main/notes"); code != http.StatusServiceUnavailable || !strings.Contains(body, `"code":"config_not_loaded"`) || !strings.Contains(body, `"code":"build"`) {
+		t.Errorf("a data route before the config loads = %d %s", code, body)
+	}
+	if code, body := read("/"); code != http.StatusServiceUnavailable || !strings.Contains(body, "deno bundle failed") || !strings.Contains(body, "_functions/hello") {
+		t.Errorf("the root page before the config loads = %d:\n%s", code, body)
+	}
 	edit(t, filepath.Join(root, realm, "main/_functions/hello/index.ts"), "export default () => 1;\n")
 	waitFor("/readyz", func() bool { return get("/readyz") == http.StatusOK })
 	if _, err := registry.ReadManifest(filepath.Join(root, realm, "main/_functions")); err != nil {
@@ -287,4 +227,10 @@ func TestDevDenoWithFreshBundles(t *testing.T) {
 	if warning, err := devDeno(settings.Settings{Dev: true, ConfigDir: t.TempDir(), Deno: "/nonexistent/deno"}); err != nil || warning != "" {
 		t.Errorf("no functions: %q, %v", warning, err)
 	}
+}
+
+func boardOf(dir string, err error) *problemBoard {
+	b := &problemBoard{}
+	b.set(devreport.Of(err, dir))
+	return b
 }

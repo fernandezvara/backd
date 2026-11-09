@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/devreport"
 	"github.com/fernandezvara/backd/internal/executor"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/strutil"
@@ -25,16 +26,16 @@ import (
 // adminAPI serves /v1/{realm}/_admin/…: user management for server-side
 // services holding one of the realm's API keys.
 type adminAPI struct {
-	users        func(realm string) *auth.Users
-	reg          *registry.Registry
-	fns          *functions      // runs functions by hand (see adminInvoke)
-	fingerprint  string          // the config this instance runs (readyz shows it too)
-	version      string          // this build's version, recorded in export packages
-	env          string          // BACKD_ENV: production, staging…
-	baseURL      string          // BACKD_URL: backd's public address, for the links an administrator hands out
-	offline      bool            // the CLI's direct mode: every request is a full administrator's
-	exports      exportLeases    // the export in progress per realm
-	reloadErrors func() []string // why the last live reload failed (BACKD_DEV); nil without one
+	users       func(realm string) *auth.Users
+	reg         *registry.Registry
+	fns         *functions                 // runs functions by hand (see adminInvoke)
+	fingerprint string                     // the config this instance runs (readyz shows it too)
+	version     string                     // this build's version, recorded in export packages
+	env         string                     // BACKD_ENV: production, staging…
+	baseURL     string                     // BACKD_URL: backd's public address, for the links an administrator hands out
+	offline     bool                       // the CLI's direct mode: every request is a full administrator's
+	exports     exportLeases               // the export in progress per realm
+	devProblems func() []devreport.Problem // why the last live reload failed (BACKD_DEV); nil without one
 	// imageMaxPixels is the instance's image pixel limit, which a config check applies to the draft.
 	imageMaxPixels int64
 	// expandMaxArray is the instance's per-array expansion limit, which a config check applies.

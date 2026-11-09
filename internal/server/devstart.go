@@ -13,9 +13,14 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
+	"sync"
 	"syscall"
 	"time"
 
+	"github.com/fernandezvara/backd/internal/adminui"
+	"github.com/fernandezvara/backd/internal/devreport"
+	"github.com/fernandezvara/backd/internal/httpapi"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/settings"
 )
@@ -80,6 +85,8 @@ func startDev(ctx context.Context, role string, cfg settings.Settings, logOut io
 	load := func() (*registry.Registry, string, error) { return devLoad(ctx, cfg, log, serve) }
 	reg, fp, err := load()
 	if err != nil {
+		report := &problemBoard{}
+		report.set(devreport.Of(err, cfg.ConfigDir))
 		var waiting *http.Server
 		if serve {
 			ln, lerr := net.Listen("tcp", cfg.HTTPAddr)
@@ -87,11 +94,16 @@ func startDev(ctx context.Context, role string, cfg settings.Settings, logOut io
 				_ = client.Disconnect(context.Background())
 				return nil, lerr
 			}
-			waiting = &http.Server{Handler: waitingHandler(), ReadHeaderTimeout: 10 * time.Second}
+			var ui http.Handler
+			if cfg.AdminUI {
+				ui = adminui.Handler(cfg.AdminUIIdle)
+			}
+			h := httpapi.NewWaitingHandler(httpapi.WaitingConfig{Problems: report.get, UI: ui, Links: devLinks(cfg.DevLinks), Log: log})
+			waiting = &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second}
 			go func() { _ = waiting.Serve(ln) }()
 		}
 		sigCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-		reg, fp, err = waitForConfig(sigCtx, cfg.ConfigDir, log, err, load, !serve)
+		reg, fp, err = waitForConfig(sigCtx, cfg.ConfigDir, log, report, load, !serve)
 		stop()
 		if waiting != nil {
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -158,11 +170,11 @@ func hasFunctionDirs(dir string) bool {
 func devLoad(ctx context.Context, cfg settings.Settings, log *slog.Logger, build bool) (*registry.Registry, string, error) {
 	reg, err := registry.Load(cfg.ConfigDir)
 	if err != nil {
-		return nil, "", fmt.Errorf(configPrefix+"%w", err)
+		return nil, "", fmt.Errorf(devreport.ConfigPrefix+"%w", err)
 	}
 	if build {
 		if err := buildStaleFunctions(ctx, reg, cfg.Deno, log); err != nil {
-			return nil, "", buildError{err}
+			return nil, "", devreport.BuildError{Err: err}
 		}
 	}
 	for _, w := range reg.AggregateWarnings() {
@@ -178,10 +190,10 @@ func devLoad(ctx context.Context, cfg settings.Settings, log *slog.Logger, build
 // waitForConfig logs why the config didn't load and tries again when CONFIG_DIR changes,
 // until it loads or ctx ends. With retry it also tries again on every tick without a change:
 // the worker waits for bundles the API builds (in hidden directories, not in the snapshot).
-func waitForConfig(ctx context.Context, dir string, log *slog.Logger, first error, load func() (*registry.Registry, string, error), retry bool) (*registry.Registry, string, error) {
+func waitForConfig(ctx context.Context, dir string, log *slog.Logger, report *problemBoard, load func() (*registry.Registry, string, error), retry bool) (*registry.Registry, string, error) {
 	const msg = "dev mode: the config does not load; backd waits and loads it again when CONFIG_DIR changes"
 	seen := map[string]bool{}
-	logProblems(log, msg, problemsOf(first, dir), seen)
+	devreport.Log(log, msg, report.get(), seen)
 	files, _ := snapshot(dir)
 	t := time.NewTicker(devPoll)
 	defer t.Stop()
@@ -208,19 +220,26 @@ func waitForConfig(ctx context.Context, dir string, log *slog.Logger, first erro
 		if changed {
 			seen = map[string]bool{} // a new attempt: report what is still wrong again
 		}
-		logProblems(log, msg, problemsOf(err, dir), seen)
+		report.set(devreport.Of(err, dir))
+		devreport.Log(log, msg, report.get(), seen)
 	}
 }
 
-// waitingHandler is what serve answers before any config has loaded: alive, not ready.
-func waitingHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"ok"}` + "\n"))
-	})
-	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "the config has not loaded yet: see the log of backd", http.StatusServiceUnavailable)
-	})
-	return mux
+// problemBoard holds the report of a dev-mode start that is waiting: the waiting handler
+// reads it on every request while waitForConfig replaces it.
+type problemBoard struct {
+	mu       sync.Mutex
+	problems []devreport.Problem
+}
+
+func (b *problemBoard) set(ps []devreport.Problem) {
+	b.mu.Lock()
+	b.problems = ps
+	b.mu.Unlock()
+}
+
+func (b *problemBoard) get() []devreport.Problem {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return slices.Clone(b.problems)
 }

@@ -1238,5 +1238,11 @@
         "none": "Anyone with the link"
       }
     }
+  },
+  "configNotLoaded": {
+    "title": "The server's config hasn't loaded",
+    "fallback": "The config has not loaded yet (dev mode).",
+    "waiting": "This page carries on by itself once a saved change loads.",
+    "report": "Open the report"
   }
 }

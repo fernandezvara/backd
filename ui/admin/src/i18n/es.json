@@ -1238,5 +1238,11 @@
         "none": "Cualquiera con el enlace"
       }
     }
+  },
+  "configNotLoaded": {
+    "title": "La configuración del servidor no se ha cargado",
+    "fallback": "La configuración aún no se ha cargado (modo de desarrollo).",
+    "waiting": "Esta página sigue sola en cuanto se cargue un cambio guardado.",
+    "report": "Abrir el informe"
   }
 }

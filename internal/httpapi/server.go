@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/devreport"
 	"github.com/fernandezvara/backd/internal/metrics"
 	"github.com/fernandezvara/backd/internal/oauth"
 	"github.com/fernandezvara/backd/internal/push"
@@ -89,7 +90,7 @@ type Config struct {
 	PublicStorageAccessKey, PublicStorageSecretKey string
 	// ReloadErrors returns what stopped the last live reload of the config (BACKD_DEV), for
 	// the admin configuration view's warnings; nil when nothing reloads.
-	ReloadErrors func() []string
+	DevProblems func() []devreport.Problem
 	// Functions runs function calls (the executor client); nil: calls get 503.
 	Functions FunctionRunner
 	// CallbackKey signs the callback tokens functions reach data with; the
@@ -194,7 +195,7 @@ func NewHandler(cfg Config) http.Handler {
 	authRoutes.fns = fns
 	spec := &openAPI{reg: cfg.Registry}
 	if !cfg.DisableAdminAPI {
-		admin := &adminAPI{users: users, reg: cfg.Registry, fns: fns, fingerprint: cfg.ConfigFingerprint, version: cfg.Version, env: cfg.Env, baseURL: cfg.BackdURL, offline: cfg.Offline, reloadErrors: cfg.ReloadErrors, imageMaxPixels: cfg.ImageMaxPixels, expandMaxArray: cfg.Expand.OrDefault().MaxArray, aggregate: cfg.Aggregate, triggers: cfg.TriggerLimits, triggerAdmin: cfg.Triggers}
+		admin := &adminAPI{users: users, reg: cfg.Registry, fns: fns, fingerprint: cfg.ConfigFingerprint, version: cfg.Version, env: cfg.Env, baseURL: cfg.BackdURL, offline: cfg.Offline, devProblems: cfg.DevProblems, imageMaxPixels: cfg.ImageMaxPixels, expandMaxArray: cfg.Expand.OrDefault().MaxArray, aggregate: cfg.Aggregate, triggers: cfg.TriggerLimits, triggerAdmin: cfg.Triggers}
 		admin.routes(r, authRoutes.resolveRealm, withTimeout(opTimeout))
 		spec.protected = noStore(authRoutes.resolveRealm(withTimeout(opTimeout)(admin.requireAdmin(admin.need(registry.RightConfig)(http.HandlerFunc(spec.serve))))))
 	}

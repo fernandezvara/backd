@@ -95,7 +95,7 @@ func TestReloadKeepsThePreviousConfigOnAnInvalidChange(t *testing.T) {
 	if r.app != before || len(*events) != 0 || *applied != 0 {
 		t.Fatalf("an invalid config was applied (events %v, applied %d)", *events, *applied)
 	}
-	if errs := r.Errors(); len(errs) == 0 || !strings.Contains(strings.Join(errs, "\n"), "schema.json") {
+	if errs := r.Errors(); len(errs) == 0 || errs[0].File != "app/main/notes/schema.json" {
 		t.Errorf("errors = %v, want one naming schema.json", errs)
 	}
 	// Not retried until a file changes again.
