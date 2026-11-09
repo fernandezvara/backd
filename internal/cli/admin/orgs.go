@@ -45,18 +45,8 @@ type orgMemberRow struct {
 
 // userIDByEmail finds a user of the realm by address.
 func userIDByEmail(t *clicore.Target, email string) (string, error) {
-	var page struct {
-		Items []struct {
-			ID string `json:"id"`
-		} `json:"items"`
-	}
-	if err := t.Adm.Users.List(t.Ctx, url.Values{"email": {email}}, &page); err != nil {
-		return "", err
-	}
-	if len(page.Items) == 0 {
-		return "", fmt.Errorf("user not found: %s", email)
-	}
-	return page.Items[0].ID, nil
+	u, err := userByEmail(t, email)
+	return u.ID, err
 }
 
 func OrgsList(c *kli.CommandContext) error {
