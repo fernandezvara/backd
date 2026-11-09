@@ -25,7 +25,7 @@ import (
 
 // TestTemplatesServeSample checks that templated config starts and
 // serves the blog sample, end to end through the CLI and the handler
-// that `backd serve` runs.
+// that `backd-server serve` runs.
 func TestTemplatesServeSample(t *testing.T) {
 	uri := os.Getenv("MONGO_TEST_URI")
 	if uri == "" {

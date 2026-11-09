@@ -65,7 +65,7 @@ func TestVerifyFailsWhenAnExistingCollectionLacksPreImages(t *testing.T) {
 	}
 	p.Registry = loadRegistry(t, realm, map[string]string{"app/items": itemSchema, "app/items/collection.yaml": "realtime: true\n"})
 	err := p.Verify(ctx)
-	if err == nil || !strings.Contains(err.Error(), realm+"__app.items: pre-change images are not enabled") || !strings.Contains(err.Error(), "backd provision") {
+	if err == nil || !strings.Contains(err.Error(), realm+"__app.items: pre-change images are not enabled") || !strings.Contains(err.Error(), "backd-server provision") {
 		t.Fatalf("Verify = %v, want the missing images named with the command", err)
 	}
 	if err := p.Apply(ctx); err != nil {

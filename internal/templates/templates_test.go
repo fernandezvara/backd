@@ -200,7 +200,7 @@ func TestProject(t *testing.T) {
 }
 
 // TestProjectBuildsAndChecks bundles the generated project's sample
-// function with real Deno and runs the same startup check `backd serve`
+// function with real Deno and runs the same startup check `backd-server serve`
 // would, proving the template isn't just well-formed YAML/JSON but an
 // actually loadable, buildable config.
 func TestProjectBuildsAndChecks(t *testing.T) {

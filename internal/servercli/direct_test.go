@@ -80,9 +80,9 @@ func TestExportImportDirect(t *testing.T) {
 	c := &cliEnv{t: t, env: map[string]string{"CONFIG_DIR": root, "MONGO_URI": uri, "LOG_LEVEL": "error", "HOME": t.TempDir()}}
 	pkg, lines := notesPackage(t)
 
-	// The flags that belong to the direct mode are refused without it.
-	c.expect(2, "--mongo-uri needs --direct", "", "export", "--realm", realm, "--out", filepath.Join(t.TempDir(), "x"), "--mongo-uri", "mongodb://x")
-	c.expect(2, "--force needs --direct", "", "import", "--realm", realm, "--from", pkg, "--force")
+	// The flags of the direct mode are backd-server's: the CLI doesn't have them.
+	c.expect(2, "flag provided but not defined: -mongo-uri", "", "export", "--realm", realm, "--out", filepath.Join(t.TempDir(), "x"), "--mongo-uri", "mongodb://x")
+	c.expect(2, "flag provided but not defined: -force", "", "import", "--realm", realm, "--from", pkg, "--force")
 	c.expect(1, "has no realm", "", "import", "--realm", "ghost", "--from", pkg, "--direct")
 
 	// A dry run reads and writes nothing.

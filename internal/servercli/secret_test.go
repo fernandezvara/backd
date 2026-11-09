@@ -16,7 +16,7 @@ import (
 )
 
 // On MongoDB: provision, set secrets directly (bypassing the API, as an
-// operator restoring from a backup might), then `backd secret rotate-key`
+// operator restoring from a backup might), then `backd-server secret rotate-key`
 // re-encrypts them under a new master key in place.
 func TestSecretRotateKey(t *testing.T) {
 	uri := os.Getenv("MONGO_TEST_URI")

@@ -24,7 +24,7 @@ import (
 
 // End to end, on MongoDB with a real executor: an async function
 // (roadmap F11) is queued, claimed and run by a real Worker (the same
-// type `backd worker` and `backd serve --with-worker` drive), reaching
+// type `backd-server worker` and `backd-server serve --with-worker` drive), reaching
 // data through ctx.db exactly like a sync call, and its result read back
 // through GET .../_jobs/{id}.
 func TestAsyncEndToEnd(t *testing.T) {

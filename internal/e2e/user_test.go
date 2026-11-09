@@ -18,7 +18,7 @@ import (
 	"github.com/fernandezvara/backd/internal/server"
 )
 
-// On MongoDB: provisioning, `backd bootstrap`, then the CLI through the
+// On MongoDB: provisioning, `backd-server bootstrap`, then the CLI through the
 // server's own handler, and the role seeds coming back at provisioning.
 func TestRunUserLifecycle(t *testing.T) {
 	uri := os.Getenv("MONGO_TEST_URI")
@@ -51,10 +51,10 @@ func TestRunUserLifecycle(t *testing.T) {
 	})
 
 	// Before provisioning, bootstrap refuses to write.
-	c.expect(1, "is not provisioned (run `backd provision`)", "", "bootstrap", "--realm", realm, "--email", "ada@example.com", "--role", "ops")
+	c.expect(1, "is not provisioned (run `backd-server provision`)", "", "bootstrap", "--realm", realm, "--email", "ada@example.com", "--role", "ops")
 	// At warn level, provisioning reports realms nobody can administer.
 	c.env["LOG_LEVEL"] = "warn"
-	for _, want := range []string{"realm declares no admin role", "create the first administrator with `backd bootstrap`"} {
+	for _, want := range []string{"realm declares no admin role", "create the first administrator with `backd-server bootstrap`"} {
 		c.expect(0, want, "", "provision")
 	}
 	c.env["LOG_LEVEL"] = "error"
