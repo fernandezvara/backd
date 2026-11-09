@@ -15,7 +15,7 @@ import (
 	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/internal/docutil"
 
-	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/authcore"
 	"github.com/fernandezvara/backd/internal/exportpkg"
 	"github.com/fernandezvara/backd/internal/fieldcrypt"
 )
@@ -72,10 +72,10 @@ func parseFieldKeys(spec string, getenv func(string) string, warn io.Writer) ([]
 		if err != nil {
 			return nil, fmt.Errorf("--field %s: %w", target, err)
 		}
-		if k.key, err = auth.DecodeKey(text); err != nil {
+		if k.key, err = authcore.DecodeKey(text); err != nil {
 			return nil, fmt.Errorf("--field %s: %w", target, err)
 		}
-		k.fingerprint = auth.KeyFingerprint(k.key)
+		k.fingerprint = authcore.KeyFingerprint(k.key)
 		out = append(out, k)
 	}
 	return out, nil

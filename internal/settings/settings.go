@@ -16,6 +16,7 @@ import (
 
 	"github.com/fernandezvara/backd/internal/realtime"
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/internal/settings/limits"
 	"github.com/fernandezvara/backd/internal/strutil"
 )
 
@@ -197,19 +198,19 @@ func Load(getenv func(string) string) (Settings, error) {
 		s.MaxUploadBytes = n
 	}
 
-	if n, err := ImageMaxPixels(getenv); err != nil {
+	if n, err := limits.ImageMaxPixels(getenv); err != nil {
 		errs = append(errs, err)
 	} else {
 		s.ImageMaxPixels = n
 	}
 
-	if l, err := ExpandLimitsFrom(getenv); err != nil {
+	if l, err := limits.Expand(getenv); err != nil {
 		errs = append(errs, err)
 	} else {
 		s.Expand = l
 	}
 
-	if l, err := AggregateLimitsFrom(getenv); err != nil {
+	if l, err := limits.Aggregate(getenv); err != nil {
 		errs = append(errs, err)
 	} else {
 		s.Aggregate = l
@@ -220,7 +221,7 @@ func Load(getenv func(string) string) (Settings, error) {
 	} else {
 		s.Realtime = l
 	}
-	if l, err := TriggerLimitsFrom(getenv); err != nil {
+	if l, err := limits.Trigger(getenv); err != nil {
 		errs = append(errs, err)
 	} else {
 		s.TriggerLimits = l
@@ -451,75 +452,6 @@ func orDefault(v, def string) string {
 	return v
 }
 
-// ExpandLimitsFrom reads the instance's reference expansion limits
-// (BACKD_EXPAND_MAX_DEPTH, _PATHS, _ARRAY and _DOCS). A collection's reference may only lower
-// the array limit.
-func ExpandLimitsFrom(getenv func(string) string) (registry.ExpandLimits, error) {
-	l := registry.DefaultExpandLimits
-	var errs []error
-	for _, v := range []struct {
-		env  string
-		dst  *int
-		max  int
-		hint string
-	}{
-		{"BACKD_EXPAND_MAX_DEPTH", &l.MaxDepth, 2, "1 or 2"},
-		{"BACKD_EXPAND_MAX_PATHS", &l.MaxPaths, 0, "a positive integer"},
-		{"BACKD_EXPAND_MAX_ARRAY", &l.MaxArray, 0, "a positive integer"},
-		{"BACKD_EXPAND_MAX_DOCS", &l.MaxDocs, 0, "a positive integer"},
-	} {
-		s := getenv(v.env)
-		if s == "" {
-			continue
-		}
-		n, err := strconv.Atoi(s)
-		if err != nil || n < 1 || (v.max > 0 && n > v.max) {
-			errs = append(errs, fmt.Errorf("%s must be %s, got %q", v.env, v.hint, s))
-			continue
-		}
-		*v.dst = n
-	}
-	return l, errors.Join(errs...)
-}
-
-// AggregateLimitsFrom reads the instance's aggregation limits (BACKD_AGGREGATE_TIME and
-// BACKD_AGGREGATE_MAX_GROUPS). A collection's aggregate.limits may only lower them.
-func AggregateLimitsFrom(getenv func(string) string) (registry.AggregateLimits, error) {
-	l := registry.DefaultAggregateLimits
-	var errs []error
-	if v := getenv("BACKD_AGGREGATE_TIME"); v != "" {
-		d, err := time.ParseDuration(v)
-		if err != nil || d < 100*time.Millisecond || d > time.Minute {
-			errs = append(errs, fmt.Errorf("BACKD_AGGREGATE_TIME must be a duration between 100ms and 1m, got %q", v))
-		} else {
-			l.Time = d
-		}
-	}
-	if v := getenv("BACKD_AGGREGATE_MAX_GROUPS"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 || n > 10000 {
-			errs = append(errs, fmt.Errorf("BACKD_AGGREGATE_MAX_GROUPS must be an integer between 1 and 10000, got %q", v))
-		} else {
-			l.MaxGroups = n
-		}
-	}
-	return l, errors.Join(errs...)
-}
-
-// TriggerLimitsFrom reads the instance's trigger limits: BACKD_TRIGGER_MAX_CHAIN, how deep a
-// chain of writes caused by trigger runs may go. A realm's `triggers:` may only lower it.
-func TriggerLimitsFrom(getenv func(string) string) (registry.TriggerLimits, error) {
-	l := registry.DefaultTriggerLimits
-	if v := getenv("BACKD_TRIGGER_MAX_CHAIN"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 || n > registry.MaxTriggerChain {
-			return l, fmt.Errorf("BACKD_TRIGGER_MAX_CHAIN must be an integer between 1 and %d, got %q", registry.MaxTriggerChain, v)
-		}
-		l.MaxChain = n
-	}
-	return l, nil
-}
-
 // RealtimeLimitsFrom reads the instance's realtime limits: BACKD_REALTIME_MAX_SUBSCRIPTIONS_PER_STREAM,
 // BACKD_REALTIME_MAX_STREAMS_PER_USER, BACKD_REALTIME_MAX_STREAMS, BACKD_REALTIME_BUFFER (bytes per
 // stream), BACKD_REALTIME_MEMORY (bytes for all buffers) and BACKD_REALTIME_HEARTBEAT (a duration).
@@ -559,22 +491,6 @@ func RealtimeLimitsFrom(getenv func(string) string) (realtime.Limits, error) {
 		}
 	}
 	return l, errors.Join(errs...)
-}
-
-// DefaultImageMaxPixels is the pixel limit for image versions when none is set.
-const DefaultImageMaxPixels = 40_000_000
-
-// ImageMaxPixels reads BACKD_IMAGE_MAX_PIXELS: a positive number of pixels.
-func ImageMaxPixels(getenv func(string) string) (int64, error) {
-	v := getenv("BACKD_IMAGE_MAX_PIXELS")
-	if v == "" {
-		return DefaultImageMaxPixels, nil
-	}
-	n, err := strconv.ParseInt(v, 10, 64)
-	if err != nil || n < 1 {
-		return 0, fmt.Errorf("BACKD_IMAGE_MAX_PIXELS must be a positive integer, got %q", v)
-	}
-	return n, nil
 }
 
 // envSize reads a size from an environment variable: a whole number of bytes ("1048576") or a

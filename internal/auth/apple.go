@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -46,24 +45,6 @@ func (s *Users) OpenToken(sealed string) (string, error) {
 		return "", errors.New("the instance has no secrets key (BACKD_SECRETS_KEY)")
 	}
 	return OpenWith(s.Cipher, sealed)
-}
-
-// SealWith encrypts a token under a cipher, in the form "<key id>.<nonce>.<ciphertext>".
-func SealWith(c *SecretCipher, token string) (string, error) {
-	ct, nonce, err := c.Seal(token)
-	if err != nil {
-		return "", err
-	}
-	return c.KeyID + "." + nonce + "." + ct, nil
-}
-
-// OpenWith decrypts what SealWith made.
-func OpenWith(c *SecretCipher, sealed string) (string, error) {
-	parts := strings.SplitN(sealed, ".", 3)
-	if len(parts) != 3 {
-		return "", errors.New("the stored token is not in the sealed form")
-	}
-	return c.Open(parts[2], parts[1], parts[0])
 }
 
 // SaveAppleToken keeps Apple's refresh token on the user's Apple identity, sealed, unless the
