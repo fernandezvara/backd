@@ -14,6 +14,7 @@ import (
 	"github.com/rs/xid"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/internal/mongodb"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/settings"
@@ -70,8 +71,8 @@ func triggersStatus(c *kli.CommandContext) error {
 	if err := t.adm.Triggers.Status(t.ctx, &st); err != nil {
 		return err
 	}
-	if flag(c, "json") {
-		return encodeJSONLines(c.Stdout(), []triggerStatus{st})
+	if cmdutil.Flag(c, "json") {
+		return cmdutil.PrintJSONLines(c.Stdout(), []triggerStatus{st})
 	}
 	out := c.Stdout()
 	switch d := st.Dispatcher; {
@@ -120,15 +121,15 @@ func triggersGaps(c *kli.CommandContext) error {
 		return err
 	}
 	q := url.Values{}
-	if flag(c, "all") {
+	if cmdutil.Flag(c, "all") {
 		q.Set("all", "true")
 	}
 	var out struct{ Items []triggerGap }
 	if err := t.adm.Triggers.Gaps(t.ctx, q, &out); err != nil {
 		return err
 	}
-	if flag(c, "json") {
-		return encodeJSONLines(c.Stdout(), out.Items)
+	if cmdutil.Flag(c, "json") {
+		return cmdutil.PrintJSONLines(c.Stdout(), out.Items)
 	}
 	tw := tabwriter.NewWriter(c.Stdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tREASON\tCOLLECTION\tTRIGGER\tFROM\tTO\tCOUNT\tSTATE")
@@ -156,7 +157,7 @@ func triggersResolve(c *kli.CommandContext) error {
 		ID         string `json:"id"`
 		ResolvedAt string `json:"resolved_at"`
 	}
-	if err := t.adm.Triggers.ResolveGap(t.ctx, str(c, "id"), &out); err != nil {
+	if err := t.adm.Triggers.ResolveGap(t.ctx, cmdutil.Str(c, "id"), &out); err != nil {
 		return err
 	}
 	fmt.Fprintf(c.Stdout(), "gap %s resolved at %s\n", out.ID, out.ResolvedAt)
@@ -169,13 +170,13 @@ func triggersResolve(c *kli.CommandContext) error {
 func triggersRescan(c *kli.CommandContext) error {
 	now := time.Now().UTC()
 	parse := func(flagName string) (time.Time, error) {
-		v := str(c, flagName)
+		v := cmdutil.Str(c, flagName)
 		if v == "" {
 			return time.Time{}, nil
 		}
 		s, err := sinceParam(v, now)
 		if err != nil {
-			return time.Time{}, usageErr(errors.New(strings.Replace(err.Error(), "--since", "--"+flagName, 1)))
+			return time.Time{}, cmdutil.UsageErr(errors.New(strings.Replace(err.Error(), "--since", "--"+flagName, 1)))
 		}
 		return time.Parse(time.RFC3339, s)
 	}
@@ -188,7 +189,7 @@ func triggersRescan(c *kli.CommandContext) error {
 		return err
 	}
 	if since.IsZero() {
-		return usageErr(errors.New("--updated-since is required: a rescan reads the documents written from then on"))
+		return cmdutil.UsageErr(errors.New("--updated-since is required: a rescan reads the documents written from then on"))
 	}
 	ctx := context.Background()
 	// Not setup(): a rescan runs no function, so it doesn't need the bundles built.
@@ -207,8 +208,8 @@ func triggersRescan(c *kli.CommandContext) error {
 	a := &app{cfg: cfg, log: slog.New(slog.NewJSONHandler(c.Stderr(), &slog.HandlerOptions{Level: cfg.LogLevel})), reg: reg, client: client}
 	defer a.close()
 	req := triggers.RescanRequest{
-		Realm: str(c, "realm"), Database: str(c, "database"), Collection: str(c, "collection"),
-		Trigger: str(c, "trigger"), Since: since, Until: until, Confirm: flag(c, "confirm"), Run: xid.New().String(),
+		Realm: cmdutil.Str(c, "realm"), Database: cmdutil.Str(c, "database"), Collection: cmdutil.Str(c, "collection"),
+		Trigger: cmdutil.Str(c, "trigger"), Since: since, Until: until, Confirm: cmdutil.Flag(c, "confirm"), Run: xid.New().String(),
 	}
 	res, err := triggers.Rescan(ctx, a.reg, req, &mongodb.DocScanner{Client: a.client, Decrypt: func(ctx context.Context, mongoDB, coll string, doc map[string]any) error {
 		return a.decryptDocument(ctx, req.Realm, mongoDB, coll, doc)

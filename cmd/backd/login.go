@@ -6,25 +6,24 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"os"
 	"strings"
 
 	"github.com/fernandezvara/kli"
-	"golang.org/x/term"
 
+	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/pkg/client"
 )
 
 func loginAction(c *kli.CommandContext) error {
-	return login(str(c, "realm"), str(c, "url"), str(c, "email"), flag(c, "magic-link"), c.Getenv, ioOf(c))
+	return login(cmdutil.Str(c, "realm"), cmdutil.Str(c, "url"), cmdutil.Str(c, "email"), cmdutil.Flag(c, "magic-link"), c.Getenv, cmdutil.IOOf(c))
 }
 
 func logoutAction(c *kli.CommandContext) error {
-	return logout(str(c, "realm"), str(c, "url"), c.Getenv, ioOf(c))
+	return logout(cmdutil.Str(c, "realm"), cmdutil.Str(c, "url"), c.Getenv, cmdutil.IOOf(c))
 }
 
 func whoamiAction(c *kli.CommandContext) error {
-	return whoami(str(c, "realm"), str(c, "url"), c.Getenv, ioOf(c))
+	return whoami(cmdutil.Str(c, "realm"), cmdutil.Str(c, "url"), c.Getenv, cmdutil.IOOf(c))
 }
 
 // sessionAnswer is the session a sign-in ends in.
@@ -42,7 +41,7 @@ func sessionOf(s *client.Session) sessionAnswer {
 	return a
 }
 
-func login(realm, flagURL, email string, magicLink bool, getenv func(string) string, uio userIO) error {
+func login(realm, flagURL, email string, magicLink bool, getenv func(string) string, uio cmdutil.IO) error {
 	creds, path, err := loadCredentials(getenv)
 	if err != nil {
 		return err
@@ -56,23 +55,23 @@ func login(realm, flagURL, email string, magicLink bool, getenv func(string) str
 		return err
 	}
 	if plainRemote(u) {
-		fmt.Fprintf(uio.stderr, "warning: %s isn't HTTPS: the password and session travel unencrypted\n", u)
+		fmt.Fprintf(uio.Stderr, "warning: %s isn't HTTPS: the password and session travel unencrypted\n", u)
 	}
-	terminal := isTerminal(uio.stdin)
+	terminal := cmdutil.IsTerminal(uio.Stdin)
 	if email == "" {
 		if !terminal {
 			return errors.New("--email is required when standard input isn't a terminal")
 		}
-		fmt.Fprint(uio.stderr, "Email: ")
-		line, err := bufio.NewReader(uio.stdin).ReadString('\n')
+		fmt.Fprint(uio.Stderr, "Email: ")
+		line, err := bufio.NewReader(uio.Stdin).ReadString('\n')
 		if err != nil {
 			return errors.New("no email given")
 		}
 		email = strings.TrimSpace(line)
 	}
-	if !isTerminal(uio.stdin) {
+	if !cmdutil.IsTerminal(uio.Stdin) {
 		// The password and a code are two lines of the same input.
-		uio.stdin = bufio.NewReader(uio.stdin)
+		uio.Stdin = bufio.NewReader(uio.Stdin)
 	}
 	t, err := makeTarget(u, realm, "", false, hc)
 	if err != nil {
@@ -84,7 +83,7 @@ func login(realm, flagURL, email string, magicLink bool, getenv func(string) str
 			return err
 		}
 	} else {
-		pw, err := readSecret(uio, false, "Password")
+		pw, err := cmdutil.ReadSecret(uio, false, "Password")
 		if err != nil {
 			return err
 		}
@@ -107,14 +106,14 @@ func login(realm, flagURL, email string, magicLink bool, getenv func(string) str
 	if err := creds.save(path); err != nil {
 		return fmt.Errorf("logged in, but can't store the session: %w", err)
 	}
-	fmt.Fprintf(uio.stdout, "logged in to realm %s on %s as %s (session expires at %s at the latest)\n", realm, u, res.Email, res.ExpiresAt)
+	fmt.Fprintf(uio.Stdout, "logged in to realm %s on %s as %s (session expires at %s at the latest)\n", realm, u, res.Email, res.ExpiresAt)
 	if getenv("BACKD_API_KEY") != "" {
-		fmt.Fprintln(uio.stderr, "note: BACKD_API_KEY is set, so commands use that key instead of this session")
+		fmt.Fprintln(uio.Stderr, "note: BACKD_API_KEY is set, so commands use that key instead of this session")
 	}
 	return nil
 }
 
-func logout(realm, flagURL string, getenv func(string) string, uio userIO) error {
+func logout(realm, flagURL string, getenv func(string) string, uio cmdutil.IO) error {
 	t, err := newTarget(flagURL, realm, getenv, true)
 	if err != nil {
 		return err
@@ -135,11 +134,11 @@ func logout(realm, flagURL string, getenv func(string) string, uio userIO) error
 	if err := creds.save(path); err != nil {
 		return err
 	}
-	fmt.Fprintf(uio.stdout, "logged out of realm %s on %s\n", realm, t.url)
+	fmt.Fprintf(uio.Stdout, "logged out of realm %s on %s\n", realm, t.url)
 	return nil
 }
 
-func whoami(realm, flagURL string, getenv func(string) string, uio userIO) error {
+func whoami(realm, flagURL string, getenv func(string) string, uio cmdutil.IO) error {
 	t, err := newTarget(flagURL, realm, getenv, true)
 	if err != nil {
 		return err
@@ -148,9 +147,9 @@ func whoami(realm, flagURL string, getenv func(string) string, uio userIO) error
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(uio.stdout, "%s (id %s) on realm %s at %s; roles: %s\n", me.Email, me.ID, realm, t.url, orNone(me.Roles))
+	fmt.Fprintf(uio.Stdout, "%s (id %s) on realm %s at %s; roles: %s\n", me.Email, me.ID, realm, t.url, orNone(me.Roles))
 	if getenv("BACKD_API_KEY") != "" {
-		fmt.Fprintln(uio.stderr, "note: BACKD_API_KEY is set, so commands use that key instead of this session")
+		fmt.Fprintln(uio.Stderr, "note: BACKD_API_KEY is set, so commands use that key instead of this session")
 	}
 	return nil
 }
@@ -176,9 +175,4 @@ func plainRemote(u string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip == nil || !ip.IsLoopback()
-}
-
-func isTerminal(r any) bool {
-	f, ok := r.(*os.File)
-	return ok && term.IsTerminal(int(f.Fd()))
 }

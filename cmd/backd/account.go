@@ -8,6 +8,7 @@ import (
 
 	"github.com/fernandezvara/kli"
 
+	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/pkg/client"
 )
 
@@ -16,14 +17,14 @@ import (
 // a fresh proof of identity, as the server does.
 
 // accountTarget resolves the stored session of the realm (an API key is not a person).
-func accountTarget(c *kli.CommandContext) (*target, userIO, error) {
+func accountTarget(c *kli.CommandContext) (*target, cmdutil.IO, error) {
 	t, err := targetOf(c, true)
 	if err != nil {
-		return nil, userIO{}, err
+		return nil, cmdutil.IO{}, err
 	}
-	uio := ioOf(c)
-	if !isTerminal(uio.stdin) {
-		uio.stdin = bufio.NewReader(uio.stdin)
+	uio := cmdutil.IOOf(c)
+	if !cmdutil.IsTerminal(uio.Stdin) {
+		uio.Stdin = bufio.NewReader(uio.Stdin)
 	}
 	return t, uio, nil
 }
@@ -40,11 +41,11 @@ func accountMFAStatus(c *kli.CommandContext) error {
 	}
 	switch {
 	case st.Enabled:
-		fmt.Fprintf(uio.stdout, "two-step verification: on (%s); recovery codes left: %d; required by a role: %t\n", joinList(st.Methods), st.RecoveryCodesLeft, st.Required)
+		fmt.Fprintf(uio.Stdout, "two-step verification: on (%s); recovery codes left: %d; required by a role: %t\n", joinList(st.Methods), st.RecoveryCodesLeft, st.Required)
 	case !st.Available:
-		fmt.Fprintln(uio.stdout, "two-step verification: not available in this realm")
+		fmt.Fprintln(uio.Stdout, "two-step verification: not available in this realm")
 	default:
-		fmt.Fprintf(uio.stdout, "two-step verification: off; required by a role: %t (turn it on with `backd account mfa-enable`)\n", st.Required)
+		fmt.Fprintf(uio.Stdout, "two-step verification: off; required by a role: %t (turn it on with `backd account mfa-enable`)\n", st.Required)
 	}
 	return nil
 }
@@ -77,7 +78,7 @@ func accountMFAEnable(c *kli.CommandContext) error {
 	showSetup(uio, setup.OtpauthURI, setup.Secret)
 	var out *client.MFAConfirmResult
 	for tries := 0; ; tries++ {
-		code, err := readLine(uio, "Code shown by the app, to confirm")
+		code, err := cmdutil.ReadLine(uio, "Code shown by the app, to confirm")
 		if err != nil {
 			return err
 		}
@@ -86,19 +87,19 @@ func accountMFAEnable(c *kli.CommandContext) error {
 		if err == nil {
 			break
 		}
-		if !errors.As(err, &ae) || ae.Code != "invalid_code" || tries >= 2 || !isTerminal(uio.stdin) {
+		if !errors.As(err, &ae) || ae.Code != "invalid_code" || tries >= 2 || !cmdutil.IsTerminal(uio.Stdin) {
 			return err
 		}
-		fmt.Fprintln(uio.stderr, "that code is not right: try the next one the app shows")
+		fmt.Fprintln(uio.Stderr, "that code is not right: try the next one the app shows")
 	}
-	fmt.Fprintln(uio.stderr, "two-step verification is on; your other sessions ended")
+	fmt.Fprintln(uio.Stderr, "two-step verification is on; your other sessions ended")
 	showRecoveryCodes(uio, out.RecoveryCodes)
 	return nil
 }
 
 // accountMFADisable turns the second factor off.
 func accountMFADisable(c *kli.CommandContext) error {
-	if !flag(c, "yes") {
+	if !cmdutil.Flag(c, "yes") {
 		return errors.New("turning two-step verification off weakens the account: add --yes to confirm")
 	}
 	t, uio, err := accountTarget(c)
@@ -112,7 +113,7 @@ func accountMFADisable(c *kli.CommandContext) error {
 	if err := t.cl.Auth().MFA.Disable(t.ctx, withProof(proof)...); err != nil {
 		return err
 	}
-	fmt.Fprintln(uio.stdout, "two-step verification is off")
+	fmt.Fprintln(uio.Stdout, "two-step verification is off")
 	return nil
 }
 
@@ -130,7 +131,7 @@ func accountRecoveryCodes(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(uio.stderr, "the earlier recovery codes no longer work")
+	fmt.Fprintln(uio.Stderr, "the earlier recovery codes no longer work")
 	showRecoveryCodes(uio, codes)
 	return nil
 }

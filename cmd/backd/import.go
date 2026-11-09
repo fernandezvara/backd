@@ -24,6 +24,7 @@ import (
 	"github.com/fernandezvara/kli"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/internal/exportpkg"
 )
 
@@ -92,13 +93,13 @@ func (t *importTotals) add(part string, base int, a importChunkAnswer) {
 // Documents keep their ids and _meta, so running it again after an interruption finishes the
 // job: what was written already is found identical and left alone.
 func importAction(c *kli.CommandContext) error {
-	mode := str(c, "mode")
+	mode := cmdutil.Str(c, "mode")
 	if mode != "create" && mode != "skip" && mode != "replace" {
-		return usageErr(fmt.Errorf("--mode: want create, skip or replace, got %q", mode))
+		return cmdutil.UsageErr(fmt.Errorf("--mode: want create, skip or replace, got %q", mode))
 	}
-	dry, skipInvalid := flag(c, "dry-run"), flag(c, "skip-invalid")
+	dry, skipInvalid := cmdutil.Flag(c, "dry-run"), cmdutil.Flag(c, "skip-invalid")
 	stderr := c.Stderr()
-	dir, cleanup, err := openPackage(str(c, "from"))
+	dir, cleanup, err := openPackage(cmdutil.Str(c, "from"))
 	if err != nil {
 		return err
 	}
@@ -107,9 +108,9 @@ func importAction(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	keys, err := parseFieldKeys(str(c, "field"), c.Getenv, stderr)
+	keys, err := parseFieldKeys(cmdutil.Str(c, "field"), c.Getenv, stderr)
 	if err != nil {
-		return usageErr(err)
+		return cmdutil.UsageErr(err)
 	}
 	packKeys, err := packageKeys(dir)
 	if err != nil {
@@ -117,16 +118,16 @@ func importAction(c *kli.CommandContext) error {
 	}
 	dec, err := newDecryptor(m, keys, packKeys)
 	if err != nil {
-		return usageErr(err)
+		return cmdutil.UsageErr(err)
 	}
 	var ek *auth.SecretCipher
-	if spec := str(c, "auth-key"); spec != "" {
+	if spec := cmdutil.Str(c, "auth-key"); spec != "" {
 		text, err := readKeySource(spec, c.Getenv, stderr)
 		if err != nil {
-			return usageErr(fmt.Errorf("--auth-key: %w", err))
+			return cmdutil.UsageErr(fmt.Errorf("--auth-key: %w", err))
 		}
 		if ek, err = auth.ExportKey(text); err != nil {
-			return usageErr(fmt.Errorf("--auth-key: %w", err))
+			return cmdutil.UsageErr(fmt.Errorf("--auth-key: %w", err))
 		}
 		if m.AuthKey != "" && ek.KeyID != m.AuthKey {
 			return fmt.Errorf("--auth-key is not the key this package was exported with (its fingerprint is %s, the package's is %s)", ek.KeyID, m.AuthKey)
@@ -141,11 +142,11 @@ func importAction(c *kli.CommandContext) error {
 	}
 	defer closeT()
 	if d != nil && !dry {
-		if err := d.refuseIfServed(context.Background(), flag(c, "force"), stderr); err != nil {
+		if err := d.refuseIfServed(context.Background(), cmdutil.Flag(c, "force"), stderr); err != nil {
 			return err
 		}
 	}
-	proof, err := t.proof(ioOf(c))
+	proof, err := t.proof(cmdutil.IOOf(c))
 	if err != nil {
 		return err
 	}
@@ -202,7 +203,7 @@ func importAction(c *kli.CommandContext) error {
 	}
 	printImportReport(stderr, "validated", val, mode)
 	blocking := val.counts["conflict"] > 0 || (val.counts["invalid"] > 0 && !skipInvalid)
-	if path := str(c, "report"); path != "" || len(val.problems) > 0 && skipInvalid {
+	if path := cmdutil.Str(c, "report"); path != "" || len(val.problems) > 0 && skipInvalid {
 		if path == "" {
 			path = "import-report.json"
 		}
@@ -233,7 +234,7 @@ func importAction(c *kli.CommandContext) error {
 		return err
 	}
 	printImportReport(stderr, "imported", wr, mode)
-	if path := str(c, "report"); path != "" && len(wr.problems) > 0 {
+	if path := cmdutil.Str(c, "report"); path != "" && len(wr.problems) > 0 {
 		if err := writeImportReport(path, wr); err != nil {
 			return err
 		}

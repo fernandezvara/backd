@@ -16,6 +16,7 @@ import (
 
 	"github.com/fernandezvara/kli"
 
+	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/internal/exportpkg"
 	"github.com/fernandezvara/backd/internal/fieldcrypt"
 )
@@ -47,76 +48,76 @@ type exportPlan struct {
 // by part into a package directory (or archive), verifying and recording each part so an
 // interrupted run continues where it stopped.
 func exportAction(c *kli.CommandContext) error {
-	out := strings.TrimRight(str(c, "out"), "/")
-	archive := flag(c, "archive")
-	database, collections := str(c, "db"), splitList(str(c, "collection"))
+	out := strings.TrimRight(cmdutil.Str(c, "out"), "/")
+	archive := cmdutil.Flag(c, "archive")
+	database, collections := cmdutil.Str(c, "db"), splitList(cmdutil.Str(c, "collection"))
 	if len(collections) > 0 && database == "" {
-		return usageErr(errors.New("--collection needs --db"))
+		return cmdutil.UsageErr(errors.New("--collection needs --db"))
 	}
-	format, fields, where := str(c, "format"), splitList(str(c, "fields")), str(c, "where")
+	format, fields, where := cmdutil.Str(c, "format"), splitList(cmdutil.Str(c, "fields")), cmdutil.Str(c, "where")
 	if format == "" {
 		format = "jsonl"
 	}
 	if format != "jsonl" && format != "csv" {
-		return usageErr(fmt.Errorf("--format: want jsonl or csv, got %q", format))
+		return cmdutil.UsageErr(fmt.Errorf("--format: want jsonl or csv, got %q", format))
 	}
 	if where != "" && (database == "" || len(collections) != 1) {
-		return usageErr(errors.New("--where needs --db and exactly one --collection"))
+		return cmdutil.UsageErr(errors.New("--where needs --db and exactly one --collection"))
 	}
 	csvOut := format == "csv"
-	include := str(c, "include")
+	include := cmdutil.Str(c, "include")
 	if include != "" && include != "auth" {
-		return usageErr(fmt.Errorf("--include: want auth, got %q", include))
+		return cmdutil.UsageErr(fmt.Errorf("--include: want auth, got %q", include))
 	}
 	if include == "auth" && (database != "" || len(fields) > 0 || csvOut) {
-		return usageErr(errors.New("--include auth exports the whole realm: not with --db, --collection, --fields, --where or --format csv"))
+		return cmdutil.UsageErr(errors.New("--include auth exports the whole realm: not with --db, --collection, --fields, --where or --format csv"))
 	}
-	if keyOut := str(c, "auth-key-out"); keyOut != "" && include != "auth" {
-		return usageErr(errors.New("--auth-key-out needs --include auth"))
+	if keyOut := cmdutil.Str(c, "auth-key-out"); keyOut != "" && include != "auth" {
+		return cmdutil.UsageErr(errors.New("--auth-key-out needs --include auth"))
 	}
-	if csvOut && flag(c, "no-files") {
-		return usageErr(errors.New("--no-files has no meaning with --format csv: a CSV extract never holds files"))
+	if csvOut && cmdutil.Flag(c, "no-files") {
+		return cmdutil.UsageErr(errors.New("--no-files has no meaning with --format csv: a CSV extract never holds files"))
 	}
-	anonymize := flag(c, "anonymize")
+	anonymize := cmdutil.Flag(c, "anonymize")
 	var planBody map[string]any
 	if anonymize {
 		planBody = map[string]any{"anonymize": true}
-		if v := str(c, "anonymize-files"); v != "" {
+		if v := cmdutil.Str(c, "anonymize-files"); v != "" {
 			if v != "keep" {
-				return usageErr(fmt.Errorf("--anonymize-files: want keep, got %q", v))
+				return cmdutil.UsageErr(fmt.Errorf("--anonymize-files: want keep, got %q", v))
 			}
 			planBody["anonymize_files"] = v
 		}
-		if path := str(c, "anonymize-config"); path != "" {
+		if path := cmdutil.Str(c, "anonymize-config"); path != "" {
 			data, err := os.ReadFile(path)
 			if err != nil {
-				return usageErr(fmt.Errorf("--anonymize-config: %w", err))
+				return cmdutil.UsageErr(fmt.Errorf("--anonymize-config: %w", err))
 			}
 			planBody["anonymize_config"] = string(data)
 		}
-		if spec := str(c, "staging-password"); spec != "" {
+		if spec := cmdutil.Str(c, "staging-password"); spec != "" {
 			if include != "auth" {
-				return usageErr(errors.New("--staging-password needs --include auth: without users there is no password to set"))
+				return cmdutil.UsageErr(errors.New("--staging-password needs --include auth: without users there is no password to set"))
 			}
 			pw, err := readKeySource(spec, c.Getenv, c.Stderr())
 			if err != nil {
-				return usageErr(fmt.Errorf("--staging-password: %w", err))
+				return cmdutil.UsageErr(fmt.Errorf("--staging-password: %w", err))
 			}
 			planBody["staging_password"] = pw
 		}
 		if csvOut {
-			return usageErr(errors.New("--anonymize writes a package: not with --format csv"))
+			return cmdutil.UsageErr(errors.New("--anonymize writes a package: not with --format csv"))
 		}
 	} else {
 		for _, f := range []string{"anonymize-config", "staging-password", "anonymize-files"} {
-			if str(c, f) != "" {
-				return usageErr(fmt.Errorf("--%s needs --anonymize", f))
+			if cmdutil.Str(c, f) != "" {
+				return cmdutil.UsageErr(fmt.Errorf("--%s needs --anonymize", f))
 			}
 		}
 	}
-	keys, err := parseFieldKeys(str(c, "field"), c.Getenv, c.Stderr())
+	keys, err := parseFieldKeys(cmdutil.Str(c, "field"), c.Getenv, c.Stderr())
 	if err != nil {
-		return usageErr(err)
+		return cmdutil.UsageErr(err)
 	}
 	t, closeT, _, err := openTarget(c)
 	if err != nil {
@@ -132,7 +133,7 @@ func exportAction(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	proof, err := t.proof(ioOf(c))
+	proof, err := t.proof(cmdutil.IOOf(c))
 	if err != nil {
 		return err
 	}
@@ -143,7 +144,7 @@ func exportAction(c *kli.CommandContext) error {
 	for _, name := range collections {
 		q.Add("collection", name)
 	}
-	if flag(c, "no-files") {
+	if cmdutil.Flag(c, "no-files") {
 		q.Set("files", "false")
 	}
 	if len(fields) > 0 {
@@ -210,7 +211,7 @@ func exportAction(c *kli.CommandContext) error {
 	}
 	dec, err := newDecryptor(m, keys, dataKeys)
 	if err != nil {
-		return usageErr(err)
+		return cmdutil.UsageErr(err)
 	}
 	fileIDs := map[string][]string{} // database -> file ids, in order
 	for di := range m.Databases {
@@ -322,7 +323,7 @@ func exportAction(c *kli.CommandContext) error {
 		fmt.Fprintf(stderr, "warning: %d second factors or push devices were left out because the realm's secrets key could not open them (with --direct, pass --master-key)\n", totals.AuthUnavailable)
 	}
 	if plan.ExportKey != "" {
-		if keyOut := str(c, "auth-key-out"); keyOut != "" {
+		if keyOut := cmdutil.Str(c, "auth-key-out"); keyOut != "" {
 			if err := writeSecretFile(keyOut, plan.ExportKey+"\n"); err != nil {
 				return fmt.Errorf("the package is complete, but its export key could not be written (%v): export again", err)
 			}

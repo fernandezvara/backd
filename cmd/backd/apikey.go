@@ -9,6 +9,7 @@ import (
 	"github.com/fernandezvara/kli"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/strutil"
 )
@@ -29,27 +30,27 @@ type apiKey struct {
 
 // keyOptions checks the create flags and adds them to the request body.
 func keyOptions(c *kli.CommandContext, body map[string]any) error {
-	body["role"] = str(c, "role")
-	if v := str(c, "expires"); v != "" {
+	body["role"] = cmdutil.Str(c, "role")
+	if v := cmdutil.Str(c, "expires"); v != "" {
 		if d, err := strutil.ParseDuration(v); err != nil || d <= 0 {
-			return usageErr(fmt.Errorf("--expires: want a positive duration such as 90d or 12h, got %q", v))
+			return cmdutil.UsageErr(fmt.Errorf("--expires: want a positive duration such as 90d or 12h, got %q", v))
 		}
 		body["expires_in"] = v
 	}
-	if v := str(c, "networks"); v != "" {
+	if v := cmdutil.Str(c, "networks"); v != "" {
 		nets, err := registry.ParseNetworks(strings.Split(v, ","))
 		if err != nil {
-			return usageErr(fmt.Errorf("--networks: want comma-separated IP addresses or CIDR networks, got %q", v))
+			return cmdutil.UsageErr(fmt.Errorf("--networks: want comma-separated IP addresses or CIDR networks, got %q", v))
 		}
 		body["networks"] = nets.Strings()
 	}
-	if v := str(c, "org"); v != "" {
+	if v := cmdutil.Str(c, "org"); v != "" {
 		body["org"] = v
 	}
-	if v := str(c, "scopes"); v != "" {
+	if v := cmdutil.Str(c, "scopes"); v != "" {
 		grants := strings.Split(v, ",")
 		if _, err := auth.ParseScopes(grants); err != nil {
-			return usageErr(fmt.Errorf("--scopes: %w", err))
+			return cmdutil.UsageErr(fmt.Errorf("--scopes: %w", err))
 		}
 		body["scopes"] = grants
 	}
@@ -57,7 +58,7 @@ func keyOptions(c *kli.CommandContext, body map[string]any) error {
 }
 
 func apikeyCreate(c *kli.CommandContext) error {
-	body := map[string]any{"name": str(c, "name")}
+	body := map[string]any{"name": cmdutil.Str(c, "name")}
 	if err := keyOptions(c, body); err != nil {
 		return err
 	}
@@ -67,7 +68,7 @@ func apikeyCreate(c *kli.CommandContext) error {
 	}
 	// A key outlives the session and is not asked for a second factor: a person signed in with a
 	// session proves who they are again first.
-	uio := ioOf(c)
+	uio := cmdutil.IOOf(c)
 	proof, err := t.proof(uio)
 	if err != nil {
 		return err
@@ -76,7 +77,7 @@ func apikeyCreate(c *kli.CommandContext) error {
 	if err := t.adm.APIKeys.Create(t.ctx, body, &k, withProof(proof)...); err != nil {
 		return err
 	}
-	fmt.Fprintln(uio.stdout, k.Key)
+	fmt.Fprintln(uio.Stdout, k.Key)
 	msg := fmt.Sprintf("API key %q (role %s) created. Store it now as a secret: it can't be shown again.", k.Name, k.Role)
 	if len(k.Scopes) > 0 {
 		msg += " It reaches only: " + strings.Join(k.Scopes, ", ") + "."
@@ -86,7 +87,7 @@ func apikeyCreate(c *kli.CommandContext) error {
 	} else {
 		msg += " Warning: it never expires; prefer --expires (for example 90d) and rotate keys before they expire."
 	}
-	fmt.Fprintln(uio.stderr, msg)
+	fmt.Fprintln(uio.Stderr, msg)
 	return nil
 }
 
@@ -119,7 +120,7 @@ func apikeyRevoke(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	name := str(c, "name")
+	name := cmdutil.Str(c, "name")
 	var ae *apiError
 	if err := t.adm.APIKeys.Delete(t.ctx, name); err != nil {
 		if errors.As(err, &ae) && ae.Status == 404 && ae.Message == "API key not found" {

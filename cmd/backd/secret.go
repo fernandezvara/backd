@@ -11,6 +11,7 @@ import (
 	"github.com/fernandezvara/kli"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/internal/mongodb"
 	"github.com/fernandezvara/backd/internal/settings"
 )
@@ -34,11 +35,11 @@ func secretSet(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	name, database, org := str(c, "name"), str(c, "database"), str(c, "org")
+	name, database, org := cmdutil.Str(c, "name"), cmdutil.Str(c, "database"), cmdutil.Str(c, "org")
 	if org != "" && database != "" {
 		return errors.New("--org and --database are different scopes: give one")
 	}
-	value, err := readSecretValue(ioOf(c), "Secret")
+	value, err := cmdutil.ReadSecretValue(cmdutil.IOOf(c), "Secret")
 	if err != nil {
 		return err
 	}
@@ -90,7 +91,7 @@ func secretDelete(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	name, database, org := str(c, "name"), str(c, "database"), str(c, "org")
+	name, database, org := cmdutil.Str(c, "name"), cmdutil.Str(c, "database"), cmdutil.Str(c, "org")
 	if org != "" && database != "" {
 		return errors.New("--org and --database are different scopes: give one")
 	}
@@ -107,7 +108,7 @@ func secretDelete(c *kli.CommandContext) error {
 		return err
 	} else if held && database == "" && org == "" {
 		// Deleting a key loses what it protects: a person proves who they are again first.
-		if proof, err = t.proof(ioOf(c)); err != nil {
+		if proof, err = t.proof(cmdutil.IOOf(c)); err != nil {
 			return err
 		}
 	}
@@ -122,7 +123,7 @@ func secretDelete(c *kli.CommandContext) error {
 }
 
 func secretRotateKey(c *kli.CommandContext) error {
-	return rotateSecretsKey(context.Background(), c.Getenv, ioOf(c))
+	return rotateSecretsKey(context.Background(), c.Getenv, cmdutil.IOOf(c))
 }
 
 // secretRef names a secret as function.yaml would: realm.NAME for the realm scope, NAME for a
@@ -147,7 +148,7 @@ func orgScope(org string) string {
 
 // rotateSecretsKey re-encrypts every auth-enabled realm's secrets from
 // the old (currently configured) master key to a new one, in place.
-func rotateSecretsKey(ctx context.Context, getenv func(string) string, uio userIO) error {
+func rotateSecretsKey(ctx context.Context, getenv func(string) string, uio cmdutil.IO) error {
 	oldKey, err := settings.LoadKeyMaterial(getenv, "BACKD_SECRETS_KEY")
 	if err != nil {
 		return err
@@ -173,7 +174,7 @@ func rotateSecretsKey(ctx context.Context, getenv func(string) string, uio userI
 	if oldCipher.KeyID == newCipher.KeyID {
 		return errors.New("BACKD_SECRETS_KEY and BACKD_SECRETS_NEW_KEY are the same key")
 	}
-	a, err := setup(ctx, getenv, uio.stderr)
+	a, err := setup(ctx, getenv, uio.Stderr)
 	if err != nil {
 		return err
 	}
@@ -187,7 +188,7 @@ func rotateSecretsKey(ctx context.Context, getenv func(string) string, uio userI
 			return fmt.Errorf("%s: %w", realm.Name, err)
 		}
 		if n > 0 {
-			fmt.Fprintf(uio.stdout, "%s: %d secret(s) rotated\n", realm.Name, n)
+			fmt.Fprintf(uio.Stdout, "%s: %d secret(s) rotated\n", realm.Name, n)
 		}
 	}
 	return nil

@@ -11,6 +11,7 @@ import (
 
 	"github.com/fernandezvara/kli"
 
+	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/rulestest"
 )
@@ -26,7 +27,7 @@ func rulesTest(c *kli.CommandContext) error {
 	if err != nil {
 		return fmt.Errorf("invalid config:\n%w", err)
 	}
-	only, verbose, strict := str(c, "collection"), flag(c, "verbose"), flag(c, "strict")
+	only, verbose, strict := cmdutil.Str(c, "collection"), cmdutil.Flag(c, "verbose"), cmdutil.Flag(c, "strict")
 	out := c.Stdout()
 
 	var tested, passed, failed, broken int
@@ -96,9 +97,9 @@ func rulesTest(c *kli.CommandContext) error {
 	fmt.Fprintln(out)
 	switch {
 	case failed > 0 || broken > 0:
-		return kli.Exit(1, errors.New(""))
+		return cmdutil.Failed(errors.New(""))
 	case strict && len(untested) > 0:
-		return kli.Exit(1, fmt.Errorf("%d collections with rules have no tests (--strict)", len(untested)))
+		return cmdutil.Failed(fmt.Errorf("%d collections with rules have no tests (--strict)", len(untested)))
 	}
 	return nil
 }

@@ -18,6 +18,7 @@ This section is for the **contributor**: whoever changes `backd` itself. To run 
 | Path | Contents |
 |---|---|
 | `cmd/backd/` | The `backd` binary: subcommand dispatch |
+| `internal/cmdutil/` | Helpers the command trees share: flag definitions and reads, the command wrapper, exit codes, terminal input and JSON output |
 | `internal/settings/` | Runtime settings from environment variables |
 | `internal/registry/` | Loads and validates the `CONFIG_DIR` tree into the registry |
 | `internal/jsonnum/` | JSON number normalization (int64 / float64) |

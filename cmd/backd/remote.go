@@ -1,14 +1,12 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -20,6 +18,7 @@ import (
 	"github.com/fernandezvara/kli"
 
 	"github.com/fernandezvara/backd/internal/adminclient"
+	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/pkg/client"
 )
 
@@ -194,12 +193,12 @@ func newTarget(flagURL, realm string, getenv func(string) string, sessionOnly bo
 // targetOf resolves the server, realm and credential of an API command
 // from its --realm and --url flags.
 func targetOf(c *kli.CommandContext, sessionOnly bool) (*target, error) {
-	return targetFor(c, str(c, "realm"), sessionOnly)
+	return targetFor(c, cmdutil.Str(c, "realm"), sessionOnly)
 }
 
 // targetFor is targetOf for a realm resolved apart from the --realm flag.
 func targetFor(c *kli.CommandContext, realm string, sessionOnly bool) (*target, error) {
-	return newTarget(str(c, "url"), realm, c.Getenv, sessionOnly)
+	return newTarget(cmdutil.Str(c, "url"), realm, c.Getenv, sessionOnly)
 }
 
 // httpClient trusts the system's CAs, plus BACKD_CA_CERT (a PEM file) if
@@ -282,7 +281,7 @@ func (t *target) mapError(err error) error {
 // (their second factor's code, else the password, else a code sent by email), and returns the
 // header that sensitive requests carry. Nothing is asked of an API key, or of a user the server
 // asks nothing of.
-func (t *target) proof(uio userIO) (map[string]string, error) {
+func (t *target) proof(uio cmdutil.IO) (map[string]string, error) {
 	if t.fromKey {
 		return nil, nil
 	}
@@ -296,7 +295,7 @@ func (t *target) proof(uio userIO) (map[string]string, error) {
 	in := client.ReauthInput{Method: me.ReauthMethods[0]}
 	switch in.Method {
 	case "password":
-		pw, err := readSecret(uio, false, "Password (to confirm it is you)")
+		pw, err := cmdutil.ReadSecret(uio, false, "Password (to confirm it is you)")
 		if err != nil {
 			return nil, err
 		}
@@ -305,14 +304,14 @@ func (t *target) proof(uio userIO) (map[string]string, error) {
 		if err := t.cl.Auth().RequestReauthCode(t.ctx); err != nil {
 			return nil, err
 		}
-		fmt.Fprintln(uio.stderr, "a confirmation code was sent to your email address")
-		code, err := readLine(uio, "Code from the email")
+		fmt.Fprintln(uio.Stderr, "a confirmation code was sent to your email address")
+		code, err := cmdutil.ReadLine(uio, "Code from the email")
 		if err != nil {
 			return nil, err
 		}
 		in.Code = code
 	default: // totp: the code of the authenticator app
-		code, err := readLine(uio, "Code from your authenticator app (or a recovery code)")
+		code, err := cmdutil.ReadLine(uio, "Code from your authenticator app (or a recovery code)")
 		if err != nil {
 			return nil, err
 		}
@@ -333,19 +332,6 @@ func withProof(headers map[string]string) []client.RequestOption { return adminc
 
 // withHeaders is withProof for headers that are not a proof (an export's lease).
 var withHeaders = withProof
-
-// readLine reads one line the user types (a code): from the terminal with a prompt, or the first
-// line of standard input when it isn't one.
-func readLine(uio userIO, prompt string) (string, error) {
-	if f, ok := uio.stdin.(*os.File); ok && isTerminal(f) {
-		fmt.Fprintf(uio.stderr, "%s: ", prompt)
-	}
-	line, err := bufio.NewReader(uio.stdin).ReadString('\n')
-	if err != nil && (!errors.Is(err, io.EOF) || line == "") {
-		return "", errors.New("no code given")
-	}
-	return strings.TrimSpace(line), nil
-}
 
 // explain adds a hint to errors a CLI user can act on.
 func (t *target) explain(path string, e *apiError) error {

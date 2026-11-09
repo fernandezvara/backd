@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/fernandezvara/kli"
+
+	"github.com/fernandezvara/backd/internal/cmdutil"
 )
 
 type complianceScope struct {
@@ -39,8 +41,8 @@ func complianceScopeCmd(c *kli.CommandContext) error {
 	if err := t.adm.Compliance.Scope(t.ctx, &sc); err != nil {
 		return err
 	}
-	if flag(c, "json") {
-		return encodeJSONLines(c.Stdout(), []complianceScope{sc})
+	if cmdutil.Flag(c, "json") {
+		return cmdutil.PrintJSONLines(c.Stdout(), []complianceScope{sc})
 	}
 	w := c.Stdout()
 	if !sc.Auth {

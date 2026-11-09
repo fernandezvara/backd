@@ -9,6 +9,8 @@ import (
 	"text/tabwriter"
 
 	"github.com/fernandezvara/kli"
+
+	"github.com/fernandezvara/backd/internal/cmdutil"
 )
 
 type storageStep struct {
@@ -46,13 +48,13 @@ func storageCheck(c *kli.CommandContext) error {
 		return err
 	}
 	kinds := []string{"private", "public"}
-	which := str(c, "storage")
+	which := cmdutil.Str(c, "storage")
 	switch which {
 	case "":
 	case "private", "public":
 		kinds = []string{which}
 	default:
-		return usageErr(errors.New("--storage must be private or public"))
+		return cmdutil.UsageErr(errors.New("--storage must be private or public"))
 	}
 	var reps []storageCheckReport
 	var missing error
@@ -73,8 +75,8 @@ func storageCheck(c *kli.CommandContext) error {
 	if len(reps) == 0 {
 		return missing
 	}
-	if flag(c, "json") {
-		if err := encodeJSONLines(c.Stdout(), reps); err != nil {
+	if cmdutil.Flag(c, "json") {
+		if err := cmdutil.PrintJSONLines(c.Stdout(), reps); err != nil {
 			return err
 		}
 	} else {
@@ -87,7 +89,7 @@ func storageCheck(c *kli.CommandContext) error {
 	}
 	for _, rep := range reps {
 		if !rep.OK {
-			return kli.Exit(1, fmt.Errorf("the %s storage check failed: fix the steps marked fail", rep.Storage))
+			return cmdutil.Failed(fmt.Errorf("the %s storage check failed: fix the steps marked fail", rep.Storage))
 		}
 	}
 	return nil

@@ -8,6 +8,7 @@ import (
 
 	"github.com/fernandezvara/kli"
 
+	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/internal/openapigen"
 	"github.com/fernandezvara/backd/internal/registry"
 )
@@ -15,8 +16,8 @@ import (
 // openapiCommand handles `backd openapi`: it generates a realm's OpenAPI document from the
 // local CONFIG_DIR, to standard output or --out, or with --check compares the file.
 func openapiCommand(c *kli.CommandContext) error {
-	realm, out := str(c, "realm"), str(c, "out")
-	check := flag(c, "check")
+	realm, out := cmdutil.Str(c, "realm"), cmdutil.Str(c, "out")
+	check := cmdutil.Flag(c, "check")
 	if check && out == "" {
 		return errors.New("--check needs --out: the file to compare with")
 	}
@@ -29,7 +30,7 @@ func openapiCommand(c *kli.CommandContext) error {
 		return fmt.Errorf("invalid config:\n%w", err)
 	}
 	generate := openapigen.Public
-	if flag(c, "admin") {
+	if cmdutil.Flag(c, "admin") {
 		generate = openapigen.Admin
 	}
 	doc, err := generate(reg, realm)

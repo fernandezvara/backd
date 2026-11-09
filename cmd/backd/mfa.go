@@ -7,6 +7,7 @@ import (
 
 	"github.com/boombuler/barcode/qr"
 
+	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/pkg/client"
 )
 
@@ -15,7 +16,7 @@ import (
 
 // finishStep takes what a first factor led to, to a session: it asks for the code of a second
 // factor, or sets one up, as the step says. res is filled with the session.
-func finishStep(t *target, uio userIO, step *client.Step, res *sessionAnswer) error {
+func finishStep(t *target, uio cmdutil.IO, step *client.Step, res *sessionAnswer) error {
 	switch step.Kind {
 	case client.StepSession:
 		*res = sessionOf(step.Session)
@@ -36,14 +37,14 @@ func codeIsRecovery(code string) bool {
 
 // askSecondFactor asks for the code of an authenticator app, or a recovery code, up to three times
 // on a terminal (the challenge allows five).
-func askSecondFactor(t *target, uio userIO, challenge string, res *sessionAnswer) error {
+func askSecondFactor(t *target, uio cmdutil.IO, challenge string, res *sessionAnswer) error {
 	tries := 1
-	if isTerminal(uio.stdin) {
+	if cmdutil.IsTerminal(uio.Stdin) {
 		tries = 3
 	}
 	var last error
 	for range tries {
-		code, err := readLine(uio, "Code from your authenticator app (or a recovery code)")
+		code, err := cmdutil.ReadLine(uio, "Code from your authenticator app (or a recovery code)")
 		if err != nil {
 			return err
 		}
@@ -57,12 +58,12 @@ func askSecondFactor(t *target, uio userIO, challenge string, res *sessionAnswer
 		case err == nil:
 			*res = sessionOf(session)
 			if session.RecoveryCodesLeft != nil {
-				fmt.Fprintf(uio.stderr, "note: a recovery code was used; %d left. Replace them with `backd account recovery-codes` when you can\n", *session.RecoveryCodesLeft)
+				fmt.Fprintf(uio.Stderr, "note: a recovery code was used; %d left. Replace them with `backd account recovery-codes` when you can\n", *session.RecoveryCodesLeft)
 			}
 			return nil
 		case errors.As(err, &ae) && ae.Code == "invalid_code":
 			last = err
-			fmt.Fprintln(uio.stderr, "that code is not right")
+			fmt.Fprintln(uio.Stderr, "that code is not right")
 		default:
 			return err
 		}
@@ -73,8 +74,8 @@ func askSecondFactor(t *target, uio userIO, challenge string, res *sessionAnswer
 // enrollInTerminal sets TOTP up for a sign-in whose role requires it: it shows the secret as an
 // otpauth:// address and as a QR code of block characters, asks for the first code, and shows
 // the recovery codes once.
-func enrollInTerminal(t *target, uio userIO, challenge string, res *sessionAnswer) error {
-	fmt.Fprintln(uio.stderr, "this account must use two-step verification: set up an authenticator app")
+func enrollInTerminal(t *target, uio cmdutil.IO, challenge string, res *sessionAnswer) error {
+	fmt.Fprintln(uio.Stderr, "this account must use two-step verification: set up an authenticator app")
 	setup, err := t.cl.Auth().MFA.Setup(t.ctx, challenge)
 	if err != nil {
 		return err
@@ -82,7 +83,7 @@ func enrollInTerminal(t *target, uio userIO, challenge string, res *sessionAnswe
 	showSetup(uio, setup.OtpauthURI, setup.Secret)
 	var out *client.MFAConfirmResult
 	for tries := 0; ; tries++ {
-		code, err := readLine(uio, "Code shown by the app, to confirm")
+		code, err := cmdutil.ReadLine(uio, "Code shown by the app, to confirm")
 		if err != nil {
 			return err
 		}
@@ -91,10 +92,10 @@ func enrollInTerminal(t *target, uio userIO, challenge string, res *sessionAnswe
 		if err == nil {
 			break
 		}
-		if !errors.As(err, &ae) || ae.Code != "invalid_code" || tries >= 2 || !isTerminal(uio.stdin) {
+		if !errors.As(err, &ae) || ae.Code != "invalid_code" || tries >= 2 || !cmdutil.IsTerminal(uio.Stdin) {
 			return err
 		}
-		fmt.Fprintln(uio.stderr, "that code is not right: try the next one the app shows")
+		fmt.Fprintln(uio.Stderr, "that code is not right: try the next one the app shows")
 	}
 	if out.Session != nil {
 		*res = sessionOf(out.Session)
@@ -105,26 +106,26 @@ func enrollInTerminal(t *target, uio userIO, challenge string, res *sessionAnswe
 
 // showSetup prints what an authenticator app needs: the QR code, the address it holds and the secret
 // for typing in.
-func showSetup(uio userIO, uri, secret string) {
-	fmt.Fprintln(uio.stderr)
+func showSetup(uio cmdutil.IO, uri, secret string) {
+	fmt.Fprintln(uio.Stderr)
 	if art, err := qrBlocks(uri); err == nil {
-		fmt.Fprintln(uio.stderr, art)
+		fmt.Fprintln(uio.Stderr, art)
 	}
-	fmt.Fprintf(uio.stderr, "Scan the code with your authenticator app, or add it by hand:\n  address: %s\n  secret:  %s\n\n", uri, secret)
+	fmt.Fprintf(uio.Stderr, "Scan the code with your authenticator app, or add it by hand:\n  address: %s\n  secret:  %s\n\n", uri, secret)
 }
 
 // showRecoveryCodes prints the codes once and, on a terminal, waits until the user says they are
 // saved: they can't be shown again.
-func showRecoveryCodes(uio userIO, codes []string) {
-	fmt.Fprintln(uio.stdout, "Recovery codes (each works once; they are shown only now):")
+func showRecoveryCodes(uio cmdutil.IO, codes []string) {
+	fmt.Fprintln(uio.Stdout, "Recovery codes (each works once; they are shown only now):")
 	for _, c := range codes {
-		fmt.Fprintf(uio.stdout, "  %s\n", c)
+		fmt.Fprintf(uio.Stdout, "  %s\n", c)
 	}
-	if isTerminal(uio.stdin) {
-		fmt.Fprint(uio.stderr, "Save them somewhere safe (not in the phone with the app), then press Enter: ")
-		_, _ = readLine(uio, "")
+	if cmdutil.IsTerminal(uio.Stdin) {
+		fmt.Fprint(uio.Stderr, "Save them somewhere safe (not in the phone with the app), then press Enter: ")
+		_, _ = cmdutil.ReadLine(uio, "")
 	} else {
-		fmt.Fprintln(uio.stderr, "save them somewhere safe: they can't be shown again")
+		fmt.Fprintln(uio.Stderr, "save them somewhere safe: they can't be shown again")
 	}
 }
 
@@ -168,12 +169,12 @@ func qrBlocks(text string) (string, error) {
 
 // magicLinkSignIn signs in with a link or a code sent to an address: it asks for a message, then
 // for the code in it, and ends with the session or, for a user with a second factor, the second step.
-func magicLinkSignIn(t *target, uio userIO, address string, res *sessionAnswer) error {
+func magicLinkSignIn(t *target, uio cmdutil.IO, address string, res *sessionAnswer) error {
 	if _, err := t.cl.Auth().MagicLink.Request(t.ctx, address, client.MagicLinkOptions{}); err != nil {
 		return err
 	}
-	fmt.Fprintf(uio.stderr, "if %s can sign in, a message with a 6-digit code is on its way\n", address)
-	code, err := readLine(uio, "Code from the email")
+	fmt.Fprintf(uio.Stderr, "if %s can sign in, a message with a 6-digit code is on its way\n", address)
+	code, err := cmdutil.ReadLine(uio, "Code from the email")
 	if err != nil {
 		return err
 	}

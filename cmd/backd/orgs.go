@@ -8,6 +8,8 @@ import (
 	"text/tabwriter"
 
 	"github.com/fernandezvara/kli"
+
+	"github.com/fernandezvara/backd/internal/cmdutil"
 )
 
 // Organizations through the admin API (design/organizations.md §5.2).
@@ -61,7 +63,7 @@ func orgsList(c *kli.CommandContext) error {
 		return err
 	}
 	q := url.Values{}
-	if s := str(c, "status"); s != "" {
+	if s := cmdutil.Str(c, "status"); s != "" {
 		q.Set("status", s)
 	}
 	var out struct {
@@ -70,12 +72,12 @@ func orgsList(c *kli.CommandContext) error {
 	if err := t.adm.Orgs.List(t.ctx, q, &out); err != nil {
 		return err
 	}
-	io := ioOf(c)
+	io := cmdutil.IOOf(c)
 	if len(out.Items) == 0 {
-		fmt.Fprintln(io.stdout, "no organizations")
+		fmt.Fprintln(io.Stdout, "no organizations")
 		return nil
 	}
-	w := tabwriter.NewWriter(io.stdout, 0, 4, 2, ' ', 0)
+	w := tabwriter.NewWriter(io.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(w, "ID\tNAME\tSLUG\tSTATUS\tCREATED")
 	for _, o := range out.Items {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", o.ID, o.Name, o.slug(), o.Status, o.CreatedAt)
@@ -89,12 +91,12 @@ func orgsShow(c *kli.CommandContext) error {
 		return err
 	}
 	var o orgRow
-	if err := t.adm.Orgs.Get(t.ctx, str(c, "id"), &o); err != nil {
+	if err := t.adm.Orgs.Get(t.ctx, cmdutil.Str(c, "id"), &o); err != nil {
 		return err
 	}
-	io := ioOf(c)
+	io := cmdutil.IOOf(c)
 	claims, _ := json.Marshal(o.Claims)
-	fmt.Fprintf(io.stdout, "id       %s\nname     %s\nslug     %s\nstatus   %s\ncreated  %s\nclaims   %s\n", o.ID, o.Name, o.slug(), o.Status, o.CreatedAt, claims)
+	fmt.Fprintf(io.Stdout, "id       %s\nname     %s\nslug     %s\nstatus   %s\ncreated  %s\nclaims   %s\n", o.ID, o.Name, o.slug(), o.Status, o.CreatedAt, claims)
 	return nil
 }
 
@@ -103,16 +105,16 @@ func orgsCreate(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	owner, err := userIDByEmail(t, str(c, "owner"))
+	owner, err := userIDByEmail(t, cmdutil.Str(c, "owner"))
 	if err != nil {
 		return err
 	}
-	body := map[string]any{"name": str(c, "name"), "slug": str(c, "slug"), "owner": owner}
+	body := map[string]any{"name": cmdutil.Str(c, "name"), "slug": cmdutil.Str(c, "slug"), "owner": owner}
 	var o orgRow
 	if err := t.adm.Orgs.Create(t.ctx, body, &o); err != nil {
 		return err
 	}
-	fmt.Fprintf(ioOf(c).stdout, "organization %s created (%s), owned by %s\n", o.ID, o.Name, str(c, "owner"))
+	fmt.Fprintf(cmdutil.IOOf(c).Stdout, "organization %s created (%s), owned by %s\n", o.ID, o.Name, cmdutil.Str(c, "owner"))
 	return nil
 }
 
@@ -125,11 +127,11 @@ func orgsMembers(c *kli.CommandContext) error {
 		Items   []orgMemberRow `json:"items"`
 		HasMore bool           `json:"has_more"`
 	}
-	if err := t.adm.Orgs.Members(t.ctx, str(c, "id"), url.Values{"limit": {"500"}}, &out); err != nil {
+	if err := t.adm.Orgs.Members(t.ctx, cmdutil.Str(c, "id"), url.Values{"limit": {"500"}}, &out); err != nil {
 		return err
 	}
-	io := ioOf(c)
-	w := tabwriter.NewWriter(io.stdout, 0, 4, 2, ' ', 0)
+	io := cmdutil.IOOf(c)
+	w := tabwriter.NewWriter(io.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(w, "USER\tEMAIL\tROLES\tEFFECTIVE")
 	for _, m := range out.Items {
 		var eff []string
@@ -142,7 +144,7 @@ func orgsMembers(c *kli.CommandContext) error {
 		return err
 	}
 	if out.HasMore {
-		fmt.Fprintln(io.stderr, "note: only the first 500 members are shown")
+		fmt.Fprintln(io.Stderr, "note: only the first 500 members are shown")
 	}
 	return nil
 }
@@ -152,18 +154,18 @@ func orgsAddMember(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	id, err := userIDByEmail(t, str(c, "email"))
+	id, err := userIDByEmail(t, cmdutil.Str(c, "email"))
 	if err != nil {
 		return err
 	}
 	body := map[string]any{"user": id}
-	if r := str(c, "roles"); r != "" {
+	if r := cmdutil.Str(c, "roles"); r != "" {
 		body["roles"] = strings.Split(r, ",")
 	}
-	if err := t.adm.Orgs.AddMember(t.ctx, str(c, "id"), body); err != nil {
+	if err := t.adm.Orgs.AddMember(t.ctx, cmdutil.Str(c, "id"), body); err != nil {
 		return err
 	}
-	fmt.Fprintf(ioOf(c).stdout, "%s added to %s\n", str(c, "email"), str(c, "id"))
+	fmt.Fprintf(cmdutil.IOOf(c).Stdout, "%s added to %s\n", cmdutil.Str(c, "email"), cmdutil.Str(c, "id"))
 	return nil
 }
 
@@ -172,14 +174,14 @@ func orgsAssignOwner(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	id, err := userIDByEmail(t, str(c, "email"))
+	id, err := userIDByEmail(t, cmdutil.Str(c, "email"))
 	if err != nil {
 		return err
 	}
-	if err := t.adm.Orgs.SetOwner(t.ctx, str(c, "id"), map[string]any{"user": id}); err != nil {
+	if err := t.adm.Orgs.SetOwner(t.ctx, cmdutil.Str(c, "id"), map[string]any{"user": id}); err != nil {
 		return err
 	}
-	fmt.Fprintf(ioOf(c).stdout, "%s is now a manager of %s\n", str(c, "email"), str(c, "id"))
+	fmt.Fprintf(cmdutil.IOOf(c).Stdout, "%s is now a manager of %s\n", cmdutil.Str(c, "email"), cmdutil.Str(c, "id"))
 	return nil
 }
 
@@ -189,13 +191,13 @@ func orgsClaimsSet(c *kli.CommandContext) error {
 		return err
 	}
 	var claims map[string]any
-	if err := json.Unmarshal([]byte(str(c, "claims")), &claims); err != nil {
+	if err := json.Unmarshal([]byte(cmdutil.Str(c, "claims")), &claims); err != nil {
 		return fmt.Errorf("--claims must be a JSON object: %w", err)
 	}
-	if err := t.adm.Orgs.SetClaims(t.ctx, str(c, "id"), claims); err != nil {
+	if err := t.adm.Orgs.SetClaims(t.ctx, cmdutil.Str(c, "id"), claims); err != nil {
 		return err
 	}
-	fmt.Fprintf(ioOf(c).stdout, "claims of %s set\n", str(c, "id"))
+	fmt.Fprintf(cmdutil.IOOf(c).Stdout, "claims of %s set\n", cmdutil.Str(c, "id"))
 	return nil
 }
 
@@ -207,13 +209,13 @@ func orgsInvite(c *kli.CommandContext) error {
 		return err
 	}
 	body := map[string]any{}
-	email, user, open := str(c, "email"), str(c, "user"), flag(c, "open")
+	email, user, open := cmdutil.Str(c, "email"), cmdutil.Str(c, "user"), cmdutil.Flag(c, "open")
 	switch {
 	case open && (email != "" || user != ""):
 		return fmt.Errorf("--open can't be combined with --email or --user")
 	case open:
 		body["binding"] = "none"
-		if n := num(c, "uses"); n > 0 {
+		if n := cmdutil.Num(c, "uses"); n > 0 {
 			body["max_uses"] = n
 		}
 	case email != "" && user != "":
@@ -229,13 +231,13 @@ func orgsInvite(c *kli.CommandContext) error {
 	default:
 		return fmt.Errorf("say who is invited: --email, --user (an email of an existing user) or --open")
 	}
-	if r := str(c, "roles"); r != "" {
+	if r := cmdutil.Str(c, "roles"); r != "" {
 		body["roles"] = strings.Split(r, ",")
 	}
-	if e := str(c, "expires"); e != "" {
+	if e := cmdutil.Str(c, "expires"); e != "" {
 		body["expires_in"] = e
 	}
-	if flag(c, "send") {
+	if cmdutil.Flag(c, "send") {
 		body["send"] = true
 	}
 	var out struct {
@@ -244,15 +246,15 @@ func orgsInvite(c *kli.CommandContext) error {
 		Link      *string `json:"link"`
 		ExpiresAt string  `json:"expires_at"`
 	}
-	if err := t.adm.Orgs.Invite(t.ctx, str(c, "id"), body, &out); err != nil {
+	if err := t.adm.Orgs.Invite(t.ctx, cmdutil.Str(c, "id"), body, &out); err != nil {
 		return err
 	}
-	io := ioOf(c)
-	fmt.Fprintf(io.stdout, "invitation %s, valid until %s\n", out.ID, out.ExpiresAt)
+	io := cmdutil.IOOf(c)
+	fmt.Fprintf(io.Stdout, "invitation %s, valid until %s\n", out.ID, out.ExpiresAt)
 	if out.Link != nil {
-		fmt.Fprintf(io.stdout, "link   %s\n", *out.Link)
+		fmt.Fprintf(io.Stdout, "link   %s\n", *out.Link)
 	}
-	fmt.Fprintf(io.stdout, "token  %s\n", out.Token)
+	fmt.Fprintf(io.Stdout, "token  %s\n", out.Token)
 	return nil
 }
 
@@ -274,11 +276,11 @@ func orgsInvitations(c *kli.CommandContext) error {
 			ExpiresAt string   `json:"expires_at"`
 		} `json:"items"`
 	}
-	if err := t.adm.Orgs.Invitations(t.ctx, str(c, "id"), &out); err != nil {
+	if err := t.adm.Orgs.Invitations(t.ctx, cmdutil.Str(c, "id"), &out); err != nil {
 		return err
 	}
-	io := ioOf(c)
-	w := tabwriter.NewWriter(io.stdout, 0, 4, 2, ' ', 0)
+	io := cmdutil.IOOf(c)
+	w := tabwriter.NewWriter(io.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(w, "ID\tBINDING\tFOR\tROLES\tUSES\tSTATUS\tEXPIRES")
 	for _, i := range out.Items {
 		who := i.Email
@@ -298,10 +300,10 @@ func orgsRevokeInvitation(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	if err := t.adm.Orgs.RevokeInvitation(t.ctx, str(c, "id"), str(c, "invitation")); err != nil {
+	if err := t.adm.Orgs.RevokeInvitation(t.ctx, cmdutil.Str(c, "id"), cmdutil.Str(c, "invitation")); err != nil {
 		return err
 	}
-	fmt.Fprintf(ioOf(c).stdout, "invitation %s revoked\n", str(c, "invitation"))
+	fmt.Fprintf(cmdutil.IOOf(c).Stdout, "invitation %s revoked\n", cmdutil.Str(c, "invitation"))
 	return nil
 }
 
@@ -312,29 +314,29 @@ func dataTransfer(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	org := any(str(c, "org"))
+	org := any(cmdutil.Str(c, "org"))
 	if org == "none" {
 		org = nil
 	}
 	body := map[string]any{"org": org}
-	switch team := str(c, "team"); team {
+	switch team := cmdutil.Str(c, "team"); team {
 	case "":
 	case "none":
 		body["team"] = nil
 	default:
 		body["team"] = team
 	}
-	if err := t.adm.Data.Transfer(t.ctx, str(c, "database"), str(c, "collection"), str(c, "id"), body, nil); err != nil {
+	if err := t.adm.Data.Transfer(t.ctx, cmdutil.Str(c, "database"), cmdutil.Str(c, "collection"), cmdutil.Str(c, "id"), body, nil); err != nil {
 		return err
 	}
-	to := str(c, "org")
+	to := cmdutil.Str(c, "org")
 	if to == "none" {
 		to = "no organization"
 	}
-	if team := str(c, "team"); team != "" && team != "none" {
+	if team := cmdutil.Str(c, "team"); team != "" && team != "none" {
 		to += ", team " + team
 	}
-	fmt.Fprintf(ioOf(c).stdout, "document %s moved to %s\n", str(c, "id"), to)
+	fmt.Fprintf(cmdutil.IOOf(c).Stdout, "document %s moved to %s\n", cmdutil.Str(c, "id"), to)
 	return nil
 }
 
@@ -344,8 +346,8 @@ func dataAssignOrg(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	body := map[string]any{"org": str(c, "org")}
-	if w := str(c, "where"); w != "" {
+	body := map[string]any{"org": cmdutil.Str(c, "org")}
+	if w := cmdutil.Str(c, "where"); w != "" {
 		var where map[string]any
 		if err := json.Unmarshal([]byte(w), &where); err != nil {
 			return fmt.Errorf("--where must be a JSON object: %w", err)
@@ -353,22 +355,22 @@ func dataAssignOrg(c *kli.CommandContext) error {
 		body["where"] = where
 	}
 	q := url.Values{}
-	if flag(c, "dry-run") {
+	if cmdutil.Flag(c, "dry-run") {
 		q.Set("dry_run", "true")
 	}
 	var out struct {
 		Job     string `json:"job"`
 		Matched int64  `json:"matched"`
 	}
-	if err := t.adm.Data.AssignOrg(t.ctx, str(c, "database"), str(c, "collection"), q, body, &out); err != nil {
+	if err := t.adm.Data.AssignOrg(t.ctx, cmdutil.Str(c, "database"), cmdutil.Str(c, "collection"), q, body, &out); err != nil {
 		return err
 	}
-	io := ioOf(c)
-	if flag(c, "dry-run") {
-		fmt.Fprintf(io.stdout, "%d documents have no organization and match: nothing was changed\n", out.Matched)
+	io := cmdutil.IOOf(c)
+	if cmdutil.Flag(c, "dry-run") {
+		fmt.Fprintf(io.Stdout, "%d documents have no organization and match: nothing was changed\n", out.Matched)
 		return nil
 	}
-	fmt.Fprintf(io.stdout, "job %s queued: %d documents will be given the organization (follow it with `backd functions jobs --realm %s --job %s`)\n", out.Job, out.Matched, str(c, "realm"), out.Job)
+	fmt.Fprintf(io.Stdout, "job %s queued: %d documents will be given the organization (follow it with `backd functions jobs --realm %s --job %s`)\n", out.Job, out.Matched, cmdutil.Str(c, "realm"), out.Job)
 	return nil
 }
 
@@ -388,12 +390,12 @@ func orgsOwned(c *kli.CommandContext) error {
 		ToDelete int64 `json:"to_delete"`
 		ToKeep   int64 `json:"to_keep"`
 	}
-	if err := t.adm.Orgs.Owned(t.ctx, str(c, "id"), &out); err != nil {
+	if err := t.adm.Orgs.Owned(t.ctx, cmdutil.Str(c, "id"), &out); err != nil {
 		return err
 	}
-	io := ioOf(c)
-	fmt.Fprintf(io.stdout, "%s (%s): deleting it removes %d documents and leaves %d\n", out.Org.Name, out.Org.ID, out.ToDelete, out.ToKeep)
-	w := tabwriter.NewWriter(io.stdout, 0, 4, 2, ' ', 0)
+	io := cmdutil.IOOf(c)
+	fmt.Fprintf(io.Stdout, "%s (%s): deleting it removes %d documents and leaves %d\n", out.Org.Name, out.Org.ID, out.ToDelete, out.ToKeep)
+	w := tabwriter.NewWriter(io.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(w, "COLLECTION\tDOCUMENTS\tON DELETE")
 	for _, col := range out.Collections {
 		fmt.Fprintf(w, "%s/%s\t%d\t%s\n", col.Database, col.Collection, col.Documents, col.OnOrgDel)
@@ -402,17 +404,17 @@ func orgsOwned(c *kli.CommandContext) error {
 }
 
 func orgsDelete(c *kli.CommandContext) error {
-	if !flag(c, "yes") {
+	if !cmdutil.Flag(c, "yes") {
 		return fmt.Errorf("deleting an organization ends everyone's access at once and removes the documents of its `delete` collections: see them first with `backd orgs owned`, then add --yes to confirm")
 	}
 	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}
-	if err := t.adm.Orgs.Delete(t.ctx, str(c, "id")); err != nil {
+	if err := t.adm.Orgs.Delete(t.ctx, cmdutil.Str(c, "id")); err != nil {
 		return err
 	}
-	fmt.Fprintf(ioOf(c).stdout, "organization %s deleted; its documents are being cleaned up in the background\n", str(c, "id"))
+	fmt.Fprintf(cmdutil.IOOf(c).Stdout, "organization %s deleted; its documents are being cleaned up in the background\n", cmdutil.Str(c, "id"))
 	return nil
 }
 
@@ -422,10 +424,10 @@ func orgsSetSlug(c *kli.CommandContext) error {
 		return err
 	}
 	var o orgRow
-	if err := t.adm.Orgs.SetSlug(t.ctx, str(c, "id"), map[string]any{"slug": str(c, "slug")}, &o); err != nil {
+	if err := t.adm.Orgs.SetSlug(t.ctx, cmdutil.Str(c, "id"), map[string]any{"slug": cmdutil.Str(c, "slug")}, &o); err != nil {
 		return err
 	}
-	fmt.Fprintf(ioOf(c).stdout, "organization %s is now %s\n", o.ID, o.slug())
+	fmt.Fprintf(cmdutil.IOOf(c).Stdout, "organization %s is now %s\n", o.ID, o.slug())
 	return nil
 }
 
@@ -435,12 +437,12 @@ func orgsReactivate(c *kli.CommandContext) error {
 		return err
 	}
 	body := map[string]any{}
-	if s := str(c, "slug"); s != "" {
+	if s := cmdutil.Str(c, "slug"); s != "" {
 		body["slug"] = s
 	}
-	if err := t.adm.Orgs.Reactivate(t.ctx, str(c, "id"), body); err != nil {
+	if err := t.adm.Orgs.Reactivate(t.ctx, cmdutil.Str(c, "id"), body); err != nil {
 		return err
 	}
-	fmt.Fprintf(ioOf(c).stdout, "organization %s is active again, with no members: assign an owner with `backd orgs assign-owner`\n", str(c, "id"))
+	fmt.Fprintf(cmdutil.IOOf(c).Stdout, "organization %s is active again, with no members: assign an owner with `backd orgs assign-owner`\n", cmdutil.Str(c, "id"))
 	return nil
 }

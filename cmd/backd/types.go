@@ -11,6 +11,7 @@ import (
 
 	"github.com/fernandezvara/kli"
 
+	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/internal/functions"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/typegen"
@@ -20,23 +21,23 @@ import (
 // CONFIG_DIR, or from a running instance with --from, and writes them, or checks or diffs
 // them against the files already there.
 func typesCommand(c *kli.CommandContext) error {
-	realm, db, out := str(c, "realm"), str(c, "db"), str(c, "out")
-	check, diff := flag(c, "check"), flag(c, "diff")
-	lang := str(c, "lang")
+	realm, db, out := cmdutil.Str(c, "realm"), cmdutil.Str(c, "db"), cmdutil.Str(c, "out")
+	check, diff := cmdutil.Flag(c, "check"), cmdutil.Flag(c, "diff")
+	lang := cmdutil.Str(c, "lang")
 	if lang == "" {
 		lang = "ts"
 	}
 	if lang != "ts" && lang != "dart" && lang != "go" && lang != "python" {
 		return fmt.Errorf("unknown --lang %q: ts, dart, go or python", lang)
 	}
-	pkg := str(c, "package")
+	pkg := cmdutil.Str(c, "package")
 	if pkg != "" && lang != "go" {
 		return fmt.Errorf("--package is for --lang go")
 	}
 	if pkg != "" && !token.IsIdentifier(pkg) {
 		return fmt.Errorf("--package %q is not a Go package name", pkg)
 	}
-	if flag(c, "functions") {
+	if cmdutil.Flag(c, "functions") {
 		if lang != "ts" {
 			return fmt.Errorf("--functions writes TypeScript only")
 		}
@@ -45,7 +46,7 @@ func typesCommand(c *kli.CommandContext) error {
 
 	var gen *typegen.Output
 	var err error
-	if from := str(c, "from"); from != "" {
+	if from := cmdutil.Str(c, "from"); from != "" {
 		gen, err = typesFromServer(c, from, realm, db, lang, pkg)
 	} else {
 		gen, err = typesFromConfig(c, realm, db, lang, pkg)

@@ -10,26 +10,27 @@ import (
 	"github.com/fernandezvara/kli"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/cmdutil"
 )
 
 // bootstrapAction handles `backd bootstrap`.
 func bootstrapAction(c *kli.CommandContext) error {
 	ctx := context.Background()
-	uio := ioOf(c)
-	a, err := setup(ctx, c.Getenv, uio.stderr)
+	uio := cmdutil.IOOf(c)
+	a, err := setup(ctx, c.Getenv, uio.Stderr)
 	if err != nil {
 		return err
 	}
 	defer a.close()
-	realm := str(c, "realm")
+	realm := cmdutil.Str(c, "realm")
 	users, err := a.users(ctx, realm)
 	if err != nil {
 		return err
 	}
-	return bootstrap(ctx, users, realm, str(c, "email"), str(c, "role"), uio)
+	return bootstrap(ctx, users, realm, cmdutil.Str(c, "email"), cmdutil.Str(c, "role"), uio)
 }
 
-func bootstrap(ctx context.Context, users *auth.Users, realm, email, role string, uio userIO) error {
+func bootstrap(ctx context.Context, users *auth.Users, realm, email, role string, uio cmdutil.IO) error {
 	// The first administrator holds every area (`admin: true`): a role that
 	// opens only some can't manage the others, so it can't recover a realm.
 	roles := users.Settings.FullAdminRoles()
@@ -59,7 +60,7 @@ func bootstrap(ctx context.Context, users *auth.Users, realm, email, role string
 	} else if !errors.Is(err, auth.ErrNotFound) {
 		return err
 	}
-	pw, err := readSecret(uio, true, "Password")
+	pw, err := cmdutil.ReadSecret(uio, true, "Password")
 	if err != nil {
 		return err
 	}
@@ -72,10 +73,10 @@ func bootstrap(ctx context.Context, users *auth.Users, realm, email, role string
 		return fmt.Errorf("created %s, but couldn't assign the role %q: %w", u.Email, role, err)
 	}
 	users.Audit(ctx, auth.AuditBootstrap, "user:"+u.ID, map[string]any{"role": role})
-	fmt.Fprintf(uio.stdout, "created %s (id %s) with the admin role %q in realm %s\n", u.Email, u.ID, role, realm)
+	fmt.Fprintf(uio.Stdout, "created %s (id %s) with the admin role %q in realm %s\n", u.Email, u.ID, role, realm)
 	if !users.IsSeeded(u.Email, role) {
-		fmt.Fprintf(uio.stderr, "note: to keep this assignment if the realm is rebuilt from its config, list %s under roles.%s.users in %s/realm.yaml.\n", u.Email, role, realm)
+		fmt.Fprintf(uio.Stderr, "note: to keep this assignment if the realm is rebuilt from its config, list %s under roles.%s.users in %s/realm.yaml.\n", u.Email, role, realm)
 	}
-	fmt.Fprintf(uio.stderr, "next: `backd login --realm %s --url <server> --email %s`, then manage users and API keys with `backd user` and `backd apikey`\n", realm, u.Email)
+	fmt.Fprintf(uio.Stderr, "next: `backd login --realm %s --url <server> --email %s`, then manage users and API keys with `backd user` and `backd apikey`\n", realm, u.Email)
 	return nil
 }

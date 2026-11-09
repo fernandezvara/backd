@@ -7,6 +7,8 @@ import (
 	"text/tabwriter"
 
 	"github.com/fernandezvara/kli"
+
+	"github.com/fernandezvara/backd/internal/cmdutil"
 )
 
 // connectionRow is a connection as the admin API returns it.
@@ -31,15 +33,15 @@ func orgsSSO(c *kli.CommandContext) error {
 	var out struct {
 		Items []connectionRow `json:"items"`
 	}
-	if err := t.adm.Orgs.SSOList(t.ctx, str(c, "id"), &out); err != nil {
+	if err := t.adm.Orgs.SSOList(t.ctx, cmdutil.Str(c, "id"), &out); err != nil {
 		return err
 	}
-	io := ioOf(c)
+	io := cmdutil.IOOf(c)
 	if len(out.Items) == 0 {
-		fmt.Fprintln(io.stdout, "no connections")
+		fmt.Fprintln(io.Stdout, "no connections")
 		return nil
 	}
-	w := tabwriter.NewWriter(io.stdout, 0, 4, 2, ' ', 0)
+	w := tabwriter.NewWriter(io.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(w, "PROVIDER\tCLIENT ID\tLIMITED TO\tJOIN ROLES\tENABLED\tSECRET\tREGISTER THIS REDIRECT ADDRESS")
 	for _, r := range out.Items {
 		limit := r.Tenant + r.HostedDomain
@@ -64,22 +66,22 @@ func orgsSSOSet(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	body := map[string]any{"client_id": str(c, "client-id")}
+	body := map[string]any{"client_id": cmdutil.Str(c, "client-id")}
 	for flagName, key := range map[string]string{"tenant": "tenant", "hosted-domain": "hosted_domain"} {
-		if v := str(c, flagName); v != "" {
+		if v := cmdutil.Str(c, flagName); v != "" {
 			body[key] = v
 		}
 	}
 	for flagName, key := range map[string]string{"email-domains": "email_domains", "native-client-ids": "native_client_ids", "join-roles": "join_roles"} {
-		if list := splitList(str(c, flagName)); list != nil {
+		if list := splitList(cmdutil.Str(c, flagName)); list != nil {
 			body[key] = list
 		}
 	}
-	if flag(c, "disabled") {
+	if cmdutil.Flag(c, "disabled") {
 		body["enabled"] = false
 	}
-	if !flag(c, "keep-secret") {
-		secret, err := readSecretValue(ioOf(c), "Client secret")
+	if !cmdutil.Flag(c, "keep-secret") {
+		secret, err := cmdutil.ReadSecretValue(cmdutil.IOOf(c), "Client secret")
 		if err != nil {
 			return err
 		}
@@ -89,15 +91,15 @@ func orgsSSOSet(c *kli.CommandContext) error {
 		body["client_secret"] = secret
 	}
 	var row connectionRow
-	if err := t.adm.Orgs.SSOSet(t.ctx, str(c, "id"), str(c, "provider"), body, &row); err != nil {
+	if err := t.adm.Orgs.SSOSet(t.ctx, cmdutil.Str(c, "id"), cmdutil.Str(c, "provider"), body, &row); err != nil {
 		return err
 	}
-	io := ioOf(c)
-	fmt.Fprintf(io.stdout, "%s connection of %s saved\n", row.Provider, str(c, "id"))
+	io := cmdutil.IOOf(c)
+	fmt.Fprintf(io.Stdout, "%s connection of %s saved\n", row.Provider, cmdutil.Str(c, "id"))
 	if row.RedirectURI != "" {
-		fmt.Fprintf(io.stdout, "register this redirect address with the provider: %s\n", row.RedirectURI)
+		fmt.Fprintf(io.Stdout, "register this redirect address with the provider: %s\n", row.RedirectURI)
 	} else {
-		fmt.Fprintf(io.stdout, "register this path, after backd's public address, with the provider: %s\n", row.RedirectPath)
+		fmt.Fprintf(io.Stdout, "register this path, after backd's public address, with the provider: %s\n", row.RedirectPath)
 	}
 	return nil
 }
@@ -107,10 +109,10 @@ func orgsSSORequiredOff(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	if err := t.adm.Orgs.Patch(t.ctx, str(c, "id"), map[string]any{"sso_required": false}, nil); err != nil {
+	if err := t.adm.Orgs.Patch(t.ctx, cmdutil.Str(c, "id"), map[string]any{"sso_required": false}, nil); err != nil {
 		return err
 	}
-	fmt.Fprintf(ioOf(c).stdout, "%s no longer requires its sign-in connection\n", str(c, "id"))
+	fmt.Fprintf(cmdutil.IOOf(c).Stdout, "%s no longer requires its sign-in connection\n", cmdutil.Str(c, "id"))
 	return nil
 }
 
@@ -119,9 +121,9 @@ func orgsSSODelete(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	if err := t.adm.Orgs.SSODelete(t.ctx, str(c, "id"), str(c, "provider")); err != nil {
+	if err := t.adm.Orgs.SSODelete(t.ctx, cmdutil.Str(c, "id"), cmdutil.Str(c, "provider")); err != nil {
 		return err
 	}
-	fmt.Fprintf(ioOf(c).stdout, "%s connection of %s removed\n", str(c, "provider"), str(c, "id"))
+	fmt.Fprintf(cmdutil.IOOf(c).Stdout, "%s connection of %s removed\n", cmdutil.Str(c, "provider"), cmdutil.Str(c, "id"))
 	return nil
 }
