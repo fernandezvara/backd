@@ -58,7 +58,7 @@ curl -s http://localhost:8080/readyz
 
 `readyz` answers once MongoDB has become a replica set and backd is serving; until then it refuses the connection or answers `503`, so repeat it every few seconds. `docker compose logs -f backd` follows the API. If port 8080 is taken, change the left side of `"127.0.0.1:8080:80"` in `compose.yaml` and use that port in every URL.
 
-backd reads `config/` **at startup**, so every change to a file under `config/` needs `docker compose restart backd` (chapter 5 adds one more command for functions). A typo fails startup and the log names the file and line — `docker compose logs backd` shows it.
+The stack runs backd in dev mode, which follows `config/`: every change you save to a file under it — rules, schemas, `realm.yaml`, later functions — is loaded in a moment, with no restart and no build step. A typo is refused, the previous config keeps serving, and `docker compose logs backd` names the file and line.
 
 ## Try the API by hand
 

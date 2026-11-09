@@ -55,7 +55,7 @@ and `publish/index.ts` calls it just before its `return`:
   return { asset_id, published_at };
 ```
 
-Rebuild and restart as before (`docker compose run --rm functions-build && docker compose restart backd`). This is also the moment to save the finished `publish/index.test.ts` of chapter 5 — it asserts the call.
+Save it; backd bundles the function and reloads, as before. This is also the moment to save the finished `publish/index.test.ts` of chapter 5 — it asserts the call.
 
 `ctx.call` is checked against that list: call something undeclared and the answer is `call_not_declared`; the graph can't cycle or nest deeper than 4 ([Internal functions](../../build/functions/internal/)). In the handler it's an `await` like any other — and deliberately *last*, wrapped in try/catch: a failing notification must not undo a publish that already happened.
 
@@ -102,7 +102,7 @@ update: >
 await db.collection("assets").patch(asset_id, { published_at, published_by: ctx.user?.id ?? null });
 ```
 
-Rebuild and restart (`docker compose run --rm functions-build && docker compose restart backd`). The log now says `collection validator updated` for `assets`: at startup `backd` compared `schema.json` with the database's validator and applied the difference. Check what it did:
+Save it. The log now says `collection validator updated` for `assets`: on that reload `backd` compared `schema.json` with the database's validator and applied the difference. Check what it did:
 
 - Assets published **before** the change are untouched: they come back without `published_by`, and editing them still works. A new optional field never breaks old documents.
 - Publish a draft and read it back: `published_by` is the curator's id. Try to set it from a member session (`PATCH` with `{"published_by": "someone"}`) and the rule answers `403`.

@@ -49,7 +49,7 @@ Until the worker is done the status is `pending`, so the app can say so; a PDF o
 {{< tutorial-files "main/assets/collection.yaml" >}}
 
 ```sh
-docker compose restart backd
+docker compose logs --since 1m backd | grep 'config reloaded'   # backd follows config/: it loaded the change
 ```
 
 The app asks for links with `fileLinks: true`, which also links every `ready` version, so a card shows the thumbnail when there is one and the picture when there isn't:

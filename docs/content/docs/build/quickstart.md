@@ -12,10 +12,10 @@ This page is the shortest honest path to a `backd` you can build against: downlo
 
 Each tagged version is published automatically:
 
-- binaries for Linux, macOS and Windows (amd64 and arm64), with a `checksums.txt`, on the repository's [GitHub Releases](https://github.com/fernandezvara/backd/releases) page;
+- binaries on the repository's [GitHub Releases](https://github.com/fernandezvara/backd/releases) page, with a `checksums.txt`: **`backd`**, the command line, for Linux, macOS and Windows (amd64 and arm64), and **`backd-server`**, which runs the server, for Linux. On your own machine you need `backd`; the stack below runs `backd-server` in containers;
 - a container image for linux/amd64 and linux/arm64: `ghcr.io/fernandezvara/backd:<version>`, and `latest` for the newest stable version.
 
-`backd version` prints what you got — from the binary, or from the image, whose entrypoint *is* `backd`:
+`backd version` prints what you got. The image's entrypoint is `backd-server` (it also carries `backd`):
 
 ```sh
 docker run --rm ghcr.io/fernandezvara/backd:v0.9.7 version
@@ -118,7 +118,7 @@ Dev mode does the reload for you — there is no rebuild step:
 
 ## 4. Without Docker
 
-`backd` needs MongoDB 8.2 as a replica set; a single node is fine ([Operate → MongoDB](../../operate/#mongodb) shows how to start one). Then the binary alone is enough:
+The server needs MongoDB 8.2 as a replica set; a single node is fine ([Operate → MongoDB](../../operate/#mongodb) shows how to start one). Install both release binaries, `backd` and `backd-server`; `backd-server` runs on Linux only (on macOS and Windows use the containers above, or WSL2):
 
 ```sh
 mkdir config && export CONFIG_DIR=$PWD/config
@@ -136,7 +136,7 @@ curl http://127.0.0.1:9090/v1/demo/main/posts -H "Authorization: Bearer $KEY"
 
 ## Commands you will use
 
-`backd help` groups its commands by who uses them. The **develop** group is the one an application developer reaches for:
+`backd help` groups its commands by who uses them. The **Project** group is the one an application developer reaches for:
 
 | Command | Purpose |
 |---|---|
@@ -145,7 +145,8 @@ curl http://127.0.0.1:9090/v1/demo/main/posts -H "Authorization: Bearer $KEY"
 | `backd rules test` | Run each collection's `rules.test.yaml` without a database (see [Testing rules](../auth/rules/#testing-rules)) |
 | `backd databases [--collections]` | Print the MongoDB databases (or collections) the config uses |
 | `backd types`, `backd openapi` | Generate TypeScript types or an OpenAPI document from a realm (see [Clients](../clients/types/)) |
-| `backd-server functions build\|invoke\|history\|logs\|jobs` | Bundle, call and inspect [server-side functions](../functions/) |
+| `backd functions invoke\|history\|logs\|jobs` | Call and inspect [server-side functions](../functions/) through a running backd |
+| `backd-server functions build` | Bundle the functions (CI and the container do it; dev mode does it for you) |
 
 …and `backd-server bootstrap` and `backd login` for the first administrator and a session, as above. Administering a realm — users, API keys, organizations, secrets, the audit trail — is in [Command-line administration](../../operate/administration/cli/), which covers every command.
 

@@ -16,7 +16,7 @@ Before you change anything, check the three accounts of chapter 2 exist: **opera
 signup: invite   # was: open
 ```
 
-and `docker compose restart backd`. Existing accounts keep working — this only governs **new** sign-ups. From now on `POST /_auth/signup` without a valid `invitation` token answers `403`:
+and save: backd reloads. Existing accounts keep working — this only governs **new** sign-ups. From now on `POST /_auth/signup` without a valid `invitation` token answers `403`:
 
 ```sh
 curl -i -X POST http://localhost:8080/v1/shelf/_auth/signup \

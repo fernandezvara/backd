@@ -57,7 +57,7 @@ on_owner_delete:
 ## Apply and try to break it
 
 ```sh
-docker compose restart backd
+docker compose logs --since 1m backd | grep 'config reloaded'   # backd follows config/: it loaded the change
 ```
 
 You need an asset that belongs to somebody else and that you can see: a *published* one (a draft of another member is invisible to you, so you couldn't even try). Any member can still set `published_at` (that is the hole below), so sign in as `curator@shelf.example` (same login call as below), create an asset with a `published_at` through the app's API calls or `curl`, and copy its `id`. Then, as the operator or your member, call the API with your session. A session is a token: sign in by hand and keep it in a variable —

@@ -18,7 +18,7 @@
 
 ## Quick start
 
-The shortest path to a realm you can build against — see the [Quickstart](https://fernandezvara.github.io/backd/docs/build/quickstart/) for the full walkthrough. Get `backd` from [GitHub Releases](https://github.com/fernandezvara/backd/releases) (binaries for Linux, macOS and Windows) or the image `ghcr.io/fernandezvara/backd`, then generate a project and run its compose stack:
+The shortest path to a realm you can build against — see the [Quickstart](https://fernandezvara.github.io/backd/docs/build/quickstart/) for the full walkthrough. Get the `backd` command line from [GitHub Releases](https://github.com/fernandezvara/backd/releases) (Linux, macOS and Windows); `backd-server`, which runs the server (Linux only), comes in the image `ghcr.io/fernandezvara/backd` and as a release archive, then generate a project and run its compose stack:
 
 ```sh
 backd template project --dir ./my-app --realm demo

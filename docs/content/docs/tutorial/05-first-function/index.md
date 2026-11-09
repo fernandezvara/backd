@@ -66,10 +66,10 @@ The helpers, the two other functions of this chapter and their tests (the finish
 
 ## The dev loop
 
-Functions run as **TypeScript in a Deno process with no permissions** (no disk, no network unless `network:` says so) — one process per call, started by the executor container, so a function can only do what its `function.yaml` and the `ctx` it is handed allow ([how they run](../../build/functions/writing/)). backd runs the bundled JavaScript, so the sources are bundled before it starts. `functions-build` is the compose service that does it — it uses the executor image, so there is nothing to install. backd refuses to start with stale or missing bundles, so after editing a function you run the build and restart:
+Functions run as **TypeScript in a Deno process with no permissions** (no disk, no network unless `network:` says so) — one process per call, started by the executor container, so a function can only do what its `function.yaml` and the `ctx` it is handed allow ([how they run](../../build/functions/writing/)). backd runs the bundled JavaScript, so the sources are bundled first — and in dev mode, which this stack runs, backd does that itself: at startup, and again whenever you save a function. The stack's `backd` container is the `backd-executor` image, which carries the Deno that bundles, so there is nothing to install and no build command. After saving a function, check that it loaded:
 
 ```sh
-docker compose run --rm functions-build && docker compose restart backd
+docker compose logs --since 1m backd | grep 'config reloaded'   # backd bundled the function and loaded it
 ```
 
 Then call it as the curator (log in as in chapter 3, with `curator@shelf.example`, and use that token): `POST /v1/shelf/main/_func/publish` with `{"asset_id": "…"}` and an `Idempotency-Key` header — or from the client, `db.fn('publish', { asset_id }, { idempotencyKey })`. A function answers errors with the code it chose (`403` for a member, `409 already_published`), never a stack trace.
@@ -111,7 +111,7 @@ The collections' rules tighten to match. Replace the `rules:` section of both `c
 
 {{< example-file path="shelf/main/shares/collection.yaml" lines="1-10" >}}
 
-has no `create`/`update` rule at all (functions write, nobody else), and `created_by` — not `_meta.owner`, which is the function — scopes who may read or revoke a link. Remember `docker compose restart backd` after the build above.
+has no `create`/`update` rule at all (functions write, nobody else), and `created_by` — not `_meta.owner`, which is the function — scopes who may read or revoke a link.
 
 ## What the app does with it
 

@@ -83,21 +83,11 @@ func enrollInTerminal(t *clicore.Target, uio cmdutil.IO, challenge string, res *
 		return err
 	}
 	showSetup(uio, setup.OtpauthURI, setup.Secret)
-	var out *client.MFAConfirmResult
-	for tries := 0; ; tries++ {
-		code, err := cmdutil.ReadLine(uio, "Code shown by the app, to confirm")
-		if err != nil {
-			return err
-		}
-		out, err = t.Client.Auth().MFA.Confirm(t.Ctx, client.MFAConfirmInput{Challenge: challenge, SetupID: setup.SetupID, Code: code})
-		var ae *clicore.APIError
-		if err == nil {
-			break
-		}
-		if !errors.As(err, &ae) || ae.Code != "invalid_code" || tries >= 2 || !cmdutil.IsTerminal(uio.Stdin) {
-			return err
-		}
-		fmt.Fprintln(uio.Stderr, "that code is not right: try the next one the app shows")
+	out, err := confirmSetup(uio, func(code string) (*client.MFAConfirmResult, error) {
+		return t.Client.Auth().MFA.Confirm(t.Ctx, client.MFAConfirmInput{Challenge: challenge, SetupID: setup.SetupID, Code: code})
+	})
+	if err != nil {
+		return err
 	}
 	if out.Session != nil {
 		*res = sessionOf(out.Session)
@@ -185,4 +175,24 @@ func magicLinkSignIn(t *clicore.Target, uio cmdutil.IO, address string, res *ses
 		return err
 	}
 	return finishStep(t, uio, step, res)
+}
+
+// confirmSetup asks for the first code of a new authenticator and confirms it, asking again
+// after a wrong code (up to three times, on a terminal only).
+func confirmSetup(uio cmdutil.IO, confirm func(code string) (*client.MFAConfirmResult, error)) (*client.MFAConfirmResult, error) {
+	for tries := 0; ; tries++ {
+		code, err := cmdutil.ReadLine(uio, "Code shown by the app, to confirm")
+		if err != nil {
+			return nil, err
+		}
+		out, err := confirm(code)
+		if err == nil {
+			return out, nil
+		}
+		var ae *clicore.APIError
+		if !errors.As(err, &ae) || ae.Code != "invalid_code" || tries >= 2 || !cmdutil.IsTerminal(uio.Stdin) {
+			return nil, err
+		}
+		fmt.Fprintln(uio.Stderr, "that code is not right: try the next one the app shows")
+	}
 }

@@ -78,21 +78,11 @@ func AccountMFAEnable(c *kli.CommandContext) error {
 		return err
 	}
 	showSetup(uio, setup.OtpauthURI, setup.Secret)
-	var out *client.MFAConfirmResult
-	for tries := 0; ; tries++ {
-		code, err := cmdutil.ReadLine(uio, "Code shown by the app, to confirm")
-		if err != nil {
-			return err
-		}
-		out, err = t.Client.Auth().MFA.Confirm(t.Ctx, client.MFAConfirmInput{SetupID: setup.SetupID, Code: code}, clicore.WithProof(proof)...)
-		var ae *clicore.APIError
-		if err == nil {
-			break
-		}
-		if !errors.As(err, &ae) || ae.Code != "invalid_code" || tries >= 2 || !cmdutil.IsTerminal(uio.Stdin) {
-			return err
-		}
-		fmt.Fprintln(uio.Stderr, "that code is not right: try the next one the app shows")
+	out, err := confirmSetup(uio, func(code string) (*client.MFAConfirmResult, error) {
+		return t.Client.Auth().MFA.Confirm(t.Ctx, client.MFAConfirmInput{SetupID: setup.SetupID, Code: code}, clicore.WithProof(proof)...)
+	})
+	if err != nil {
+		return err
 	}
 	fmt.Fprintln(uio.Stderr, "two-step verification is on; your other sessions ended")
 	showRecoveryCodes(uio, out.RecoveryCodes)

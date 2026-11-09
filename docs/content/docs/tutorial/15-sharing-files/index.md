@@ -30,7 +30,7 @@ Fetch the files, build and restart:
 {{< tutorial-files "main/_functions/download/function.yaml main/_functions/download/index.ts main/_functions/download/index.test.ts main/_functions/download/input.schema.json" >}}
 
 ```sh
-docker compose run --rm functions-build && docker compose restart backd
+docker compose logs --since 1m backd | grep 'config reloaded'   # backd bundled the function and loaded it
 ```
 
 Download from the gallery: the card says `1 downloads`. (Open the *Gallery*, since it is the one counted: *My assets* downloads are the owner's own and aren't.)
@@ -49,7 +49,7 @@ The same two lines as for `published_at` in chapter 5 close it. Edit the `rules:
 {{< example-file path="shelf/main/assets/collection.yaml" lines="26-32" >}}
 
 ```sh
-docker compose restart backd
+docker compose logs --since 1m backd | grep 'config reloaded'   # backd follows config/: it loaded the change
 ```
 
 Repeat the `PATCH`: **`403`**. An owner can no longer set their own count, nor create an asset that starts with one, and the `download` function keeps counting because it writes through `ctx.admin.db`.

@@ -22,7 +22,7 @@ compose=$dir/compose.yaml
 cleanup() {
   trap - EXIT
   docker compose -f "$compose" down -v >/dev/null 2>&1 || true
-  # functions-build runs as root and leaves root-owned .build folders in the
+  # backd (dev mode) runs as root and leaves root-owned .build folders in the
   # mounted config: remove them from a container (the same image, as root),
   # then the rest. Cleaning up must never turn a green run red.
   docker run --rm --user root --entrypoint sh -v "$dir":/work backd-executor:shelf-tour \
@@ -50,6 +50,9 @@ find "$dir/config" -name .build -prune -exec rm -rf {} +
 # The pins' private notes (chapter 25) are encrypted with a key the operator creates, and backd
 # refuses to start without it: provision the database, create the key offline (the chapter does
 # the same by hand), then start everything.
+# No functions-build service any more: dev mode bundles when the stack runs, but provision
+# (a separate, one-shot run here) checks the bundles first, so build them the way CI does.
+docker compose -f "$compose" run --rm --no-deps backd functions build >/dev/null
 docker compose -f "$compose" run --rm backd provision >/dev/null
 docker compose -f "$compose" run --rm --no-deps backd secret create --realm shelf --type key --generate --name SHELF_NOTES >/dev/null
 

@@ -1,11 +1,10 @@
 package cli
 
 import (
-	"bytes"
-	"fmt"
 	"io"
-	"regexp"
 	"strings"
+
+	"github.com/fernandezvara/backd/internal/cmdutil"
 )
 
 // helpGroups is the global help: commands grouped by what they work on, as the packages
@@ -13,14 +12,11 @@ import (
 // exactly one group (a test holds the two together); the descriptions are the commands' own
 // short help. functions is a group of both kinds: its types subcommand is local, the others
 // need a server, and its own help says which.
-var helpGroups = []struct {
-	title, note string
-	commands    []string
-}{
-	{"Project", "local: CONFIG_DIR only, no running server", []string{"template", "config", "rules", "databases", "types", "openapi", "export-decrypt"}},
-	{"Account", "your sign-in on a running backd", []string{"login", "logout", "whoami", "account"}},
-	{"Administration", "a running backd's admin API", []string{"user", "orgs", "apikey", "push", "secret", "encrypt", "audit", "data", "storage", "files", "functions", "export", "import", "compliance", "consents", "app-config", "triggers"}},
-	{"General", "", []string{"help", "version"}},
+var helpGroups = []cmdutil.HelpGroup{
+	{Title: "Project", Note: "local: CONFIG_DIR only, no running server", Commands: []string{"template", "config", "rules", "databases", "types", "openapi", "export-decrypt"}},
+	{Title: "Account", Note: "your sign-in on a running backd", Commands: []string{"login", "logout", "whoami", "account"}},
+	{Title: "Administration", Note: "a running backd's admin API", Commands: []string{"user", "orgs", "apikey", "push", "secret", "encrypt", "audit", "data", "storage", "files", "functions", "export", "import", "compliance", "consents", "app-config", "triggers"}},
+	{Title: "General", Note: "", Commands: []string{"help", "version"}},
 }
 
 // localCommands need no running server; every other command does. A command of a group is
@@ -69,49 +65,17 @@ func commandHelpPath(args []string) []string {
 	return path
 }
 
-// helpCommand is the entry for `help`, which the command tree doesn't register itself.
-const helpCommand = "show this help, or a command's help: backd help <command>"
-
 // isGlobalHelp reports whether the arguments ask for the global help: none at all (plain
 // `backd` starts nothing), or `help` / `--help` / `-h` alone.
-func isGlobalHelp(args []string) bool {
-	if len(args) == 0 {
-		return true
-	}
-	return len(args) == 1 && (args[0] == "help" || args[0] == "--help" || args[0] == "-h")
-}
+func isGlobalHelp(args []string) bool { return cmdutil.IsGlobalHelp(args) }
 
-// commandSummaries reads the one-line description of every command from the tree's own
-// flat help, so the grouped help cannot say something else than `backd <command> --help`.
+// commandSummaries reads the one-line description of every command from the tree's own flat help.
 func commandSummaries(getenv func(string) string) map[string]string {
-	var flat bytes.Buffer
-	cfg := newCLI(getenv, strings.NewReader(""), &flat, io.Discard)
-	_ = cfg.Execute([]string{"backd", "--help"})
-	out := map[string]string{"help": helpCommand}
-	line := regexp.MustCompile(`^  (\S+)\s+(\S.*)$`)
-	for l := range strings.SplitSeq(flat.String(), "\n") {
-		if m := line.FindStringSubmatch(l); m != nil {
-			out[m[1]] = m[2]
-		}
-	}
-	return out
+	return cmdutil.Summaries(newCLI(getenv, strings.NewReader(""), io.Discard, io.Discard), "backd")
 }
 
 // groupedHelp renders the global help.
 func groupedHelp(getenv func(string) string) string {
-	summaries := commandSummaries(getenv)
-	var b strings.Builder
-	b.WriteString("Usage: backd <command> [options]\n")
-	for _, g := range helpGroups {
-		if g.note != "" {
-			fmt.Fprintf(&b, "\n%s (%s):\n", g.title, g.note)
-		} else {
-			fmt.Fprintf(&b, "\n%s:\n", g.title)
-		}
-		for _, name := range g.commands {
-			fmt.Fprintf(&b, "  %-15s %s\n", name, summaries[name])
-		}
-	}
-	b.WriteString("\n`backd <command> --help` shows a command's help. The server and the tools that work on\nMongoDB directly are backd-server's (`backd-server --help`).\n")
-	return b.String()
+	return cmdutil.GroupedHelp("backd", helpGroups, commandSummaries(getenv),
+		"`backd <command> --help` shows a command's help. The server and the tools that work on\nMongoDB directly are backd-server's (`backd-server --help`).\n")
 }
