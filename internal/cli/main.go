@@ -29,22 +29,14 @@ func Run(args []string, getenv func(string) string, stdin io.Reader, stdout, std
 	return cmdutil.Execute(newCLI(getenv, stdin, stdout, stderr), "backd", args, stderr)
 }
 
-// role runs one of backd's server roles: it loads the settings, the config
-// and the MongoDB client, then hands the app to action.
-func role(name string, action func(context.Context, *server.App) error) kli.CommandFunc {
+// role runs one of backd's server roles with its flags (see server.Run).
+func role(name string) kli.CommandFunc {
 	return cmdutil.Act("backd "+name, func(c *kli.CommandContext) error {
-		ctx := context.Background()
-		a, err := server.Setup(ctx, c.Getenv, c.Stderr())
-		if err != nil {
-			return err
-		}
-		defer a.Close()
 		o := server.Options{WithWorker: name == "serve" && cmdutil.Flag(c, "with-worker")}
 		if name == "provision" {
 			o.DisablePreImages, o.Yes = cmdutil.Flag(c, "disable-preimages"), cmdutil.Flag(c, "yes")
 		}
-		a.SetOptions(o)
-		return action(ctx, a)
+		return server.Run(context.Background(), name, c.Getenv, c.Stderr(), o)
 	})
 }
 

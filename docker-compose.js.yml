@@ -62,23 +62,15 @@ services:
         condition: service_completed_successfully
     restart: on-failure:30
 
-  # One-shot: bundles the test functions so backd's startup check passes.
-  # Uses the executor image (backd + the pinned Deno) so no extra image
-  # is needed to build (see docker/egress-test/docker-compose.yml).
-  functions-build:
+  backd:
+    # The executor image (backd + the pinned Deno): dev mode bundles the
+    # functions at startup and on change, into the config, so the mount is
+    # writable and backd runs as root (your user under rootless podman).
     build:
       context: .
       dockerfile: docker/executor/Dockerfile
     entrypoint: ["/usr/local/bin/backd"]
-    command: ["functions", "build"]
     user: root
-    environment:
-      CONFIG_DIR: /config
-    volumes:
-      - ./clients/js/test/integration/config:/config
-
-  backd:
-    build: .
     # --with-worker: sync and async functions both run in this one
     # process, so the integration tests need no separate worker service.
     command: ["serve", "--with-worker"]
@@ -99,12 +91,10 @@ services:
       # The files realm keeps its storage keys as secrets (set by run.sh).
       BACKD_SECRETS_KEY: js-integration-secrets-key-0123456789abcdef
     volumes:
-      - ./clients/js/test/integration/config:/config:ro
+      - ./clients/js/test/integration/config:/config
     depends_on:
       mongo:
         condition: service_healthy
-      functions-build:
-        condition: service_completed_successfully
 
   # No egress or network isolation here (unlike docker/egress-test): the
   # test functions never reach the network, so there's nothing to prove.

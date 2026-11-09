@@ -122,7 +122,7 @@ func (r *reloader) Poll(ctx context.Context) {
 	r.files = now
 	ev, err := r.reload(ctx, changed)
 	if err != nil {
-		r.app.log.Error("dev mode: the config change was not applied; the previous config keeps running", "error", err)
+		logProblems(r.app.log, "dev mode: the config change was not applied; the previous config keeps running", problemsOf(err, r.app.cfg.ConfigDir), nil)
 		r.setErrors(strings.Split(strings.TrimSpace(err.Error()), "\n"))
 		return
 	}
@@ -140,27 +140,12 @@ func (r *reloader) reload(ctx context.Context, changed []string) (*reloadEvent, 
 	cur := r.app
 	reg, err := registry.Load(cur.cfg.ConfigDir)
 	if err != nil {
-		return nil, fmt.Errorf("invalid config:\n%w", err)
-	}
-	if err := reg.CheckImageLimits(cur.cfg.ImageMaxPixels); err != nil {
-		return nil, fmt.Errorf("invalid config:\n%w", err)
-	}
-	if err := reg.CheckExpandLimits(cur.cfg.Expand.MaxArray); err != nil {
-		return nil, fmt.Errorf("invalid config:\n%w", err)
-	}
-	if err := reg.CheckAggregateLimits(cur.cfg.Aggregate); err != nil {
-		return nil, fmt.Errorf("invalid config:\n%w", err)
-	}
-	if err := reg.CheckTriggerLimits(cur.cfg.TriggerLimits); err != nil {
-		return nil, fmt.Errorf("invalid config:\n%w", err)
+		return nil, fmt.Errorf(configPrefix+"%w", err)
 	}
 	if err := r.build(ctx, reg); err != nil {
-		return nil, err
+		return nil, buildError{err}
 	}
-	if err := checkFunctions(reg, cur.cfg, cur.log); err != nil {
-		return nil, err
-	}
-	fp, err := reg.Fingerprint()
+	fp, err := checkLoaded(reg, cur.cfg, cur.log)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +257,7 @@ func diffSnapshots(before, after map[string]string) []string {
 func followConfig(ctx context.Context, cur *App, interval time.Duration) *App {
 	files, _ := snapshot(cur.cfg.ConfigDir)
 	pending := false
-	lastErr := ""
+	seen := map[string]bool{}
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
@@ -293,13 +278,11 @@ func followConfig(ctx context.Context, cur *App, interval time.Duration) *App {
 		}
 		reg, fp, err := loadConfig(cur.cfg, cur.log)
 		if err != nil {
-			if msg := err.Error(); msg != lastErr {
-				lastErr = msg
-				cur.log.Warn("dev mode: the config change is not applied yet; the worker keeps running the previous config (it tries again until it loads)", "error", msg)
-			}
+			logProblems(cur.log, "dev mode: the config change is not applied yet; the worker keeps running the previous config (it tries again until it loads)", problemsOf(err, cur.cfg.ConfigDir), seen)
 			continue
 		}
-		pending, lastErr = false, ""
+		pending = false
+		clear(seen)
 		if fp == cur.fingerprint {
 			continue // changed files, same config (a comment, a stray file)
 		}

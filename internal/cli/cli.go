@@ -860,13 +860,13 @@ func registerRoles(cfg *kli.Config) {
 		cmdutil.Boolean(cc, "with-worker", "also run the worker role (async jobs) in this process")
 	}
 	cfg.Command("serve").ShortHelp("load config, provision or verify MongoDB, serve HTTP").LongHelp(serveHelp).
-		Func(role("serve", server.Serve)).Config(withWorker)
+		Func(role("serve")).Config(withWorker)
 	cfg.Command("worker").ShortHelp("run the worker role alone: claims and runs async jobs").
 		LongHelp("Claims and runs async jobs (mode: async) and scheduled functions. Needs\nBACKD_EXECUTOR_URL; WORKER_CONCURRENCY caps jobs running at once (default 10).").
-		Func(role("worker", server.Worker)).Config(func(*kli.CommandConfig) {})
+		Func(role("worker")).Config(func(*kli.CommandConfig) {})
 	cfg.Command("provision").ShortHelp("load config, apply provisioning once and exit").
 		LongHelp("Creates missing collections, validators and indexes, and enables pre-change images on\nrealtime collections. Nothing is ever removed, except with --disable-preimages --yes:\nthat switches the images off on collections that no longer need them, and deletes the\nimages stored so far for good.").
-		Func(role("provision", server.Provision)).Config(func(cc *kli.CommandConfig) {
+		Func(role("provision")).Config(func(cc *kli.CommandConfig) {
 		cmdutil.Boolean(cc, "disable-preimages", "switch off pre-change images on collections that no longer need them (irreversible)")
 		cmdutil.Boolean(cc, "yes", "confirm --disable-preimages")
 	})

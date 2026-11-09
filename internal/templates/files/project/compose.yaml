@@ -44,6 +44,10 @@ x-backd-env: &backd-env
   BACKD_DEV: "true"
   BACKD_DEV_ANY_ADDR: "true"
   BACKD_URL: http://localhost:8080
+  # Deno (bundling, at startup and on change) and its cache run as your
+  # user, which has no home in the image.
+  HOME: /tmp
+  DENO_DIR: /tmp/deno
   BACKD_ADMIN_UI: "true"
   # The worker and the API call the executor with this token, and functions
   # call back to the API's internal listener with this key.
@@ -101,27 +105,6 @@ services:
       - minio-data:/data
     networks: [data]
 
-  # One-shot: bundles every functions project before backd starts (backd
-  # refuses stale or missing bundles). In dev mode backd bundles again
-  # whenever a function changes, so you only notice this one at `up`.
-  functions-build:
-    image: *backd-image
-    pull_policy: missing
-    entrypoint: ["/usr/local/bin/backd"]
-    command: ["functions", "build"]
-    user: *dev-user
-    environment:
-      CONFIG_DIR: /config
-      HOME: /tmp
-      DENO_DIR: /tmp/deno
-    volumes:
-      - ./config:/config
-    # Function dependencies may be fetched from the network on build.
-    networks: [uplink]
-
-  # The API, the admin API and UI, the internal listener for functions —
-  # and the worker role too (--with-worker): async jobs and scheduled
-  # functions run while it does.
   backd:
     image: *backd-image
     pull_policy: missing
@@ -137,7 +120,6 @@ services:
     networks: [data, isolated]
     depends_on:
       mongo: { condition: service_healthy }
-      functions-build: { condition: service_completed_successfully }
     stop_grace_period: 20s
 
   # One Deno process per function call. No route to MongoDB or the

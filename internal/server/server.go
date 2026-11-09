@@ -72,60 +72,87 @@ type App struct {
 }
 
 // loadConfig loads CONFIG_DIR and checks it against the instance's limits and the functions'
-// bundles, as startup and a live reload do. It returns the registry and its fingerprint.
+// bundles, as startup does. It returns the registry and its fingerprint.
 func loadConfig(cfg settings.Settings, log *slog.Logger) (*registry.Registry, string, error) {
 	reg, err := registry.Load(cfg.ConfigDir)
 	if err != nil {
-		return nil, "", fmt.Errorf("invalid config:\n%w", err)
-	}
-	if err := reg.CheckImageLimits(cfg.ImageMaxPixels); err != nil {
-		return nil, "", fmt.Errorf("invalid config:\n%w", err)
-	}
-	if err := reg.CheckExpandLimits(cfg.Expand.MaxArray); err != nil {
-		return nil, "", fmt.Errorf("invalid config:\n%w", err)
-	}
-	if err := reg.CheckAggregateLimits(cfg.Aggregate); err != nil {
-		return nil, "", fmt.Errorf("invalid config:\n%w", err)
-	}
-	if err := reg.CheckTriggerLimits(cfg.TriggerLimits); err != nil {
-		return nil, "", fmt.Errorf("invalid config:\n%w", err)
+		return nil, "", fmt.Errorf(configPrefix+"%w", err)
 	}
 	for _, w := range reg.AggregateWarnings() {
 		log.Warn(w)
 	}
-	if err := checkFunctions(reg, cfg, log); err != nil {
-		return nil, "", err
-	}
-	fingerprint, err := reg.Fingerprint()
+	fingerprint, err := checkLoaded(reg, cfg, log)
 	if err != nil {
 		return nil, "", err
 	}
 	return reg, fingerprint, nil
 }
 
+// checkLoaded checks a loaded config against the instance's limits and the functions'
+// bundles, as startup and a live reload do, and returns its fingerprint.
+func checkLoaded(reg *registry.Registry, cfg settings.Settings, log *slog.Logger) (string, error) {
+	for _, check := range []func() error{
+		func() error { return reg.CheckImageLimits(cfg.ImageMaxPixels) },
+		func() error { return reg.CheckExpandLimits(cfg.Expand.MaxArray) },
+		func() error { return reg.CheckAggregateLimits(cfg.Aggregate) },
+		func() error { return reg.CheckTriggerLimits(cfg.TriggerLimits) },
+	} {
+		if err := check(); err != nil {
+			return "", fmt.Errorf(configPrefix+"%w", err)
+		}
+	}
+	if err := checkFunctions(reg, cfg, log); err != nil {
+		return "", err
+	}
+	return reg.Fingerprint()
+}
+
+// Setup loads the settings and the config and connects to MongoDB: what every role and
+// direct tool needs. Any error is final (Run is the dev-mode start that waits instead).
 func Setup(ctx context.Context, getenv func(string) string, logOut io.Writer) (*App, error) {
 	cfg, err := settings.Load(getenv)
 	if err != nil {
 		return nil, err
 	}
-	log := slog.New(slog.NewJSONHandler(logOut, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	return setupWith(ctx, cfg, logOut)
+}
 
+func setupWith(ctx context.Context, cfg settings.Settings, logOut io.Writer) (*App, error) {
+	log := newLogger(cfg, logOut)
 	reg, fingerprint, err := loadConfig(cfg, log)
 	if err != nil {
 		return nil, err
 	}
-	log.Info("reference expansion limits", "max_depth", cfg.Expand.MaxDepth, "max_paths", cfg.Expand.MaxPaths, "max_array", cfg.Expand.MaxArray, "max_docs", cfg.Expand.MaxDocs)
-	log.Info("config loaded", "version", buildinfo.Version, "config_dir", cfg.ConfigDir, "fingerprint", fingerprint, "realms", len(reg.Realms), "databases", len(reg.Databases()))
+	client, m, err := connect(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return newApp(cfg, log, reg, fingerprint, client, m), nil
+}
 
+func newLogger(cfg settings.Settings, out io.Writer) *slog.Logger {
+	return slog.New(slog.NewJSONHandler(out, &slog.HandlerOptions{Level: cfg.LogLevel}))
+}
+
+// connect opens the MongoDB client (it must be a replica set) and the metrics, when
+// METRICS_ADDR is set.
+func connect(ctx context.Context, cfg settings.Settings) (*mongo.Client, *metrics.Metrics, error) {
 	var m *metrics.Metrics
 	if cfg.MetricsAddr != "" {
 		m = metrics.New(buildinfo.Version, buildinfo.Commit())
 	}
 	client, err := mongodb.Connect(ctx, cfg.MongoURI, m.MongoMonitor())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return &App{cfg: cfg, log: log, reg: reg, client: client, fingerprint: fingerprint, metrics: m}, nil
+	return client, m, nil
+}
+
+// newApp is the app of a loaded config, logged as loaded.
+func newApp(cfg settings.Settings, log *slog.Logger, reg *registry.Registry, fingerprint string, client *mongo.Client, m *metrics.Metrics) *App {
+	log.Info("reference expansion limits", "max_depth", cfg.Expand.MaxDepth, "max_paths", cfg.Expand.MaxPaths, "max_array", cfg.Expand.MaxArray, "max_docs", cfg.Expand.MaxDocs)
+	log.Info("config loaded", "version", buildinfo.Version, "config_dir", cfg.ConfigDir, "fingerprint", fingerprint, "realms", len(reg.Realms), "databases", len(reg.Databases()))
+	return &App{cfg: cfg, log: log, reg: reg, client: client, fingerprint: fingerprint, metrics: m}
 }
 
 func (a *App) Close() { _ = a.client.Disconnect(context.Background()) }
@@ -180,7 +207,7 @@ func isLoopbackAddr(addr string) bool {
 func Serve(ctx context.Context, a *App) error {
 	if a.cfg.Dev && !isLoopbackAddr(a.cfg.HTTPAddr) {
 		if !a.cfg.DevAnyAddr {
-			return fmt.Errorf("BACKD_DEV=true requires HTTP_ADDR bound to localhost (e.g. 127.0.0.1:8080), got %q: dev mode must never be reachable off the machine (a container whose ports are published on 127.0.0.1 only can set BACKD_DEV_ANY_ADDR=true)", a.cfg.HTTPAddr)
+			return devAddrError(a.cfg.HTTPAddr)
 		}
 		a.log.Warn("BACKD_DEV_ANY_ADDR=true: dev mode on an address that isn't localhost; make sure nothing but this machine can reach it", "addr", a.cfg.HTTPAddr)
 	}
