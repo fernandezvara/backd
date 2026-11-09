@@ -17,7 +17,7 @@ This section is for the **contributor**: whoever changes `backd` itself. To run 
 
 | Path | Contents |
 |---|---|
-| `cmd/backd/` | The `backd` CLI: only `main`, which runs `internal/cli` |
+| `cmd/backd/` | The `backd` CLI: only `main`, which runs `internal/cli`. `deps_test.go` fails, naming the import chain, if the CLI reaches a server package or the MongoDB driver |
 | `cmd/backd-server/` | The `backd-server` binary: only `main`, which runs `internal/servercli` |
 | `internal/cli/` | The CLI's command tree (`cli.go`) and grouped help, run in-process by `cli.Run` so tests drive it like the binary; it never links the server. The commands are in `project/` (local, on `CONFIG_DIR`), `account/` (your sign-in) and `admin/` (the admin API; `opener.go` is the seam export, import and the field keys share with `backd-server`), on `clicore/` (the target server, credentials, export packages) |
 | `internal/servercli/` | `backd-server`'s command tree: the roles, and the tools that work on MongoDB or run Deno directly |
