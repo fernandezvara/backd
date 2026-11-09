@@ -21,7 +21,7 @@ func TestWithoutACommandBackdPrintsTheGroupedHelp(t *testing.T) {
 	if code != 0 || errOut != "" {
 		t.Fatalf("exit %d, stderr %q", code, errOut)
 	}
-	for _, title := range []string{"Develop:", "Session:", "Administer a realm:", "General:"} {
+	for _, title := range []string{"Project (local: CONFIG_DIR only, no running server):", "Account (your sign-in on a running backd):", "Administration (a running backd's admin API):", "General:"} {
 		if !strings.Contains(none, "\n"+title+"\n") {
 			t.Errorf("the help lacks the group %q:\n%s", title, none)
 		}
@@ -78,5 +78,35 @@ func TestEveryCommandIsListedOnceInTheHelp(t *testing.T) {
 		if n := len(regexp.MustCompile(`(?m)^  `+regexp.QuoteMeta(name)+` +`+regexp.QuoteMeta(short)+`$`).FindAllString(page, -1)); n != 1 {
 			t.Errorf("%s is on the page %d times with its description", name, n)
 		}
+	}
+}
+
+// Each command's help says whether it needs a running server; functions, a group of both
+// kinds, marks each subcommand.
+func TestCommandHelpSaysWhetherItNeedsAServer(t *testing.T) {
+	for _, tt := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"config", "check", "--help"}, "Server: none needed"},
+		{[]string{"template", "help"}, "Server: none needed"},
+		{[]string{"functions", "types", "--help"}, "Server: none needed"},
+		{[]string{"user", "list", "--help"}, "Server: needs a running backd"},
+		{[]string{"login", "--help"}, "Server: needs a running backd"},
+		{[]string{"functions", "invoke", "--help"}, "Server: needs a running backd"},
+		{[]string{"functions", "--help"}, "`types` is local"},
+	} {
+		code, out, errOut := helpOf(t, tt.args...)
+		if code != 0 || !strings.Contains(out, tt.want) {
+			t.Errorf("%v: %d %q %q, want %q", tt.args, code, out, errOut, tt.want)
+		}
+	}
+	_, fns, _ := helpOf(t, "functions", "--help")
+	if !regexp.MustCompile(`types +print JSDoc types[^\n]*\[local\]`).MatchString(fns) || !regexp.MustCompile(`invoke +call the function[^\n]*\[server\]`).MatchString(fns) {
+		t.Errorf("functions --help doesn't mark its subcommands:\n%s", fns)
+	}
+	// A command line that only looks like a help request is run, not annotated.
+	if _, out, _ := helpOf(t, "version"); strings.Contains(out, "Server:") {
+		t.Errorf("version: %q", out)
 	}
 }

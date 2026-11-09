@@ -19,7 +19,7 @@ This section is for the **contributor**: whoever changes `backd` itself. To run 
 |---|---|
 | `cmd/backd/` | The `backd` CLI: only `main`, which runs `internal/cli` |
 | `cmd/backd-server/` | The `backd-server` binary: only `main`, which runs `internal/servercli` |
-| `internal/cli/` | The CLI's command tree (`cli.go`) and commands, run in-process by `cli.Run` so tests drive it like the binary; it never links the server (`opener.go` is the seam export, import and the field keys share with `backd-server`) |
+| `internal/cli/` | The CLI's command tree (`cli.go`) and grouped help, run in-process by `cli.Run` so tests drive it like the binary; it never links the server. The commands are in `project/` (local, on `CONFIG_DIR`), `account/` (your sign-in) and `admin/` (the admin API; `opener.go` is the seam export, import and the field keys share with `backd-server`), on `clicore/` (the target server, credentials, export packages) |
 | `internal/servercli/` | `backd-server`'s command tree: the roles, and the tools that work on MongoDB or run Deno directly |
 | `internal/dbnames/` | The names of backd's own databases and collections, for the CLI |
 | `internal/server/` | The server roles: settings and config loading, the startup checks, `serve`, `worker`, `provision`, the executor and egress bootstrap, and the dev-mode reloader |

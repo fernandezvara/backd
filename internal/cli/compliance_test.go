@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/fernandezvara/backd/internal/cli/admin"
 )
 
 func TestComplianceScope(t *testing.T) {
@@ -113,8 +115,8 @@ func TestUserExport(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	exportPoll = time.Millisecond
-	t.Cleanup(func() { exportPoll = 2 * time.Second })
+	admin.ExportPoll = time.Millisecond
+	t.Cleanup(func() { admin.ExportPoll = 2 * time.Second })
 	dir := t.TempDir()
 	c := &cliEnv{t: t, env: map[string]string{"BACKD_CREDENTIALS": filepath.Join(dir, "credentials"), "BACKD_API_KEY": "bdk_x"}}
 

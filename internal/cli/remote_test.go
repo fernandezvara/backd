@@ -14,6 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fernandezvara/backd/internal/cli/account"
+	"github.com/fernandezvara/backd/internal/cli/admin"
+	"github.com/fernandezvara/backd/internal/cli/clicore"
+
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/auth/authtest"
 	"github.com/fernandezvara/backd/internal/httpapi"
@@ -129,7 +133,7 @@ organizations:
 	if fi, _ := os.Stat(filepath.Dir(creds)); fi.Mode().Perm() != 0o700 {
 		t.Errorf("credentials directory mode %v", fi.Mode().Perm())
 	}
-	var stored credentials
+	var stored clicore.Credentials
 	data, _ := os.ReadFile(creds)
 	if err := json.Unmarshal(data, &stored); err != nil || stored.DefaultURL != srv.URL || !strings.HasPrefix(stored.Sessions[srv.URL]["acme"].Token, "bds_") {
 		t.Fatalf("stored credentials: %s", data)
@@ -270,7 +274,7 @@ organizations:
 		t.Errorf("audit --user:\n%s", out)
 	}
 	out = c.expect(0, `"action":"user.create"`, "", "audit", "--realm", "acme", "--action", "user.create", "--json")
-	var rec auditRecord
+	var rec admin.AuditRecord
 	if err := json.Unmarshal([]byte(strings.SplitN(out, "\n", 2)[0]), &rec); err != nil || rec.Target == nil || !strings.HasPrefix(*rec.Target, "user:") {
 		t.Errorf("audit --json: %q %v", out, err)
 	}
@@ -414,7 +418,7 @@ func TestLoginArguments(t *testing.T) {
 		{"http://[::1]:8080", false},
 		{"http://backd:8080", false},
 	} {
-		if got := plainRemote(tt.url); got != tt.want {
+		if got := account.PlainRemote(tt.url); got != tt.want {
 			t.Errorf("plainRemote(%s) = %v", tt.url, got)
 		}
 	}

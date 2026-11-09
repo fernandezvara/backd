@@ -8,7 +8,7 @@ import (
 	"github.com/fernandezvara/kli"
 
 	"github.com/fernandezvara/backd/internal/auth"
-	"github.com/fernandezvara/backd/internal/cli"
+	"github.com/fernandezvara/backd/internal/cli/admin"
 	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/internal/mongodb"
 	"github.com/fernandezvara/backd/internal/server"
@@ -80,7 +80,7 @@ func rotateRealmSecrets(ctx context.Context, a *server.App, realm string, oldCip
 		}
 		plain, err := oldCipher.Open(s.Ciphertext, s.Nonce, s.KeyID)
 		if err != nil {
-			return n, fmt.Errorf("%s: %w", cli.SecretRef(s.Scope(), s.Name), err)
+			return n, fmt.Errorf("%s: %w", admin.SecretRef(s.Scope(), s.Name), err)
 		}
 		ct, nonce, err := newCipher.Seal(plain)
 		if err != nil {
@@ -90,7 +90,7 @@ func rotateRealmSecrets(ctx context.Context, a *server.App, realm string, oldCip
 		if s.PrevCiphertext != "" { // a key whose rotation is unfinished holds two values
 			prev, err := oldCipher.Open(s.PrevCiphertext, s.PrevNonce, s.KeyID)
 			if err != nil {
-				return n, fmt.Errorf("%s: %w", cli.SecretRef(s.Scope(), s.Name), err)
+				return n, fmt.Errorf("%s: %w", admin.SecretRef(s.Scope(), s.Name), err)
 			}
 			if s.PrevCiphertext, s.PrevNonce, err = newCipher.Seal(prev); err != nil {
 				return n, err
@@ -98,7 +98,7 @@ func rotateRealmSecrets(ctx context.Context, a *server.App, realm string, oldCip
 		}
 		s.KeyID = newCipher.KeyID
 		if err := store.UpsertSecret(ctx, s); err != nil {
-			return n, fmt.Errorf("%s: %w", cli.SecretRef(s.Scope(), s.Name), err)
+			return n, fmt.Errorf("%s: %w", admin.SecretRef(s.Scope(), s.Name), err)
 		}
 		n++
 	}

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fernandezvara/backd/internal/cli/account"
+
 	"github.com/pquerna/otp/totp"
 
 	"github.com/fernandezvara/backd/internal/auth"
@@ -279,7 +281,7 @@ func TestAccountSecondFactorCommands(t *testing.T) {
 }
 
 func TestQRBlocks(t *testing.T) {
-	art, err := qrBlocks("otpauth://totp/acme:ada@example.com?secret=JBSWY3DPEHPK3PXP&issuer=acme")
+	art, err := account.QRBlocks("otpauth://totp/acme:ada@example.com?secret=JBSWY3DPEHPK3PXP&issuer=acme")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -119,9 +119,9 @@ Be careful when taking an admin role away from yourself: once no one holds an ad
 
 ## Every command
 
-`backd help` lists the same commands in the same groups; `backd <command> --help` shows one command's flags. [`backd-server`'s commands](../server/#every-command) have their own page.
+`backd help` lists the same commands in the same groups; `backd <command> --help` shows one command's flags and ends by saying whether it needs a running server. [`backd-server`'s commands](../server/#every-command) have their own page.
 
-**Develop** — for building with `backd` (see also the [quickstart](../../../build/quickstart/)):
+**Project** — local, on `CONFIG_DIR` only, no running server (see also the [quickstart](../../../build/quickstart/)):
 
 | Command | Purpose |
 |---|---|
@@ -131,9 +131,9 @@ Be careful when taking an admin role away from yourself: once no one holds an ad
 | `backd databases [--collections]` | Print the MongoDB databases (or collections) the config uses, one per line (needs only `CONFIG_DIR`; see [least-privilege deployments](../../#least-privilege-deployments)) |
 | `backd types` | Generate a realm's TypeScript types (see [Typing and OpenAPI](../../../build/clients/types/)) |
 | `backd openapi` | Generate a realm's OpenAPI 3.1 document (see [OpenAPI](../../../build/api/openapi/)) |
-| `backd functions types\|invoke\|history\|logs\|jobs` | Print the functions' JSDoc types, call one through a running `backd`, and see its recent calls, console output and jobs (see [Calling functions](../../../build/functions/calling/), [Async jobs](../../../build/functions/jobs/)) |
+| `backd export-decrypt --from <package> --out <dir> --field …` | Open the encrypted fields of an [export package](../export-import/encrypted-fields/) with their keys, offline: no server, no database |
 
-**Session:**
+**Account** — your own sign-in, on a running `backd`:
 
 | Command | Purpose |
 |---|---|
@@ -141,7 +141,7 @@ Be careful when taking an admin role away from yourself: once no one holds an ad
 | `backd logout`, `backd whoami` | End the stored session, or show who it belongs to |
 | `backd account <command>` | Manage your own [second factor](../../../build/auth/mfa/) and recovery codes (see [Your own sign-in security](#your-own-sign-in-security)) |
 
-**Administer a realm:**
+**Administration** — a running `backd`'s admin API:
 
 | Command | Purpose |
 |---|---|
@@ -154,6 +154,7 @@ Be careful when taking an admin role away from yourself: once no one holds an ad
 | `backd data check\|transfer\|assign-org` | Check stored documents against their schemas, move documents between collections, or assign them an organization |
 | `backd storage check\|usage\|reconcile` | Check a realm's [object storage](../../providers/storage/), report its usage, or clean up orphans (see [Keeping storage tidy](../../storage-maintenance/)) |
 | `backd export`, `backd import` | Write a realm, database or collections, with their files, as a [package](../export-import/), or read one into a realm |
+| `backd functions invoke\|history\|logs\|jobs\|types` | Call a function through a running `backd`, and see its recent calls, console output and jobs (see [Calling functions](../../../build/functions/calling/), [Async jobs](../../../build/functions/jobs/)) | (`types`, the functions' JSDoc types, is local)
 | `backd files regenerate` | Rebuild [image versions](../../../build/files/file-fields/#image-versions) the documents already hold |
 | `backd compliance scope` | What a user's [personal data export](../compliance/) covers |
 | `backd consents notify\|record` | Manage the [consents](../../../build/auth/consents/) users accept |
