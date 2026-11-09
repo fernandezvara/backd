@@ -6,14 +6,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/fernandezvara/backd/internal/buildinfo"
@@ -104,30 +101,9 @@ func ServeExecutor(getenv func(string) string, stderr io.Writer) error {
 		// Invocations carry their own deadlines (up to 24h for async jobs).
 		IdleTimeout: 120 * time.Second,
 	}
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return err
-	}
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	errc := make(chan error, 1)
-	go func() {
-		log.Info("listening", "addr", ln.Addr().String())
-		errc <- srv.Serve(ln)
-	}()
-	select {
-	case err := <-errc:
-		return err
-	case <-ctx.Done():
-	}
-	// Running functions stop with their process group when the executor
-	// stops; give short ones a moment to finish.
-	shutdown, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(shutdown); err != nil && !errors.Is(err, context.DeadlineExceeded) {
-		return err
-	}
-	return nil
+	// Running functions stop with their process group when the executor stops; runServer
+	// gives short ones a moment to finish.
+	return runServer(ctx, srv, addr, log)
 }
 
 func orDefault(v, def string) string {
