@@ -2,7 +2,6 @@ package admin
 
 import (
 	"fmt"
-	"net/url"
 
 	"github.com/fernandezvara/backd/internal/cli/clicore"
 
@@ -48,18 +47,9 @@ func ConsentsRecord(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	var page struct {
-		Items []struct {
-			ID    string `json:"id"`
-			Email string `json:"email"`
-		} `json:"items"`
-	}
-	email := cmdutil.Str(c, "email")
-	if err := t.Adm.Users.List(t.Ctx, url.Values{"email": {email}}, &page); err != nil {
+	u, err := userByEmail(t, cmdutil.Str(c, "email"))
+	if err != nil {
 		return err
-	}
-	if len(page.Items) == 0 {
-		return fmt.Errorf("user not found: %s", email)
 	}
 	body := map[string]any{"consent": cmdutil.Str(c, "consent"), "action": cmdutil.Str(c, "action"), "evidence": cmdutil.Str(c, "evidence")}
 	if v := cmdutil.Str(c, "version"); v != "" {
@@ -72,9 +62,9 @@ func ConsentsRecord(c *kli.CommandContext) error {
 		Evidence string `json:"evidence"`
 		At       string `json:"at"`
 	}
-	if err := t.Adm.Users.AcceptConsents(t.Ctx, page.Items[0].ID, body, &out); err != nil {
+	if err := t.Adm.Users.AcceptConsents(t.Ctx, u.ID, body, &out); err != nil {
 		return err
 	}
-	fmt.Fprintf(c.Stdout(), "recorded: %s %s %s for %s (evidence: %s)\n", out.Action, out.Consent, out.Version, page.Items[0].Email, out.Evidence)
+	fmt.Fprintf(c.Stdout(), "recorded: %s %s %s for %s (evidence: %s)\n", out.Action, out.Consent, out.Version, u.Email, out.Evidence)
 	return nil
 }

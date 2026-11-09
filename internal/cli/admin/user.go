@@ -43,13 +43,19 @@ type UserCtx struct {
 }
 
 // find looks a user up by email.
-func (c *UserCtx) find() (adminUser, error) {
+func (c *UserCtx) find() (adminUser, error) { return userByEmail(c.Target, c.Email) }
+
+// errUserNotFound is userByEmail's answer for an address no user of the realm has.
+var errUserNotFound = errors.New("user not found")
+
+// userByEmail finds a user of the realm by address, through the admin API.
+func userByEmail(t *clicore.Target, email string) (adminUser, error) {
 	var page struct{ Items []adminUser }
-	if err := c.Target.Adm.Users.List(c.Target.Ctx, url.Values{"email": {c.Email}}, &page); err != nil {
+	if err := t.Adm.Users.List(t.Ctx, url.Values{"email": {email}}, &page); err != nil {
 		return adminUser{}, err
 	}
 	if len(page.Items) == 0 {
-		return adminUser{}, fmt.Errorf("user not found: %s", c.Email)
+		return adminUser{}, fmt.Errorf("%w: %s", errUserNotFound, email)
 	}
 	return page.Items[0], nil
 }

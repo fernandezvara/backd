@@ -66,14 +66,14 @@ func FunctionsInvoke(c *kli.CommandContext) error {
 	}
 	reqHeaders := map[string]string{}
 	if email := cmdutil.Str(c, "as"); email != "" {
-		var page struct{ Items []adminUser }
-		if err := t.Adm.Users.List(t.Ctx, url.Values{"email": {email}}, &page); err != nil {
-			return fmt.Errorf("--as %s: %w", email, err)
-		}
-		if len(page.Items) == 0 {
+		u, err := userByEmail(t, email)
+		if errors.Is(err, errUserNotFound) {
 			return fmt.Errorf("--as %s: user not found", email)
 		}
-		reqHeaders["X-Backd-On-Behalf-Of"] = page.Items[0].ID
+		if err != nil {
+			return fmt.Errorf("--as %s: %w", email, err)
+		}
+		reqHeaders["X-Backd-On-Behalf-Of"] = u.ID
 	}
 
 	start := time.Now()
