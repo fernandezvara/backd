@@ -1,7 +1,7 @@
 # Design: two binaries, `backd` (CLI) and `backd-server`
 
 - **Issues:** #845–#859 (milestone `40-cli-server-split`): #845 this design, #846–#855 the steps 1–10 of §9, #856–#859 step 11 (one per audit item)
-- **Status:** draft, being iterated
+- **Status:** decided; nothing is built. Starts after milestone 39 merges; §8 holds only the mechanical chart and pipeline changes.
 - **Related:** [kubernetes.md](./kubernetes.md), [types-openapi.md](./types-openapi.md), [export-import.md](./export-import.md), `support_docs/code_refactor.md` (local audit, Phase 5)
 
 ## 1. The problem
