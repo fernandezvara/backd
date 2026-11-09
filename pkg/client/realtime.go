@@ -617,6 +617,9 @@ func (c *Client) openStream(ctx context.Context, path []string, body any) (*http
 	if c.opts.Types != "" {
 		req.Header.Set("X-Backd-Types", c.opts.Types)
 	}
+	if c.opts.UserAgent != "" {
+		req.Header.Set("User-Agent", c.opts.UserAgent)
+	}
 	h, sentSession, _, err := c.credentials(ctx)
 	if err != nil {
 		return nil, err

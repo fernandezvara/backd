@@ -63,7 +63,7 @@ func ServeEgress(getenv func(string) string, stderr io.Writer) error {
 	}
 	defer stopMetrics()
 	p := &egress.Proxy{Key: []byte(key), AllowPrivate: allowPrivate, Log: log, Metrics: m}
-	log.Info("egress ready", "version", buildinfo.Version, "allow_private", allowPrivate)
+	log.Info("egress ready", "version", buildinfo.Get(), "allow_private", allowPrivate)
 
 	srv := &http.Server{Handler: p.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	ln, err := net.Listen("tcp", addr)

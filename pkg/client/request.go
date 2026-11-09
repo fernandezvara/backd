@@ -203,6 +203,9 @@ func (c *Client) do(ctx context.Context, r *request) (*Response, error) {
 	if c.opts.Types != "" {
 		headers.Set("X-Backd-Types", c.opts.Types)
 	}
+	if c.opts.UserAgent != "" {
+		headers.Set("User-Agent", c.opts.UserAgent)
+	}
 	if p := c.proof.Load(); r.reauth && p != nil && p.expires.After(time.Now()) {
 		headers.Set("X-Backd-Reauth", p.token)
 	}
@@ -276,6 +279,9 @@ func (c *Client) do(ctx context.Context, r *request) (*Response, error) {
 			} else {
 				slog.Warn("backd: the generated types are out of date with the server: run `backd types` and commit the result")
 			}
+		}
+		if skew := res.Header.Get("X-Backd-Version-Skew"); skew != "" && c.opts.OnVersionSkew != nil && c.skewReported.CompareAndSwap(false, true) {
+			c.opts.OnVersionSkew(skew)
 		}
 		if done, out, err := cc.answer(res, endpoint, held, r); done {
 			return out, err

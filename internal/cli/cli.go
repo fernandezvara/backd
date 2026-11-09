@@ -23,7 +23,7 @@ func newCLI(getenv func(string) string, stdin io.Reader, stdout, stderr io.Write
 
 	cfg.Command("version").ShortHelp("print the version").
 		Func(cmdutil.Act("backd version", func(c *kli.CommandContext) error {
-			fmt.Fprintln(c.Stdout(), "backd", buildinfo.Version)
+			fmt.Fprintln(c.Stdout(), "backd", buildinfo.Get())
 			return nil
 		}))
 

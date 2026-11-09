@@ -52,7 +52,7 @@ type adminUserKey struct{}
 func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Handler, timeout func(http.Handler) http.Handler) {
 	r.Route("/v1/{realm}/_admin", func(r chi.Router) {
 		// An export streams for as long as the data takes: it bounds each batch itself.
-		r.Use(noStore, resolveRealm, skipPath("/_admin/export", skipPath("/_admin/import", timeout)), a.requireAdmin)
+		r.Use(noStore, resolveRealm, skipPath("/_admin/export", skipPath("/_admin/import", timeout)), a.requireAdmin, versionSkew(a.version))
 		json := requireContentType("application/json")
 		r.Get("/whoami", a.whoami)
 		r.With(a.need(registry.RightConfig)).Get("/config", a.config)

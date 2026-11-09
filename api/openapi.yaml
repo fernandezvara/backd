@@ -18,6 +18,19 @@ info:
     config generates, the answer carries `X-Backd-Types-Stale: true` (and
     nothing else changes); production builds send no header.
 
+    The backd CLI sends `User-Agent: backd/<version>`, and the server never states its own
+    version. On `/v1/{realm}/_admin/…` operations, once the caller is authenticated, and
+    only when the two versions differ by semver precedence, the answer carries
+    `X-Backd-Version-Skew: newer` (the server is newer than the CLI) or `older`
+    (`#/components/headers/VersionSkew`); it is never on unauthenticated answers, and not
+    exposed to browsers. Only a User-Agent whose first product token is exactly `backd` is
+    looked at.
+
+    Every operation may answer `403 dev_client_refused`: a released server outside dev mode
+    refuses a development CLI (`User-Agent: backd/dev`) on every route, before
+    authentication. It guards against mistakes (an untested build on production data), not
+    against anyone; a development server (version `dev`, or `BACKD_DEV=true`) accepts it.
+
     A session an organization's connection opened (its first `methods` entry is
     `sso:{org}:{provider}`) proves who the person is in that organization, not that the
     account is theirs: operations that change what protects the account (the password,
@@ -3509,6 +3522,8 @@ paths:
           schema: { type: string }
       responses:
         "200":
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
           description: A page of users, sorted by email, read from the database one page at a time.
           content:
             application/json:
@@ -3544,6 +3559,8 @@ paths:
                 password: { type: string, minLength: 8, maxLength: 128 }
       responses:
         "201":
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
           description: The user.
           content:
             application/json:
@@ -3613,7 +3630,7 @@ paths:
       responses:
         "202":
           description: The erase job.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema:
@@ -3650,7 +3667,7 @@ paths:
               properties:
                 password: { type: string, minLength: 8, maxLength: 128 }
       responses:
-        "204": { description: Password set. }
+        "204": { description: Password set., headers: { X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } } }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
@@ -3670,7 +3687,7 @@ paths:
       responses:
         "200":
           description: The state.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema:
@@ -3721,6 +3738,8 @@ paths:
                 notify: { type: boolean, description: "Also start the job that emails every user a link to choose a new password (`409` before anything changes when the realm sends no email)." }
       responses:
         "200":
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
           description: The epoch and what it touched.
           content:
             application/json:
@@ -3759,6 +3778,8 @@ paths:
       security: [{ apiKey: [] }, { session: [] }]
       responses:
         "202":
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
           description: The job.
           content:
             application/json:
@@ -3787,6 +3808,8 @@ paths:
       security: [{ apiKey: [] }, { session: [] }]
       responses:
         "200":
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
           description: How many sessions ended.
           content:
             application/json:
@@ -3830,7 +3853,7 @@ paths:
       responses:
         "200":
           description: The link, once.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema:
@@ -3870,7 +3893,7 @@ paths:
               properties:
                 reason: { type: string, maxLength: 500, description: "Why, for the audit trail." }
       responses:
-        "204": { description: Password expired. }
+        "204": { description: Password expired., headers: { X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } } }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
@@ -3930,7 +3953,7 @@ paths:
       responses:
         "200":
           description: The report.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OwnedReport" }
@@ -3952,7 +3975,7 @@ paths:
       responses:
         "200":
           description: The sessions.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema:
@@ -3990,7 +4013,7 @@ paths:
       responses:
         "204":
           description: Session ended.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -4011,7 +4034,7 @@ paths:
       responses:
         "200":
           description: "The state: `enabled: false` is all there is for a realm without `push:`."
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema:
@@ -4076,7 +4099,7 @@ paths:
       responses:
         "200":
           description: The sends.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema:
@@ -4108,7 +4131,7 @@ paths:
       responses:
         "200":
           description: The send.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/PushSend" }
@@ -4134,7 +4157,7 @@ paths:
       responses:
         "200":
           description: How many devices went.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema:
@@ -4182,7 +4205,7 @@ paths:
       responses:
         "202":
           description: "Planned: how many users were queued, limited or had no device."
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema:
@@ -4216,7 +4239,7 @@ paths:
       responses:
         "200":
           description: The devices.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema:
@@ -4246,7 +4269,7 @@ paths:
       responses:
         "204":
           description: Device removed.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -4266,7 +4289,7 @@ paths:
       responses:
         "200":
           description: The organizations, each with its number of members.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema:
@@ -4302,7 +4325,7 @@ paths:
       responses:
         "201":
           description: The organization.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Organization" }
@@ -4325,7 +4348,7 @@ paths:
       responses:
         "200":
           description: The organization with its claims.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationRecord" }
@@ -4357,7 +4380,7 @@ paths:
       responses:
         "200":
           description: The organization.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationRecord" }
@@ -4380,7 +4403,7 @@ paths:
       responses:
         "204":
           description: The organization was deleted.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -4400,7 +4423,7 @@ paths:
       responses:
         "200":
           description: The report.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationOwned" }
@@ -4435,7 +4458,7 @@ paths:
       responses:
         "200":
           description: The organization.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationRecord" }
@@ -4461,7 +4484,7 @@ paths:
       responses:
         "200":
           description: A page of members.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationMembers" }
@@ -4489,7 +4512,7 @@ paths:
       responses:
         "200":
           description: The member.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationMember" }
@@ -4523,7 +4546,7 @@ paths:
       responses:
         "200":
           description: The member.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationMember" }
@@ -4542,7 +4565,7 @@ paths:
       responses:
         "204":
           description: The member was removed.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -4570,7 +4593,7 @@ paths:
       responses:
         "200":
           description: The organization.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationRecord" }
@@ -4607,7 +4630,7 @@ paths:
       responses:
         "200":
           description: The organization.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationRecord" }
@@ -4635,7 +4658,7 @@ paths:
       responses:
         "200":
           description: The connections, sorted by provider.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationConnections" }
@@ -4657,7 +4680,7 @@ paths:
       responses:
         "200":
           description: The connection.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationConnection" }
@@ -4686,7 +4709,7 @@ paths:
       responses:
         "200":
           description: The connection, without its secret.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationConnection" }
@@ -4707,7 +4730,7 @@ paths:
       responses:
         "204":
           description: Removed.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -4736,7 +4759,7 @@ paths:
       responses:
         "200":
           description: The member.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationMember" }
@@ -4759,7 +4782,7 @@ paths:
       responses:
         "200":
           description: The invitations, never tokens.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema:
@@ -4788,7 +4811,7 @@ paths:
       responses:
         "201":
           description: The invitation, with its token and link.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationInvitationCreated" }
@@ -4812,7 +4835,7 @@ paths:
       responses:
         "204":
           description: The invitation was revoked.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -4831,7 +4854,7 @@ paths:
       responses:
         "200":
           description: The invitation with its new token and link.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationInvitationCreated" }
@@ -4854,7 +4877,7 @@ paths:
       responses:
         "200":
           description: The teams.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema:
@@ -4893,7 +4916,7 @@ paths:
       responses:
         "201":
           description: The team.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationTeam" }
@@ -4928,7 +4951,7 @@ paths:
       responses:
         "200":
           description: The team.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationTeam" }
@@ -4947,7 +4970,7 @@ paths:
       responses:
         "204":
           description: The team was deleted.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -4976,7 +4999,7 @@ paths:
       responses:
         "200":
           description: A page of members and holders.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationTeamMembers" }
@@ -5008,7 +5031,7 @@ paths:
       responses:
         "200":
           description: The member as seen from the team.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationTeamMember" }
@@ -5034,7 +5057,7 @@ paths:
       responses:
         "200":
           description: The member as seen from the team.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationTeamMember" }
@@ -5057,7 +5080,7 @@ paths:
       responses:
         "200":
           description: The member as seen from the team.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationTeamMember" }
@@ -5082,7 +5105,7 @@ paths:
       responses:
         "200":
           description: The member.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationMember" }
@@ -5100,7 +5123,7 @@ paths:
       responses:
         "200":
           description: The member.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrganizationMember" }
@@ -5126,7 +5149,7 @@ paths:
       responses:
         "200":
           description: The sign-in methods.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema:
@@ -5158,7 +5181,7 @@ paths:
       responses:
         "200":
           description: The consents.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema:
@@ -5200,7 +5223,7 @@ paths:
       responses:
         "201":
           description: The record.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema:
@@ -5260,7 +5283,7 @@ paths:
       responses:
         "202":
           description: The export was queued.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AdminDataExport" }
@@ -5286,7 +5309,7 @@ paths:
       responses:
         "200":
           description: Exports.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema:
@@ -5316,7 +5339,7 @@ paths:
       responses:
         "200":
           description: The export.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AdminDataExport" }
@@ -5344,7 +5367,7 @@ paths:
       responses:
         "200":
           description: The package.
-          headers: { Content-Disposition: { schema: { type: string } } }
+          headers: { Content-Disposition: { schema: { type: string } }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/zip:
               schema: { type: string, format: binary }
@@ -5370,7 +5393,7 @@ paths:
       responses:
         "200":
           description: The state.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema:
@@ -5406,7 +5429,7 @@ paths:
       operationId: adminResetUserMFA
       security: [{ apiKey: [] }, { session: [] }]
       responses:
-        "204": { description: The second factor was removed. }
+        "204": { description: The second factor was removed., headers: { X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -5432,7 +5455,7 @@ paths:
       responses:
         "200":
           description: The overview.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema:
@@ -5479,7 +5502,7 @@ paths:
       responses:
         "204":
           description: Sign-in method removed.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -5561,6 +5584,8 @@ paths:
       security: [{ apiKey: [] }, { session: [] }]
       responses:
         "200":
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
           description: The realm's API keys, by name; never the keys themselves.
           content:
             application/json:
@@ -5614,6 +5639,8 @@ paths:
                     organization. Not for admin keys.
       responses:
         "201":
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
           description: The key, shown only here.
           content:
             application/json:
@@ -5638,7 +5665,7 @@ paths:
       operationId: adminRevokeAPIKey
       security: [{ apiKey: [] }, { session: [] }]
       responses:
-        "204": { description: Key revoked. }
+        "204": { description: Key revoked., headers: { X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -5654,6 +5681,8 @@ paths:
       security: [{ apiKey: [] }, { session: [] }]
       responses:
         "200":
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
           description: The realm's secrets, by scope and name; never their values.
           content:
             application/json:
@@ -5697,6 +5726,8 @@ paths:
                 value: { type: string, description: "Import this key: 32 bytes in base64url." }
       responses:
         "201":
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
           description: The key was created. The response is never cached.
           content:
             application/json:
@@ -5750,7 +5781,7 @@ paths:
                 database: { type: string, description: "Scopes it to this database of the realm instead of the realm itself." }
                 org: { type: string, description: "Scopes it to this organization (its id) instead; not together with `database`." }
       responses:
-        "204": { description: Secret set. }
+        "204": { description: Secret set., headers: { X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } } }
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
@@ -5770,7 +5801,7 @@ paths:
         - { name: database, in: query, description: "Its database scope; absent means the realm scope.", schema: { type: string } }
         - { name: org, in: query, description: "An organization's secret (its id), instead of `database`.", schema: { type: string } }
       responses:
-        "204": { description: Secret deleted. }
+        "204": { description: Secret deleted., headers: { X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -5811,6 +5842,8 @@ paths:
                 resume: { type: boolean }
       responses:
         "200":
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
           description: The key was rotated. The response is never cached.
           content:
             application/json:
@@ -5853,6 +5886,8 @@ paths:
         - { name: collection, in: query, description: "Needs `database`.", schema: { type: string } }
       responses:
         "200":
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
           description: The collections that encrypt, or once did.
           content:
             application/json:
@@ -5938,6 +5973,8 @@ paths:
                 field: { type: string, description: "The encrypted field's path." }
       responses:
         "200":
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
           description: The new generation is active.
           content:
             application/json:
@@ -5989,6 +6026,8 @@ paths:
                 dry_run: { type: boolean }
       responses:
         "202":
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
           description: The job is queued.
           content:
             application/json:
@@ -6021,7 +6060,7 @@ paths:
       responses:
         "200":
           description: The configuration.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema:
@@ -6068,7 +6107,7 @@ paths:
       responses:
         "200":
           description: The generated types.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema:
@@ -6112,6 +6151,7 @@ paths:
         "200":
           description: The document.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             ETag: { schema: { type: string }, description: Identifies this document; send it back as `If-None-Match`. }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
           content:
@@ -6150,6 +6190,8 @@ paths:
       security: [{ apiKey: [] }, { session: [] }]
       responses:
         "200":
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
           description: The caller's admin access.
           content:
             application/json:
@@ -6202,6 +6244,8 @@ paths:
         - { $ref: "#/components/parameters/skip" }
       responses:
         "200":
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
           description: A page of audit records, newest first.
           content:
             application/json:
@@ -6240,6 +6284,8 @@ paths:
         - { $ref: "#/components/parameters/skip" }
       responses:
         "200":
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
           description: A page of invocation records, newest first.
           content:
             application/json:
@@ -6281,6 +6327,8 @@ paths:
         - { $ref: "#/components/parameters/skip" }
       responses:
         "200":
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
           description: A page of jobs, newest first.
           content:
             application/json:
@@ -6315,6 +6363,7 @@ paths:
         "200":
           description: The job.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
           content:
             application/json:
@@ -6359,7 +6408,7 @@ paths:
       responses:
         "200":
           description: The result; `ok` is false when the configuration with the drafts would not load.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ConfigCheck" }
@@ -6459,6 +6508,7 @@ paths:
         "200":
           description: The plan, a collection's documents or a file's object.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
           content:
             application/json:
@@ -6529,6 +6579,7 @@ paths:
         "200":
           description: The plan.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
           content:
             application/json:
@@ -6567,6 +6618,8 @@ paths:
           schema: { type: boolean }
       responses:
         "200":
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
           description: Released, with what the export streamed.
           content:
             application/json:
@@ -6652,6 +6705,7 @@ paths:
         "200":
           description: The lease, or the result for the chunk.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
           content:
             application/json:
@@ -6707,7 +6761,7 @@ paths:
           application/octet-stream:
             schema: { type: string, format: binary }
       responses:
-        "204": { description: Stored. }
+        "204": { description: Stored., headers: { X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } } }
         "400":
           description: "A missing checksum, or `checksum_mismatch`."
           content:
@@ -6746,7 +6800,7 @@ paths:
           in: query
           schema: { type: boolean }
       responses:
-        "204": { description: Released. }
+        "204": { description: Released., headers: { X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "409":
@@ -6788,6 +6842,7 @@ paths:
         "200":
           description: The report.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
           content:
             application/json:
@@ -6825,6 +6880,7 @@ paths:
         "200":
           description: The status.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
           content:
             application/json:
@@ -7118,6 +7174,7 @@ paths:
         "200":
           description: What the run did.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
           content:
             application/json:
@@ -7157,6 +7214,7 @@ paths:
         "200":
           description: The scope.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
           content:
             application/json:
@@ -7185,6 +7243,7 @@ paths:
         "200":
           description: The configuration.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
             ETag: { description: "The configuration version, such as `\"c3\"`.", schema: { type: string } }
           content:
@@ -7218,6 +7277,7 @@ paths:
         "200":
           description: The new version, or the same one when nothing changed.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
             ETag: { description: "The configuration version.", schema: { type: string } }
           content:
@@ -7249,6 +7309,7 @@ paths:
         "200":
           description: The history.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
           content:
             application/json:
@@ -7294,6 +7355,7 @@ paths:
         "200":
           description: The new version.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
             ETag: { description: "The configuration version.", schema: { type: string } }
           content:
@@ -7346,6 +7408,7 @@ paths:
         "202":
           description: The job.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Location: { schema: { type: string } }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
           content:
@@ -7398,6 +7461,7 @@ paths:
         "200":
           description: The report.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
           content:
             application/json:
@@ -7435,6 +7499,7 @@ paths:
         "200":
           description: The running check and the latest reports.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
           content:
             application/json:
@@ -7495,6 +7560,7 @@ paths:
         "202":
           description: The check, queued.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Location: { schema: { type: string }, description: "`/v1/{realm}/_admin/jobs/{id}`." }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
           content:
@@ -7541,6 +7607,7 @@ paths:
         "200":
           description: The report.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
           content:
             application/json:
@@ -7570,7 +7637,7 @@ paths:
       responses:
         "200":
           description: The job, now done and cancelled.
-          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
           content:
             application/json:
               schema: { $ref: "#/components/schemas/JobSummary" }
@@ -7605,6 +7672,7 @@ paths:
         "202":
           description: The new job, queued.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Location: { schema: { type: string }, description: "`/v1/{realm}/{database}/_jobs/{id}` of the new job." }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
           content:
@@ -7636,6 +7704,7 @@ paths:
         "200":
           description: The schedules.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
           content:
             application/json:
@@ -7668,6 +7737,7 @@ paths:
         "200":
           description: The state.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
           content:
             application/json:
@@ -7697,6 +7767,7 @@ paths:
         "200":
           description: The gaps.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
           content:
             application/json:
@@ -7728,6 +7799,7 @@ paths:
         "200":
           description: The gap is resolved.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
           content:
             application/json:
@@ -7763,6 +7835,7 @@ paths:
         "200":
           description: The schedule, now paused.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
           content:
             application/json:
@@ -7796,6 +7869,7 @@ paths:
         "200":
           description: The schedule, running.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
           content:
             application/json:
@@ -7855,6 +7929,7 @@ paths:
         "200":
           description: A `sync` function's output, any JSON value.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
           content:
             application/json:
@@ -7862,6 +7937,7 @@ paths:
         "202":
           description: An `async` function was queued; poll `Location` for its result.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Location: { description: "`/v1/{realm}/{database}/_jobs/{id}`.", schema: { type: string } }
           content:
             application/json:
@@ -7883,6 +7959,8 @@ paths:
       security: [{ apiKey: [] }, { session: [] }]
       responses:
         "200":
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
           description: Invitations, newest first; tokens are never listed.
           content:
             application/json:
@@ -7915,6 +7993,8 @@ paths:
                 locale: { type: string, description: "With `send`: the language of the email, such as `es`." }
       responses:
         "201":
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
           description: "The invitation, with its token (shown only here), or with `sent: true` and no token when it was emailed."
           content:
             application/json:
@@ -7936,7 +8016,7 @@ paths:
       operationId: adminRevokeInvitation
       security: [{ apiKey: [] }, { session: [] }]
       responses:
-        "204": { description: Invitation revoked. }
+        "204": { description: Invitation revoked., headers: { X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
@@ -8563,6 +8643,7 @@ paths:
         "200":
           description: The field.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { schema: { type: string } }
           content:
             application/json:
@@ -9031,6 +9112,7 @@ paths:
         "200":
           description: A page of documents.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             ETag: { $ref: "#/components/headers/ListETag" }
             Vary: { $ref: "#/components/headers/DataVary" }
             Cache-Control: { $ref: "#/components/headers/DataCacheControl" }
@@ -9059,6 +9141,7 @@ paths:
         "201":
           description: The created document (or, for a replayed `Idempotency-Key`, the document as it was created).
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Idempotent-Replayed: { description: "`true` when this is the remembered answer of an earlier request with the same `Idempotency-Key`.", schema: { const: "true" } }
             ETag: { $ref: "#/components/headers/ETag" }
             Vary: { $ref: "#/components/headers/DataVary" }
@@ -9163,6 +9246,7 @@ paths:
         "204":
           description: Document deleted (or, in a collection with `soft_delete`, marked deleted).
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Vary: { $ref: "#/components/headers/DataVary" }
             Cache-Control: { $ref: "#/components/headers/DataCacheControl" }
         "400": { $ref: "#/components/responses/Error" }
@@ -9274,6 +9358,8 @@ paths:
                 where: { type: object }
       responses:
         "200":
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
           description: "A dry run: how many documents the job would change."
           content:
             application/json:
@@ -9284,6 +9370,8 @@ paths:
                 properties:
                   matched: { type: integer }
         "202":
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
           description: The job was queued.
           content:
             application/json:
@@ -9348,6 +9436,7 @@ paths:
         "201":
           description: The pending upload (for a direct field, with the link to send the file to).
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { schema: { const: no-store } }
           content:
             application/json:
@@ -9412,6 +9501,7 @@ paths:
         "201":
           description: The upload, started.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { schema: { const: no-store } }
           content:
             application/json:
@@ -9476,6 +9566,7 @@ paths:
         "200":
           description: A pending upload, ready to be attached by a write.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { schema: { const: no-store } }
           content:
             application/json:
@@ -9483,6 +9574,7 @@ paths:
         "201":
           description: The document, with the file attached.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             ETag: { $ref: "#/components/headers/ETag" }
             Location: { schema: { type: string }, description: "The file's URL." }
             Vary: { $ref: "#/components/headers/DataVary" }
@@ -9544,6 +9636,7 @@ paths:
         "201":
           description: The document, with the file attached.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             ETag: { $ref: "#/components/headers/ETag" }
             Location: { schema: { type: string }, description: "The file's URL." }
             Vary: { $ref: "#/components/headers/DataVary" }
@@ -9640,6 +9733,7 @@ paths:
         "200":
           description: The file's bytes (proxy mode), or the link (`?link=json`).
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             ETag: { schema: { type: string } }
             Accept-Ranges: { schema: { const: bytes } }
             Content-Disposition: { schema: { type: string } }
@@ -9654,6 +9748,7 @@ paths:
         "206":
           description: The requested range of the file.
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Content-Range: { schema: { type: string } }
             ETag: { schema: { type: string } }
           content:
@@ -9724,6 +9819,7 @@ paths:
         "200":
           description: One result per operation, in the same order (the remembered ones again for a replayed `Idempotency-Key`).
           headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
             Cache-Control: { $ref: "#/components/headers/NoStore" }
             Idempotent-Replayed: { description: "`true` when this is the remembered answer of an earlier request with the same `Idempotency-Key`.", schema: { const: "true" } }
           content:
@@ -9856,6 +9952,8 @@ paths:
                 upscale: { type: boolean }
       responses:
         "200":
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
           description: The version's details.
           content:
             application/json:
@@ -9877,6 +9975,8 @@ paths:
       security: [{ apiKey: [] }, { session: [] }]
       responses:
         "200":
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
           description: The version's new state.
           content:
             application/json:
@@ -10130,6 +10230,13 @@ components:
       required: true
       description: The request ID, echoed from the request or generated; also in the error body as `request_id`.
       schema: { type: string, minLength: 1 }
+    VersionSkew:
+      description: >-
+        On authenticated admin answers to a backd CLI (`User-Agent: backd/<version>`)
+        whose version differs from the server's: `newer` when the server is newer, `older`
+        when it is older. Absent when they are the same, when either is a development
+        build, and on unauthenticated answers.
+      schema: { enum: [newer, older] }
     DevDurationMs:
       description: >-
         The function's time inside the executor, in milliseconds. Only when
@@ -10725,7 +10832,8 @@ components:
                 unsupported_media_type, too_many_requests, internal_error,
                 unavailable, field_encrypted (a `where` or `order_by` names an encrypted
                 field, or does more with one than equality through its blind index),
-                config_not_loaded (503, dev mode only: no config has loaded yet; each
+                dev_client_refused (403: a development CLI, `User-Agent: backd/dev`, on a
+                released server outside dev mode), config_not_loaded (503, dev mode only: no config has loaded yet; each
                 detail is one problem of the report, with `code` its kind: config,
                 rules or build); for function calls also function_failed,
                 function_timeout, invalid_output, secret_missing,

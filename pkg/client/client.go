@@ -63,6 +63,13 @@ type Options struct {
 	MapError func(error) error
 	// OnStaleTypes is called once when the server says the types are stale; a warning is logged by default.
 	OnStaleTypes func()
+	// UserAgent is sent as the User-Agent of every call (Go's default otherwise). The backd CLI
+	// sends backd/<version>: a backd server compares that with its own and answers
+	// X-Backd-Version-Skew on authenticated admin calls when they differ.
+	UserAgent string
+	// OnVersionSkew is called once, with "newer" or "older" (the server is newer or older than
+	// the version in UserAgent), when a response carries X-Backd-Version-Skew.
+	OnVersionSkew func(skew string)
 }
 
 // Client talks to one realm. It is safe for concurrent use.
@@ -88,6 +95,7 @@ type Client struct {
 	oauth         OAuthStorage
 	credHooks     []func()
 	staleReported atomic.Bool
+	skewReported  atomic.Bool
 	proof         atomic.Pointer[reauthProof]
 	// expired is called when the server refuses the session token; auth sets it.
 	expired func(context.Context)
