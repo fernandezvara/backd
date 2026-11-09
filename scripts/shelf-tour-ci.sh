@@ -50,6 +50,9 @@ find "$dir/config" -name .build -prune -exec rm -rf {} +
 # The pins' private notes (chapter 25) are encrypted with a key the operator creates, and backd
 # refuses to start without it: provision the database, create the key offline (the chapter does
 # the same by hand), then start everything.
+# No functions-build service any more: dev mode bundles when the stack runs, but provision
+# (a separate, one-shot run here) checks the bundles first, so build them the way CI does.
+docker compose -f "$compose" run --rm --no-deps backd functions build >/dev/null
 docker compose -f "$compose" run --rm backd provision >/dev/null
 docker compose -f "$compose" run --rm --no-deps backd secret create --realm shelf --type key --generate --name SHELF_NOTES >/dev/null
 
