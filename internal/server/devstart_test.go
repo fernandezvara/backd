@@ -202,7 +202,7 @@ func TestDevServeWaitsForAConfigThatLoads(t *testing.T) {
 	root := cmdtest.Write(t, map[string]string{
 		realm + "/realm.yaml":                          "auth: disabled\n",
 		realm + "/main/notes/schema.json":              "{}",
-		realm + "/main/_functions/hello/function.yaml": "mode: sync\ninvoke: \"true\"\n",
+		realm + "/main/_functions/hello/function.yaml": "mode: sync\n",
 		realm + "/main/_functions/hello/index.ts":      "export default () => {\n  const x y = 1;\n};\n",
 	})
 	t.Cleanup(func() {
