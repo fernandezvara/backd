@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -14,11 +15,13 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/fernandezvara/kli"
 
 	"github.com/fernandezvara/backd/internal/adminclient"
+	"github.com/fernandezvara/backd/internal/buildinfo"
 	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/pkg/client"
 )
@@ -127,6 +130,28 @@ type Target struct {
 	// parts, an import's chunks).
 	long    *client.Client
 	AdmLong *adminclient.Admin
+
+	// Warn receives the one line about a version skew (TargetFor sets the command's stderr).
+	Warn         io.Writer
+	skewReported atomic.Bool
+}
+
+// UserAgent is how the CLI introduces itself: backd/<version>. The server compares the version
+// with its own and only says whether it is newer or older; a released server refuses backd/dev.
+func UserAgent() string { return "backd/" + strings.TrimPrefix(buildinfo.Get(), "v") }
+
+// reportSkew prints, once per command, that the server runs another version.
+func (t *Target) reportSkew(skew string) {
+	if t.Warn == nil || !t.skewReported.CompareAndSwap(false, true) {
+		return
+	}
+	v := buildinfo.Get()
+	switch skew {
+	case "newer":
+		fmt.Fprintf(t.Warn, "warning: the server runs a newer backd than this CLI (%s); update the CLI\n", v)
+	case "older":
+		fmt.Fprintf(t.Warn, "warning: the server runs an older backd than this CLI (%s); use the CLI of the server's version, or update the server\n", v)
+	}
 }
 
 // resolveURL picks the server: --url, BACKD_URL, or the one used last.
@@ -155,7 +180,7 @@ func MakeTarget(u, realm, credential string, fromKey bool, hc *http.Client) (*Ta
 	long := *hc
 	long.Timeout = 0
 	build := func(doer client.Doer) (*client.Client, *adminclient.Admin, error) {
-		o := client.Options{URL: u, Realm: realm, Doer: doer, MapError: t.mapError}
+		o := client.Options{URL: u, Realm: realm, Doer: doer, MapError: t.mapError, UserAgent: UserAgent(), OnVersionSkew: t.reportSkew}
 		switch {
 		case credential == "":
 		case fromKey:
@@ -216,7 +241,12 @@ func TargetOf(c *kli.CommandContext, sessionOnly bool) (*Target, error) {
 
 // targetFor is targetOf for a realm resolved apart from the --realm flag.
 func TargetFor(c *kli.CommandContext, realm string, sessionOnly bool) (*Target, error) {
-	return NewTarget(cmdutil.Str(c, "url"), realm, c.Getenv, sessionOnly)
+	t, err := NewTarget(cmdutil.Str(c, "url"), realm, c.Getenv, sessionOnly)
+	if err != nil {
+		return nil, err
+	}
+	t.Warn = c.Stderr()
+	return t, nil
 }
 
 // httpClient trusts the system's CAs, plus BACKD_CA_CERT (a PEM file) if

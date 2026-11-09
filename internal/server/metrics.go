@@ -20,7 +20,7 @@ func startMetrics(getenv func(string) string, log *slog.Logger, reserved ...stri
 	if err != nil || addr == "" {
 		return nil, func() {}, err
 	}
-	m := metrics.New(buildinfo.Version, buildinfo.Commit())
+	m := metrics.New(buildinfo.Get(), buildinfo.Commit())
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {

@@ -37,7 +37,8 @@ In scope:
 - **Access rules** — the `rules:` section of `collection.yaml`.
 - **Admin API** — `/v1/{realm}/_admin`.
 - **Admin web interface** — served at `/_ui/`: its CSP and headers, how it holds the admin token, and any way to run script in it or read that token.
-- **CLI** — the commands that use the admin API (`backd login`, `user`, `apikey`, `secret`, `bootstrap`) and the credentials file it keeps.
+- **CLI** — the commands that use the admin API (`backd login`, `user`, `apikey`, `secret`) and the credentials file it keeps; `backd-server`'s tools that work on MongoDB directly (`bootstrap`, `user mfa-reset`, offline `export` and `import`).
+- **The server's version** — the server never states its version: it only tells an authenticated administrator's CLI (`User-Agent: backd/<version>`) whether it is newer or older (`X-Backd-Version-Skew`). A version disclosed to an unauthenticated caller is in scope. The refusal of a development CLI (`403 dev_client_refused`) guards against mistakes, not access: sending another User-Agent past it is not a vulnerability.
 - **Field keys** — `POST /v1/{realm}/_admin/secrets` with `type: key`, `backd secret create`: a key's value shown more than once or kept outside the sealed store, in a log, an audit record or an error; a function, provider or setting that can read one; a key created, replaced or deleted without a full administrator and a fresh proof; a key deleted while a field uses it; a fingerprint that reveals the key.
 - **Audit trail** — `/v1/{realm}/_admin/audit`: records that are missing, alterable, or that contain secrets.
 - **User erasure** — `DELETE /v1/{realm}/_admin/users/{id}`: personal data it leaves behind beyond what the docs list, or an erase that skips silently.

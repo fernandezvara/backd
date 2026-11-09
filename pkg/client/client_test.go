@@ -206,6 +206,23 @@ func TestStaleTypesAreReportedOnce(t *testing.T) {
 	}
 }
 
+func TestUserAgentAndVersionSkewReportedOnce(t *testing.T) {
+	var agent string
+	var skews []string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		agent = r.Header.Get("User-Agent")
+		w.Header().Set("X-Backd-Version-Skew", "newer")
+	}, func(o *Options) {
+		o.UserAgent = "backd/0.9.7"
+		o.OnVersionSkew = func(s string) { skews = append(skews, s) }
+	})
+	c.Do(bg, "GET", []string{"a"}, nil, nil)
+	c.Do(bg, "GET", []string{"a"}, nil, nil)
+	if agent != "backd/0.9.7" || len(skews) != 1 || skews[0] != "newer" {
+		t.Errorf("User-Agent %q, skews %v", agent, skews)
+	}
+}
+
 func TestNoTypesHeaderWithoutTypes(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := r.Header["X-Backd-Types"]; ok {

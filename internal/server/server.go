@@ -140,7 +140,7 @@ func newLogger(cfg settings.Settings, out io.Writer) *slog.Logger {
 func connect(ctx context.Context, cfg settings.Settings) (*mongo.Client, *metrics.Metrics, error) {
 	var m *metrics.Metrics
 	if cfg.MetricsAddr != "" {
-		m = metrics.New(buildinfo.Version, buildinfo.Commit())
+		m = metrics.New(buildinfo.Get(), buildinfo.Commit())
 	}
 	client, err := mongodb.Connect(ctx, cfg.MongoURI, m.MongoMonitor())
 	if err != nil {
@@ -152,14 +152,14 @@ func connect(ctx context.Context, cfg settings.Settings) (*mongo.Client, *metric
 // newApp is the app of a loaded config, logged as loaded.
 func newApp(cfg settings.Settings, log *slog.Logger, reg *registry.Registry, fingerprint string, client *mongo.Client, m *metrics.Metrics) *App {
 	log.Info("reference expansion limits", "max_depth", cfg.Expand.MaxDepth, "max_paths", cfg.Expand.MaxPaths, "max_array", cfg.Expand.MaxArray, "max_docs", cfg.Expand.MaxDocs)
-	log.Info("config loaded", "version", buildinfo.Version, "config_dir", cfg.ConfigDir, "fingerprint", fingerprint, "realms", len(reg.Realms), "databases", len(reg.Databases()))
+	log.Info("config loaded", "version", buildinfo.Get(), "config_dir", cfg.ConfigDir, "fingerprint", fingerprint, "realms", len(reg.Realms), "databases", len(reg.Databases()))
 	return &App{cfg: cfg, log: log, reg: reg, client: client, fingerprint: fingerprint, metrics: m}
 }
 
 func (a *App) Close() { _ = a.client.Disconnect(context.Background()) }
 
 func (a *App) Provisioner() *mongodb.Provisioner {
-	return &mongodb.Provisioner{Client: a.client, Registry: a.reg, Log: a.log, Fingerprint: a.fingerprint, Version: buildinfo.Version}
+	return &mongodb.Provisioner{Client: a.client, Registry: a.reg, Log: a.log, Fingerprint: a.fingerprint, Version: buildinfo.Get()}
 }
 
 func Provision(ctx context.Context, a *App) error {
@@ -381,7 +381,7 @@ func Worker(ctx context.Context, a *App) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	w := httpapi.NewWorker(a.HandlerConfig(), workerID())
-	a.log.Info("worker ready", "version", buildinfo.Version, "concurrency", a.cfg.WorkerConcurrency)
+	a.log.Info("worker ready", "version", buildinfo.Get(), "concurrency", a.cfg.WorkerConcurrency)
 	w.LogImageLimits()
 	if a.metrics != nil {
 		go a.metrics.WatchMongo(ctx, func(c context.Context) error { return a.client.Ping(c, nil) }, 15*time.Second)
@@ -475,7 +475,7 @@ func (a *App) HandlerConfig() httpapi.Config {
 		Users:             a.RealmUsers(),
 		TrustedProxies:    a.cfg.TrustedProxies,
 		ConfigFingerprint: a.fingerprint,
-		Version:           buildinfo.Version,
+		Version:           buildinfo.Get(),
 		Env:               a.cfg.Env,
 		Dev:               a.cfg.Dev,
 		DevLinks:          devLinks(a.cfg.DevLinks),

@@ -82,6 +82,7 @@ Every error uses the same JSON envelope. Success responses are never wrapped.
 | 401 | `invalid_credentials` | Wrong email or password |
 | 401 | `password_expired` | The password is right but was [expired](../auth/users/#expiring-a-password); the user resets it |
 | 403 | `forbidden` | The operation isn't allowed: sign-up in a realm where it isn't open, no [access rule](../auth/rules/) allows it, a session on the [admin API](../../operate/administration/admin/), or acting on behalf of a disabled user |
+| 403 | `dev_client_refused` | A development build of the CLI (`User-Agent: backd/dev`) against a released server outside dev mode; use a released `backd` (see [the server's version](../../operate/administration/security/#the-servers-version)) |
 | 404 | `not_found` | Unknown route, realm, database, collection or `id`, or a document the caller's access rules hide |
 | 405 | `method_not_allowed` | Method not supported on the route |
 | 409 | `conflict` | A unique index is violated (`details` name the fields) |

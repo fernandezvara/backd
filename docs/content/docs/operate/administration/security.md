@@ -252,6 +252,12 @@ What the numbers decided:
 
 **Found and fixed in the review:** the authentication parts of a manifest could name any local path (they are now checked against the format and the checksums, like every other part); `_meta` of an imported document was accepted as it came; an imported file was not held to its field's size; the key file could keep the permissions of a file that was already there; a user's `admin_networks` and `login_networks` survived an anonymized export.
 
+### The server's version
+
+backd never says which version it runs: an unauthenticated version string tells an attacker which known vulnerabilities to try. The [`backd` CLI](../cli/) says its own version in its User-Agent (`backd/<version>`), and the server only answers whether it is newer or older (`X-Backd-Version-Skew`), on admin API answers, after the caller is authenticated, and only when they differ; the CLI prints one warning line. It is not exposed to browsers, and no other client is compared.
+
+A released server outside dev mode refuses a development CLI (`User-Agent: backd/dev`, a build from source) on every route, before authentication, with `403 dev_client_refused`, so an untested build never touches production data. It guards against a mistake, not against anyone: a User-Agent is easy to change, and the refusal tells the caller nothing but that the server is not in development. A development server (version `dev`, or `BACKD_DEV=true`) accepts it.
+
 ## What you are responsible for
 
 - **TLS.** `backd` serves plain HTTP; terminate TLS in front of it.

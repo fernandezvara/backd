@@ -48,6 +48,8 @@ const (
 	codeUnsupportedMedia  = "unsupported_media_type"
 	codeInternal          = "internal_error"
 	codeUnavailable       = "unavailable"
+	// codeDevClientRefused answers a development CLI (backd/dev) on a released server.
+	codeDevClientRefused = "dev_client_refused"
 	// codeConfigNotLoaded answers every API call of a dev-mode server whose config hasn't
 	// loaded yet (NewWaitingHandler).
 	codeConfigNotLoaded = "config_not_loaded"

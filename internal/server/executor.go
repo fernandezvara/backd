@@ -96,7 +96,7 @@ func ServeExecutor(getenv func(string) string, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("%w (BACKD_EXECUTOR_TOKEN, or with EXECUTOR_PROXY set, BACKD_EGRESS_KEY)", err)
 	}
-	log.Info("executor ready", "version", buildinfo.Version, "deno", v, "max_processes", maxProcs, "dir", dir, "proxy", proxy)
+	log.Info("executor ready", "version", buildinfo.Get(), "deno", v, "max_processes", maxProcs, "dir", dir, "proxy", proxy)
 
 	srv := &http.Server{
 		Handler:           ex.Handler(),

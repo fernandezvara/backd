@@ -16,6 +16,7 @@ Until a stable release is declared, a minor release may have breaking changes; t
 
 ### Changed
 
+- **The CLI warns when the server runs another version, without the server disclosing it:** the CLI sends `User-Agent: backd/<version>`; authenticated admin answers carry `X-Backd-Version-Skew: newer|older` when the versions differ, and the CLI prints one line. A released server outside dev mode refuses a development CLI (`backd/dev`) with `403 dev_client_refused`. Both binaries fall back to the module version, so `go install …@vX.Y.Z` reports it. See [the server's version](https://fernandezvara.github.io/backd/docs/operate/administration/security/#the-servers-version).
 - **Dev mode starts without a build step and waits instead of exiting:** with `BACKD_DEV=true`, `serve` builds missing or stale function bundles at startup, and an error in the config, its rules or a function's build no longer stops `serve` or `worker`: they log one record per problem (`kind`, `file`, `line`, `error`, `output`, `hint`) and start on the first save that loads, answering `/healthz` meanwhile; the root page shows the report, every other route answers `503 config_not_loaded` with it, and the admin UI says so. The local stacks lose their one-shot `functions-build` service, and their `backd` runs on the executor image. See [Dev mode](https://fernandezvara.github.io/backd/docs/build/functions/testing/#dev-mode).
 
 ## 0.9.7

@@ -26,7 +26,7 @@ func newCLI(getenv func(string) string, stdin io.Reader, stdout, stderr io.Write
 	cfg := kli.New().SetName("backd-server").SetEnv(getenv).SetIO(stdin, stdout, stderr)
 	cfg.Command("version").ShortHelp("print the version").
 		Func(cmdutil.Act("backd-server version", func(c *kli.CommandContext) error {
-			fmt.Fprintln(c.Stdout(), "backd-server", buildinfo.Version)
+			fmt.Fprintln(c.Stdout(), "backd-server", buildinfo.Get())
 			return nil
 		}))
 	registerRoles(cfg)
