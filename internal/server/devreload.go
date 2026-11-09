@@ -75,26 +75,7 @@ func newReloader(a *App, public, internal *swapHandler) *reloader {
 		return next.syncRoles(ctx)
 	}
 	r.build = func(ctx context.Context, reg *registry.Registry) error {
-		stale := false
-		for _, db := range reg.Databases() {
-			if db.Functions == nil || len(db.Functions.Functions) == 0 {
-				continue
-			}
-			src, err := registry.SourceHash(db.Functions.Dir)
-			if err != nil {
-				return err
-			}
-			if m, err := registry.ReadManifest(db.Functions.Dir); err != nil || m.Source != src {
-				stale = true
-			}
-		}
-		if !stale {
-			return nil
-		}
-		return functions.Build(ctx, reg, functions.Options{
-			Deno: a.cfg.Deno,
-			Log:  func(format string, args ...any) { a.log.Info(fmt.Sprintf(format, args...)) },
-		})
+		return buildStaleFunctions(ctx, reg, a.cfg.Deno, a.log)
 	}
 	r.files, _ = snapshot(a.cfg.ConfigDir)
 	return r
