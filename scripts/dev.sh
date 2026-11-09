@@ -191,10 +191,10 @@ case "${1:-up}" in
     scripts/local-certs.sh   # renews the certificate when it is about to expire; the CA stays
     write_stack_json         # before nginx mounts $seed_dir, so it is yours, not root's
     echo "Starting the stack from $image (the docs site is built the first time)…"
-    # backd refuses stale or missing bundles: build them first, and wait for it (not every
-    # compose implementation waits for a one-shot service).
-    "${compose[@]}" run --rm functions-build || { image_hint; exit 1; }
+    # backd (dev mode) builds the functions at startup.
     if [ "${EXAMPLES:-}" = 1 ]; then
+      # Provisioning first (below) checks the bundles, so build them before it.
+      "${compose[@]}" run --rm --no-deps backd functions build >/dev/null || { image_hint; exit 1; }
       # The Shelf's private notes (tutorial chapter 25) are encrypted with a key backd must find
       # at start; the examples are disposable, so the value is not kept.
       "${compose[@]}" run --rm backd provision >/dev/null || { image_hint; exit 1; }

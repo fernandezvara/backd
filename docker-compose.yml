@@ -90,24 +90,15 @@ services:
         condition: service_completed_successfully
     restart: on-failure:20
 
-  # One-shot: bundles every example realm's functions before backd starts
-  # (backd refuses stale or missing bundles). Uses the executor image
-  # (backd + the pinned Deno) so no extra image is needed to build; needs
-  # write access to examples/config, unlike backd's own read-only mount.
-  functions-build:
+  backd:
+    # The executor image (backd + the pinned Deno): dev mode bundles the
+    # functions at startup and on change, into the config, so the mount is
+    # writable and backd runs as root (your user under rootless podman).
     build:
       context: .
       dockerfile: docker/executor/Dockerfile
     entrypoint: ["/usr/local/bin/backd"]
-    command: ["functions", "build"]
     user: root
-    environment:
-      CONFIG_DIR: /config
-    volumes:
-      - ./examples/config:/config
-
-  backd:
-    build: .
     command: ["serve", "--with-worker"]
     environment:
       CONFIG_DIR: /config
@@ -145,12 +136,10 @@ services:
       METRICS_ADDR: ":9090"
       METRICS_TOKEN: local-dev-metrics-token-not-a-secret-0123456789
     volumes:
-      - ./examples/config:/config:ro
+      - ./examples/config:/config
     depends_on:
       mongo:
         condition: service_healthy
-      functions-build:
-        condition: service_completed_successfully
     # Longer than SHUTDOWN_TIMEOUT (15s) so in-flight requests can drain.
     stop_grace_period: 20s
 

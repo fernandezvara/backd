@@ -30,7 +30,7 @@ config/shop/main/_functions/
 
 ## 2. Build it and start the stack
 
-`backd` runs *bundles*, so build after every change to a function (it refuses to start with stale ones):
+`backd` runs *bundles*, so build after every change to a function (it refuses to start with stale ones; in [dev mode](../testing/#dev-mode) it builds them itself):
 
 ```sh
 export EXECUTOR_TOKEN=$(openssl rand -base64 32)

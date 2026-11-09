@@ -13,8 +13,8 @@
 #   http://localhost:9090  Prometheus         http://localhost:3000  Grafana (no login)
 #   http://localhost:9001  MinIO console (backd-dev / dev-p4ssw0rd!)
 #
-# Your config is CONFIG_DIR (default ./config), mounted READ-WRITE at /config in backd, the
-# worker and functions-build: in dev mode (BACKD_DEV) backd follows it, so a saved change is
+# Your config is CONFIG_DIR (default ./config), mounted READ-WRITE at /config in backd and the
+# worker: in dev mode (BACKD_DEV) backd follows it, so a saved change is
 # live in a moment, functions are bundled again, and `backd.d.ts` types are written back for
 # your editor. The API and the worker are separate services; WORKERS=3 make dev starts three.
 #
@@ -116,22 +116,6 @@ services:
         condition: service_completed_successfully
     restart: on-failure:20
 
-  # One-shot: bundles every functions project before backd starts (backd refuses stale or
-  # missing bundles). In dev mode backd bundles again whenever a function changes.
-  functions-build:
-    image: *backd-image
-    pull_policy: missing
-    entrypoint: ["/usr/local/bin/backd"]
-    command: ["functions", "build"]
-    user: *dev-user
-    environment:
-      CONFIG_DIR: /config
-      HOME: /tmp
-      DENO_DIR: /tmp/deno
-    volumes:
-      - ${CONFIG_DIR:-./config}:/config
-
-  # The API: the HTTP API, the admin API and UI, the internal listener for functions.
   backd:
     image: *backd-image
     pull_policy: missing
@@ -149,8 +133,6 @@ services:
     depends_on:
       mongo:
         condition: service_healthy
-      functions-build:
-        condition: service_completed_successfully
     stop_grace_period: 20s
 
   # Claims and runs async jobs and scheduled functions, on its own: watch it with

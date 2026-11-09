@@ -10,6 +10,10 @@ Until a stable release is declared, a minor release may have breaking changes; t
 
 - **Running backd on Kubernetes, on DigitalOcean:** a Helm chart (`deploy/kubernetes/backd`) with the API, realtime, admin, worker, executor and egress workloads, the configuration baked into the image (a release is an image tag; a rollback re-provisions first), restricted pods, network policies, Traefik routes with per-address limits and an admin host reachable only from an allowlist (`admin-allow.sh`), and a release pipeline (`deploy/kubernetes/pipeline`: guard against `auth: disabled`, build, push, atomic upgrade, prune). Terraform (`deploy/terraform/digitalocean`) builds the cluster, a managed MongoDB of 1 or 3 nodes, one or two Spaces, a container registry, the load balancer, the DNS records, cert-manager and the Secrets the chart reads, from a state kept in a private Space. DigitalOcean's MongoDB has no custom roles, so the database posture is weaker than the Compose reference; the docs say so. See [Deploying on DigitalOcean](https://fernandezvara.github.io/backd/docs/operate/production/cloud-providers/digitalocean/), [Kubernetes](https://fernandezvara.github.io/backd/docs/operate/production/kubernetes/) and [Secrets on Kubernetes](https://fernandezvara.github.io/backd/docs/operate/production/kubernetes/#secrets-on-kubernetes).
 
+### Changed
+
+- **Dev mode starts without a build step and waits instead of exiting:** with `BACKD_DEV=true`, `serve` builds missing or stale function bundles at startup, and an error in the config, its rules or a function's build no longer stops `serve` or `worker`: they log one record per problem (`kind`, `file`, `line`, `error`, `output`, `hint`) and start on the first save that loads, answering `/healthz` (but not `/readyz`) meanwhile. The local stacks lose their one-shot `functions-build` service, and their `backd` runs on the executor image. See [Dev mode](https://fernandezvara.github.io/backd/docs/build/functions/testing/#dev-mode).
+
 ## 0.9.7
 
 ### Added

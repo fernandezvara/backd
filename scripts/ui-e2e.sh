@@ -29,7 +29,7 @@ cleanup() {
 trap cleanup EXIT
 
 scripts/local-certs.sh
-docker compose build functions-build backd executor
+docker compose build backd executor
 docker compose up -d --no-deps mongo minio minio-setup
 mongo_ready() {
   docker compose exec -T mongo mongosh --quiet --eval "try { rs.status() } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo:27017'}]}) } if (!db.hello().isWritablePrimary) quit(1)" >/dev/null 2>&1
@@ -39,7 +39,8 @@ for _ in $(seq 1 60); do
   sleep 2
 done
 mongo_ready || { echo "MongoDB didn't become ready" >&2; exit 1; }
-docker compose run --rm functions-build
+# Provisioning (below) checks the bundles: build them first (serve would, in dev mode).
+docker compose run --rm --no-deps backd functions build
 # backd's dev mode and worker want the executor (the example realms declare
 # functions); the UI itself needs neither, so bring up only what answers.
 # The Shelf realm's pins keep private notes encrypted (tutorial chapter 25): backd refuses to

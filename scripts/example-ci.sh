@@ -31,7 +31,7 @@ trap cleanup EXIT
 scripts/local-certs.sh
 # Step by step and without dependencies: the docs site, which nginx would
 # pull in, isn't needed (nginx resolves its upstreams per request).
-docker compose build functions-build backd executor egress
+docker compose build backd executor egress
 docker compose up -d --no-deps mongo
 # A single-node replica set: initiate it (the compose health check does the
 # same) and wait for the primary.
@@ -43,7 +43,8 @@ for _ in $(seq 1 60); do
   sleep 2
 done
 mongo_ready || { echo "MongoDB didn't become ready" >&2; exit 1; }
-docker compose run --rm functions-build
+# Provisioning (below) checks the bundles: build them first (serve would, in dev mode).
+docker compose run --rm --no-deps backd functions build
 # The Shelf's pins keep private notes encrypted (tutorial chapter 25): backd refuses to start
 # without the key, so it is created first, offline.
 docker compose run --rm --no-deps backd provision >/dev/null

@@ -20,7 +20,7 @@
 
 # `backd functions build` output for test fixtures (built fresh by each run)
 /clients/js/test/integration/config/**/_functions/.build/
-# same, for the local stack's functions-build service (docker-compose.yml)
+# same, for the bundles backd builds in the local stack (docker-compose.yml)
 /examples/config/**/_functions/.build/
 
 # Private Claude Code instructions (imports ~/.claude/projects/backd.md)

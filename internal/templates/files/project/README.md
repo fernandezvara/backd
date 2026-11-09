@@ -45,7 +45,7 @@ AGENTS.md                      repo guide for AI coding assistants
    docker compose up
    ```
 
-   backd listens on <http://127.0.0.1:8080> with `BACKD_DEV=true`: it follows `config/` live — save a change to a schema, `collection.yaml` or `realm.yaml` and it reloads in a moment; save a function and it's bundled again automatically (the `functions-build` one-shot only matters at `up`, since backd refuses missing bundles). It also runs the worker role (`serve --with-worker`), so async jobs and cron schedules work here.
+   backd listens on <http://127.0.0.1:8080> with `BACKD_DEV=true`: it follows `config/` live — save a change to a schema, `collection.yaml` or `realm.yaml` and it reloads in a moment; save a function and it's bundled again automatically, as at `up` (a build error is logged and backd waits for the save that fixes it). It also runs the worker role (`serve --with-worker`), so async jobs and cron schedules work here.
 
    <http://127.0.0.1:8080/> itself is a small landing page, only while `BACKD_DEV=true`: the realms and databases currently loaded, links into the admin UI and each realm's OpenAPI, `/healthz`/`/readyz` and the docs — plus whatever `BACKD_DEV_LINKS` adds (MinIO console by default).
 
