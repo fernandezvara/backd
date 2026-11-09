@@ -1,0 +1,13 @@
+apiVersion: v2
+name: backd
+description: "backd on Kubernetes - the API, the admin instance, the realtime instances, the worker, the functions executor and egress, with the configuration baked into the image"
+type: application
+version: 0.1.0
+# The backd release the chart is written for: the executor and egress images use it as their
+# tag unless releaseImages.tag says otherwise. Updated with every release.
+appVersion: "v0.9.6"
+keywords: [backd, mongodb, api]
+home: https://fernandezvara.github.io/backd/
+sources: [https://github.com/fernandezvara/backd]
+maintainers:
+  - name: fernandezvara

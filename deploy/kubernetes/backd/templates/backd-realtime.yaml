@@ -1,0 +1,1 @@
+{{ include "backd.serve" (dict "root" . "component" "backd-realtime" "key" "backdRealtime" "admin" false "ui" false "events" true "triggers" true) }}

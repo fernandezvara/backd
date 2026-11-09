@@ -1,0 +1,209 @@
+{{- if .Values.ingress.enabled }}
+{{- $ing := .Values.ingress }}
+{{- $api := required "ingress.hosts.api is required (API_HOST of the install ConfigMap)" $ing.hosts.api }}
+{{- $admin := required "ingress.hosts.admin is required (ADMIN_HOST of the install ConfigMap)" $ing.hosts.admin }}
+{{- $cidrs := include "backd.adminAllowedCIDRs" . | fromYamlArray }}
+{{- if not $cidrs }}
+{{- fail "ingress.admin.allowedCIDRs is required: the admin host is never opened to everyone. Give the addresses that may reach it, e.g. --set 'ingress.admin.allowedCIDRs={203.0.113.7/32}'" }}
+{{- end }}
+{{- $ctx := dict "root" . "component" "ingress" }}
+# ---------------------------------------------------------------- certificates
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: backd-api
+  labels:
+    {{- include "backd.labels" $ctx | nindent 4 }}
+spec:
+  secretName: backd-api-tls
+  dnsNames: [{{ $api | quote }}]
+  issuerRef:
+    kind: ClusterIssuer
+    name: {{ $ing.clusterIssuer }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: backd-admin
+  labels:
+    {{- include "backd.labels" $ctx | nindent 4 }}
+spec:
+  secretName: backd-admin-tls
+  dnsNames: [{{ $admin | quote }}]
+  issuerRef:
+    kind: ClusterIssuer
+    name: {{ $ing.clusterIssuer }}
+---
+# ---------------------------------------------------------------- middlewares
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: backd-hsts
+  labels:
+    {{- include "backd.labels" $ctx | nindent 4 }}
+spec:
+  headers:
+    stsSeconds: {{ $ing.hstsSeconds }}
+    forceSTSHeader: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: backd-limit-api
+  labels:
+    {{- include "backd.labels" $ctx | nindent 4 }}
+spec:
+  rateLimit:
+    average: {{ $ing.limits.api.average }}
+    period: {{ $ing.limits.api.period }}
+    burst: {{ $ing.limits.api.burst }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: backd-limit-auth
+  labels:
+    {{- include "backd.labels" $ctx | nindent 4 }}
+spec:
+  rateLimit:
+    average: {{ $ing.limits.auth.average }}
+    period: {{ $ing.limits.auth.period }}
+    burst: {{ $ing.limits.auth.burst }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: backd-limit-functions
+  labels:
+    {{- include "backd.labels" $ctx | nindent 4 }}
+spec:
+  rateLimit:
+    average: {{ $ing.limits.functions.average }}
+    period: {{ $ing.limits.functions.period }}
+    burst: {{ $ing.limits.functions.burst }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: backd-limit-concurrent
+  labels:
+    {{- include "backd.labels" $ctx | nindent 4 }}
+spec:
+  inFlightReq:
+    amount: {{ $ing.limits.concurrentRequests }}
+---
+# The same size as backd's MAX_BODY_BYTES: a larger body never reaches backd.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: backd-limit-body
+  labels:
+    {{- include "backd.labels" $ctx | nindent 4 }}
+spec:
+  buffering:
+    maxRequestBodyBytes: {{ $ing.limits.maxBodyBytes }}
+    memRequestBodyBytes: {{ $ing.limits.maxBodyBytes }}
+---
+# Who may reach the admin host. deploy/kubernetes/scripts/admin-allow.sh changes it in place.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: backd-admin-allow
+  labels:
+    {{- include "backd.labels" $ctx | nindent 4 }}
+spec:
+  ipAllowList:
+    sourceRange:
+      {{- toYaml $cidrs | nindent 6 }}
+---
+# ---------------------------------------------------------------- the public host
+# Only /v1/ is routed: /_ui/, /healthz, /readyz and /metrics are not reachable from outside, and
+# the public pods serve no admin API anyway.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: backd-api
+  labels:
+    {{- include "backd.labels" $ctx | nindent 4 }}
+spec:
+  entryPoints: [websecure]
+  tls:
+    secretName: backd-api-tls
+  routes:
+    # Sign-up, login and the account flows: the strict limit, then the general one.
+    - kind: Rule
+      priority: 40
+      match: Host(`{{ $api }}`) && PathRegexp(`^/v1/[^/]+/_auth/(signup|login|password|email|verify-email|verify-email/resend|reset-password|reset-password/request|confirm-email-change|accept-invitation)$`)
+      middlewares:
+        - name: backd-hsts
+        - name: backd-limit-concurrent
+        - name: backd-limit-auth
+        - name: backd-limit-api
+        - name: backd-limit-body
+      services:
+        - {name: backd, port: 8080}
+    # Calling a function.
+    - kind: Rule
+      priority: 40
+      match: Host(`{{ $api }}`) && PathRegexp(`^/v1/[^/]+/[^/]+/_func(/|$)`)
+      middlewares:
+        - name: backd-hsts
+        - name: backd-limit-concurrent
+        - name: backd-limit-functions
+        - name: backd-limit-api
+        - name: backd-limit-body
+      services:
+        - {name: backd, port: 8080}
+    # Realtime subscriptions: a held-open event stream, so no limit on how long it lasts. Only
+    # these pods read the change stream.
+    - kind: Rule
+      priority: 40
+      match: Host(`{{ $api }}`) && PathRegexp(`^/v1/[^/]+/_realtime$`)
+      middlewares:
+        - name: backd-hsts
+      services:
+        - {name: backd-realtime, port: 8080}
+    # Files: no body limit at the edge (backd's upload limits apply); the general limits do.
+    - kind: Rule
+      priority: 30
+      match: Host(`{{ $api }}`) && PathRegexp(`^/v1/[^/]+/[^/]+/[^/]+/([^/]+/)?_files/`)
+      middlewares:
+        - name: backd-hsts
+        - name: backd-limit-concurrent
+        - name: backd-limit-api
+      services:
+        - {name: backd, port: 8080}
+    - kind: Rule
+      priority: 10
+      match: Host(`{{ $api }}`) && PathPrefix(`/v1/`)
+      middlewares:
+        - name: backd-hsts
+        - name: backd-limit-concurrent
+        - name: backd-limit-api
+        - name: backd-limit-body
+      services:
+        - {name: backd, port: 8080}
+---
+# ---------------------------------------------------------------- the admin host
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: backd-admin
+  labels:
+    {{- include "backd.labels" $ctx | nindent 4 }}
+spec:
+  entryPoints: [websecure]
+  tls:
+    secretName: backd-admin-tls
+  routes:
+    - kind: Rule
+      match: Host(`{{ $admin }}`)
+      middlewares:
+        # The allowlist first: an address that is not allowed gets nothing else from the pod.
+        - name: backd-admin-allow
+        - name: backd-hsts
+        - name: backd-limit-concurrent
+        - name: backd-limit-api
+      services:
+        - {name: backd-admin, port: 8080}
+{{- end }}

@@ -24,5 +24,5 @@ docker compose --env-file .env up -d --build
 | `test.sh`, `test.compose.yaml` | The end-to-end test (`make prod-test`, run in CI) |
 
 The documentation explains each part and has a hardening checklist:
-Operate → Production deployment (`docs/content/docs/operate/production.md`)
+Operate → Production deployment (`docs/content/docs/operate/production/docker-compose.md`)
 and Operate → Backup and restore (`docs/content/docs/operate/backup.md`).

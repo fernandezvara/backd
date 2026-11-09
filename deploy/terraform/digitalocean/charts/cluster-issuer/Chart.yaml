@@ -1,0 +1,5 @@
+apiVersion: v2
+name: cluster-issuer
+description: The Let's Encrypt ClusterIssuer of a backd installation (DNS-01 on DigitalOcean DNS)
+type: application
+version: 0.1.0

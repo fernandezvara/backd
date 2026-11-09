@@ -1,0 +1,205 @@
+{{/* Labels and selectors. Called with (dict "root" $ "component" "backd"). */}}
+{{- define "backd.selector" -}}
+app.kubernetes.io/name: backd
+app.kubernetes.io/instance: {{ .root.Release.Name }}
+app.kubernetes.io/component: {{ .component }}
+{{- end }}
+
+{{- define "backd.labels" -}}
+{{ include "backd.selector" . }}
+app.kubernetes.io/part-of: backd
+app.kubernetes.io/version: {{ .root.Chart.AppVersion | quote }}
+app.kubernetes.io/managed-by: {{ .root.Release.Service }}
+helm.sh/chart: {{ printf "%s-%s" .root.Chart.Name .root.Chart.Version | replace "+" "_" }}
+{{- end }}
+
+{{/* Pods of a component: its own number, else replicas.default. (dict "root" $ "key" "backdAdmin") */}}
+{{- define "backd.replicas" -}}
+{{- $r := .root.Values.replicas -}}
+{{- $v := index $r .key -}}
+{{- if kindIs "invalid" $v -}}{{ $r.default }}{{- else -}}{{ $v }}{{- end -}}
+{{- end }}
+
+{{/* Images. */}}
+{{- define "backd.configImage" -}}
+{{ required "image.repository is required: the configuration image, <registry>/<name>" .Values.image.repository }}:{{ required "image.tag is required: the release of the configuration image" .Values.image.tag }}
+{{- end }}
+
+{{- define "backd.releaseTag" -}}
+{{ .Values.releaseImages.tag | default .Chart.AppVersion }}
+{{- end }}
+
+{{- define "backd.egressImage" -}}
+{{ .Values.releaseImages.backd }}:{{ include "backd.releaseTag" . }}
+{{- end }}
+
+{{- define "backd.executorImage" -}}
+{{ .Values.releaseImages.executor }}:{{ include "backd.releaseTag" . }}
+{{- end }}
+
+{{/* Restricted pod security: non-root, read-only root filesystem, no capabilities. (dict "uid" 65532) */}}
+{{- define "backd.podSecurityContext" -}}
+runAsNonRoot: true
+runAsUser: {{ .uid }}
+runAsGroup: {{ .uid }}
+seccompProfile:
+  type: RuntimeDefault
+{{- end }}
+
+{{- define "backd.containerSecurityContext" -}}
+allowPrivilegeEscalation: false
+readOnlyRootFilesystem: true
+capabilities:
+  drop: [ALL]
+{{- end }}
+
+{{/* Scheduling shared by every pod. (dict "root" $ "component" "worker") */}}
+{{- define "backd.scheduling" -}}
+{{- with .root.Values.nodeSelector }}
+nodeSelector:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- with .root.Values.tolerations }}
+tolerations:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- if .root.Values.spreadOverNodes }}
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        {{- include "backd.selector" . | nindent 8 }}
+{{- end }}
+{{- end }}
+
+{{/* A value from the install ConfigMap. (dict "root" $ "key" "BACKD_URL") */}}
+{{- define "backd.fromInstall" -}}
+valueFrom:
+  configMapKeyRef:
+    name: {{ .root.Values.install }}
+    key: {{ .key }}
+{{- end }}
+
+{{/* A value from a Secret. (dict "name" "backd-keys" "key" "BACKD_SECRETS_KEY") */}}
+{{- define "backd.fromSecret" -}}
+valueFrom:
+  secretKeyRef:
+    name: {{ .name }}
+    key: {{ .key }}
+{{- end }}
+
+{{/* Environment of every backd process (serve, worker, provision). */}}
+{{- define "backd.env.common" -}}
+- name: CONFIG_DIR
+  value: /config
+- name: LOG_LEVEL
+  value: {{ .Values.logLevel | quote }}
+- name: BACKD_URL
+  {{- include "backd.fromInstall" (dict "root" . "key" "BACKD_URL") | nindent 2 }}
+- name: BACKD_ENV
+  {{- include "backd.fromInstall" (dict "root" . "key" "BACKD_ENV") | nindent 2 }}
+- name: BACKD_DEPLOYMENT_ID
+  {{- include "backd.fromInstall" (dict "root" . "key" "BACKD_DEPLOYMENT_ID") | nindent 2 }}
+- name: METRICS_ADDR
+  value: ":9090"
+- name: METRICS_TOKEN
+  {{- include "backd.fromSecret" (dict "name" .Values.secrets.keys "key" "BACKD_METRICS_TOKEN") | nindent 2 }}
+{{- range $k, $v := .Values.env }}
+- name: {{ $k }}
+  value: {{ $v | quote }}
+{{- end }}
+{{- end }}
+
+{{/* The database for the pods that serve: the application user, and verify mode (they never change the schema). */}}
+{{- define "backd.env.mongo" -}}
+- name: MONGO_URI
+  {{- include "backd.fromSecret" (dict "name" .Values.secrets.mongo "key" "MONGO_URI") | nindent 2 }}
+- name: PROVISION_MODE
+  value: verify
+{{- end }}
+
+{{/* The managed MongoDB's CA, which MONGO_URI names (tlsCAFile=/etc/backd/tls/ca.pem). */}}
+{{- define "backd.mongoCAVolume" -}}
+- name: mongo-ca
+  secret:
+    secretName: {{ .Values.secrets.mongo }}
+    items:
+      - key: ca.pem
+        path: ca.pem
+{{- end }}
+
+{{- define "backd.mongoCAMount" -}}
+- name: mongo-ca
+  mountPath: /etc/backd/tls
+  readOnly: true
+{{- end }}
+
+{{/* The root filesystem is read-only; /tmp is where the image versions, the function bundles and the
+configuration checks keep their temporary files. */}}
+{{- define "backd.tmpVolume" -}}
+- name: tmp
+  emptyDir:
+    sizeLimit: 1Gi
+{{- end }}
+
+{{- define "backd.tmpMount" -}}
+- name: tmp
+  mountPath: /tmp
+{{- end }}
+
+{{/*
+The addresses that may reach the admin host, as a YAML list. The ConfigMap that
+deploy/kubernetes/scripts/admin-allow.sh keeps wins when it exists (so a later `helm upgrade` does not
+undo a change made with the script); the values seed the first install. Empty if neither has one.
+*/}}
+{{- define "backd.adminAllowedCIDRs" -}}
+{{- $cidrs := .Values.ingress.admin.allowedCIDRs -}}
+{{- $cm := lookup "v1" "ConfigMap" .Release.Namespace "backd-admin-allow" -}}
+{{- if and $cm $cm.data (index $cm.data "allowedCIDRs") -}}
+{{- $cidrs = splitList "," (index $cm.data "allowedCIDRs") -}}
+{{- end -}}
+{{- toYaml $cidrs -}}
+{{- end }}
+
+{{/*
+The hostAliases of the pods that connect to the database, as a YAML list; empty if there are none.
+DigitalOcean's MongoDB tells the driver to use the members' PUBLIC names, which the network policy
+(rightly) does not let the pods reach; the aliases make those names resolve to the members' private
+addresses, inside the pods only. mongo.hostAliases wins; otherwise the ones Terraform keeps in the
+backd-install ConfigMap (MONGO_HOST_ALIASES, JSON) are used when the release is installed or upgraded
+(`helm template` cannot read the cluster, so it renders none).
+*/}}
+{{- define "backd.mongoHostAliases" -}}
+{{- $aliases := .Values.mongo.hostAliases -}}
+{{- if not $aliases -}}
+{{- $cm := lookup "v1" "ConfigMap" .Release.Namespace "backd-install" -}}
+{{- if and $cm $cm.data (index $cm.data "MONGO_HOST_ALIASES") -}}
+{{- $aliases = fromJsonArray (index $cm.data "MONGO_HOST_ALIASES") -}}
+{{- end -}}
+{{- end -}}
+{{- if $aliases -}}
+{{- toYaml $aliases -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+The private addresses the object storage is reached at, one per line; empty if there are none.
+DigitalOcean's resolver answers Spaces names inside a VPC with a private address (the last host of
+the VPC range), which the 443 rule must not exclude. networkPolicy.storageCIDRs wins; otherwise
+SPACES_PRIVATE_CIDR of the backd-install ConfigMap is used when the release is installed or
+upgraded (`helm template` cannot read the cluster, so it renders none).
+*/}}
+{{- define "backd.storageCIDRs" -}}
+{{- $cidrs := .Values.networkPolicy.storageCIDRs -}}
+{{- if not $cidrs -}}
+{{- $cm := lookup "v1" "ConfigMap" .Release.Namespace "backd-install" -}}
+{{- if and $cm $cm.data (index $cm.data "SPACES_PRIVATE_CIDR") -}}
+{{- $cidrs = list (index $cm.data "SPACES_PRIVATE_CIDR") -}}
+{{- end -}}
+{{- end -}}
+{{- if $cidrs -}}
+{{- toYaml $cidrs -}}
+{{- end -}}
+{{- end }}

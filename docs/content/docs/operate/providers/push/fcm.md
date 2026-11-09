@@ -43,7 +43,7 @@ push:
 
 ## 4. The network
 
-Requests go through the [egress proxy](../../../production/#functions-executor-egress-and-worker) of the deployment, with a token the worker signs for each delivery unit naming only these hosts:
+Requests go through the [egress proxy](../../../production/docker-compose/#functions-executor-egress-and-worker) of the deployment, with a token the worker signs for each delivery unit naming only these hosts:
 
 | Host | For |
 |---|---|

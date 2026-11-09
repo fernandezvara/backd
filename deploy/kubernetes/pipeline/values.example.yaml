@@ -1,0 +1,25 @@
+# deploy/values.yaml of the configuration repository: the chart's values for this installation.
+# The image (repository, tag) and releaseImages.tag come from the workflow.
+#
+# What Terraform printed: terraform output -json hostnames, and the DATABASE_CIDR of the
+# backd-install ConfigMap (kubectl get configmap backd-install -n backd -o yaml).
+ingress:
+  hosts:
+    api: api.example.com
+    admin: admin.example.com
+  admin:
+    # Who may reach the admin host (seeds the first install; change it later with
+    # deploy/kubernetes/scripts/admin-allow.sh, which the chart then respects).
+    allowedCIDRs: ["203.0.113.7/32"]
+
+networkPolicy:
+  databaseCIDR: 10.30.0.0/16
+
+replicas:
+  default: 2
+  backdAdmin: 1
+  worker: 1
+
+# More environment for every backd process, for example:
+# env:
+#   BACKD_AGGREGATE_TIME: 10s

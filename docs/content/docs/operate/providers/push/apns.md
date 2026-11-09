@@ -50,7 +50,7 @@ A token made in one is refused (`BadDeviceToken`) by the other. A realm that ser
 
 ## 4. The network
 
-The worker needs `api.push.apple.com` (or the sandbox host), through the [egress proxy](../../../production/#functions-executor-egress-and-worker) of the deployment: it opens a CONNECT tunnel and speaks HTTP/2 inside it, which backd tests. Without a proxy it dials the host directly, public addresses only.
+The worker needs `api.push.apple.com` (or the sandbox host), through the [egress proxy](../../../production/docker-compose/#functions-executor-egress-and-worker) of the deployment: it opens a CONNECT tunnel and speaks HTTP/2 inside it, which backd tests. Without a proxy it dials the host directly, public addresses only.
 
 ## What backd sends and does
 

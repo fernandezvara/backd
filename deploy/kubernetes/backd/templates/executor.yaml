@@ -1,0 +1,96 @@
+{{- $ctx := dict "root" . "component" "executor" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: executor
+  labels:
+    {{- include "backd.labels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ include "backd.replicas" (dict "root" . "key" "executor") }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "backd.selector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "backd.labels" $ctx | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- include "backd.podSecurityContext" (dict "uid" .Values.executor.runAsUser) | nindent 8 }}
+      {{- include "backd.scheduling" $ctx | nindent 6 }}
+      containers:
+        - name: executor
+          # The released executor image: it runs whatever it is given, and never sees the
+          # configuration, MongoDB or the signing keys.
+          image: {{ include "backd.executorImage" . }}
+          imagePullPolicy: {{ .Values.releaseImages.pullPolicy }}
+          ports:
+            - {name: executor, containerPort: 9100}
+            - {name: metrics, containerPort: 9090}
+          env:
+            - name: BACKD_EXECUTOR_TOKEN
+              {{- include "backd.fromSecret" (dict "name" .Values.secrets.keys "key" "BACKD_EXECUTOR_TOKEN") | nindent 14 }}
+            - name: EXECUTOR_MAX_PROCESSES
+              value: {{ .Values.executor.maxProcesses | quote }}
+            - name: EXECUTOR_PROXY
+              value: http://egress:3128
+            - name: BACKD_EGRESS_KEY
+              {{- include "backd.fromSecret" (dict "name" .Values.secrets.keys "key" "BACKD_EGRESS_KEY") | nindent 14 }}
+            - name: LOG_LEVEL
+              value: {{ .Values.logLevel | quote }}
+            - name: METRICS_ADDR
+              value: ":9090"
+            - name: METRICS_TOKEN
+              {{- include "backd.fromSecret" (dict "name" .Values.secrets.keys "key" "BACKD_METRICS_TOKEN") | nindent 14 }}
+          livenessProbe:
+            tcpSocket: {port: executor}
+            periodSeconds: 10
+          readinessProbe:
+            tcpSocket: {port: executor}
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.resources.executor | nindent 12 }}
+          securityContext:
+            {{- include "backd.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - {name: work, mountPath: /tmp/backd-executor}
+      volumes:
+        # The bundle cache and the working directory of each function call.
+        - name: work
+          emptyDir:
+            medium: Memory
+            sizeLimit: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: executor
+  labels:
+    {{- include "backd.labels" $ctx | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "backd.selector" $ctx | nindent 4 }}
+  ports:
+    - {name: executor, port: 9100, targetPort: executor}
+{{- if and (gt (int (include "backd.replicas" (dict "root" . "key" "executor"))) 1) .Values.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: executor
+  labels:
+    {{- include "backd.labels" $ctx | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "backd.selector" $ctx | nindent 6 }}
+{{- end }}
