@@ -1,6 +1,6 @@
 # Design: two binaries, `backd` (CLI) and `backd-server`
 
-- **Issues:** 40.1–40.15 (milestone `40-cli-server-split`): 40.1 this design, 40.2–40.11 the steps 1–10 of §9, 40.12–40.15 step 11 (one per audit item)
+- **Issues:** #845–#859 (milestone `40-cli-server-split`): #845 this design, #846–#855 the steps 1–10 of §9, #856–#859 step 11 (one per audit item)
 - **Status:** draft, being iterated
 - **Related:** [kubernetes.md](./kubernetes.md), [types-openapi.md](./types-openapi.md), [export-import.md](./export-import.md), `support_docs/code_refactor.md` (local audit, Phase 5)
 
