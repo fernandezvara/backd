@@ -7,7 +7,7 @@ import (
 	"github.com/fernandezvara/kli"
 
 	"github.com/fernandezvara/backd/internal/buildinfo"
-	"github.com/fernandezvara/backd/internal/cli"
+	"github.com/fernandezvara/backd/internal/cli/admin"
 	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/internal/registry"
 )
@@ -48,7 +48,7 @@ func newCLI(getenv func(string) string, stdin io.Reader, stdout, stderr io.Write
 		})
 
 	sec := cfg.Command("secret").ShortHelp("field keys and the master key, straight on MongoDB")
-	cli.RegisterFieldKeys(sec, direct)
+	admin.RegisterFieldKeys(sec, direct)
 	sec.SubCommand("rotate-key").ShortHelp("re-encrypt every realm's secrets under a new master key").
 		LongHelp("Re-encrypts every realm's secrets from BACKD_SECRETS_KEY (the currently\nconfigured, old key) to BACKD_SECRETS_NEW_KEY (the new one; BACKD_SECRETS_NEW_KEY_FILE\nalso works). It writes to MongoDB directly, so it\nneeds the server's CONFIG_DIR and MONGO_URI: run it where backd runs, for example\n  docker compose exec backd backd-server secret rotate-key\nRestart every backd instance with BACKD_SECRETS_KEY set to the new key afterward.").
 		Func(cmdutil.Act("backd-server secret rotate-key", secretRotateKey)).Config(func(*kli.CommandConfig) {})
@@ -63,7 +63,7 @@ func newCLI(getenv func(string) string, stdin io.Reader, stdout, stderr io.Write
 			cmdutil.Boolean(cc, "yes", "confirm the reset, which ends all of the user's sessions")
 		})
 
-	cli.RegisterTransfer(cfg, direct)
+	admin.RegisterTransfer(cfg, direct)
 
 	trg := cfg.Command("triggers").ShortHelp("re-emit a collection's changes to its triggers")
 	trg.SubCommand("rescan").ShortHelp("queue a collection's recently written documents again").

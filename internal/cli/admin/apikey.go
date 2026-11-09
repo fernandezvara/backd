@@ -1,0 +1,142 @@
+package admin
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"text/tabwriter"
+
+	"github.com/fernandezvara/backd/internal/cli/clicore"
+
+	"github.com/fernandezvara/kli"
+
+	"github.com/fernandezvara/backd/internal/authcore"
+	"github.com/fernandezvara/backd/internal/cmdutil"
+	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/internal/strutil"
+)
+
+// apiKey is an API key as the admin API returns it.
+type apiKey struct {
+	Name       string   `json:"name"`
+	Role       string   `json:"role"`
+	Prefix     string   `json:"prefix"`
+	Networks   []string `json:"networks"`
+	Scopes     []string `json:"scopes"`
+	CreatedAt  string   `json:"created_at"`
+	LastUsedAt *string  `json:"last_used_at"`
+	ExpiresAt  *string  `json:"expires_at"`
+	Org        *string  `json:"org"`
+	Key        string   `json:"key"`
+}
+
+// keyOptions checks the create flags and adds them to the request body.
+func keyOptions(c *kli.CommandContext, body map[string]any) error {
+	body["role"] = cmdutil.Str(c, "role")
+	if v := cmdutil.Str(c, "expires"); v != "" {
+		if d, err := strutil.ParseDuration(v); err != nil || d <= 0 {
+			return cmdutil.UsageErr(fmt.Errorf("--expires: want a positive duration such as 90d or 12h, got %q", v))
+		}
+		body["expires_in"] = v
+	}
+	if v := cmdutil.Str(c, "networks"); v != "" {
+		nets, err := registry.ParseNetworks(strings.Split(v, ","))
+		if err != nil {
+			return cmdutil.UsageErr(fmt.Errorf("--networks: want comma-separated IP addresses or CIDR networks, got %q", v))
+		}
+		body["networks"] = nets.Strings()
+	}
+	if v := cmdutil.Str(c, "org"); v != "" {
+		body["org"] = v
+	}
+	if v := cmdutil.Str(c, "scopes"); v != "" {
+		grants := strings.Split(v, ",")
+		if _, err := authcore.ParseScopes(grants); err != nil {
+			return cmdutil.UsageErr(fmt.Errorf("--scopes: %w", err))
+		}
+		body["scopes"] = grants
+	}
+	return nil
+}
+
+func ApikeyCreate(c *kli.CommandContext) error {
+	body := map[string]any{"name": cmdutil.Str(c, "name")}
+	if err := keyOptions(c, body); err != nil {
+		return err
+	}
+	t, err := clicore.TargetOf(c, false)
+	if err != nil {
+		return err
+	}
+	// A key outlives the session and is not asked for a second factor: a person signed in with a
+	// session proves who they are again first.
+	uio := cmdutil.IOOf(c)
+	proof, err := t.Proof(uio)
+	if err != nil {
+		return err
+	}
+	var k apiKey
+	if err := t.Adm.APIKeys.Create(t.Ctx, body, &k, clicore.WithProof(proof)...); err != nil {
+		return err
+	}
+	fmt.Fprintln(uio.Stdout, k.Key)
+	msg := fmt.Sprintf("API key %q (role %s) created. Store it now as a secret: it can't be shown again.", k.Name, k.Role)
+	if len(k.Scopes) > 0 {
+		msg += " It reaches only: " + strings.Join(k.Scopes, ", ") + "."
+	}
+	if k.ExpiresAt != nil {
+		msg += " It expires at " + *k.ExpiresAt + "."
+	} else {
+		msg += " Warning: it never expires; prefer --expires (for example 90d) and rotate keys before they expire."
+	}
+	fmt.Fprintln(uio.Stderr, msg)
+	return nil
+}
+
+func ApikeyList(c *kli.CommandContext) error {
+	t, err := clicore.TargetOf(c, false)
+	if err != nil {
+		return err
+	}
+	var page struct{ Items []apiKey }
+	if err := t.Adm.APIKeys.List(t.Ctx, &page); err != nil {
+		return err
+	}
+	tw := tabwriter.NewWriter(c.Stdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "NAME\tROLE\tKEY\tSCOPES\tNETWORKS\tCREATED\tLAST USED\tEXPIRES")
+	for _, k := range page.Items {
+		nets, scopes := strings.Join(k.Networks, ","), strings.Join(k.Scopes, ",")
+		if nets == "" {
+			nets = "-"
+		}
+		if scopes == "" {
+			scopes = "all" // no scopes: full access
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s…\t%s\t%s\t%s\t%s\t%s\n", k.Name, k.Role, k.Prefix, scopes, nets, k.CreatedAt, orDash(k.LastUsedAt), orDash(k.ExpiresAt))
+	}
+	return tw.Flush()
+}
+
+func ApikeyRevoke(c *kli.CommandContext) error {
+	t, err := clicore.TargetOf(c, false)
+	if err != nil {
+		return err
+	}
+	name := cmdutil.Str(c, "name")
+	var ae *clicore.APIError
+	if err := t.Adm.APIKeys.Delete(t.Ctx, name); err != nil {
+		if errors.As(err, &ae) && ae.Status == 404 && ae.Message == "API key not found" {
+			return fmt.Errorf("no API key named %q", name)
+		}
+		return err
+	}
+	fmt.Fprintf(c.Stdout(), "API key %q revoked\n", name)
+	return nil
+}
+
+func orDash(s *string) string {
+	if s == nil {
+		return "-"
+	}
+	return *s
+}

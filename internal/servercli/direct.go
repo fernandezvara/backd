@@ -11,7 +11,7 @@ import (
 
 	"github.com/fernandezvara/kli"
 
-	"github.com/fernandezvara/backd/internal/cli"
+	"github.com/fernandezvara/backd/internal/cli/admin"
 	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/internal/httpapi"
 	"github.com/fernandezvara/backd/internal/mongodb"
@@ -26,8 +26,8 @@ import (
 // takes each of them as a full administrator's working offline (and says so in the records it
 // writes).
 
-// direct is the opener of those commands (cli.RegisterTransfer, cli.RegisterFieldKeys).
-var direct = cli.Opener{
+// direct is the opener of those commands (admin.RegisterTransfer, admin.RegisterFieldKeys).
+var direct = admin.Opener{
 	Prog:  "backd-server",
 	Flags: directFlags,
 	Open:  openDirect,
@@ -60,7 +60,7 @@ func valueOrSource(c *kli.CommandContext, name string) (string, error) {
 }
 
 // openDirect connects to MongoDB and loads CONFIG_DIR for the realm named by --realm.
-func openDirect(c *kli.CommandContext) (*cli.Session, error) {
+func openDirect(c *kli.CommandContext) (*admin.Session, error) {
 	realm := cmdutil.Str(c, "realm")
 	uri := ""
 	if spec := cmdutil.Str(c, "mongo-uri"); spec != "" {
@@ -148,7 +148,7 @@ func openDirect(c *kli.CommandContext) (*cli.Session, error) {
 	hc.StorageAccessKey, hc.StorageSecretKey = storageKey, storageSecret
 	hc.PublicStorageAccessKey, hc.PublicStorageSecretKey = publicKey, publicSecret
 	h := httpapi.NewHandler(hc)
-	return cli.InProcess(realm, h, a.Close, func(c *kli.CommandContext) error {
+	return admin.InProcess(realm, h, a.Close, func(c *kli.CommandContext) error {
 		return refuseIfServed(context.Background(), a, realm, cmdutil.Flag(c, "force"), c.Stderr())
 	}), nil
 }

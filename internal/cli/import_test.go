@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/fernandezvara/backd/internal/cli/admin"
+
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/exportpkg"
 )
@@ -186,7 +188,7 @@ func TestImportReadsAnArchive(t *testing.T) {
 func TestEachChunk(t *testing.T) {
 	var chunks []string
 	var firsts []int
-	err := eachChunk(strings.NewReader("aaaa\nbbbb\ncc\ndddddddddddd\ne"), 10, func(c []byte, first int) error {
+	err := admin.EachChunk(strings.NewReader("aaaa\nbbbb\ncc\ndddddddddddd\ne"), 10, func(c []byte, first int) error {
 		chunks = append(chunks, string(c))
 		firsts = append(firsts, first)
 		return nil
@@ -392,7 +394,7 @@ func TestWriteSecretFileTightensAnExistingFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeSecretFile(path, "new\n"); err != nil {
+	if err := admin.WriteSecretFile(path, "new\n"); err != nil {
 		t.Fatal(err)
 	}
 	st, _ := os.Stat(path)

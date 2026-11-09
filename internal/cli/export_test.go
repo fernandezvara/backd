@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/fernandezvara/backd/internal/cli/admin"
+
 	"github.com/fernandezvara/backd/internal/exportpkg"
 )
 
@@ -283,15 +285,15 @@ func TestFileRefsOfKnowsPublicFiles(t *testing.T) {
 	if err := os.WriteFile(part, []byte(lines), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	refs, err := fileRefsOf(part, []string{"photo", "secret", "gallery"})
+	refs, err := admin.FileRefsOf(part, []string{"photo", "secret", "gallery"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []fileRef{{ID: "fl_pub", Public: true, KeyName: "Me.png"}, {ID: "fl_priv"}, {ID: "fl_g1", Public: true, KeyName: "A.jpg"}, {ID: "fl_g2"}}
+	want := []admin.FileRef{{ID: "fl_pub", Public: true, KeyName: "Me.png"}, {ID: "fl_priv"}, {ID: "fl_g1", Public: true, KeyName: "A.jpg"}, {ID: "fl_g2"}}
 	if !reflect.DeepEqual(refs, want) {
 		t.Errorf("refs = %+v, want %+v", refs, want)
 	}
-	if ids, _ := fileIDsOf(part, []string{"photo"}); !reflect.DeepEqual(ids, []string{"fl_pub"}) {
+	if ids, _ := admin.FileIDsOf(part, []string{"photo"}); !reflect.DeepEqual(ids, []string{"fl_pub"}) {
 		t.Errorf("ids = %v", ids)
 	}
 }
