@@ -339,7 +339,7 @@ func Serve(ctx context.Context, a *App) error {
 				}
 				for name, fn := range db.Functions.Functions {
 					if fn.Schedule != nil {
-						a.log.Info("scheduled function runs only while a worker is running (backd worker, or serve --with-worker)", "function", realm+"/"+dbName+"/"+name, "schedule", fn.ScheduleExpr)
+						a.log.Info("scheduled function runs only while a worker is running (backd-server worker, or serve --with-worker)", "function", realm+"/"+dbName+"/"+name, "schedule", fn.ScheduleExpr)
 					}
 				}
 			}
@@ -882,11 +882,11 @@ func (a *App) syncRoles(ctx context.Context) error {
 		}
 		switch {
 		case len(rl.Settings.AdminRoles()) == 0:
-			a.log.Warn("realm declares no admin role (admin: true in realm.yaml): only existing admin API keys can manage it, and `backd bootstrap` can't create an administrator", "realm", rl.Name)
+			a.log.Warn("realm declares no admin role (admin: true in realm.yaml): only existing admin API keys can manage it, and `backd-server bootstrap` can't create an administrator", "realm", rl.Name)
 		case len(rl.Settings.FullAdminRoles()) == 0:
-			a.log.Warn("no role of the realm has admin: true: nobody can manage roles and API keys beyond the areas their own role opens, and `backd bootstrap` can't create an administrator", "realm", rl.Name)
+			a.log.Warn("no role of the realm has admin: true: nobody can manage roles and API keys beyond the areas their own role opens, and `backd-server bootstrap` can't create an administrator", "realm", rl.Name)
 		case rep.Admins == 0:
-			a.log.Warn("no user holds an admin role of the realm, in realm.yaml or the database: create the first administrator with `backd bootstrap`", "realm", rl.Name)
+			a.log.Warn("no user holds an admin role of the realm, in realm.yaml or the database: create the first administrator with `backd-server bootstrap`", "realm", rl.Name)
 		}
 		if (rl.Settings.MFA.RequiredAll || len(rl.Settings.MFA.RequiredRoles) > 0) && len(a.cfg.SecretsKey) == 0 {
 			a.log.Error("the realm requires a second factor but this instance has no BACKD_SECRETS_KEY: those users can't sign in (503 mfa_unavailable) until it is set",
@@ -1150,7 +1150,7 @@ func storageOrigins(reg *registry.Registry) []string {
 // heartbeatEvery is how often a serving instance says it is alive (see mongodb.InstanceLiveFor).
 const heartbeatEvery = 15 * time.Second
 
-// announce makes this instance known to the offline tools (`backd import --direct` refuses to
+// announce makes this instance known to the offline tools (`backd-server import` refuses to
 // write into a realm somebody serves) until the returned function is called.
 func (a *App) announce(ctx context.Context) func() {
 	id := xid.New().String()

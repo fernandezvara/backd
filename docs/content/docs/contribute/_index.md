@@ -17,8 +17,11 @@ This section is for the **contributor**: whoever changes `backd` itself. To run 
 
 | Path | Contents |
 |---|---|
-| `cmd/backd/` | The `backd` binary: only `main`, which runs `internal/cli` |
-| `internal/cli/` | The command tree (`cli.go`) and every command, run in-process by `cli.Run` so tests drive it like the binary |
+| `cmd/backd/` | The `backd` CLI: only `main`, which runs `internal/cli` |
+| `cmd/backd-server/` | The `backd-server` binary: only `main`, which runs `internal/servercli` |
+| `internal/cli/` | The CLI's command tree (`cli.go`) and commands, run in-process by `cli.Run` so tests drive it like the binary; it never links the server (`opener.go` is the seam export, import and the field keys share with `backd-server`) |
+| `internal/servercli/` | `backd-server`'s command tree: the roles, and the tools that work on MongoDB or run Deno directly |
+| `internal/dbnames/` | The names of backd's own databases and collections, for the CLI |
 | `internal/server/` | The server roles: settings and config loading, the startup checks, `serve`, `worker`, `provision`, the executor and egress bootstrap, and the dev-mode reloader |
 | `internal/e2e/` | End-to-end tests: a server started in the test, on MongoDB and Deno, driven through the CLI and the clients |
 | `internal/buildinfo/` | The version the binaries were built as |
@@ -40,9 +43,9 @@ This section is for the **contributor**: whoever changes `backd` itself. To run 
 | `internal/changefeed/` | A database's change history, driver-neutral: the base of triggers and realtime |
 | `internal/triggers/` | The dispatcher that runs a collection's [triggers](../build/functions/triggers/): one lease per deployment, a durable position |
 | `internal/realtime/` | [Realtime](../build/api/realtime/) subscriptions as server-sent events: limits, buffers, resume tokens |
-| `internal/functions/` | `backd functions build`: bundles each function with Deno and records the manifest startup checks |
-| `internal/executor/` | The supervisor behind `backd executor`: one Deno process per call, with its permissions and limits |
-| `internal/egress/` | `backd egress`: the only way a function reaches the network |
+| `internal/functions/` | `backd-server functions build`: bundles each function with Deno and records the manifest startup checks |
+| `internal/executor/` | The supervisor behind `backd-server executor`: one Deno process per call, with its permissions and limits |
+| `internal/egress/` | `backd-server egress`: the only way a function reaches the network |
 | `internal/cron/` | Five-field cron expressions and their schedule, in UTC or a time zone |
 | `internal/email/` | Email kinds, templates (from `_realm/email`) and rendering |
 | `internal/push/`, `internal/pushsend/` | Push messages and templates; the FCM, APNs and Web Push senders |
@@ -198,7 +201,7 @@ Releases are published by `.github/workflows/release.yml` when a version tag is 
 
 The workflow then:
 
-- builds the binaries with [GoReleaser](https://goreleaser.com/) (`.goreleaser.yaml`): Linux, macOS and Windows on amd64 and arm64, as archives with `LICENSE` and `README.md`, plus `checksums.txt`;
+- builds the binaries with [GoReleaser](https://goreleaser.com/) (`.goreleaser.yaml`): `backd` (the CLI) for Linux, macOS and Windows and `backd-server` for Linux, on amd64 and arm64, as archives with `LICENSE` and `README.md`, plus `checksums.txt`;
 - adds an SPDX SBOM for each archive, made with Syft;
 - embeds the admin UI in the binaries (it is built first) and attaches the same build as `admin-ui_vX.Y.Z.tar.gz` to the release;
 - creates the GitHub release with those files and generated notes;
@@ -208,7 +211,7 @@ The workflow then:
 
 A second workflow, `pages.yml`, runs on the same tag and publishes this documentation site to GitHub Pages, so the site always shows the latest tagged version. It needs *Settings → Pages → Source: GitHub Actions* set once in the repository. To publish a documentation fix between releases, run it by hand: *Actions → pages → Run workflow*, on `main`.
 
-The version reaches the binary through `-X github.com/fernandezvara/backd/internal/buildinfo.Version`, in both GoReleaser and the Dockerfile (`--build-arg VERSION`); local builds report `dev`.
+The version reaches both binaries through `-X github.com/fernandezvara/backd/internal/buildinfo.Version`, in GoReleaser and both Dockerfiles (`--build-arg VERSION`); local builds report `dev`.
 
 `make release-check` validates the configuration and builds every archive into `dist/` without publishing. CI runs `goreleaser check` on every push.
 

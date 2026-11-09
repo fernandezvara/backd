@@ -27,7 +27,7 @@ func TestRunConfig(t *testing.T) {
 	// unbuilt bundles fail the check, like startup, exactly as adding a
 	// fresh one with `template function` would.
 	code, _, errOut := cli("config", "check")
-	if code != 1 || !strings.Contains(errOut, "functions are not built: run `backd functions build` (for shop/main)") {
+	if code != 1 || !strings.Contains(errOut, "functions are not built: run `backd-server functions build` (for shop/main)") {
 		t.Errorf("unbuilt functions: %d %q", code, errOut)
 	}
 	if code, _, _ := cli("config", "fingerprint"); code != 1 {

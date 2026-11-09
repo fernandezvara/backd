@@ -134,7 +134,7 @@ Apple requires an app that offers Sign in with Apple and account deletion to **r
 - When the user is [erased](../../../operate/administration/erasure/) or deleted, or removes the Apple sign-in method, a **revoke job** (`origin: backd:apple.revoke` in the [jobs](../../functions/jobs/) list) takes the token before the sign-in method goes, and a worker tells Apple to revoke it. A failure is tried again after a growing wait (up to eight attempts, then the job is listed as failed and keeps the token until it expires); once Apple has revoked it the job forgets the token and the audit records `identity.apple_revoked`, never the token.
 - `revoke_on_delete: false` stops all of it: nothing is stored and nothing is revoked, for realms without an iOS app.
 
-Run a worker (`backd worker`, or `serve --with-worker`) for this: without one the revoke job waits.
+Run a worker (`backd-server worker`, or `serve --with-worker`) for this: without one the revoke job waits.
 
 ## Who the person is
 

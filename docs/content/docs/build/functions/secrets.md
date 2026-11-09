@@ -48,7 +48,7 @@ To rotate the master key (for example after a suspected leak, or on a schedule),
 
 ```sh
 BACKD_SECRETS_KEY=$OLD_KEY BACKD_SECRETS_NEW_KEY=$NEW_KEY \
-  docker compose exec backd /backd secret rotate-key
+  docker compose exec backd backd-server secret rotate-key
 ```
 
 This re-encrypts every realm's secrets in place, organization scopes included — unlike `set`/`list`/`delete`, it writes to MongoDB directly, so it needs `CONFIG_DIR` and `MONGO_URI`, not a session or API key. Afterward, restart every `backd`, `worker` and CLI use with `BACKD_SECRETS_KEY` set to the new key; the old one is no longer needed.

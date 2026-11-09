@@ -6,7 +6,7 @@ weight: 100
 toc: true
 ---
 
-All runtime configuration comes from environment variables. At startup `backd` checks all of them and reports every problem at once, then exits with a non-zero status if any are invalid.
+All runtime configuration comes from environment variables. At startup `backd-server` checks all of them and reports every problem at once, then exits with a non-zero status if any are invalid. The table is `backd-server`'s; the CLI reads only a few ([which binary reads them](#which-binary-reads-them)).
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
@@ -51,10 +51,23 @@ All runtime configuration comes from environment variables. At startup `backd` c
 | `BACKD_DEV` | no | `false` | `true` reloads the config and rebuilds function sources automatically as the files change (see [Dev mode](../functions/testing/#dev-mode)); `serve` refuses to start unless `HTTP_ADDR` is bound to localhost. Local development only |
 | `BACKD_DEV_LINKS` | no | none | Extra links on the [dev-mode landing page](../functions/testing/#dev-mode) (only while `BACKD_DEV=true`), as `Label=URL` pairs separated by `;`, for the tools next to the API, for example `MinIO console=http://127.0.0.1:9001` |
 | `BACKD_DEV_ANY_ADDR` | no | `false` | `true` lets `BACKD_DEV=true` run on an address that isn't localhost, for a container whose ports are published on the host's localhost only (the local [development stack](../../contribute/local-development/)). Never set it where anything else can reach `backd` |
-| `WORKER_CONCURRENCY` | no | `10` | [Async jobs](../functions/jobs/) one worker process runs at once, on `backd worker` or `backd serve --with-worker` |
+| `WORKER_CONCURRENCY` | no | `10` | [Async jobs](../functions/jobs/) one worker process runs at once, on `backd-server worker` or `backd-server serve --with-worker` |
 | `METRICS_ADDR`, `METRICS_TOKEN` | no | — | Where this process serves `/metrics`, and the bearer token it may require (see [Metrics](../../operate/metrics/)) |
 
-`backd functions build` also reads `DENO`, the Deno binary to bundle with (default: `deno` on the `PATH`); `BACKD_DEV` reads the same variable. `backd executor` and `backd egress` have their own variables (see [Running the executor](../../operate/functions-runtime/#running-the-executor) and [Egress](../functions/network/#egress-the-network-allowlist-completed)); `backd worker` reuses `BACKD_EXECUTOR_URL`/`BACKD_EXECUTOR_TOKEN`/`BACKD_CALLBACK_URL`/`BACKD_CALLBACK_KEY` (see [Running the worker](../../operate/functions-runtime/#running-the-worker)).
+`backd-server functions build` also reads `DENO`, the Deno binary to bundle with (default: `deno` on the `PATH`); `BACKD_DEV` reads the same variable. `backd-server executor` and `backd-server egress` have their own variables (see [Running the executor](../../operate/functions-runtime/#running-the-executor) and [Egress](../functions/network/#egress-the-network-allowlist-completed)); `backd-server worker` reuses `BACKD_EXECUTOR_URL`/`BACKD_EXECUTOR_TOKEN`/`BACKD_CALLBACK_URL`/`BACKD_CALLBACK_KEY` (see [Running the worker](../../operate/functions-runtime/#running-the-worker)).
+
+### Which binary reads them
+
+Everything in the table is read by [`backd-server`](../../operate/administration/server/), the binary that runs the server roles. The [`backd` CLI](../../operate/administration/cli/) reads only:
+
+| Variable | What for |
+|---|---|
+| `CONFIG_DIR` | The project tools (`template`, `config check`, `rules test`, `types`, `openapi`, `databases`, `functions types`) |
+| `BACKD_URL`, `BACKD_API_KEY`, `BACKD_CA_CERT` | The server its admin commands talk to, an admin API key instead of a stored session, and extra CAs to trust ([Logging in](../../operate/administration/cli/#logging-in)) |
+| `BACKD_CREDENTIALS`, `XDG_CONFIG_HOME`, `HOME` (`USERPROFILE` on Windows) | Where the stored sessions are kept: `BACKD_CREDENTIALS`, else `$XDG_CONFIG_HOME/backd/credentials`, else `.config/backd/credentials` in the home directory |
+| `BACKD_IMAGE_MAX_PIXELS`, `BACKD_EXPAND_MAX_DEPTH`, `_PATHS`, `_ARRAY`, `_DOCS`, `BACKD_AGGREGATE_TIME`, `BACKD_AGGREGATE_MAX_GROUPS`, `BACKD_TRIGGER_MAX_CHAIN` | `backd config check` applies the same instance limits startup does, so set them as the server has them |
+
+`DENO` is `backd-server`'s (`functions build`, the executor and dev mode).
 
 The pages of this section show YAML in pieces: a snippet of `collection.yaml` assumes the schema fields, roles and secrets it names exist in the rest of the configuration. `backd config check` is the judge of a whole tree. The complete, tested trees are under `examples/config`.
 
@@ -82,5 +95,5 @@ Write binary units (`MiB`, `GiB`) for limits you compare with memory or what a b
 Example:
 
 ```sh
-CONFIG_DIR=./config MONGO_URI='mongodb://localhost:27017/?replicaSet=rs0' backd serve
+CONFIG_DIR=./config MONGO_URI='mongodb://localhost:27017/?replicaSet=rs0' backd-server serve
 ```

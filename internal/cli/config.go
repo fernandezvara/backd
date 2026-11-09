@@ -5,6 +5,7 @@ import (
 
 	"github.com/fernandezvara/kli"
 
+	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/settings/limits"
 )
@@ -16,7 +17,7 @@ func checkConfig(c *kli.CommandContext) error { return configCommand(c, false) }
 func configFingerprint(c *kli.CommandContext) error { return configCommand(c, true) }
 
 func configCommand(c *kli.CommandContext, fingerprintOnly bool) error {
-	dir, err := configDir(c)
+	dir, err := cmdutil.ConfigDir(c)
 	if err != nil {
 		return err
 	}

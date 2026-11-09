@@ -19,7 +19,7 @@ $ flutter run -d linux   # or macos / windows
 ```
 
 Sign in with a bootstrap user of the shelf realm, e.g. the one
-`backd bootstrap --realm shelf --email you@example.com` made, or the seeded
+`backd-server bootstrap --realm shelf --email you@example.com` made, or the seeded
 member/curator accounts the dev stack ships.
 
 ## The generated types

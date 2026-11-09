@@ -1,4 +1,4 @@
-// Package executor runs server-side functions: `backd executor` is a
+// Package executor runs server-side functions: `backd-server executor` is a
 // supervisor that runs each invocation in its own Deno process, with only
 // the function's permissions and limits, and returns its output.
 //
@@ -200,7 +200,7 @@ type Config struct {
 	Dir          string // writable working directory (runner, bundle cache)
 	Token        string // shared with backd: authenticates both directions
 	MaxProcesses int    // function processes at once; default 64
-	// Proxy is backd egress's base URL (e.g. http://backd-egress:3128), set
+	// Proxy is backd-server egress's base URL (e.g. http://backd-egress:3128), set
 	// as HTTP(S)_PROXY for function processes with a per-invocation token
 	// (EgressKey) embedded as its credentials, scoped to that call's
 	// allowed hosts. Both empty: functions get no outbound network at all

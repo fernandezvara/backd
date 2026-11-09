@@ -21,12 +21,12 @@ func TestWithoutACommandBackdPrintsTheGroupedHelp(t *testing.T) {
 	if code != 0 || errOut != "" {
 		t.Fatalf("exit %d, stderr %q", code, errOut)
 	}
-	for _, title := range []string{"Develop:", "Session:", "Administer a realm:", "Server:", "General:"} {
+	for _, title := range []string{"Develop:", "Session:", "Administer a realm:", "General:"} {
 		if !strings.Contains(none, "\n"+title+"\n") {
 			t.Errorf("the help lacks the group %q:\n%s", title, none)
 		}
 	}
-	if !strings.HasPrefix(none, "Usage: backd <command> [options]\n") || !strings.Contains(none, "`backd <command> --help` shows a command's help.") {
+	if !strings.HasPrefix(none, "Usage: backd <command> [options]\n") || !strings.Contains(none, "`backd <command> --help` shows a command's help.") || !strings.Contains(none, "backd-server --help") || strings.Contains(none, "\n  serve ") {
 		t.Errorf("the help:\n%s", none)
 	}
 	// backd help, backd --help and backd -h are the same page.
@@ -38,9 +38,6 @@ func TestWithoutACommandBackdPrintsTheGroupedHelp(t *testing.T) {
 	// A command's own help is still the library's.
 	if code, got, errOut := helpOf(t, "help", "user"); code != 0 || !strings.Contains(got+errOut, "manage a realm's users") {
 		t.Errorf("help user: %d %q %q", code, got, errOut)
-	}
-	if code, got, errOut := helpOf(t, "serve", "--help"); code != 0 || !strings.Contains(got+errOut, "Usage: backd serve") {
-		t.Errorf("serve --help: %d %q %q", code, got, errOut)
 	}
 }
 
@@ -81,13 +78,5 @@ func TestEveryCommandIsListedOnceInTheHelp(t *testing.T) {
 		if n := len(regexp.MustCompile(`(?m)^  `+regexp.QuoteMeta(name)+` +`+regexp.QuoteMeta(short)+`$`).FindAllString(page, -1)); n != 1 {
 			t.Errorf("%s is on the page %d times with its description", name, n)
 		}
-	}
-}
-
-func TestServeStillServes(t *testing.T) {
-	// It gets as far as loading the config, which does not exist here.
-	code, _, errOut := helpOf(t, "serve")
-	if code != 1 || !strings.Contains(errOut, "invalid config") {
-		t.Errorf("serve: %d %q", code, errOut)
 	}
 }

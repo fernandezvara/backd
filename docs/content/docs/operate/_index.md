@@ -85,7 +85,7 @@ This is all done for you at startup: validators, declared indexes, the system da
 - If anything differs, it refuses to start and lists every difference. For example:
 
   ```
-  backd serve: MongoDB does not match the config (run `backd provision`):
+  backd-server serve: MongoDB does not match the config (run `backd-server provision`):
     shop__orders.items: collection missing
     shop__orders.clients: validator differs from schema.json
     shop__orders.clients: index (email) missing
@@ -101,13 +101,13 @@ This is all done for you at startup: validators, declared indexes, the system da
 - **Nothing is ever dropped.** Some databases, collections and indexes exist in MongoDB but not in the config: databases named like `<realm>__<database>`, collections inside configured databases, or indexes not in `indexes.json`. `backd` doesn't serve those databases and collections, keeps those indexes, and logs a warning for each. The same goes for a `<realm>___system` database whose realm is gone or has `auth: disabled`: it is kept and reported, never used.
 - Schema keywords that MongoDB can't enforce are logged at `info` level (see [Schema validation](../build/configuration/validation/)).
 
-`backd provision` runs `apply` once and exits.
+`backd-server provision` runs `apply` once and exits.
 
-Both `backd provision` and `backd serve` then apply the [role assignments](../build/configuration/realm/#roles) seeded in each realm's `realm.yaml`.
+Both `backd-server provision` and `backd-server serve` then apply the [role assignments](../build/configuration/realm/#roles) seeded in each realm's `realm.yaml`.
 
 ### Realm system databases
 
-Each realm with `auth: enabled` has a system database named `<realm>___system` (three underscores). It holds the realm's users and credentials, managed through the [admin API](administration/admin/) (for example with [`backd user`](../build/auth/users/)); only [`backd bootstrap`](administration/cli/#the-first-administrator) writes to it directly. Realm names must be short enough for this name to stay under MongoDB's 64-character limit, so a realm name can be at most 54 characters.
+Each realm with `auth: enabled` has a system database named `<realm>___system` (three underscores). It holds the realm's users and credentials, managed through the [admin API](administration/admin/) (for example with [`backd user`](../build/auth/users/)); only [`backd-server bootstrap`](administration/cli/#the-first-administrator) writes to it directly. Realm names must be short enough for this name to stay under MongoDB's 64-character limit, so a realm name can be at most 54 characters.
 
 | Collection | Holds | Indexes |
 |---|---|---|
@@ -135,12 +135,12 @@ Treat the system databases as sensitive: they contain password hashes and token 
 
 The service's MongoDB user doesn't need to create collections, change validators or build indexes. Run provisioning as a separate deploy step instead:
 
-1. Run `backd provision` with an admin-privileged `MONGO_URI`.
+1. Run `backd-server provision` with an admin-privileged `MONGO_URI`.
 2. Grant the service's user `find`, `insert`, `update`, `remove` and `listIndexes` on each collection that `backd databases --collections` prints, and `listCollections` on their databases. MongoDB privileges can't match names by pattern, so repeat this step whenever the config changes.
 3. Start the service with `PROVISION_MODE=verify` and that user.
 
 {{< hint style="tip" title="Best practice" >}}
-In production, run `backd provision` once per release with an admin URI and start every instance with `PROVISION_MODE=verify` and a user that can only read and write the configured collections. A compromised instance then can't change validators, indexes or collections.
+In production, run `backd-server provision` once per release with an admin URI and start every instance with `PROVISION_MODE=verify` and a user that can only read and write the configured collections. A compromised instance then can't change validators, indexes or collections.
 {{< /hint >}}
 
 Grant collections rather than MongoDB's built-in `readWrite` role on whole databases: `readWrite` also allows creating, dropping and re-indexing collections, and MongoDB lets `insert` on a database create any collection in it. The [production reference](production/docker-compose/#least-privilege-provisioning) automates all three steps.
@@ -158,6 +158,25 @@ blog___system.api_keys
 blog__main.posts
 shop__orders.items
 ```
+
+### Upgrading to the next release (unreleased)
+
+backd becomes two binaries, released together with one version: **`backd-server`** runs the server and the tools that work on MongoDB or run Deno, and **`backd`** is the [command line](administration/cli/) for developers and administrators. Nothing changes in the data or the configuration, but the commands below moved, with no alias:
+
+| Was | Now |
+|---|---|
+| `backd serve`, `worker`, `executor`, `egress`, `provision` | `backd-server serve`, `worker`, `executor`, `egress`, `provision` |
+| `backd functions build` | `backd-server functions build` (in CI, in the `backd-executor` image) |
+| `backd bootstrap` | `backd-server bootstrap` |
+| `backd secret rotate-key` | `backd-server secret rotate-key` |
+| `backd secret create\|rotate\|list --direct` | `backd-server secret create\|rotate\|list` |
+| `backd user mfa-reset --local` | `backd-server user mfa-reset` |
+| `backd export --direct`, `backd import --direct` | `backd-server export`, `backd-server import` |
+| `backd triggers rescan` | `backd-server triggers rescan` |
+
+- **Images.** Both images carry both binaries. The `backd` image's entrypoint is now `backd-server` (its command is still `serve`), and the `backd-executor` image's is `backd-server executor`. A compose file or chart that passes only a role as the command keeps working; one that sets `entrypoint: ["/usr/local/bin/backd"]` for a server role sets `/usr/local/bin/backd-server`. `docker compose exec backd /backd bootstrap` becomes `docker compose exec backd backd-server bootstrap`.
+- **Release archives.** `backd` ships for Linux, macOS and Windows, and `backd-server` for Linux; install the CLI on the machines you administer from.
+- **Dev mode** builds the functions at startup and waits for a config that loads instead of exiting ([Dev mode](../build/functions/testing/#dev-mode)): the local stacks' one-shot `functions-build` service is gone.
 
 ### Upgrading to v0.9.7
 

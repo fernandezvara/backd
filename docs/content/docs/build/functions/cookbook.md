@@ -16,7 +16,7 @@ The repository's development stack serves the realm and runs a worker of its own
 
 ```sh
 make dev-build && make dev-examples   # the API is at https://localhost:8443
-make dev-backd ARGS='bootstrap --realm workshop --email ops@example.com'   # first administrator
+make dev-server ARGS='bootstrap --realm workshop --email ops@example.com'   # first administrator
 # (the workshop tour already offers an operator demo account, so this is only needed to use the CLI)
 
 API=https://localhost:8443/v1/workshop
@@ -143,7 +143,7 @@ Set its secret with `backd secret set --realm workshop --database main --name PA
 ### Step by step
 
 1. **At Postmark:** create a *Server* and copy its **Server API token**. Add a *Sender Signature* (a single address) or, better, verify your **domain** (SPF and DKIM), and use an address of it as the sender. Postmark refuses mail from anything it hasn't verified.
-2. **Copy the function** into your realm's database (here `notifications/_functions/postmark/`, with a `deno.json` like the one next to it) and run `backd functions build`.
+2. **Copy the function** into your realm's database (here `notifications/_functions/postmark/`, with a `deno.json` like the one next to it) and run `backd-server functions build`.
 3. **Set its two secrets**, the token and the sender (`POSTMARK_FROM` is the verified sender, such as `Acme <no-reply@acme.example>`; keep `email.from` in `realm.yaml` the same):
 
    ```sh

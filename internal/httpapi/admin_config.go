@@ -354,9 +354,9 @@ func configWarnings(s registry.RealmSettings) []map[string]any {
 	case !s.AuthEnabled:
 		warn("auth_disabled", "authentication is disabled: anyone who can reach this realm can read and write its data")
 	case len(s.AdminRoles()) == 0:
-		warn("no_admin_role", "no role has an admin level: only existing admin API keys can manage the realm, and `backd bootstrap` can't create an administrator")
+		warn("no_admin_role", "no role has an admin level: only existing admin API keys can manage the realm, and `backd-server bootstrap` can't create an administrator")
 	case len(s.FullAdminRoles()) == 0:
-		warn("no_full_admin_role", "no role has `admin: true`: `backd bootstrap` can't create the first administrator, and nobody can manage every area")
+		warn("no_full_admin_role", "no role has `admin: true`: `backd-server bootstrap` can't create the first administrator, and nobody can manage every area")
 	}
 	if s.AuthEnabled && len(s.AdminNetworks.Strings()) == 0 {
 		warn("admin_networks_open", "the admin API is reachable from any network: set admin.allowed_networks")

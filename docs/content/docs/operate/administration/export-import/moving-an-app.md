@@ -8,7 +8,7 @@ toc: true
 
 This is the whole journey of moving an app, users included, from an instance you call *old* to one you call *new*.
 
-1. **Prepare the new instance.** Its `CONFIG_DIR` needs the same databases and collections as the old one (the schemas may differ: the import tells you what the new ones refuse). Provision it (`backd provision`, or start it) and make sure the realm has authentication enabled and, if documents hold files, a `storage:` section (and a `public_storage:` one if they hold [public files](../../../../build/files/file-fields/#public-fields)) whose secrets are set.
+1. **Prepare the new instance.** Its `CONFIG_DIR` needs the same databases and collections as the old one (the schemas may differ: the import tells you what the new ones refuse). Provision it (`backd-server provision`, or start it) and make sure the realm has authentication enabled and, if documents hold files, a `storage:` section (and a `public_storage:` one if they hold [public files](../../../../build/files/file-fields/#public-fields)) whose secrets are set.
 2. **Export from the old instance**, keeping the one-time key apart from the package:
 
    ```

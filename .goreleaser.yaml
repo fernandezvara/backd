@@ -23,14 +23,29 @@ builds:
     ldflags: ["-s -w -X github.com/fernandezvara/backd/internal/buildinfo.Version={{ .Tag }}"]
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
+  # The server runs on Linux only (its executor needs process limits and /proc).
+  - id: backd-server
+    main: ./cmd/backd-server
+    binary: backd-server
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    ldflags: ["-s -w -X github.com/fernandezvara/backd/internal/buildinfo.Version={{ .Tag }}"]
+    goos: [linux]
+    goarch: [amd64, arm64]
 
 archives:
   - id: backd
+    ids: [backd]
     formats: [tar.gz]
     format_overrides:
       - goos: windows
         formats: [zip]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [LICENSE, README.md]
+  - id: backd-server
+    ids: [backd-server]
+    formats: [tar.gz]
+    name_template: "backd-server_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files: [LICENSE, README.md]
 
 # An SPDX SBOM per archive, made with Syft (installed by the release workflow).
@@ -54,4 +69,5 @@ release:
   prerelease: auto
   footer: |
     Container images: `docker pull ghcr.io/fernandezvara/backd:{{ .Tag }}` and `ghcr.io/fernandezvara/backd-executor:{{ .Tag }}` (linux/amd64 and linux/arm64), signed with cosign (keyless) and published with their SBOM and provenance.
+    `backd` is the command line (Linux, macOS, Windows); `backd-server` runs the server (Linux). Both images carry both.
     Verify downloads against `checksums.txt`; each archive has an SPDX SBOM (`*.sbom.json`).

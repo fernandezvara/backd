@@ -396,9 +396,6 @@ func TestLoginArguments(t *testing.T) {
 		{[]string{"login", "--realm", "acme"}, 1, "no server given"},
 		{[]string{"whoami", "--realm", "acme", "--url", "ftp://x"}, 1, "invalid server URL"},
 		{[]string{"whoami", "--realm", "acme", "--url", "http://localhost:1"}, 1, "not logged in"},
-		{[]string{"bootstrap", "help"}, 0, "Usage: backd bootstrap"},
-		{[]string{"bootstrap", "--realm", "acme"}, 2, "--email"},
-		{[]string{"bootstrap", "--realm", "acme", "--email", "a@x.io"}, 1, "CONFIG_DIR is required"},
 	} {
 		var stderr bytes.Buffer
 		if code := Run(tt.args, getenv, strings.NewReader(""), &stderr, &stderr); code != tt.wantCode || !strings.Contains(stderr.String(), tt.want) {

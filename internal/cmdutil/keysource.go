@@ -1,4 +1,4 @@
-package cli
+package cmdutil
 
 import (
 	"errors"
@@ -8,11 +8,11 @@ import (
 	"strings"
 )
 
-// readKeySource reads a key the operator names as key:<value>, env:<VAR> or file:<path>, the
+// ReadKeySource reads a key the operator names as key:<value>, env:<VAR> or file:<path>, the
 // same way everywhere a key is given on the command line. A key given as a value ends up in
 // shell history and process lists, which the docs warn about; a file wider than owner-only
 // draws a warning on warn.
-func readKeySource(spec string, getenv func(string) string, warn io.Writer) (string, error) {
+func ReadKeySource(spec string, getenv func(string) string, warn io.Writer) (string, error) {
 	kind, value, ok := strings.Cut(spec, ":")
 	if !ok || value == "" {
 		return "", fmt.Errorf("want key:<value>, env:<VAR> or file:<path>, got %q", spec)

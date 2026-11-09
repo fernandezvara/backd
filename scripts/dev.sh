@@ -10,6 +10,7 @@
 #   scripts/dev.sh reset   stop it and delete the data (mongo, minio, prometheus, grafana)
 #   scripts/dev.sh logs    follow the logs; S=worker for one service
 #   scripts/dev.sh backd … run the backd command line in the API container (make dev-backd ARGS='…')
+#   scripts/dev.sh server … run backd-server's tools there, such as bootstrap (make dev-server ARGS='…')
 #
 # Settings, from the environment:
 #   CONFIG_DIR     your config (default ./config), mounted read-write: backd follows it
@@ -69,7 +70,7 @@ write_stack_json() {
       {"href": "http://localhost:9001/", "label": "MinIO console", "note": "backd-dev / dev-p4ssw0rd!"}
     ]}
   ],
-  "credentials_hint": "No seeded accounts. Create the first administrator of a realm with: make dev-backd ARGS='bootstrap --realm <realm> --email you@example.com'"
+  "credentials_hint": "No seeded accounts. Create the first administrator of a realm with: make dev-server ARGS='bootstrap --realm <realm> --email you@example.com'"
 }
 EOF
 }
@@ -148,10 +149,11 @@ case "${1:-up}" in
     echo "The data is gone (your config in $CONFIG_DIR is untouched)."
     ;;
 
-  backd)
+  backd|server)
+    bin=/backd; [ "$1" = server ] && bin=/backd-server
     shift
     tty=(); [ -t 0 ] || tty=(-T)   # a terminal for prompts (passwords), none when input is piped
-    exec "${compose[@]}" exec "${tty[@]}" backd /backd "$@"
+    exec "${compose[@]}" exec "${tty[@]}" backd "$bin" "$@"
     ;;
 
   logs)
@@ -198,7 +200,7 @@ case "${1:-up}" in
       # The Shelf's private notes (tutorial chapter 25) are encrypted with a key backd must find
       # at start; the examples are disposable, so the value is not kept.
       "${compose[@]}" run --rm backd provision >/dev/null || { image_hint; exit 1; }
-      "${compose[@]}" run --rm --no-deps backd secret create --direct --realm shelf --type key --generate --name SHELF_NOTES --skip-existing >/dev/null || { image_hint; exit 1; }
+      "${compose[@]}" run --rm --no-deps backd secret create --realm shelf --type key --generate --name SHELF_NOTES --skip-existing >/dev/null || { image_hint; exit 1; }
     fi
     "${compose[@]}" up -d --scale "worker=${WORKERS:-1}"
 

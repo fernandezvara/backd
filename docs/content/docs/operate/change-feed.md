@@ -38,13 +38,13 @@ Opting a collection in is a decision with a price, so it is per collection and n
 | **Several streams** | Eight streams reading the same backlog together delivered more than three times the total of one, each taking about twice as long. |
 
 {{< hint style="warning" >}}
-Pre-change images are enabled per collection by `backd provision`, and a restart never switches them off: keep `realtime: true` to collections that need it, and away from very large documents that change often.
+Pre-change images are enabled per collection by `backd-server provision`, and a restart never switches them off: keep `realtime: true` to collections that need it, and away from very large documents that change often.
 {{< /hint >}}
 
 ## Requirements
 
 - **MongoDB 6.0 or later**, as a replica set. A configuration with a realtime collection on an older server stops at startup, naming the requirement and the collections: without the previous document, a removal could not be told to the right subscribers, and there is no degraded mode.
-- **Pre-change images** on every realtime collection. `backd provision` (and `PROVISION_MODE=apply`, the default) enables them with `collMod`, which needs that privilege like creating an index does. With `PROVISION_MODE=verify` an instance **refuses to start** when a realtime collection lacks them, naming the collection and the command to run.
+- **Pre-change images** on every realtime collection. `backd-server provision` (and `PROVISION_MODE=apply`, the default) enables them with `collMod`, which needs that privilege like creating an index does. With `PROVISION_MODE=verify` an instance **refuses to start** when a realtime collection lacks them, naming the collection and the command to run.
 - **A MongoDB user that may read a change stream of the deployment.** The stream is opened on the whole deployment and `backd` filters it, and MongoDB checks the scope of the stream, not its filter: the user in `MONGO_URI` needs the `changeStream` and `find` actions on every database, for example the built-in `readAnyDatabase` role. An instance that serves realtime collections tries this at startup and stops with a message naming the role if the user lacks it. Clusters where `backd`'s user is confined to its own databases can't use realtime yet.
 
 ## Disabling pre-change images
@@ -52,8 +52,8 @@ Pre-change images are enabled per collection by `backd provision`, and a restart
 Dropping `realtime:` from a collection leaves its images in place, so a rolling deploy with an older configuration never loses them; `backd` only warns that they still cost storage and writes. To remove them:
 
 ```sh
-backd provision --disable-preimages          # lists what it would remove and stops
-backd provision --disable-preimages --yes    # removes them
+backd-server provision --disable-preimages          # lists what it would remove and stops
+backd-server provision --disable-preimages --yes    # removes them
 ```
 
 Removing them **deletes the images stored so far for good**. It only touches configured collections that no longer need them.
@@ -69,9 +69,9 @@ When a collection declares [`triggers:`](../../build/configuration/config-dir/#t
 - **Several deployments, one cluster.** Give each its own [`BACKD_DEPLOYMENT_ID`](../../build/configuration/) so their dispatchers don't share a lease.
 
 - **Chains and overload.** A trigger run's writes are stamped, so the events they cause carry a depth: past `max_chain`, or past `max_chained_per_minute` for one trigger, they are dropped and counted (`trigger_dropped_total{reason}`); events nobody chained are never dropped for being many. A realm with more than `max_backlog` unfinished trigger jobs (`trigger_backlog`) records further events as a `backlog` gap instead of queuing them, so the jobs collection stays bounded and other realms keep flowing. Alert well below the ceiling.
-- **A new index.** The dispatcher counts a realm's unfinished trigger jobs by origin and status; `backd provision` creates that index in each realm's `jobs` collection (instances with `PROVISION_MODE=verify` ask for it).
+- **A new index.** The dispatcher counts a realm's unfinished trigger jobs by origin and status; `backd-server provision` creates that index in each realm's `jobs` collection (instances with `PROVISION_MODE=verify` ask for it).
 
-- **Ordered triggers.** A trigger with `ordered: true` gives its jobs a key (the trigger and the document) and an order (the time of the change in the database's history, the same wherever it is read); a worker takes only the oldest unfinished job of a key. `jobs_serialized_waiting` shows how many wait behind another; a document that changes faster than its function runs builds a queue of its own. `backd provision` adds the index this needs (`serial_key`, `serial_order`) to each realm's `jobs`.
+- **Ordered triggers.** A trigger with `ordered: true` gives its jobs a key (the trigger and the document) and an order (the time of the change in the database's history, the same wherever it is read); a worker takes only the oldest unfinished job of a key. `jobs_serialized_waiting` shows how many wait behind another; a document that changes faster than its function runs builds a queue of its own. `backd-server provision` adds the index this needs (`serial_key`, `serial_order`) to each realm's `jobs`.
 
 ## Seeing and repairing what the dispatcher did
 
@@ -79,14 +79,14 @@ When a collection declares [`triggers:`](../../build/configuration/config-dir/#t
 backd triggers status --realm shop          # lease, position age, triggers, backlog, open gaps
 backd triggers gaps --realm shop [--all]    # what could not be turned into jobs
 backd triggers resolve --realm shop --id <gap>
-backd triggers rescan --realm shop --database main --collection orders --updated-since 6h
+backd-server triggers rescan --realm shop --database main --collection orders --updated-since 6h
 ```
 
 `status`, `gaps` and `resolve` use the realm's [admin API](../administration/admin/) (`GET /_admin/triggers/status`, `GET /_admin/triggers/gaps`, `POST /_admin/triggers/gaps/{id}/resolve`) with the `functions` area, as the session of `backd login` or an admin API key. `status` lists every trigger with its function and the note **runs with admin data access**: a trigger's function always has `ctx.admin.db`, so that is the one place to review who holds it. The lease holder's name is not shown.
 
 A **gap** says what the dispatcher could not do and for which collection and trigger. After you have dealt with it, `resolve` closes it (audited); an unresolved one stays in `status` and `trigger_gaps_total`.
 
-**`rescan`** re-emits what a gap lost. It runs where you run the command, with `CONFIG_DIR` and `MONGO_URI` like [`backd provision`](../#provisioning), not through the API, because it may read a whole collection:
+**`rescan`** re-emits what a gap lost. It runs where you run the command, with `CONFIG_DIR` and `MONGO_URI` like [`backd-server provision`](../#provisioning), not through the API, because it may read a whole collection:
 
 - It reads the documents of one collection written from `--updated-since` (an RFC 3339 time, or `6h`, `7d`) until `--until` (default now), and queues an `updated` event for each to the triggers that can be evaluated from a document alone.
 - It is **not a replay**: a document changed twice in the range is read once, as it is now; deletions can't be found; a trigger whose condition needs `before` or `changed()`, or that does not listen to `updated`, is reported and skipped.
@@ -96,10 +96,10 @@ A **gap** says what the dispatcher could not do and for which collection and tri
 
 ## Operating checklist
 
-- The MongoDB user needs the [change stream privilege](#requirements); `backd provision` enables pre-change images and creates the jobs indexes, and instances in `verify` mode refuse to start without them.
+- The MongoDB user needs the [change stream privilege](#requirements); `backd-server provision` enables pre-change images and creates the jobs indexes, and instances in `verify` mode refuse to start without them.
 - Triggers need a running [worker](../functions-runtime/) and `BACKD_EXECUTOR_URL` like any async job.
 - Alert on `trigger_gaps_total` (reasons `window`, `backlog`, `preimage_missing`), on `trigger_backlog` approaching `max_backlog`, and on `trigger_dispatch_lag_seconds`.
-- After restoring MongoDB from a backup the stored position is invalid: a gap is recorded and the dispatcher continues from now. `backd triggers rescan` re-emits what matters.
+- After restoring MongoDB from a backup the stored position is invalid: a gap is recorded and the dispatcher continues from now. `backd-server triggers rescan` re-emits what matters.
 
 ## Realtime in production
 

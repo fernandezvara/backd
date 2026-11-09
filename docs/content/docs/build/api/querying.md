@@ -142,7 +142,7 @@ GET /v1/shop/blog/articles?where={"$search":"red \"running shoes\" -kids","statu
 - **Relevance.** `order_by=_relevance`, alone, orders by how well documents match (title weights beat body weights), ties by `id`, and puts the score in each document's `_meta.score`. Relevance pages by `skip`, and only through the first 1,000 results (`400` beyond); there is no `after`. Any other `order_by` works as usual, with the search as a filter.
 - **Elsewhere.** `$search` also works in [aggregations](../aggregations/) (results per category next to a search box) and with [`expand`](../references/). Conditional GET works as for any list.
 - **Cost.** A search that needs more than `BACKD_AGGREGATE_TIME` (5 seconds by default) is `422 search_too_expensive`: many common words match most of a large collection and have to be scored. Fewer or rarer words, or a narrower `where`, fix it.
-- **While the index is rebuilt** (its declaration changed and `backd provision` is replacing it) a search answers `503 index_building` with `Retry-After`.
+- **While the index is rebuilt** (its declaration changed and `backd-server provision` is replacing it) a search answers `503 index_building` with `Retry-After`.
 
 The [search guide](../search/) covers declaring the index, weights, languages and what search doesn't do.
 
@@ -171,7 +171,7 @@ Invalid queries return `400 invalid_query`, with one detail per problem:
 
 - `order_by=-age,name` sorts by `age` descending, then `name` ascending.
 - `id` ascending is always added as a final tiebreaker unless `order_by` already includes `id`, so pages are stable.
-- **Without `order_by`, documents come in creation order:** `_meta.created_at`, then `id`. Ids that clients choose ([custom ids](../documents/#custom-ids)) have no order of their own, so the default doesn't lean on them. `backd provision` creates an index for it on every collection. Earlier versions ordered by `id`, which for generated ids is nearly the same.
+- **Without `order_by`, documents come in creation order:** `_meta.created_at`, then `id`. Ids that clients choose ([custom ids](../documents/#custom-ids)) have no order of their own, so the default doesn't lean on them. `backd-server provision` creates an index for it on every collection. Earlier versions ordered by `id`, which for generated ids is nearly the same.
 - `has_more` is `true` when documents exist beyond this page.
 - `skip` pages by offset, so deep pages get slower and can shift if data changes between requests. A [cursor](#paging-with-a-cursor) doesn't have those problems.
 

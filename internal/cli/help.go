@@ -17,8 +17,7 @@ var helpGroups = []struct {
 }{
 	{"Develop", []string{"template", "config", "rules", "databases", "types", "openapi", "functions"}},
 	{"Session", []string{"login", "logout", "whoami", "account"}},
-	{"Administer a realm", []string{"bootstrap", "user", "orgs", "apikey", "push", "secret", "encrypt", "audit", "data", "storage", "files", "export", "export-decrypt", "import", "compliance", "consents", "app-config", "triggers"}},
-	{"Server", []string{"serve", "provision", "worker", "executor", "egress"}},
+	{"Administer a realm", []string{"user", "orgs", "apikey", "push", "secret", "encrypt", "audit", "data", "storage", "files", "export", "export-decrypt", "import", "compliance", "consents", "app-config", "triggers"}},
 	{"General", []string{"help", "version"}},
 }
 
@@ -61,6 +60,6 @@ func groupedHelp(getenv func(string) string) string {
 			fmt.Fprintf(&b, "  %-12s %s\n", name, summaries[name])
 		}
 	}
-	b.WriteString("\n`backd <command> --help` shows a command's help.\n")
+	b.WriteString("\n`backd <command> --help` shows a command's help. The server and the tools that work on\nMongoDB directly are backd-server's (`backd-server --help`).\n")
 	return b.String()
 }

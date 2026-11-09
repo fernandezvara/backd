@@ -5,8 +5,8 @@
 # cron schedules, and a webhook.
 #
 # Anyone can sign up and place orders. `staff` may call refund; the cron
-# functions need at least one worker (`backd serve --with-worker`, which the
-# local stack runs, or a dedicated `backd worker`).
+# functions need at least one worker (`backd-server serve --with-worker`, which the
+# local stack runs, or a dedicated `backd-server worker`).
 auth: enabled
 signup: open
 
@@ -32,7 +32,7 @@ email:
 account:
   allow_email_change: true
 
-# `backd bootstrap --realm workshop --email <email>` creates the first
+# `backd-server bootstrap --realm workshop --email <email>` creates the first
 # administrator; give people the staff role in `roles.staff.users` below or
 # with `backd user add-role --role staff`.
 #

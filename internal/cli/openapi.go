@@ -21,7 +21,7 @@ func openapiCommand(c *kli.CommandContext) error {
 	if check && out == "" {
 		return errors.New("--check needs --out: the file to compare with")
 	}
-	dir, err := configDir(c)
+	dir, err := cmdutil.ConfigDir(c)
 	if err != nil {
 		return err
 	}

@@ -64,7 +64,7 @@ func (a *App) UsersOf(ctx context.Context, realm string) (*auth.Users, error) {
 }
 
 // Rescan reads a collection's stored documents again and queues the trigger jobs their
-// changes would have queued (`backd triggers rescan`).
+// changes would have queued (`backd-server triggers rescan`).
 func (a *App) Rescan(ctx context.Context, req triggers.RescanRequest) (triggers.RescanResult, error) {
 	return triggers.Rescan(ctx, a.reg, req, &mongodb.DocScanner{Client: a.client, Decrypt: func(ctx context.Context, mongoDB, coll string, doc map[string]any) error {
 		return a.decryptDocument(ctx, req.Realm, mongoDB, coll, doc)

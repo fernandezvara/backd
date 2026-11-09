@@ -20,7 +20,7 @@ The Helm chart of backd (`backd/`), the scripts around it, and the design behind
 | `worker` | the configuration image | async jobs and cron | yes |
 | `executor` | `ghcr.io/fernandezvara/backd-executor` | one Deno process per function call | no |
 | `egress` | `ghcr.io/fernandezvara/backd` | the only way out for functions and push | no |
-| `backd-provision` (Job) | the configuration image | `backd provision`, as a Helm hook before an install, an upgrade **and a rollback** | yes |
+| `backd-provision` (Job) | the configuration image | `backd-server provision`, as a Helm hook before an install, an upgrade **and a rollback** | yes |
 
 The **configuration image** is `FROM ghcr.io/fernandezvara/backd:<version>` plus the realm tree and the built functions, checked with `backd config check` when it is built. A release is a new tag: `helm upgrade --set image.tag=<release>` is the rollout. Every pod of a release runs exactly the same configuration, and the serving pods start in `PROVISION_MODE=verify`: they refuse a database that differs from their configuration.
 

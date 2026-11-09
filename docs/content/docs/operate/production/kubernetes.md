@@ -20,7 +20,7 @@ It maps the [production reference](../) one to one:
 | `worker` | your configuration image | [async jobs](../../../build/functions/jobs/) and cron | yes |
 | `executor` | `ghcr.io/fernandezvara/backd-executor` | one Deno process per function call | no |
 | `egress` | `ghcr.io/fernandezvara/backd` | the only way out for functions and push | no |
-| `backd-provision` (Job) | your configuration image | `backd provision`, before an install, an upgrade or a rollback | yes |
+| `backd-provision` (Job) | your configuration image | `backd-server provision`, before an install, an upgrade or a rollback | yes |
 
 Each is `replicas.<name>` in the values, and `replicas.default` is used by every component without a number of its own. A component with more than one pod gets a PodDisruptionBudget. Use one namespace per installation: the Services have fixed names.
 
@@ -90,7 +90,7 @@ An installation on Kubernetes has a handful of secrets. None is in the repositor
 | Registry push credential | Terraform | the state; a CI secret | the pipeline |
 | DNS token | you | the state; a Secret in cert-manager's namespace | cert-manager, for certificates |
 | Spaces keys | Terraform | the state; **realm secrets in MongoDB** (`backd secret set`) | `backd`, for the files |
-| The first administrator | `backd bootstrap` | MongoDB | you |
+| The first administrator | `backd-server bootstrap` | MongoDB | you |
 
 Each workload gets only the secrets it uses: the executor, which runs functions, never gets the database, the callback key or `BACKD_SECRETS_KEY`; egress only its own key; and only the provisioning Job sees the administrative database user. The Spaces keys are not environment variables of any pod: `backd` stores them encrypted under `BACKD_SECRETS_KEY` in MongoDB, as [realm secrets](../../providers/storage/#the-access-keys).
 
@@ -106,7 +106,7 @@ Terraform's state holds every generated secret, both database URIs and the Space
 |---|---|---|
 | `executor_token` | `backd`, `backd-admin`, `backd-realtime`, the worker and the executor, together | nothing; calls to functions fail between the first and the last restart |
 | `callback_key`, `egress_key`, `metrics_token` | every workload that has it | nothing |
-| `secrets_key` | every `backd` workload | **`backd secret rotate-key`** (it re-encrypts the stored secrets under `BACKD_SECRETS_KEY` and `BACKD_SECRETS_NEW_KEY`); replacing the key without it makes every stored secret unreadable |
+| `secrets_key` | every `backd` workload | **`backd-server secret rotate-key`** (it re-encrypts the stored secrets under `BACKD_SECRETS_KEY` and `BACKD_SECRETS_NEW_KEY`); replacing the key without it makes every stored secret unreadable |
 | the registry push credential | none | `-replace=digitalocean_container_registry_docker_credentials.push`, then update the CI secret |
 | a Spaces key | none | `-replace` the key, then `backd secret set` the new one: no restart, the key is read within a minute |
 

@@ -41,7 +41,7 @@
 #
 # Realtime (docs: Operations -> Change feed). Marks the collection's changes as ones that
 # may be streamed to subscribed clients. Costs storage and writes (pre-change images,
-# enabled by `backd provision`), so it is per collection. Commented out.
+# enabled by `backd-server provision`), so it is per collection. Commented out.
 #
 # realtime: true
 #

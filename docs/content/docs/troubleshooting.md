@@ -51,7 +51,7 @@ An error body is `{"error": {"code", "message", "details"}}`, and the status say
 
 ## A function change does nothing
 
-Functions are bundled before they run. In dev mode saving the file rebuilds the bundle; otherwise run `backd functions build` (or `docker compose run --rm functions-build` in the tutorial stack) and restart `backd`. A TypeScript error stops the build and names the line. `console.log` lines and a failed call's error are in the log of `backd`.
+Functions are bundled before they run. In dev mode saving the file rebuilds the bundle; otherwise run `backd-server functions build` (or `docker compose run --rm functions-build` in the tutorial stack) and restart `backd`. A TypeScript error stops the build and names the line. `console.log` lines and a failed call's error are in the log of `backd`.
 
 ## Start over
 

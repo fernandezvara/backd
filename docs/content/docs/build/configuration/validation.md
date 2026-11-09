@@ -73,7 +73,7 @@ Each collection keeps **the latest report**, replaced by the next check that fin
 
 ### Upgrading
 
-Reports live in a new system collection, `schema_checks`, in the realm's system database: run `backd provision` (or start with `PROVISION_MODE=apply`) after upgrading, as for any new system collection.
+Reports live in a new system collection, `schema_checks`, in the realm's system database: run `backd-server provision` (or start with `PROVISION_MODE=apply`) after upgrading, as for any new system collection.
 
 ## System fields
 

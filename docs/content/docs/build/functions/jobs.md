@@ -38,7 +38,7 @@ A `sync` function can be started as a job too, by the caller, with [`Prefer: res
 The call only enqueues the job: `400`, `401`, `403` and `429` (a [rate limit](../calling/#rate-limits)) still apply at that point, exactly as for `sync`, and the function never runs inline. Keep the `id` (or the `Location` header): it is how you find out what happened.
 
 {{< hint warning >}}
-A job only runs while a [worker](../../../operate/functions-runtime/#running-the-worker) is running (`backd worker`, or `backd serve --with-worker`). Without one it stays `queued` forever, and nothing else tells you: check for it in every environment, including local development.
+A job only runs while a [worker](../../../operate/functions-runtime/#running-the-worker) is running (`backd-server worker`, or `backd-server serve --with-worker`). Without one it stays `queued` forever, and nothing else tells you: check for it in every environment, including local development.
 {{< /hint >}}
 
 ## The life of a job
@@ -271,7 +271,7 @@ For anything user-facing, don't make every client poll a job endpoint: let the j
 
 | You see | Most likely | What to do |
 |---|---|---|
-| `status: "queued"` for longer than a moment | No worker is running, or it can't reach the executor | Run `backd worker`, or `backd serve --with-worker` (needs `BACKD_EXECUTOR_URL`); check its log |
+| `status: "queued"` for longer than a moment | No worker is running, or it can't reach the executor | Run `backd-server worker`, or `backd-server serve --with-worker` (needs `BACKD_EXECUTOR_URL`); check its log |
 | A job you no longer want | It is queued, retrying or running | [Cancel it](#cancelling-and-re-running-a-job) |
 | `status: "running"` for longer than `timeout` + 30 s | A worker was lost, or the executor is down or busy: the lease has to expire before a retry | Wait for the lease; look at `backd functions jobs` (`TRIES`) and the executor's health |
 | `done`, but `result.status` isn't `ok` | The function failed | `backd functions logs --function … --request-id …`; the [history](../logs/) shows the status and code |

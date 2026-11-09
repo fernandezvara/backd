@@ -60,7 +60,7 @@ An administrator can't use these endpoints to end up holding more than they star
 - **A user who holds admin rights the caller doesn't can be read, and nothing more:** changing their password or address, disabling, erasing, re-roling them or setting their networks answers `403`, since each would be a way to become them.
 - **Admin API keys are created and revoked only by full administrators** (`admin: true` or an admin key), because such a key opens every area. Data keys follow the `apikeys` area.
 
-Keep one role with `admin: true`, held by the people who recover the realm: `backd bootstrap` needs it for the first administrator, and startup warns when a realm has none.
+Keep one role with `admin: true`, held by the people who recover the realm: `backd-server bootstrap` needs it for the first administrator, and startup warns when a realm has none.
 
 ## Endpoints
 
@@ -264,7 +264,7 @@ curl -X PUT https://localhost:8443/v1/blog/_admin/secrets/STRIPE_KEY \
 - `owned` counts the documents the user owns (`_meta.owner`); `pull` and `unset` count, per field, the documents that hold the user (by email or id, as the policy says). `status` is `active` or `deactivated`.
 - The collections **without a policy** are listed by name and not counted: an erase leaves them alone.
 - `organizations` lists the [organizations](../../../build/organizations/api/) the user can manage, and `last_manager` says whether an erase leaves one without anyone who can: it becomes `orphaned` (its members keep access) until an administrator assigns a manager. `kept_in_organizations` counts, per collection, the documents the user owns that belong to an organization: they **stay with it, with the owner cleared**, unless the collection says [`in_org: apply`](../../../build/configuration/config-dir/#organizations).
-- It returns counts and field names, never document content. The counts use indexes that `backd provision` creates from the policies.
+- It returns counts and field names, never document content. The counts use indexes that `backd-server provision` creates from the policies.
 
 ### Changing a user's email
 

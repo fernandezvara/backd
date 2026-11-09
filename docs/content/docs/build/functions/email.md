@@ -38,7 +38,7 @@ email:
 - **`customizable`** lists the kinds an organization may write its own template of, and `overrides.permission` who edits them: see [organization email templates](../../organizations/email-templates/).
 - **`data_hook`** (optional) names an internal, `mode: sync` function that backd calls before it renders a system email, to fill in `{{.App}}` with an organization's branding: see [organization context](../../organizations/organization-context/). `pages.data_hook` does the same for the hosted pages.
 - **`function`** is the delivery function. Startup fails if it doesn't exist, isn't `internal: true` or isn't `mode: async`, naming the file.
-- **`public_url`** (or the `BACKD_URL` environment variable, which every `backd serve` and `backd worker` reads) is the address the links in emails point at. Startup fails when a realm sends email and neither is set.
+- **`public_url`** (or the `BACKD_URL` environment variable, which every `backd-server serve` and `backd-server worker` reads) is the address the links in emails point at. Startup fails when a realm sends email and neither is set.
 - **`locales`** lists the languages the realm's emails exist in; `default_locale` must be one of them.
 - Email needs `auth: enabled`: its users, tokens and counters live in the realm's system database.
 
@@ -212,4 +212,4 @@ So the realm can't be used to flood an address or as a relay, `backd` limits how
 
 ## Upgrading
 
-Email adds a system collection (`email_tokens`) to the realm's system database: run `backd provision` (or start with `PROVISION_MODE=apply`) after upgrading, as for any new system collection.
+Email adds a system collection (`email_tokens`) to the realm's system database: run `backd-server provision` (or start with `PROVISION_MODE=apply`) after upgrading, as for any new system collection.

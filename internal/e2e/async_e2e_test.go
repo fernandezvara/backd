@@ -13,7 +13,6 @@ import (
 
 	"github.com/rs/xid"
 
-	"github.com/fernandezvara/backd/internal/cli"
 	"github.com/fernandezvara/backd/internal/cmdtest"
 	"github.com/fernandezvara/backd/internal/executor"
 	"github.com/fernandezvara/backd/internal/functions"
@@ -25,7 +24,7 @@ import (
 
 // End to end, on MongoDB with a real executor: an async function
 // (roadmap F11) is queued, claimed and run by a real Worker (the same
-// type `backd worker` and `backd serve --with-worker` drive), reaching
+// type `backd-server worker` and `backd-server serve --with-worker` drive), reaching
 // data through ctx.db exactly like a sync call, and its result read back
 // through GET .../_jobs/{id}.
 func TestAsyncEndToEnd(t *testing.T) {
@@ -72,7 +71,7 @@ func TestAsyncEndToEnd(t *testing.T) {
 	if err := functions.Build(ctx, reg0, functions.Options{}); err != nil {
 		t.Fatal(err)
 	}
-	if code := cli.Run([]string{"provision"}, getenv, nil, io.Discard, io.Discard); code != 0 {
+	if code := runAny([]string{"provision"}, getenv, nil, io.Discard, io.Discard); code != 0 {
 		t.Fatal("provision failed")
 	}
 	a, err := server.Setup(ctx, getenv, io.Discard)

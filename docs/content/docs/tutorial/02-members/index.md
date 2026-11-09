@@ -46,9 +46,9 @@ Open `http://localhost:8080` and **sign up** (any password of 12 or more charact
 | `curator@shelf.example` | the **curator**: publishes assets from chapter 5 on |
 | your own address | a plain **member**, to see what the rules refuse |
 
-Do it **now**. Once chapter 4 sets `signup: invite`, a new address can't sign up without an invitation, and nobody can create an invitation without an administrator — so an operator who hasn't signed up yet would lock you out ([the way back](../04-invitations/#locked-out) is `backd bootstrap`, but it is easier not to need it). Log out between accounts (**Log out** in the nav), or use a private window for each.
+Do it **now**. Once chapter 4 sets `signup: invite`, a new address can't sign up without an invitation, and nobody can create an invitation without an administrator — so an operator who hasn't signed up yet would lock you out ([the way back](../04-invitations/#locked-out) is `backd-server bootstrap`, but it is easier not to need it). Log out between accounts (**Log out** in the nav), or use a private window for each.
 
-`backd bootstrap --realm shelf --email you@example.com` is how a *real* deployment creates its first admin, and the way out of that lock-out.
+`backd-server bootstrap --realm shelf --email you@example.com` is how a *real* deployment creates its first admin, and the way out of that lock-out.
 
 ## Signing in
 

@@ -38,10 +38,10 @@ export CALLBACK_KEY=$(openssl rand -base64 32)
 export EGRESS_KEY=$(openssl rand -base64 32)
 
 # With Deno 2.9.8 and backd installed:
-CONFIG_DIR=./config backd functions build
+CONFIG_DIR=./config backd-server functions build
 # Or in Deno's image, without installing Deno:
 docker run --rm -v "$PWD/config:/config" -v "$(command -v backd):/usr/local/bin/backd:ro" \
-  -e CONFIG_DIR=/config docker.io/denoland/deno:alpine-2.9.8 backd functions build
+  -e CONFIG_DIR=/config docker.io/denoland/deno:alpine-2.9.8 backd-server functions build
 
 docker compose up --build
 ```
@@ -102,7 +102,7 @@ invoke: "true"
 Rebuild, restart `backd` (it reads the bundles at startup), and call it:
 
 ```sh
-CONFIG_DIR=./config backd functions build
+CONFIG_DIR=./config backd-server functions build
 docker compose up -d --build backd
 
 curl -X POST http://127.0.0.1:8080/v1/shop/main/_func/hello -H 'Content-Type: application/json' -d '{"name": "Ada"}'
@@ -118,7 +118,7 @@ While you edit function code, run `backd` locally with `BACKD_DEV=true` instead:
 Create the first administrator, sign in, and read the function's history and logs:
 
 ```sh
-docker compose exec backd /backd bootstrap --realm shop --email ops@example.com
+docker compose exec backd backd-server bootstrap --realm shop --email ops@example.com
 backd login --realm shop --url http://127.0.0.1:8080 --email ops@example.com
 
 backd functions history --function shop/main/hello

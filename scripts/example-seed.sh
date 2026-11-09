@@ -8,7 +8,7 @@
 # factor — with the repository's own JS client, and prints the credentials document on stdout,
 # which this writes to $SEED_DIR/credentials.json (gitignored, served by nginx at /local-seed/
 # and rendered by the welcome page at /). The one thing only the API host can do stays here:
-# `backd bootstrap`, the local command that creates the first administrator of a realm.
+# `backd-server bootstrap`, the local command that creates the first administrator of a realm.
 #
 # Environment: ORIGIN (https://localhost:8443), SEED_DIR (./local-seed),
 # BACKD_EXEC — the command that runs the backd binary in the stack's API container — and

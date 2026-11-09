@@ -48,7 +48,7 @@ docker compose run --rm --no-deps backd functions build
 # The Shelf's pins keep private notes encrypted (tutorial chapter 25): backd refuses to start
 # without the key, so it is created first, offline.
 docker compose run --rm --no-deps backd provision >/dev/null
-docker compose run --rm --no-deps backd secret create --direct --realm shelf --type key --generate --name SHELF_NOTES --skip-existing >/dev/null
+docker compose run --rm --no-deps backd secret create --realm shelf --type key --generate --name SHELF_NOTES --skip-existing >/dev/null
 # The workshop's public gallery keeps its pictures in the stack's MinIO (a bucket anyone can read objects from).
 docker compose up -d --no-deps minio minio-setup minio-public-setup minio-public-policy
 docker compose up -d --no-deps backd executor egress nginx prometheus grafana

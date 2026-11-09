@@ -79,7 +79,7 @@ func (p *Provisioner) warnUnusedPreImages(db *registry.Database, existing map[st
 		if !ok || c.NeedsEvents() || !preImagesEnabled(existing[name]) {
 			continue
 		}
-		p.Log.Warn("pre-change images are enabled on a collection that no longer needs them: they cost storage and writes; `backd provision --disable-preimages` removes them for good",
+		p.Log.Warn("pre-change images are enabled on a collection that no longer needs them: they cost storage and writes; `backd-server provision --disable-preimages` removes them for good",
 			"database", db.MongoName, "collection", name)
 	}
 }

@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -16,10 +15,8 @@ import (
 	"github.com/fernandezvara/kli"
 
 	"github.com/fernandezvara/backd/internal/adminclient"
-	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/internal/registry"
-	"github.com/fernandezvara/backd/internal/server"
 )
 
 // adminUser is a user as the admin API returns it.
@@ -306,7 +303,7 @@ func userDelete(c *userCtx) error {
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	fmt.Fprintf(out, "still running after %s: a worker (backd worker, or serve --with-worker) must be up to finish it; check `backd audit --action user.erased`\n", wait)
+	fmt.Fprintf(out, "still running after %s: a worker (backd-server worker, or serve --with-worker) must be up to finish it; check `backd audit --action user.erased`\n", wait)
 	return nil
 }
 
@@ -460,7 +457,7 @@ func userRole(c *userCtx, verb, role string) error {
 		fmt.Fprintf(c.uio.Stderr, "warning: this assignment is stored only in the database. If the realm is rebuilt from its config, it won't come back.\n"+
 			"To keep it, list %s under roles.%s.users in %s/realm.yaml.\n", u.Email, role, realm)
 	case verb == "remove" && slices.Contains(c.local.Roles[role].Users, u.Email):
-		fmt.Fprintf(c.uio.Stderr, "warning: %s/realm.yaml assigns this role to %s, so it will be assigned again at the next `backd serve` or `backd provision`.\n"+
+		fmt.Fprintf(c.uio.Stderr, "warning: %s/realm.yaml assigns this role to %s, so it will be assigned again at the next `backd-server serve` or `backd-server provision`.\n"+
 			"Remove %s from roles.%s.users in realm.yaml too.\n", realm, u.Email, u.Email, role)
 	}
 	return nil
@@ -503,7 +500,7 @@ func userNetworks(c *userCtx) error {
 		if c.local == nil {
 			fmt.Fprintf(c.uio.Stderr, "note: if %s/realm.yaml sets networks for %s, they are restored at the next start.\n", c.t.realm, u.Email)
 		} else if _, ok := c.local.UserNetworks[u.Email]; ok {
-			fmt.Fprintf(c.uio.Stderr, "warning: %s/realm.yaml sets networks for %s, so they will be restored at the next `backd serve` or `backd provision`. Change them in realm.yaml too.\n", c.t.realm, u.Email)
+			fmt.Fprintf(c.uio.Stderr, "warning: %s/realm.yaml sets networks for %s, so they will be restored at the next `backd-server serve` or `backd-server provision`. Change them in realm.yaml too.\n", c.t.realm, u.Email)
 		}
 	}
 	return nil
@@ -644,42 +641,6 @@ func userMFAReset(c *userCtx) error {
 	}
 	fmt.Fprintf(c.uio.Stdout, "second factor of %s removed; their sessions ended\n", u.Email)
 	return nil
-}
-
-// userMFAResetLocal is the break-glass form: it acts on the database directly, like
-// `backd bootstrap`, so an operator can recover the only administrator of a realm.
-func userMFAResetLocal(c *kli.CommandContext) error {
-	if !cmdutil.Flag(c, "yes") {
-		return errors.New("resetting a second factor ends all of the user's sessions and can't be undone: add --yes to confirm")
-	}
-	ctx := context.Background()
-	uio := cmdutil.IOOf(c)
-	a, err := server.Setup(ctx, c.Getenv, uio.Stderr)
-	if err != nil {
-		return err
-	}
-	defer a.Close()
-	users, err := a.UsersOf(ctx, cmdutil.Str(c, "realm"))
-	if err != nil {
-		return err
-	}
-	u, err := users.Find(ctx, cmdutil.Str(c, "email"))
-	if err != nil {
-		return fmt.Errorf("user not found: %s", cmdutil.Str(c, "email"))
-	}
-	ctx = auth.WithAuditSource(ctx, func() auth.AuditSource { return auth.AuditSource{Actor: auth.ActorInstance} })
-	if err := users.ResetMFA(ctx, u.ID, ""); err != nil {
-		return mfaResetError(u.Email, err)
-	}
-	fmt.Fprintf(uio.Stdout, "second factor of %s removed; their sessions ended (audited as %s)\n", u.Email, auth.ActorInstance)
-	return nil
-}
-
-func mfaResetError(email string, err error) error {
-	if errors.Is(err, auth.ErrMFANotEnabled) {
-		return fmt.Errorf("%s has no second factor", email)
-	}
-	return err
 }
 
 // userExport handles `backd user export`: it asks for the export of a user's personal data, waits

@@ -46,14 +46,14 @@ writes a `backd.d.ts` into each database's `_functions/` folder. A function wrap
 
 `ctx.admin.config.set` exists only because `function.yaml` says `config: write`, and its keys are the configuration's paths: `"maintenance.enabld"` is an error. The same holds for `ctx.input` (from `input.schema.json`), `ctx.call` (only functions listed in `calls:`), `ctx.email` and `ctx.push` (only when declared) and the collections' documents. The name is checked at startup: a `defineFunction` that isn't the function's own location stops `backd` and says which name to use.
 
-`defineFunction` returns its handler unchanged, so tests call it like before. `deno.json` maps `@backd/functions` to the small module in the project's hidden `.backd/` folder, which is what `deno test` and the editor read; `backd functions build` needs no setup at all.
+`defineFunction` returns its handler unchanged, so tests call it like before. `deno.json` maps `@backd/functions` to the small module in the project's hidden `.backd/` folder, which is what `deno test` and the editor read; `backd-server functions build` needs no setup at all.
 
 ## Watch it follow a change
 
 Run `backd` in dev mode and edit a schema:
 
 ```sh
-CONFIG_DIR=./config BACKD_DEV=true HTTP_ADDR=127.0.0.1:8080 backd serve
+CONFIG_DIR=./config BACKD_DEV=true HTTP_ADDR=127.0.0.1:8080 backd-server serve
 ```
 
 Add `"pinned": { "type": "boolean" }` to `config/shelf/main/assets/schema.json` and save. The log says `config reloaded` and `function types updated`: `backd.d.ts` has `pinned` in `MainAssets`, so `asset.pinned` type-checks in `export` with no restart. A schema that doesn't validate is refused instead, the previous config keeps serving, and the realm's configuration view in the admin UI shows why.

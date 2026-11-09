@@ -264,11 +264,11 @@ func TestSourceHashAndBundles(t *testing.T) {
 		t.Fatal("source hash not stable")
 	}
 
-	if err := reg.CheckBundles(); err == nil || !strings.Contains(err.Error(), "functions are not built: run `backd functions build` (for shop/app)") {
+	if err := reg.CheckBundles(); err == nil || !strings.Contains(err.Error(), "functions are not built: run `backd-server functions build` (for shop/app)") {
 		t.Errorf("not built: %v", err)
 	}
 
-	// A build, as `backd functions build` writes it.
+	// A build, as `backd-server functions build` writes it.
 	bundle := []byte("export default () => 1;\n")
 	sum := sha256.Sum256(bundle)
 	writeBuild := func(m Manifest) {

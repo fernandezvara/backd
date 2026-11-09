@@ -76,15 +76,15 @@ func (p *Provisioner) verifyFingerprint(ctx context.Context) error {
 		}
 	}
 	if len(problems) > 0 {
-		return fmt.Errorf("%w: this instance's config is %s, but\n  %s\nprovision this config (`backd provision`) or deploy the config that was provisioned",
+		return fmt.Errorf("%w: this instance's config is %s, but\n  %s\nprovision this config (`backd-server provision`) or deploy the config that was provisioned",
 			ErrConfigMismatch, p.Fingerprint, strings.Join(problems, "\n  "))
 	}
 	return nil
 }
 
-// InstancesCollection holds, in the deployment database, one document per running `backd
-// serve`: the realms it serves and when it last said so. An offline import (`backd import
-// --direct`) refuses to run while an instance serving the realm is alive.
+// InstancesCollection holds, in the deployment database, one document per running `backd-server
+// serve`: the realms it serves and when it last said so. An offline import (`backd-server
+// import`) refuses to run while an instance serving the realm is alive.
 const InstancesCollection = "instances"
 
 // InstanceLiveFor is how long after its last heartbeat an instance counts as running.

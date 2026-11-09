@@ -22,7 +22,7 @@ const EgressHelp = `Runs backd's egress role: the only way a function process re
 network. An HTTP forward/CONNECT proxy that resolves every target itself
 and refuses loopback, private, link-local (metadata), CGNAT, multicast and
 unspecified addresses; each function process authenticates with a token
-scoped to its own invocation (minted by ` + "`backd executor`" + `), so the proxy
+scoped to its own invocation (minted by ` + "`backd-server executor`" + `), so the proxy
 enforces that invocation's allowlist too.
 
 Environment:

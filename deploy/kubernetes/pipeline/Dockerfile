@@ -15,13 +15,13 @@ FROM ghcr.io/fernandezvara/backd-executor:${BACKD_VERSION} AS build
 USER root
 ENV CONFIG_DIR=/config HOME=/tmp DENO_DIR=/tmp/deno
 COPY config /config
-RUN /usr/local/bin/backd functions build
+RUN /usr/local/bin/backd-server functions build
 RUN /usr/local/bin/backd config check
 
 # The deployable image has no Deno and no shell: it only reads the configuration.
 FROM ghcr.io/fernandezvara/backd:${BACKD_VERSION}
 COPY --from=build /config /config
 ENV CONFIG_DIR=/config
-# Checked again in the image that will run: the fingerprint printed here is the one `backd provision`
+# Checked again in the image that will run: the fingerprint printed here is the one `backd-server provision`
 # records and the pods verify.
 RUN ["/backd", "config", "check"]

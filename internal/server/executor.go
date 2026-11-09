@@ -32,7 +32,7 @@ Environment:
   EXECUTOR_DIR             writable directory for the bundle cache
                            (default: a backd-executor directory in the temp dir)
   EXECUTOR_MAX_PROCESSES   functions running at once (default 64)
-  EXECUTOR_PROXY           backd egress's base URL (e.g. http://backd-egress:3128);
+  EXECUTOR_PROXY           backd-server egress's base URL (e.g. http://backd-egress:3128);
                            without it, function processes get no outbound
                            network beyond --allow-net on this host
   BACKD_EGRESS_KEY         required with EXECUTOR_PROXY (32+ characters): signs
@@ -41,14 +41,14 @@ Environment:
   LOG_LEVEL                debug, info, warn or error (default info)
 
 It must only be reachable by backd, and reach only backd's internal
-listener and backd egress.
+listener and backd-server egress.
 `
 
 // executorSupported is false where the executor can't enforce its limits
 // (anything but Linux); a variable so a test can cover the message.
 var executorSupported = executor.Supported
 
-const executorUnsupported = "backd executor runs only on Linux: it needs process limits and /proc that " +
+const executorUnsupported = "backd-server executor runs only on Linux: it needs process limits and /proc that " +
 	"other systems don't have. Run it with the backd-executor container image (or under WSL2 on Windows); " +
 	"serve, worker, egress and the command line run on any system"
 

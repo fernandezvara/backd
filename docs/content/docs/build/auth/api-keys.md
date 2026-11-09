@@ -72,7 +72,7 @@ A leaked key gives full access to the realm until it's revoked or expires, so gi
 4. **Revoke at once** when a key may have leaked, or when the service using it is retired or its operator leaves.
 5. **Keep one key per service**, never a shared one, so revoking one doesn't break the others.
 
-At startup, `backd serve` helps enforce this. For each realm it logs:
+At startup, `backd-server serve` helps enforce this. For each realm it logs:
 
 - a `WARN` line listing keys that never expire;
 - a `WARN` line listing keys that expire within 14 days;

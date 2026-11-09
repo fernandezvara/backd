@@ -13,7 +13,7 @@ A pin (chapter 20) has a `note` the whole team reads. Sometimes the person who p
 Encrypted fields use a **key you hold a copy of**. Create it, with the stack from the previous chapters running:
 
 ```sh
-docker compose exec backd /backd secret create --direct --realm shelf --type key --generate --name SHELF_NOTES
+docker compose exec backd backd-server secret create --realm shelf --type key --generate --name SHELF_NOTES
 ```
 
 ```
@@ -22,7 +22,7 @@ Key SHELF_NOTES created, fingerprint SHELF_NOTES:9f2c41d0.
 This is the only time the key is shown. Store it somewhere safe outside backd: if it is lost, every value encrypted with it is lost.
 ```
 
-The key is printed once. Copy it to your password manager now, together with the fingerprint, which lets you check later that a saved copy is the right one. `--direct` works on MongoDB and `config/` straight from the command, which is why it needs no sign-in: it is also how you create a key `backd` refuses to start without.
+The key is printed once. Copy it to your password manager now, together with the fingerprint, which lets you check later that a saved copy is the right one. `backd-server` works on MongoDB and `config/` straight from the command, which is why it needs no sign-in: it is also how you create a key `backd` refuses to start without.
 
 {{< hint warning >}}
 Nothing shows this key again: not the API, the command line or the admin interface. If you lose it **and** `backd` loses its own sealed copy, the notes are gone for good. Save it before you use it.
@@ -65,7 +65,7 @@ Pin something with a private note as one member, then look at it as another:
 A key you have copied around, or an employee who left, is a reason to replace it. Replacing it is **instant**: the key only protects the keys that encrypt the notes, so nothing in the database is rewritten.
 
 ```sh
-docker compose exec backd /backd secret rotate --direct --realm shelf --name SHELF_NOTES --generate
+docker compose exec backd backd-server secret rotate --realm shelf --name SHELF_NOTES --generate
 ```
 
 You get the new key once, with both fingerprints, and every pin still reads exactly as before (its `_meta.version` didn't move). Keep your **old** copy for backups made before today: a dump needs the key that was current when it was taken. See [Field keys](../../build/configuration/field-keys/#rotate-a-key) for when a rotation is not enough.
@@ -75,8 +75,8 @@ You get the new key once, with both fingerprints, and every pin still reads exac
 An export is where "controlled by the developer" becomes concrete: the server **never decrypts for an export**, so what you get is ciphertext unless you supply the key, on your machine:
 
 ```sh
-docker compose exec backd /backd export --direct --realm shelf --db main --collection pins --no-files --out /tmp/pins
-docker compose exec backd /backd export --direct --realm shelf --db main --collection pins --no-files --out /tmp/pins-open \
+docker compose exec backd backd-server export --realm shelf --db main --collection pins --no-files --out /tmp/pins
+docker compose exec backd backd-server export --realm shelf --db main --collection pins --no-files --out /tmp/pins-open \
   --field 'private_notes=key:3q2-7wXk…'
 docker compose cp backd:/tmp/pins-open/main/pins.jsonl .
 ```

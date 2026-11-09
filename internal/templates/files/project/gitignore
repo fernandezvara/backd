@@ -1,7 +1,7 @@
 # Generated secrets for the local stack (compose reads it automatically).
 .env
 
-# Local build artifacts (rebuilt by `backd functions build`; CI rebuilds
+# Local build artifacts (rebuilt by `backd-server functions build`; CI rebuilds
 # them too, so they don't need to be committed).
 config/*/*/_functions/.build/
 

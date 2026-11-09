@@ -128,7 +128,7 @@ func typesCommand(c *kli.CommandContext) error {
 }
 
 func typesFromConfig(c *kli.CommandContext, realm, db, lang, pkg string) (*typegen.Output, error) {
-	dir, err := configDir(c)
+	dir, err := cmdutil.ConfigDir(c)
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +188,7 @@ func unmarshalInfo(b []byte) (typegen.Info, error) {
 // functionTypesCommand handles `backd types --functions`: it writes backd.d.ts into each
 // functions project of the realm, or with --check says which are missing or stale.
 func functionTypesCommand(c *kli.CommandContext, realm string, check bool) error {
-	dir, err := configDir(c)
+	dir, err := cmdutil.ConfigDir(c)
 	if err != nil {
 		return err
 	}

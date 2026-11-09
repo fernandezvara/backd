@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/fernandezvara/backd/internal/registry"
 	"maps"
 	"slices"
+
+	"github.com/fernandezvara/backd/internal/registry"
 )
 
 // ErrUndeclaredRole means a role isn't declared in the realm's realm.yaml.

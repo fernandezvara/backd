@@ -160,8 +160,8 @@ echo "--- first administrator and API keys"
 # bootstrap writes the first administrator with backd's own least-privilege
 # MongoDB user; from then on the CLI works through the API. The ops image
 # has the CLI and reaches backd directly on the data network.
-printf 'dev-p4ssw0rd!\n' | compose exec -T backd /backd bootstrap --realm blog --email ops@example.com >/dev/null 2>&1
-out=$(printf 'x\n' | compose exec -T backd /backd bootstrap --realm blog --email eve@example.com 2>&1 || true)
+printf 'dev-p4ssw0rd!\n' | compose exec -T backd backd-server bootstrap --realm blog --email ops@example.com >/dev/null 2>&1
+out=$(printf 'x\n' | compose exec -T backd backd-server bootstrap --realm blog --email eve@example.com 2>&1 || true)
 bootstrap_refused() { printf '%s' "$out" | grep -q 'already has an administrator'; }
 check "bootstrap refuses once the realm has an administrator" bootstrap_refused
 # admin_cli runs backd commands in the ops image as ops@example.com: logs
@@ -184,7 +184,7 @@ echo "--- functions: executor, egress and worker (network placement, F4)"
 # and API key, then one call proving the executor's network isolation from
 # a real function in this stack's own topology (docs: Configuration ->
 # Functions -> "Egress: the network allowlist, completed").
-printf 'dev-p4ssw0rd!5\n' | compose exec -T backd /backd bootstrap --realm netprobe --email np@example.com >/dev/null 2>&1
+printf 'dev-p4ssw0rd!5\n' | compose exec -T backd backd-server bootstrap --realm netprobe --email np@example.com >/dev/null 2>&1
 netprobe_key=$(compose run --rm -T --no-deps -e BACKD_URL=http://backd-admin:8080 -e BACKD_CREDENTIALS=/tmp/np-credentials provision sh -c \
   "printf 'dev-p4ssw0rd!5\n' | backd login --realm netprobe --email np@example.com >/dev/null && printf 'dev-p4ssw0rd!5\n' | backd apikey create --realm netprobe --name probe --expires 1d" \
   2>/dev/null | grep -o 'bdk_[A-Za-z0-9_-]*')
@@ -268,7 +268,7 @@ echo "--- PROVISION_MODE=verify"
 mongo_as "$root_uri" 'db.getSiblingDB("blog__main").posts.dropIndexes()' >/dev/null
 # A second backd with the same settings, as after a restart.
 out=$(compose run --rm -T --no-deps backd 2>&1 || true)
-config_mismatch_refused() { printf '%s' "$out" | grep -q 'MongoDB does not match the config (run .backd provision.)'; }
+config_mismatch_refused() { printf '%s' "$out" | grep -q 'MongoDB does not match the config (run .backd-server provision.)'; }
 check "backd refuses to start when MongoDB differs from the config" config_mismatch_refused
 compose stop backd >/dev/null 2>&1
 check "while backd is down, nginx answers 503 with backd's error envelope" \

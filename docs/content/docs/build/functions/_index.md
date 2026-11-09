@@ -63,13 +63,13 @@ This function, and every other one quoted in this section, is in [`examples/conf
                      │
               worker (async jobs and cron schedules) ── also uses the executor
                                                                │  network: only what the function
-                                                               ▼  declares, through backd egress
+                                                               ▼  declares, through backd-server egress
 ```
 
 - **`backd`** authenticates the caller, applies the function's `invoke` rule, validates input and output, and answers.
 - **The executor** starts one Deno process per call and stops it at its deadline. It never sees `CONFIG_DIR`, MongoDB or the signing keys.
-- **A worker** (`backd worker`, or `backd serve --with-worker`) claims async jobs and creates the runs of scheduled functions. Async jobs and cron only happen while at least one worker runs.
-- **`backd egress`** is the only way a function reaches the outside network, and only the hosts it declares.
+- **A worker** (`backd-server worker`, or `backd-server serve --with-worker`) claims async jobs and creates the runs of scheduled functions. Async jobs and cron only happen while at least one worker runs.
+- **`backd-server egress`** is the only way a function reaches the outside network, and only the hosts it declares.
 
 ## What `backd` enforces for you
 

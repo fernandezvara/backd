@@ -48,7 +48,7 @@ AGENTS.md                  the repo guide AI coding assistants read
 
 ## 3. Run it
 
-The generated `compose.yaml` runs MongoDB 8.2 (a single-node replica set), `backd serve --with-worker` (the API plus the worker that runs async jobs and schedules) in dev mode, the functions executor, egress and MinIO. All backd services run the released `backd-executor` image — it ships Deno, which dev mode needs to re-bundle functions on save; nothing is compiled or built.
+The generated `compose.yaml` runs MongoDB 8.2 (a single-node replica set), `backd-server serve --with-worker` (the API plus the worker that runs async jobs and schedules) in dev mode, the functions executor, egress and MinIO. All backd services run the released `backd-executor` image — it ships Deno, which dev mode needs to re-bundle functions on save; nothing is compiled or built.
 
 **Docker Desktop** (macOS, Windows): it ships the Compose plugin, so the same commands below work in any terminal where `docker` is on the path. Once started, the stack appears in the Dashboard under **Compose** — one project per `compose.yaml` — where you can watch each service's logs, restart a service or stop the whole stack. On Linux, plain Docker Engine plus the Compose plugin does the same.
 
@@ -73,7 +73,7 @@ docker compose up
 `backd` listens on <http://127.0.0.1:8080>, and `BACKD_DEV=true` makes it follow `config/` live: a saved change reloads in a moment, functions re-bundle automatically. Any `backd` command also runs in the stack: `docker compose exec backd /backd <command>` inside the running API container, or `docker compose run --rm backd <command>` for a one-off container (`docker compose run --rm backd version` needs the three secrets set, like `up`). Create the realm's first administrator (it asks for a password):
 
 ```sh
-docker compose exec backd /backd bootstrap --realm demo --email me@example.com
+docker compose exec backd backd-server bootstrap --realm demo --email me@example.com
 ```
 
 Sign in with the CLI — the template's `admin` role requires a second factor, so the first login enrolls an authenticator app — and create an API key for calls:
@@ -124,9 +124,9 @@ Dev mode does the reload for you — there is no rebuild step:
 mkdir config && export CONFIG_DIR=$PWD/config
 backd template realm --realm demo --sample
 export MONGO_URI='mongodb://localhost:27017/?replicaSet=rs0'   # a single-node replica set
-backd provision
-backd bootstrap --realm demo --email me@example.com          # the first administrator; asks for a password
-HTTP_ADDR=127.0.0.1:9090 backd serve &
+backd-server provision
+backd-server bootstrap --realm demo --email me@example.com          # the first administrator; asks for a password
+HTTP_ADDR=127.0.0.1:9090 backd-server serve &
 backd login --realm demo --url http://127.0.0.1:9090 --email me@example.com
 KEY=$(backd apikey create --realm demo --name local --expires 1d)
 curl http://127.0.0.1:9090/v1/demo/main/posts -H "Authorization: Bearer $KEY"
@@ -145,9 +145,9 @@ curl http://127.0.0.1:9090/v1/demo/main/posts -H "Authorization: Bearer $KEY"
 | `backd rules test` | Run each collection's `rules.test.yaml` without a database (see [Testing rules](../auth/rules/#testing-rules)) |
 | `backd databases [--collections]` | Print the MongoDB databases (or collections) the config uses |
 | `backd types`, `backd openapi` | Generate TypeScript types or an OpenAPI document from a realm (see [Clients](../clients/types/)) |
-| `backd functions build\|invoke\|history\|logs\|jobs` | Bundle, call and inspect [server-side functions](../functions/) |
+| `backd-server functions build\|invoke\|history\|logs\|jobs` | Bundle, call and inspect [server-side functions](../functions/) |
 
-…and `backd bootstrap` and `backd login` for the first administrator and a session, as above. Administering a realm — users, API keys, organizations, secrets, the audit trail — is in [Command-line administration](../../operate/administration/cli/), which covers every command.
+…and `backd-server bootstrap` and `backd login` for the first administrator and a session, as above. Administering a realm — users, API keys, organizations, secrets, the audit trail — is in [Command-line administration](../../operate/administration/cli/), which covers every command.
 
 {{< hint note >}}
 **What happens in the shadows.** The generated `compose.yaml` mirrors the repository's own development stack: same network shape (the executor can only reach `backd` and egress), `serve --with-worker`, dev-mode bundling. That stack — `make dev`, live config reload, Grafana, the local certificate authority — is for working on `backd` itself and is documented in [Contribute → Local development](../../contribute/local-development/).

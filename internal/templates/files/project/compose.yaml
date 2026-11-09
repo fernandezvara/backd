@@ -108,7 +108,7 @@ services:
   backd:
     image: *backd-image
     pull_policy: missing
-    entrypoint: ["/usr/local/bin/backd"]
+    entrypoint: ["/usr/local/bin/backd-server"]
     command: ["serve", "--with-worker"]
     user: *dev-user
     environment:
@@ -142,7 +142,7 @@ services:
   egress:
     image: *backd-image
     pull_policy: missing
-    entrypoint: ["/usr/local/bin/backd"]
+    entrypoint: ["/usr/local/bin/backd-server"]
     command: ["egress"]
     environment:
       BACKD_EGRESS_KEY: ${EGRESS_KEY:?EGRESS_KEY required - see README.md (Develop locally)}

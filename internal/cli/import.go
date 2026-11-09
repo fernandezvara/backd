@@ -5,7 +5,6 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -92,7 +91,7 @@ func (t *importTotals) add(part string, base int, a importChunkAnswer) {
 // target realm's configuration, and only then uploads the files and writes the documents.
 // Documents keep their ids and _meta, so running it again after an interruption finishes the
 // job: what was written already is found identical and left alone.
-func importAction(c *kli.CommandContext) error {
+func importAction(c *kli.CommandContext, o Opener) error {
 	mode := cmdutil.Str(c, "mode")
 	if mode != "create" && mode != "skip" && mode != "replace" {
 		return cmdutil.UsageErr(fmt.Errorf("--mode: want create, skip or replace, got %q", mode))
@@ -122,7 +121,7 @@ func importAction(c *kli.CommandContext) error {
 	}
 	var ek *authcore.SecretCipher
 	if spec := cmdutil.Str(c, "auth-key"); spec != "" {
-		text, err := readKeySource(spec, c.Getenv, stderr)
+		text, err := cmdutil.ReadKeySource(spec, c.Getenv, stderr)
 		if err != nil {
 			return cmdutil.UsageErr(fmt.Errorf("--auth-key: %w", err))
 		}
@@ -136,13 +135,14 @@ func importAction(c *kli.CommandContext) error {
 	if m.Flags.Auth && ek == nil {
 		fmt.Fprintln(stderr, "note: no --auth-key: users, identities, organizations and teams are imported, but without second factors, push devices and Apple tokens (users enroll again at their next sign-in)")
 	}
-	t, closeT, d, err := openTarget(c)
+	s, err := o.Open(c)
 	if err != nil {
 		return err
 	}
-	defer closeT()
-	if d != nil && !dry {
-		if err := d.refuseIfServed(context.Background(), cmdutil.Flag(c, "force"), stderr); err != nil {
+	defer s.Close()
+	t := s.t
+	if s.BeforeWrite != nil && !dry {
+		if err := s.BeforeWrite(c); err != nil {
 			return err
 		}
 	}

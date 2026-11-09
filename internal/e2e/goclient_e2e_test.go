@@ -12,7 +12,6 @@ import (
 
 	"github.com/rs/xid"
 
-	"github.com/fernandezvara/backd/internal/cli"
 	"github.com/fernandezvara/backd/internal/cmdtest"
 	"github.com/fernandezvara/backd/internal/mongodb"
 	"github.com/fernandezvara/backd/internal/server"
@@ -46,7 +45,7 @@ func TestGoClientEndToEnd(t *testing.T) {
 		}
 	})
 	var provisionErr strings.Builder
-	if code := cli.Run([]string{"provision"}, getenv, nil, io.Discard, &provisionErr); code != 0 {
+	if code := runAny([]string{"provision"}, getenv, nil, io.Discard, &provisionErr); code != 0 {
 		t.Fatalf("provision failed: %s", &provisionErr)
 	}
 	a, err := server.Setup(ctx, getenv, io.Discard)

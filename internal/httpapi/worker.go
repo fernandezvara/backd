@@ -24,8 +24,8 @@ import (
 // trying to claim another job, after finding none to claim.
 const workerPollInterval = 250 * time.Millisecond
 
-// Worker claims and runs async jobs (roadmap F11): `backd worker`, or
-// `backd serve --with-worker` in the same process. It never listens: it
+// Worker claims and runs async jobs (roadmap F11): `backd-server worker`, or
+// `backd-server serve --with-worker` in the same process. It never listens: it
 // reaches the executor and backd's own API (ctx.db) exactly like a
 // function's own caller would, reusing the same bundle resolution,
 // callback construction and invocation recording sync calls use.

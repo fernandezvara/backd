@@ -47,7 +47,7 @@ type configCheckProblem struct {
 // disk, and reports what it found. Every file of the realm is read and validated, not just
 // the drafts, since a change can break another file (a rule naming a field a schema no
 // longer has). It runs on a copy: nothing on the server is changed, and nothing is applied.
-// Function bundles are built by `backd functions build`, outside this check.
+// Function bundles are built by `backd-server functions build`, outside this check.
 func (a *adminAPI) checkConfig(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "realm")
 	if _, ok := a.reg.Realms[name]; !ok {

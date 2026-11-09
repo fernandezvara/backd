@@ -29,7 +29,7 @@ export CALLBACK_KEY=$(openssl rand -base64 32)
 export EGRESS_KEY=$(openssl rand -base64 32)
 docker compose up --build -d          # MongoDB + backd + the functions executor
 
-docker compose exec backd /backd bootstrap --realm demo --email me@example.com
+docker compose exec backd backd-server bootstrap --realm demo --email me@example.com
 backd login --realm demo --url http://127.0.0.1:8080 --email me@example.com
 KEY=$(backd apikey create --realm demo --name local --expires 1d)   # asks for your password again
 
@@ -47,7 +47,7 @@ To explore instead, this checkout ships example realms and applications on a loc
 BACKD_VERSION=local make dev-build && BACKD_VERSION=local make dev-examples   # https://localhost:8443 — the apps index is at /example/
 ```
 
-`BACKD_VERSION=local` builds the images from your checkout, which the examples need when they use something newer than the last release. The stack creates (and renews) a local CA in `docker/certs/` and prints how to trust it. Under [`examples/config`](examples/config), the `shop` realm needs no key (`auth: disabled` — never expose such a realm) and `blog` answers reads to anyone while writes want a user or an API key; `make dev-backd ARGS='bootstrap --realm blog --email <email>'` creates the first administrator.
+`BACKD_VERSION=local` builds the images from your checkout, which the examples need when they use something newer than the last release. The stack creates (and renews) a local CA in `docker/certs/` and prints how to trust it. Under [`examples/config`](examples/config), the `shop` realm needs no key (`auth: disabled` — never expose such a realm) and `blog` answers reads to anyone while writes want a user or an API key; `make dev-server ARGS='bootstrap --realm blog --email <email>'` creates the first administrator.
 
 ## Documentation
 
@@ -71,7 +71,7 @@ Report vulnerabilities per [SECURITY.md](SECURITY.md). The [security model](http
 ```sh
 make test         # full test suite in docker (same as CI)
 make test-local   # tests that need no external services
-make build        # binary in bin/backd
+make build        # bin/backd (the CLI) and bin/backd-server
 make docs-serve   # documentation site at http://localhost:1313/backd/
 make example      # backd's own stack, built from your checkout: API, docs (live reload), example apps
 ```

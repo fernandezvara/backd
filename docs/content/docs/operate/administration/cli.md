@@ -1,14 +1,14 @@
 ---
-title: "Command-line administration"
-description: "Create a realm's first administrator with backd bootstrap, then manage users and API keys from the command line through the admin API."
+title: "The backd CLI"
+description: "backd, the command line for developers and administrators: the project tools on CONFIG_DIR, and a running backd's admin API for users, keys and data."
 icon: "terminal"
 weight: 505
 toc: true
 ---
 
-The `backd` binary is also the command-line client for administering a realm. `backd user` and `backd apikey` don't touch MongoDB: they call the realm's [admin API](../admin/) on a running `backd`, as an administrator. They never need database credentials, and every change they make goes through the same checks as any other admin request, including [network restrictions](../../../build/configuration/realm/#network-restrictions).
+backd ships two binaries. **`backd`**, this page, is the command line for developers and administrators: the project tools that need only `CONFIG_DIR` (templates, checks, rules tests, types), and the commands that manage a running `backd` through a realm's [admin API](../admin/), as an administrator. It never opens MongoDB and never runs Deno, so it needs no database credentials, and every change it makes goes through the same checks as any other admin request, including [network restrictions](../../../build/configuration/realm/#network-restrictions). It runs on Linux, macOS and Windows; install it from the [release archives](https://github.com/fernandezvara/backd/releases).
 
-Two commands write to MongoDB directly instead: `backd bootstrap`, which creates a realm's first administrator, and `backd secret rotate-key`, which re-encrypts every realm's [secrets](../../../build/functions/secrets/) under a new master key (see [Secrets](../admin/#secrets)).
+**[`backd-server`](../server/)** runs the server roles (`serve`, `worker`, `executor`, `egress`, `provision`) and the tools that work on MongoDB or run Deno directly, such as `bootstrap`, which creates a realm's first administrator, and `functions build`. Both images carry both binaries.
 
 ## Conventions
 
@@ -20,16 +20,15 @@ Two commands write to MongoDB directly instead: `backd bootstrap`, which creates
 
 | Command | Works on | Needs |
 |---|---|---|
-| `backd serve`, `backd provision` | MongoDB and `CONFIG_DIR` | `CONFIG_DIR`, `MONGO_URI` |
 | `backd template`, `backd databases`, `backd rules test` | `CONFIG_DIR` | `CONFIG_DIR` |
 | `backd types` | `CONFIG_DIR`, or `--from <url>` | `CONFIG_DIR`, or the running instance |
-| `backd functions build\|types` | `CONFIG_DIR` | `CONFIG_DIR` (`build` also needs Deno) |
-| `backd bootstrap --realm <realm> --email <email>` | MongoDB, once per realm | `CONFIG_DIR`, `MONGO_URI`, a provisioned realm |
+| `backd config check\|fingerprint`, `backd functions types` | `CONFIG_DIR` | `CONFIG_DIR` (`config check` also applies the [instance limits](../../../build/configuration/#which-binary-reads-them) set in the environment) |
 | `backd login`, `backd logout`, `backd whoami`, `backd account …` | A running `backd` | Its URL |
 | `backd user …`, `backd apikey …`, `backd data transfer\|assign-org`, `backd orgs list\|show\|create\|set-slug\|owned\|delete\|reactivate\|members\|add-member\|invite\|invitations\|revoke-invitation\|assign-owner\|claims-set\|sso\|sso-set\|sso-delete\|sso-required-off`, `backd push devices\|remove-device\|sends\|test`, `backd audit …`, `backd secret set\|create\|rotate\|list\|delete`, `backd encrypt status\|rekey\|migrate`, `backd functions invoke\|history\|logs\|jobs`, `backd triggers status\|gaps\|resolve`, `backd storage check\|usage\|reconcile`, `backd export`, `backd compliance scope`, `backd consents notify\|record`, `backd app-config get\|set\|reset\|history\|rollback` | A running `backd`, through the [admin API](../admin/) or the function's own route | Its URL, and a stored session or `BACKD_API_KEY` |
-| `backd triggers rescan` | MongoDB, directly, like `backd provision`: it may read a whole collection | `CONFIG_DIR`, `MONGO_URI` |
-| `backd secret rotate-key` | MongoDB, directly (not the admin API) | `CONFIG_DIR`, `MONGO_URI`, `BACKD_SECRETS_KEY`, `BACKD_SECRETS_NEW_KEY` |
+| `backd export-decrypt` | An export package | The field keys |
 | `backd version` | Nothing | Nothing |
+
+What works on MongoDB directly is [`backd-server`'s](../server/): the roles, `bootstrap`, `functions build`, `secret rotate-key`, the break-glass `user mfa-reset`, offline `export` and `import`, and `triggers rescan`.
 
 ## The first administrator
 
@@ -42,10 +41,10 @@ roles:
     admin: true
 ```
 
-Once the realm is provisioned, create its first administrator where `backd` runs, with the same `CONFIG_DIR` and `MONGO_URI`:
+Once the realm is provisioned, create its first administrator with [`backd-server bootstrap`](../server/), where `backd` runs, with the same `CONFIG_DIR` and `MONGO_URI`:
 
 ```sh
-docker compose exec backd /backd bootstrap --realm blog --email ops@example.com
+docker compose exec backd backd-server bootstrap --realm blog --email ops@example.com
 # Password:
 # Repeat password:
 # created ops@example.com (id d3c9ljp8hc2g00b6s1m0) with the admin role "admin" in realm blog
@@ -115,12 +114,12 @@ Commands print the API's error code and message, with a hint when there's someth
 | `404 not_found` on admin commands | The realm doesn't exist or has auth disabled, or the admin API isn't reachable from this network (`admin.allowed_networks`, or a proxy rule such as the production reference's `ADMIN_ALLOW_FROM`) |
 
 {{< hint warning >}}
-Be careful when taking an admin role away from yourself: once no one holds an admin role, only `backd bootstrap` (on a realm without administrators) or an admin API key can manage the realm again.
+Be careful when taking an admin role away from yourself: once no one holds an admin role, only `backd-server bootstrap` (on a realm without administrators) or an admin API key can manage the realm again.
 {{< /hint >}}
 
 ## Every command
 
-`backd help` lists the same commands in the same groups; `backd <command> --help` shows one command's flags.
+`backd help` lists the same commands in the same groups; `backd <command> --help` shows one command's flags. [`backd-server`'s commands](../server/#every-command) have their own page.
 
 **Develop** — for building with `backd` (see also the [quickstart](../../../build/quickstart/)):
 
@@ -132,7 +131,7 @@ Be careful when taking an admin role away from yourself: once no one holds an ad
 | `backd databases [--collections]` | Print the MongoDB databases (or collections) the config uses, one per line (needs only `CONFIG_DIR`; see [least-privilege deployments](../../#least-privilege-deployments)) |
 | `backd types` | Generate a realm's TypeScript types (see [Typing and OpenAPI](../../../build/clients/types/)) |
 | `backd openapi` | Generate a realm's OpenAPI 3.1 document (see [OpenAPI](../../../build/api/openapi/)) |
-| `backd functions build\|invoke\|history\|logs\|jobs` | Bundle the functions with Deno, call one through a running `backd`, and see its recent calls, console output and jobs (see [Calling functions](../../../build/functions/calling/), [Async jobs](../../../build/functions/jobs/)) |
+| `backd functions types\|invoke\|history\|logs\|jobs` | Print the functions' JSDoc types, call one through a running `backd`, and see its recent calls, console output and jobs (see [Calling functions](../../../build/functions/calling/), [Async jobs](../../../build/functions/jobs/)) |
 
 **Session:**
 
@@ -146,12 +145,11 @@ Be careful when taking an admin role away from yourself: once no one holds an ad
 
 | Command | Purpose |
 |---|---|
-| `backd bootstrap --realm <realm> --email <email>` | Create a realm's first administrator (see [The first administrator](#the-first-administrator)) |
 | `backd user <command>` | Manage a realm's users through the admin API (see [Users and passwords](../../../build/auth/users/)) |
 | `backd orgs <command>` | Manage a realm's organizations, members, teams and claims, and their [sign-in connections](../../organization-sign-in/) (`sso`, `sso-set`, `sso-delete`, `sso-required-off`) (see [Organizations](../../../build/organizations/)) |
 | `backd apikey <command>` | Manage a realm's API keys (see [API keys](../../../build/auth/api-keys/)) |
 | `backd push devices\|sends\|test` | See a realm's push devices and send records, and send an audited test push (see [Records and test send](../../../build/push/records/)) |
-| `backd secret set\|create\|rotate\|list\|delete`, `backd secret rotate-key` | Manage [function secrets](../../../build/functions/secrets/) and [field keys](../../../build/configuration/field-keys/) (`create --type key --generate`, or `--value key:\|env:\|file:`; `rotate --generate\|--value\|--resume`); `rotate-key` re-encrypts them under a new master key, on MongoDB directly |
+| `backd secret set\|create\|rotate\|list\|delete` | Manage [function secrets](../../../build/functions/secrets/) and [field keys](../../../build/configuration/field-keys/) (`create --type key --generate`, or `--value key:\|env:\|file:`; `rotate --generate\|--value\|--resume`); `rotate-key` re-encrypts them under a new master key, on MongoDB directly |
 | `backd audit` | Print the realm's [audit trail](../audit/), newest first |
 | `backd data check\|transfer\|assign-org` | Check stored documents against their schemas, move documents between collections, or assign them an organization |
 | `backd storage check\|usage\|reconcile` | Check a realm's [object storage](../../providers/storage/), report its usage, or clean up orphans (see [Keeping storage tidy](../../storage-maintenance/)) |
@@ -160,16 +158,6 @@ Be careful when taking an admin role away from yourself: once no one holds an ad
 | `backd compliance scope` | What a user's [personal data export](../compliance/) covers |
 | `backd consents notify\|record` | Manage the [consents](../../../build/auth/consents/) users accept |
 | `backd app-config get\|set\|reset\|history\|rollback` | The realm's [app configuration](../../../build/configuration/app-config/): values, history, rollback |
-| `backd triggers status\|gaps\|resolve`, `backd triggers rescan` | See and repair what the [trigger dispatcher](../../change-feed/) did; `rescan` writes to MongoDB directly |
-
-**Server:**
-
-| Command | Purpose |
-|---|---|
-| `backd serve [--with-worker]` | Load config, provision or verify MongoDB, serve HTTP; `--with-worker` also runs the worker role (see [Deploying config](../../deploying/)) |
-| `backd provision` | Load config, apply provisioning once and exit |
-| `backd worker` | Claim and run [async jobs](../../../build/functions/jobs/); `WORKER_CONCURRENCY` caps how many run at once |
-| `backd executor` | Run server-side functions for `backd` (needs Deno; see [Executor, workers and egress](../../functions-runtime/)) |
-| `backd egress` | Run the egress role, the executor's only way out (see [Outbound network](../../../build/functions/network/)) |
+| `backd triggers status\|gaps\|resolve` | See what the [trigger dispatcher](../../change-feed/) did, and close a gap (`backd-server triggers rescan` re-emits a collection's changes) |
 
 **General:** `backd help`, `backd version`.

@@ -330,7 +330,7 @@ func (p *Provisioner) verifyTextIndex(ctx context.Context, c *registry.Collectio
 	case have.name != registry.IndexTextName:
 		return []string{fmt.Sprintf("the text index %q wasn't made by backd; drop it so backd can create its own", have.name)}, nil
 	case have.sig != sortedSig(c.Text):
-		return []string{"the text index differs from indexes.json (weights or languages changed); run `backd provision` to rebuild it"}, nil
+		return []string{"the text index differs from indexes.json (weights or languages changed); run `backd-server provision` to rebuild it"}, nil
 	}
 	return nil, nil
 }

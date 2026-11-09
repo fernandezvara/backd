@@ -67,10 +67,7 @@ func TestRunFunctionsArguments(t *testing.T) {
 		{[]string{"functions"}, nil, 0, "Usage: backd functions"},
 		{[]string{"functions", "help"}, nil, 0, "Usage: backd functions"},
 		{[]string{"functions", "deploy"}, nil, 2, `unknown command "deploy"`},
-		{[]string{"functions", "build", "extra"}, nil, 2, "unexpected arguments"},
-		{[]string{"functions", "build", "--force"}, nil, 2, "flag provided but not defined: -force"},
-		{[]string{"functions", "build"}, nil, 1, "CONFIG_DIR is required"},
-		{[]string{"functions", "build"}, map[string]string{"CONFIG_DIR": empty}, 0, "no functions in CONFIG_DIR"},
+		{[]string{"functions", "build"}, nil, 2, `unknown command "build"`},
 		{[]string{"functions", "invoke"}, nil, 2, "--function string (required) -> Not provided"},
 		{[]string{"functions", "invoke", "--function", "acme"}, nil, 2, `want <realm>/<database>/<name>, got "acme"`},
 		{[]string{"functions", "invoke", "--function", "acme/app/hi", "--input", "/nonexistent"}, nil, 1, "no such file or directory"},
@@ -130,27 +127,6 @@ func TestRunTemplateProject(t *testing.T) {
 	} {
 		if code, out := cli(tt.args...); code != tt.code || !strings.Contains(out, tt.want) {
 			t.Errorf("%v: %d %q, want %d %q", tt.args, code, out, tt.code, tt.want)
-		}
-	}
-}
-
-func TestRunExecutorArguments(t *testing.T) {
-	for _, tt := range []struct {
-		args []string
-		env  map[string]string
-		code int
-		want string
-	}{
-		{[]string{"executor", "help"}, nil, 0, "Usage: backd executor"},
-		{[]string{"executor", "extra"}, nil, 2, "unexpected arguments"},
-		{[]string{"executor"}, map[string]string{"DENO": "/nonexistent/deno"}, 1, "can't run /nonexistent/deno"},
-		{[]string{"executor"}, map[string]string{"EXECUTOR_MAX_PROCESSES": "0"}, 1, "EXECUTOR_MAX_PROCESSES must be a positive integer"},
-		{[]string{"executor"}, map[string]string{"LOG_LEVEL": "loud"}, 1, "LOG_LEVEL must be"},
-	} {
-		var out bytes.Buffer
-		code := Run(tt.args, func(k string) string { return tt.env[k] }, nil, &out, &out)
-		if code != tt.code || !strings.Contains(out.String(), tt.want) {
-			t.Errorf("%v: %d %q, want %d %q", tt.args, code, out.String(), tt.code, tt.want)
 		}
 	}
 }

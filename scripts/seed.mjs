@@ -27,7 +27,7 @@
 // through the realm's administrator on invite/closed ones — and sign it in answering
 // every step: consents, TOTP enrollment, a second factor. `plan` prints the seeded
 // full administrator of each realm signup can't create one on, as "realm<TAB>email"
-// lines for `backd bootstrap` (a local command of the API host, not an API).
+// lines for `backd-server bootstrap` (a local command of the API host, not an API).
 //
 // What a sign-in shows only once (the TOTP QR, its secret, the recovery codes) is
 // kept: the credentials document is printed on stdout and the caller writes it in
@@ -110,7 +110,7 @@ const signIn = async (client, realm, email, pw) => {
       const before = stored(realm, email);
       if (!before?.mfa?.secret) {
         warn(`${email} has a second factor but ${prevFile} doesn't hold its secret:`);
-        warn(`mfa-reset it, then seed again: make dev-backd ARGS='user mfa-reset --realm ${realm} --email ${email} --local --yes'`);
+        warn(`mfa-reset it, then seed again: make dev-server ARGS='user mfa-reset --realm ${realm} --email ${email} --yes'`);
         return null;
       }
       res = await client.auth.verifyMfa(
@@ -300,7 +300,7 @@ for (const e of Deno.readDirSync(configDir)) {
   realms[e.name] = s;
 }
 
-// `plan` is the wrapper's input for `backd bootstrap`: the seeded full
+// `plan` is the wrapper's input for `backd-server bootstrap`: the seeded full
 // administrator of every realm signup can't create one on.
 if (Deno.args[0] === "plan") {
   for (const name of Object.keys(realms).sort()) {

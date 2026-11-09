@@ -59,9 +59,6 @@ func (s Secret) Scope() string {
 	return s.Database
 }
 
-// OrgScope is the scope of an organization's secrets.
-func OrgScope(orgID string) string { return "org:" + orgID }
-
 // SecretMeta is a secret without its value, as listed: names, scope and
 // who last changed it, never the value.
 type SecretMeta struct {

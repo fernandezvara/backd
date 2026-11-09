@@ -4,7 +4,7 @@
 //   ctx.input   the request body (checked against input.schema.json, if any)
 //   ctx.user    the caller ({ id, email, email_verified, roles }), or null
 //
-// Build it with `backd functions build` after every change.
+// Build it with `backd-server functions build` after every change.
 
 type Context = {
   input: unknown;

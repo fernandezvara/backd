@@ -5402,7 +5402,7 @@ paths:
         sign-in. Audited as `user.mfa_reset` with the administrator as the actor. Needs the `users`
         area, and an administrator can't reset their own second factor (`403
         self_reset_not_allowed`): ask another administrator, or an operator with
-        `backd user mfa-reset --local`. There is no reset by email.
+        `backd-server user mfa-reset`. There is no reset by email.
       operationId: adminResetUserMFA
       security: [{ apiKey: [] }, { session: [] }]
       responses:
@@ -6336,7 +6336,7 @@ paths:
         disk, and answers what it found. Every file of the realm is read and validated,
         not only the drafts, since a change can break another file (a schema that drops a
         field a rule names). `checked` is how many files the realm has with the drafts.
-        Function bundles are built by `backd functions build` and are not part of it.
+        Function bundles are built by `backd-server functions build` and are not part of it.
         It works on a copy: nothing on the server is changed or applied, and the
         configuration stays a file in a repository. Draft paths are relative to the realm's
         directory (`main/notes/collection.yaml`); a `null` content deletes the file. Needs the

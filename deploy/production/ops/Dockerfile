@@ -1,6 +1,6 @@
 # Operations image for the production reference: the MongoDB tools
 # (mongosh, mongodump, mongorestore), age for encrypting backups, and the
-# backd binary with the same config as the app image (app/Dockerfile), from
+# backd binaries with the same config as the app image (app/Dockerfile), from
 # the same checkout: provisioning records its fingerprint, and backd in
 # verify mode refuses to start if its own differs. Used by the provision,
 # backup and restore jobs; build context is the repository root.
@@ -9,22 +9,23 @@ WORKDIR /src
 COPY go.mod go.sum* ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/backd ./cmd/backd
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/backd ./cmd/backd \
+    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/backd-server ./cmd/backd-server
 
 # Bundles functions/netprobe's Deno source, byte-identical to app/Dockerfile's
 # copy (see its comment): the provision job's fingerprint must match what
 # backd itself loads.
 FROM docker.io/denoland/deno:alpine-2.9.8 AS functions
-COPY --from=build /out/backd /usr/local/bin/backd
+COPY --from=build /out/backd-server /usr/local/bin/backd-server
 COPY examples/config/blog /config/blog
 COPY deploy/production/functions/netprobe /config/netprobe
 ENV CONFIG_DIR=/config
-RUN /usr/local/bin/backd functions build --check
+RUN /usr/local/bin/backd-server functions build --check
 
 FROM docker.io/library/mongo:8.2
 RUN apt-get update && apt-get install -y --no-install-recommends age && rm -rf /var/lib/apt/lists/*
-COPY --from=build /out/backd /usr/local/bin/backd
-RUN ln -s /usr/local/bin/backd /backd
+COPY --from=build /out/backd /out/backd-server /usr/local/bin/
+RUN ln -s /usr/local/bin/backd /backd && ln -s /usr/local/bin/backd-server /backd-server
 # The MinIO client, for storage-setup.sh (MinIO publishes no image of its own now;
 # Chainguard's build has just the binary).
 COPY --from=cgr.dev/chainguard/minio-client:latest /usr/bin/mc /usr/local/bin/mc

@@ -108,7 +108,7 @@ Rebuild and restart (`docker compose run --rm functions-build && docker compose 
 - Publish a draft and read it back: `published_by` is the curator's id. Try to set it from a member session (`PATCH` with `{"published_by": "someone"}`) and the rule answers `403`.
 - Reload the gallery: the new asset's card reads *published by curator@shelf.example*, the old one says nothing. The app (already written for the finished tutorial) turns the id into an address through the `members` directory that chapter 8 fills — so after chapter 8 each curator needs to have signed in once — and shows the line only when `published_by` is there.
 
-That is the safe kind of change: **adding an optional field**. The unsafe kind — making something required that old documents lack — turns those documents read-only until they are migrated, because every write is validated against the *current* schema; [Schema changes](../../build/api/documents/#schema-changes) describes it, and in production the new schema is applied as a deploy step with [`backd provision`](../../operate/deploying/) rather than at startup.
+That is the safe kind of change: **adding an optional field**. The unsafe kind — making something required that old documents lack — turns those documents read-only until they are migrated, because every write is validated against the *current* schema; [Schema changes](../../build/api/documents/#schema-changes) describes it, and in production the new schema is applied as a deploy step with [`backd-server provision`](../../operate/deploying/) rather than at startup.
 
 ## You should see
 

@@ -139,7 +139,7 @@ func (p *Provisioner) Verify(ctx context.Context) error {
 	diffs = append(diffs, sysDiffs...)
 	p.warnUnknownDatabases(ctx)
 	if len(diffs) > 0 {
-		return fmt.Errorf("MongoDB does not match the config (run `backd provision`):\n  %s", strings.Join(diffs, "\n  "))
+		return fmt.Errorf("MongoDB does not match the config (run `backd-server provision`):\n  %s", strings.Join(diffs, "\n  "))
 	}
 	return p.verifyFingerprint(ctx)
 }

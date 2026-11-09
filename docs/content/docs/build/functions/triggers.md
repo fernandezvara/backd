@@ -84,7 +84,7 @@ Trigger runs are ordinary invocations: `origin` is `trigger:<db>/<collection>/<t
 
 `account.on_signup` and the `organizations.hooks.*` of `realm.yaml` are separate paths with their own inputs, and they stay on the write path: their inputs (the provider's profile, the invitation, the computed role change) cannot be rebuilt from a change. What changed is that they are exact: a membership or team change and its hook are **one MongoDB transaction**, and the hook job has an id made of the event, so a retry is one job. `on_signup` is queued right after the account exists and retried; a crash between creating an account and queuing it can lose that one call, so reconcile from the users list if you depend on it. No configuration changed and every field of the inputs is the same. Users can't declare triggers on backd's own collections.
 
-After restoring MongoDB from a backup the dispatcher's stored position is no longer valid: a gap is recorded and it continues from now. Run `backd triggers rescan` for the interval if it matters.
+After restoring MongoDB from a backup the dispatcher's stored position is no longer valid: a gap is recorded and it continues from now. Run `backd-server triggers rescan` for the interval if it matters.
 
 {{< hint style="note" >}}
 Triggers add no routes of their own beyond the [admin routes](../../../operate/change-feed/#seeing-and-repairing-what-the-dispatcher-did) for status and gaps, and they need a realm with authentication enabled and a running [worker](../../../operate/functions-runtime/) with `BACKD_EXECUTOR_URL`, like any async job.

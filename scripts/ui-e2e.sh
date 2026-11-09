@@ -46,7 +46,7 @@ docker compose run --rm --no-deps backd functions build
 # The Shelf realm's pins keep private notes encrypted (tutorial chapter 25): backd refuses to
 # start without the key, so it is created first, offline.
 docker compose run --rm --no-deps backd provision >/dev/null
-docker compose run --rm --no-deps backd secret create --direct --realm shelf --type key --generate --name SHELF_NOTES --skip-existing >/dev/null
+docker compose run --rm --no-deps backd secret create --realm shelf --type key --generate --name SHELF_NOTES --skip-existing >/dev/null
 docker compose up -d --no-deps backd executor egress nginx
 # The adminui realm has organizations, so nobody signs up to it: its first administrator is made here,
 # and the Playwright setup makes the others with the admin API.

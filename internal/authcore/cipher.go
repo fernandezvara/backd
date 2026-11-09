@@ -71,7 +71,7 @@ func (c *SecretCipher) Seal(plaintext string) (ciphertext, nonce string, err err
 // Open decrypts a value sealed with a cipher whose KeyID matches keyID.
 func (c *SecretCipher) Open(ciphertext, nonce, keyID string) (string, error) {
 	if keyID != c.KeyID {
-		return "", fmt.Errorf("secret was encrypted under key %s, not the configured one (%s): run `backd secret rotate-key`", keyID, c.KeyID)
+		return "", fmt.Errorf("secret was encrypted under key %s, not the configured one (%s): run `backd-server secret rotate-key`", keyID, c.KeyID)
 	}
 	ct, err := base64.StdEncoding.DecodeString(ciphertext)
 	if err != nil {

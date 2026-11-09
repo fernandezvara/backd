@@ -1,4 +1,4 @@
-// Package functions builds server-side functions: `backd functions build`
+// Package functions builds server-side functions: `backd-server functions build`
 // bundles each function of a database's Deno project into one file with
 // `deno bundle`, and records the bundles in a manifest that startup checks.
 package functions

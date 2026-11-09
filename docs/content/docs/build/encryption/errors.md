@@ -12,7 +12,7 @@ Startup refusals name the file, the field and what to do; all problems of a conf
 
 | You see | It means | Do |
 |---|---|---|
-| `…: names the key HEALTH, which does not exist` | A field names a key that was never created | `backd secret create --direct --realm r --type key --generate --name HEALTH`, and **save the key**; or `--value` to restore a key you hold |
+| `…: names the key HEALTH, which does not exist` | A field names a key that was never created | `backd-server secret create --realm r --type key --generate --name HEALTH`, and **save the key**; or `--value` to restore a key you hold |
 | `…names HEALTH, which is a plain secret, not a key` | The name belongs to an ordinary secret | Use another name, or delete the secret if nothing uses it |
 | `fields are declared encrypted … but the realm has no auth` | Encrypted fields need somewhere to keep keys | Enable `auth` in `realm.yaml` |
 | `fields.x: field "x" is not declared in schema.json` | The path isn't a field of the collection | Declare it, or fix the path |
@@ -38,7 +38,7 @@ Startup refusals name the file, the field and what to do; all problems of a conf
 | You see | It means | Do |
 |---|---|---|
 | `400 field_encrypted` on a `where` or `order_by` | The field is encrypted: only `=`/`$in` on a field with `search: equality` work, and never `null` | Filter on another field, or enable search |
-| `500` "an encrypted field can't be read or written: its key is not available" | The key is missing or the instance has no secrets master key | Look at the server log (it names the field, never the value); restore the key with `backd secret create --direct --value …` and check `BACKD_SECRETS_KEY` |
+| `500` "an encrypted field can't be read or written: its key is not available" | The key is missing or the instance has no secrets master key | Look at the server log (it names the field, never the value); restore the key with `backd-server secret create --value …` and check `BACKD_SECRETS_KEY` |
 | A value comes back `null` and `_meta.redacted` lists it | Its `reveal` rule said no for this caller | Intended; change the rule or the caller's roles |
 | `409` on a write naming the field | A `unique: true` field already holds that value | Choose another value |
 

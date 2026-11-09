@@ -964,7 +964,7 @@ func (p *Provisioner) VerifySystem(ctx context.Context, realm string) error {
 		return err
 	}
 	if len(diffs) > 0 {
-		return fmt.Errorf("the system database of realm %q is not provisioned (run `backd provision`):\n  %s", realm, strings.Join(diffs, "\n  "))
+		return fmt.Errorf("the system database of realm %q is not provisioned (run `backd-server provision`):\n  %s", realm, strings.Join(diffs, "\n  "))
 	}
 	return nil
 }

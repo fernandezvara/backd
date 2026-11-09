@@ -21,7 +21,7 @@ Add an entry to `config/shelf/main/assets/indexes.json`. Its fields are weighted
 
 {{< example-file path="shelf/main/assets/indexes.json" >}}
 
-`backd provision` (or the start of `backd` itself) creates it. Declaring it later is the same as changing it: the index is **rebuilt**, the startup log says so, and a search made meanwhile answers `503 index_building` for a few seconds.
+`backd-server provision` (or the start of `backd` itself) creates it. Declaring it later is the same as changing it: the index is **rebuilt**, the startup log says so, and a search made meanwhile answers `503 index_building` for a few seconds.
 
 ## Search, best match first
 

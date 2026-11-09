@@ -15,7 +15,7 @@ Every `backd` process can tell [Prometheus](https://prometheus.io/) how it is do
 | `METRICS_ADDR` | empty (off) | Where this process serves `/metrics`, for example `:9090`. A listener of its own: it can't be `HTTP_ADDR` or `BACKD_INTERNAL_ADDR`. |
 | `METRICS_TOKEN` | empty | At least 32 characters. When set, every request needs `Authorization: Bearer <token>`. Needs `METRICS_ADDR`. |
 
-`backd serve`, `backd worker`, `backd executor` and `backd egress` each serve their own `/metrics` (the executor and egress read the same two variables); a process that runs both (`serve --with-worker`) serves one. The listener answers `GET /metrics` and nothing else (a request without the token gets `401` whatever the path), serves at most four scrapes at once, and is a separate server: a slow or flooding scraper never slows the API. If the port can't be bound, the process refuses to start, so a mistake shows at once.
+`backd-server serve`, `backd-server worker`, `backd-server executor` and `backd-server egress` each serve their own `/metrics` (the executor and egress read the same two variables); a process that runs both (`serve --with-worker`) serves one. The listener answers `GET /metrics` and nothing else (a request without the token gets `401` whatever the path), serves at most four scrapes at once, and is a separate server: a slow or flooding scraper never slows the API. If the port can't be bound, the process refuses to start, so a mistake shows at once.
 
 ```yaml
 # prometheus.yml
@@ -66,10 +66,10 @@ All names start with `backd_`; durations are in seconds.
 | `jobs_expired_leases_total` | `realm`, `kind` | Jobs claimed again because the worker holding them stopped answering. |
 | `erase_needs_attention` | `realm` | Erase jobs that used up their attempts and need an administrator (repeat the delete to resume). |
 | `metrics_refresh_errors_total` | | Times refreshing the job gauges failed; the last values stay. |
-| `executor_runs_total` | `status` | The executor's runs by status (`busy`: refused at its process limit). Served by `backd executor`. |
+| `executor_runs_total` | `status` | The executor's runs by status (`busy`: refused at its process limit). Served by `backd-server executor`. |
 | `executor_run_duration_seconds` | | How long they took (histogram). |
 | `executor_running` | | Function processes running now. |
-| `egress_requests_total` | `outcome` | Requests to the egress proxy: `allowed`, `denied_credentials`, `denied_host` or `denied_address`. Host names are never labels. Served by `backd egress`. |
+| `egress_requests_total` | `outcome` | Requests to the egress proxy: `allowed`, `denied_credentials`, `denied_host` or `denied_address`. Host names are never labels. Served by `backd-server egress`. |
 | `changefeed_open` | `consumer` | `1` while a [change-stream](../change-feed/) consumer (`realtime`) has its stream open, `0` while it is idle. |
 | `changefeed_watched_namespaces` | `consumer` | Collections the open stream watches. |
 | `changefeed_lag_seconds` | `consumer` | How far behind the cluster the last change read was. |

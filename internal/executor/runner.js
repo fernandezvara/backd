@@ -1,5 +1,5 @@
 // backd's function runner: `deno run <permissions> runner.js <bundle>`, one
-// process per invocation, started by `backd executor`.
+// process per invocation, started by `backd-server executor`.
 //
 // Protocol: stdout carries only the protocol — {"ready":true} once the
 // bundle is loaded, then one JSON result line. stdin carries one JSON

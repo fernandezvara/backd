@@ -27,7 +27,7 @@ const fnDir = "acme/app/" + registry.FunctionsDir + "/"
 const executorToken = "executor-token-0123456789abcdef0123"
 
 // writeManifest writes a build of every function in dir, as
-// `backd functions build` would (the bundles' content doesn't matter here).
+// `backd-server functions build` would (the bundles' content doesn't matter here).
 func writeManifest(t *testing.T, dir string) {
 	t.Helper()
 	entries, _ := os.ReadDir(dir)

@@ -137,7 +137,7 @@ In `presigned` mode the link is the storage's. In `proxy` mode it is a **backd l
 
 ## When things go wrong
 
-Every upload is written to a journal before its bytes go to the bucket, and a worker finishes what a crash interrupted: an object stored but never attached to a document is deleted after a grace period, and a deletion that failed is retried with backoff. Run workers (`backd worker`, or `backd serve --with-worker`) wherever files are used.
+Every upload is written to a journal before its bytes go to the bucket, and a worker finishes what a crash interrupted: an object stored but never attached to a document is deleted after a grace period, and a deletion that failed is retried with backoff. Run workers (`backd-server worker`, or `backd-server serve --with-worker`) wherever files are used.
 
 | Status | `code` | When |
 |---|---|---|

@@ -1,6 +1,6 @@
 # function.yaml: how this function runs. Every key is optional; the values
 # shown are the defaults. backd reads this file strictly: unknown keys are
-# errors. After changing the function's code, run `backd functions build`.
+# errors. After changing the function's code, run `backd-server functions build`.
 
 # sync: the caller waits for the output. async: the caller gets a job to
 # check later. webhook: for callbacks from other services (e.g. Stripe).

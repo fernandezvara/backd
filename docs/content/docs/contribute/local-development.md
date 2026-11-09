@@ -62,7 +62,8 @@ In Grafana, the *Processes* dashboard shows the API, the workers, the executor a
 | `make dev-down` | Stops it, keeping the data. |
 | `make dev-reset` | Stops it and deletes the data (MongoDB, MinIO, Prometheus, Grafana). Your `./config` is not touched. |
 | `make dev-logs` | Follows the logs; `S=worker` for one service. |
-| `make dev-backd ARGS='…'` | Runs the `backd` command line in the API container, for example `bootstrap`. |
+| `make dev-backd ARGS='…'` | Runs the `backd` command line in the API container, for example `whoami`. |
+| `make dev-server ARGS='…'` | Runs `backd-server`'s tools in the API container, for example `bootstrap`. |
 
 `BACKD_VERSION` pins the images (`BACKD_VERSION=v0.9.7 make dev-build`); the default is `latest`. The stack is for localhost and development: dev mode, fixed dev-only tokens and an open Grafana. Never use it for a deployment (see [Production deployment](../../operate/production/)).
 
@@ -82,7 +83,7 @@ The examples follow the code, so they need this when they use something newer th
 A realm with no administrator has none to sign in as. Create one with the command line in the API container (it asks for a password):
 
 ```sh
-make dev-backd ARGS='bootstrap --realm app --email you@example.com'
+make dev-server ARGS='bootstrap --realm app --email you@example.com'
 ```
 
 The starter realm requires a second factor of administrators, so their first sign-in enrolls one. Empty `mfa.required_roles` in `config/app/realm.yaml` while developing if you prefer.
@@ -157,10 +158,10 @@ A realm with `auth: disabled` has **no authentication at all**: anyone who can r
 
 The `blog` realm keeps the default `auth: enabled`, and its `posts` have [access rules](../../build/auth/rules/): anyone can read published posts, and only signed-in users can write. A server-side service writes with an [API key](../../build/auth/api-keys/), which bypasses the rules:
 
-Keys are created by the realm's administrators. Create the first one with `backd bootstrap`, log in as them with the CLI in the container, and create a key:
+Keys are created by the realm's administrators. Create the first one with `backd-server bootstrap`, log in as them with the CLI in the container, and create a key:
 
 ```sh
-make dev-backd ARGS='bootstrap --realm blog --email ops@example.com'        # asks for a password
+make dev-server ARGS='bootstrap --realm blog --email ops@example.com'        # asks for a password
 make dev-backd ARGS='login --realm blog --url http://localhost:8080 --email ops@example.com'
 KEY=$(make -s dev-backd ARGS='apikey create --realm blog --name demo --expires 1d')
 curl -X POST https://localhost:8443/v1/blog/main/posts -H "Authorization: Bearer $KEY" \
@@ -207,7 +208,7 @@ To start over, remove the CA from your trust store and delete `docker/certs/`; t
 ```sh
 git clone https://github.com/fernandezvara/backd
 cd backd
-make build        # produces bin/backd
+make build        # produces bin/backd (the CLI) and bin/backd-server
 ```
 
 Or build the container image:

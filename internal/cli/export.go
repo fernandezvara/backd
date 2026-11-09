@@ -47,7 +47,7 @@ type exportPlan struct {
 // exportAction handles `backd export`: it takes the realm's export from the running backd part
 // by part into a package directory (or archive), verifying and recording each part so an
 // interrupted run continues where it stopped.
-func exportAction(c *kli.CommandContext) error {
+func exportAction(c *kli.CommandContext, o Opener) error {
 	out := strings.TrimRight(cmdutil.Str(c, "out"), "/")
 	archive := cmdutil.Flag(c, "archive")
 	database, collections := cmdutil.Str(c, "db"), splitList(cmdutil.Str(c, "collection"))
@@ -99,7 +99,7 @@ func exportAction(c *kli.CommandContext) error {
 			if include != "auth" {
 				return cmdutil.UsageErr(errors.New("--staging-password needs --include auth: without users there is no password to set"))
 			}
-			pw, err := readKeySource(spec, c.Getenv, c.Stderr())
+			pw, err := cmdutil.ReadKeySource(spec, c.Getenv, c.Stderr())
 			if err != nil {
 				return cmdutil.UsageErr(fmt.Errorf("--staging-password: %w", err))
 			}
@@ -119,11 +119,12 @@ func exportAction(c *kli.CommandContext) error {
 	if err != nil {
 		return cmdutil.UsageErr(err)
 	}
-	t, closeT, _, err := openTarget(c)
+	s, err := o.Open(c)
 	if err != nil {
 		return err
 	}
-	defer closeT()
+	defer s.Close()
+	t := s.t
 	if archive {
 		if _, err := os.Stat(out + ".tar.gz"); err == nil {
 			return fmt.Errorf("%s.tar.gz exists: choose another --out or remove it", out)
@@ -320,7 +321,7 @@ func exportAction(c *kli.CommandContext) error {
 		fmt.Fprintf(stderr, "the package is complete, but the server wasn't told: %v\n", err)
 	}
 	if totals.AuthUnavailable > 0 {
-		fmt.Fprintf(stderr, "warning: %d second factors or push devices were left out because the realm's secrets key could not open them (with --direct, pass --master-key)\n", totals.AuthUnavailable)
+		fmt.Fprintf(stderr, "warning: %d second factors or push devices were left out because the realm's secrets key could not open them (give the server BACKD_SECRETS_KEY, or backd-server export --master-key)\n", totals.AuthUnavailable)
 	}
 	if plan.ExportKey != "" {
 		if keyOut := cmdutil.Str(c, "auth-key-out"); keyOut != "" {
@@ -579,24 +580,6 @@ func archiveDir(dir, dst string) error {
 		_ = os.Remove(dst)
 	}
 	return err
-}
-
-// openTarget is the server the command talks to: a running backd, or with --direct this
-// process over MongoDB. The returned direct is nil for a running backd.
-func openTarget(c *kli.CommandContext) (*target, func(), *direct, error) {
-	isDirect, err := usesDirect(c)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	if !isDirect {
-		t, err := targetOf(c, false)
-		return t, func() {}, nil, err
-	}
-	d, err := openDirect(c)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	return d.t, d.close, d, nil
 }
 
 // writeSecretFile writes a file only its owner can read, even if one with wider permissions

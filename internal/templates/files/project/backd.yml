@@ -24,7 +24,7 @@ jobs:
         run: deno test config/*/*/_functions/
       # backd refuses stale or missing bundles — build before checking.
       - name: Bundle the functions
-        run: backd functions build
+        run: backd-server functions build
       - name: Check the config
         run: backd config check
       - name: Test the access rules (no database needed)

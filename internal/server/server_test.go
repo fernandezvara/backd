@@ -231,7 +231,7 @@ func TestCheckFunctions(t *testing.T) {
 	if err := checkFunctions(load(), settings.Settings{}, log); err == nil || !strings.Contains(err.Error(), "functions are not built") {
 		t.Errorf("unbuilt: %v", err)
 	}
-	// A build as `backd functions build` writes it.
+	// A build as `backd-server functions build` writes it.
 	src, _ := registry.SourceHash(fns)
 	bundle := []byte("export default () => 1;\n")
 	sum := sha256.Sum256(bundle)

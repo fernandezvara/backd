@@ -30,7 +30,7 @@ Give the keys you want to use with `--field`, as `<path>=<source>` entries separ
 
 ```
 backd export --realm clinic --out ./clinic --field 'health_notes=file:./health.key'
-backd export --direct --mongo-uri env:MONGO_URI --realm clinic --no-files --out ./clinic-offline \
+backd-server export --mongo-uri env:MONGO_URI --realm clinic --no-files --out ./clinic-offline \
   --field 'main/patients.tax_id=env:TAX_KEY'
 ```
 
@@ -75,10 +75,10 @@ The **dry run lists which fields need which key**; a real import refuses (`422`)
 If an instance loses its master key or its secrets, the encrypted data in MongoDB is still there, and so are the wrapped data keys; only the field keys are missing. Save them back **under the same names**:
 
 ```
-backd secret create --direct --realm clinic --type key --name HEALTH --value file:./health.key
+backd-server secret create --realm clinic --type key --name HEALTH --value file:./health.key
 ```
 
-`--direct` works on MongoDB and `CONFIG_DIR` with no running `backd`, which matters here: `backd` refuses to start while a field names a key that doesn't exist, so the keys have to come back first.
+`backd-server secret create` works on MongoDB and `CONFIG_DIR` with no running `backd`, which matters here: `backd` refuses to start while a field names a key that doesn't exist, so the keys have to come back first.
 
 Its fingerprint must match the one you wrote down (it is printed). Everything becomes readable again, with no export and no import. A field whose key was **never saved** is unrecoverable: that is what field encryption is for, and why [the key page](../../../../build/configuration/field-keys/) asks you to save a key before using it.
 

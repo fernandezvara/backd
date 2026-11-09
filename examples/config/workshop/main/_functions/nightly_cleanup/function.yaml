@@ -1,8 +1,8 @@
 # A scheduled function: `schedule` (cron, UTC) on an async function. There is
 # no caller, so ctx.input is empty, ctx.user is null, and ctx.admin.db (full
 # access, recorded as this function) is always available in a scheduled run.
-# Needs at least one running worker: `backd worker`, or
-# `backd serve --with-worker`.
+# Needs at least one running worker: `backd-server worker`, or
+# `backd-server serve --with-worker`.
 #
 # `internal: true`: nobody can call it over HTTP. An administrator can still
 # run it by hand to test it, as its schedule would run it:

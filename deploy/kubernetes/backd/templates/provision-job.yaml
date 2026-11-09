@@ -1,5 +1,5 @@
 {{- $ctx := dict "root" . "component" "provision" }}
-# `backd provision` with the new image, before any pod of the release starts (and before a
+# `backd-server provision` with the new image, before any pod of the release starts (and before a
 # rollback starts the old ones): the serving pods run in verify mode and refuse a database that
 # differs from their configuration or was provisioned with another one. It is the only pod with
 # the administrative database user.

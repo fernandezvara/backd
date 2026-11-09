@@ -1,9 +1,10 @@
 COMPOSE_TEST = docker compose -f docker-compose.test.yml
 
-.PHONY: dev dev-examples dev-build dev-down dev-reset dev-logs dev-backd lint build ui ui-test ui-e2e test test-local perf vet lint-api openapi-clients shelf-types shelf-types-update js-test js-package js-integration dart-package dart-integration python-test python-integration python-package functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour shelf-tour-ci example-attacks release-check release-tag
+.PHONY: dev dev-examples dev-build dev-down dev-reset dev-logs dev-backd dev-server lint build ui ui-test ui-e2e test test-local perf vet lint-api openapi-clients shelf-types shelf-types-update js-test js-package js-integration dart-package dart-integration python-test python-integration python-package functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour shelf-tour-ci example-attacks release-check release-tag
 
 build:
 	go build -o bin/backd ./cmd/backd
+	go build -o bin/backd-server ./cmd/backd-server
 
 # Full test suite in the dockerized environment (same as CI).
 test:
@@ -159,9 +160,14 @@ dev-logs:
 	scripts/dev.sh logs
 
 # The backd command line in the running dev stack's API container:
-#   make dev-backd ARGS='bootstrap --realm app --email you@example.com'
+#   make dev-backd ARGS='whoami --realm app'
 dev-backd:
 	scripts/dev.sh backd $(ARGS)
+
+# backd-server's tools in the same container (they work on MongoDB directly):
+#   make dev-server ARGS='bootstrap --realm app --email you@example.com'
+dev-server:
+	scripts/dev.sh server $(ARGS)
 
 # The production reference deployment (deploy/production), end to end in Docker.
 prod-test:

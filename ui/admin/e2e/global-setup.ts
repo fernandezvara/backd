@@ -2,7 +2,7 @@ import { ConflictError, createClient } from 'backd-js'
 import { PASSWORD, REALM, users } from './users'
 
 // The realm has organizations, so nobody signs up to it: its first administrator is made offline
-// (`backd bootstrap`, in scripts/ui-e2e.sh) and makes the others, whom the realm gives their roles
+// (`backd-server bootstrap`, in scripts/ui-e2e.sh) and makes the others, whom the realm gives their roles
 // by email as they are created (a rerun finds them there already).
 export default async function globalSetup() {
   const url = process.env.E2E_URL ?? 'http://localhost:8080'

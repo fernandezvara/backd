@@ -1,4 +1,4 @@
-package cli
+package servercli
 
 import (
 	"bytes"
@@ -39,7 +39,7 @@ func TestProvisionPreImagesLifecycle(t *testing.T) {
 	env := map[string]string{"CONFIG_DIR": root, "MONGO_URI": uri}
 	cli := func(args ...string) (int, string) {
 		var out, errOut bytes.Buffer
-		code := Run(args, func(k string) string { return env[k] }, nil, &out, &errOut)
+		code := runAny(args, func(k string) string { return env[k] }, nil, &out, &errOut)
 		return code, errOut.String()
 	}
 	ctx := context.Background()

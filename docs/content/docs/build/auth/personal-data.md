@@ -22,7 +22,7 @@ compliance:
   export_retention: 7d                             # how long a package is kept (default 7d)
 ```
 
-`backd` refuses to start when the realm sets `export` without what it needs: the packages are kept in the realm's [file storage](../../files/) (`storage:`), the user is told by email (`email:`), and `export_page` must be a URL within the realm's `allowed_redirects`. Run `backd provision` once when you upgrade: exports add the `user_exports` system collection.
+`backd` refuses to start when the realm sets `export` without what it needs: the packages are kept in the realm's [file storage](../../files/) (`storage:`), the user is told by email (`email:`), and `export_page` must be a URL within the realm's `allowed_redirects`. Run `backd-server provision` once when you upgrade: exports add the `user_exports` system collection.
 
 What a package holds comes from the [personal data scope](../../configuration/config-dir/#personal-data-scope) (`personal_data:` in each `collection.yaml`), the same model as erasure. Read it with `backd compliance scope --realm <r>` before you turn exports on.
 

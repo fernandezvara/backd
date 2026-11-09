@@ -17,17 +17,19 @@ COPY go.mod go.sum* ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/backd ./cmd/backd \
-    && mkdir -p /rootfs/usr/local/bin && cp /out/backd /rootfs/usr/local/bin/backd && ln -s /usr/local/bin/backd /rootfs/backd
+    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/backd-server ./cmd/backd-server \
+    && mkdir -p /rootfs/usr/local/bin && cp /out/backd /out/backd-server /rootfs/usr/local/bin/ \
+    && ln -s /usr/local/bin/backd /rootfs/backd && ln -s /usr/local/bin/backd-server /rootfs/backd-server
 
 # Bundles functions/netprobe's Deno source into the config (see its
 # realm.yaml): so it ships pre-built, and byte-identical to ops/Dockerfile's
 # copy, since PROVISION_MODE=verify compares their config fingerprints.
 FROM docker.io/denoland/deno:alpine-2.9.8 AS functions
-COPY --from=build /out/backd /usr/local/bin/backd
+COPY --from=build /out/backd-server /usr/local/bin/backd-server
 COPY examples/config/blog /config/blog
 COPY deploy/production/functions/netprobe /config/netprobe
 ENV CONFIG_DIR=/config
-RUN /usr/local/bin/backd functions build --check
+RUN /usr/local/bin/backd-server functions build --check
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /rootfs/ /
@@ -37,6 +39,6 @@ ENV CONFIG_DIR=/config
 # An invalid config (or stale function bundles) fails the build, not a deploy.
 RUN ["/backd", "config", "check"]
 EXPOSE 8080 8081
-ENTRYPOINT ["/usr/local/bin/backd"]
-# `backd` without a command prints the help; the image serves unless told otherwise.
+ENTRYPOINT ["/usr/local/bin/backd-server"]
+# The image serves unless told otherwise.
 CMD ["serve"]
