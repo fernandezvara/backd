@@ -196,23 +196,17 @@ func EncryptMigrate(c *kli.CommandContext) error {
 		fmt.Fprintln(uio.Stdout, started.ID)
 		return nil
 	}
-	last := ""
-	for {
-		var job jobRecord
-		if err := t.Adm.Jobs.Get(t.Ctx, started.ID, &job); err != nil {
-			return err
+	job, err := followJob(t, started.ID, interval, uio.Stderr, func(job jobRecord) string {
+		if p := job.Progress; p != nil && p.Message != nil {
+			return *p.Message
 		}
-		if p := job.Progress; p != nil && p.Message != nil && *p.Message != last {
-			fmt.Fprintln(uio.Stderr, *p.Message)
-			last = *p.Message
-		}
-		if job.Status == "done" {
-			if job.Result == nil || job.Result.Status != "ok" {
-				return errors.New("the migration did not finish: see `backd functions jobs --job " + started.ID + "`")
-			}
-			break
-		}
-		time.Sleep(interval)
+		return ""
+	})
+	if err != nil {
+		return err
+	}
+	if resultStatus(job) != "ok" {
+		return errors.New("the migration did not finish: see `backd functions jobs --job " + started.ID + "`")
 	}
 	fmt.Fprintln(uio.Stdout, "done"+map[bool]string{true: " (dry run: nothing was changed)", false: ""}[cmdutil.Flag(c, "dry-run")])
 	return nil

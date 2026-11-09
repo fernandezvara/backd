@@ -96,33 +96,12 @@ func DataCheck(c *kli.CommandContext) error {
 	}
 
 	// Follow it: a line on stderr when the step or its percentage changes.
-	last := ""
-	for {
-		var job jobRecord
-		if err := t.Adm.Jobs.Get(t.Ctx, started.ID, &job); err != nil {
-			return err
-		}
-		if p := job.Progress; p != nil {
-			line := fmt.Sprintf("%s %.0f%%", p.Name, p.Current)
-			if p.Message != nil {
-				line += " (" + *p.Message + ")"
-			}
-			if line != last {
-				fmt.Fprintln(stderr, line)
-				last = line
-			}
-		}
-		if job.Status == "done" {
-			if job.Result == nil || job.Result.Status != "ok" {
-				status := "no result"
-				if job.Result != nil {
-					status = job.Result.Status
-				}
-				return fmt.Errorf("the schema check ended without a report: %s", status)
-			}
-			break
-		}
-		time.Sleep(interval)
+	job, err := followJob(t, started.ID, interval, stderr, stepProgress)
+	if err != nil {
+		return err
+	}
+	if status := resultStatus(job); status != "ok" {
+		return fmt.Errorf("the schema check ended without a report: %s", status)
 	}
 
 	var reports []checkReport
