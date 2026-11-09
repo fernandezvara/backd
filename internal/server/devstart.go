@@ -64,6 +64,15 @@ func startDev(ctx context.Context, role string, cfg settings.Settings, logOut io
 	if err := devPreflight(cfg, role, o); err != nil {
 		return nil, err
 	}
+	if serve {
+		warning, err := devDeno(cfg)
+		if err != nil {
+			return nil, err
+		}
+		if warning != "" {
+			log.Warn(warning)
+		}
+	}
 	client, m, err := connect(ctx, cfg)
 	if err != nil {
 		return nil, err
@@ -111,13 +120,26 @@ func devPreflight(cfg settings.Settings, role string, o Options) error {
 	if o.WithWorker && cfg.ExecutorURL == "" {
 		return errors.New("--with-worker requires BACKD_EXECUTOR_URL")
 	}
-	if hasFunctionDirs(cfg.ConfigDir) {
-		deno := cmp.Or(cfg.Deno, "deno")
-		if _, err := exec.LookPath(deno); err != nil {
-			return fmt.Errorf("BACKD_DEV=true builds the functions at startup, but %s was not found (DENO): run dev mode on the backd-executor image (ghcr.io/fernandezvara/backd-executor), which carries the Deno backd bundles with", deno)
+	return nil
+}
+
+// devDeno is what serve does in dev mode without Deno. With no function, or every bundle
+// fresh (built elsewhere, as a stack with its own build step does), it starts and says that a
+// changed function can't be built again (warning); with a bundle to build, it exits.
+func devDeno(cfg settings.Settings) (warning string, err error) {
+	if !hasFunctionDirs(cfg.ConfigDir) {
+		return "", nil
+	}
+	deno := cmp.Or(cfg.Deno, "deno")
+	if _, err := exec.LookPath(deno); err == nil {
+		return "", nil
+	}
+	if reg, err := registry.Load(cfg.ConfigDir); err == nil {
+		if stale, err := staleFunctions(reg); err == nil && len(stale) == 0 {
+			return fmt.Sprintf("BACKD_DEV=true without Deno (%s was not found, DENO): the functions' bundles are used as built, but a changed function can't be built again; run dev mode on the backd-executor image (ghcr.io/fernandezvara/backd-executor) to build on change", deno), nil
 		}
 	}
-	return nil
+	return "", fmt.Errorf("BACKD_DEV=true builds the functions at startup, but %s was not found (DENO): run dev mode on the backd-executor image (ghcr.io/fernandezvara/backd-executor), which carries the Deno backd bundles with", deno)
 }
 
 func devAddrError(addr string) error {

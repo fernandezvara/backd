@@ -101,8 +101,8 @@ func TestLogProblemsOncePerProblem(t *testing.T) {
 func TestDevPreflight(t *testing.T) {
 	withFns := cmdtest.Write(t, map[string]string{"app/main/_functions/hello/function.yaml": "mode: sync\n"})
 	base := settings.Settings{Dev: true, HTTPAddr: "127.0.0.1:8080", ConfigDir: withFns, Deno: "/nonexistent/deno"}
-	if err := devPreflight(base, "serve", Options{}); err == nil || !strings.Contains(err.Error(), "backd-executor") {
-		t.Errorf("no Deno with functions: %v", err)
+	if _, err := devDeno(base); err == nil || !strings.Contains(err.Error(), "backd-executor") {
+		t.Errorf("no Deno with a function to build: %v", err)
 	}
 	if err := devPreflight(base, "worker", Options{}); err == nil || !strings.Contains(err.Error(), "BACKD_EXECUTOR_URL") {
 		t.Errorf("worker without an executor: %v", err)
@@ -267,5 +267,24 @@ func TestDevServeWaitsForAConfigThatLoads(t *testing.T) {
 		}
 	case <-time.After(30 * time.Second):
 		t.Error("serve didn't stop")
+	}
+}
+
+// Without Deno, dev mode still starts on bundles built elsewhere (a stack with its own build
+// step), and says a changed function can't be built again.
+func TestDevDenoWithFreshBundles(t *testing.T) {
+	dir := cmdtest.Write(t, map[string]string{
+		"app/realm.yaml":                          "auth: disabled\n",
+		"app/main/notes/schema.json":              "{}",
+		"app/main/_functions/hello/function.yaml": "mode: sync\n",
+		"app/main/_functions/hello/index.ts":      "export default () => 1;\n",
+	})
+	cmdtest.WriteFuncManifest(t, filepath.Join(dir, "app/main/_functions"), "hello")
+	cfg := settings.Settings{Dev: true, ConfigDir: dir, Deno: "/nonexistent/deno"}
+	if warning, err := devDeno(cfg); err != nil || !strings.Contains(warning, "can't be built again") {
+		t.Errorf("fresh bundles without Deno: %q, %v", warning, err)
+	}
+	if warning, err := devDeno(settings.Settings{Dev: true, ConfigDir: t.TempDir(), Deno: "/nonexistent/deno"}); err != nil || warning != "" {
+		t.Errorf("no functions: %q, %v", warning, err)
 	}
 }
