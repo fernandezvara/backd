@@ -52,7 +52,7 @@ func TestEveryCommandIsListedOnceInTheHelp(t *testing.T) {
 	}
 	seen := map[string]int{}
 	for _, g := range helpGroups {
-		for _, name := range g.commands {
+		for _, name := range g.Commands {
 			seen[name]++
 		}
 	}
