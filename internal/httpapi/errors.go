@@ -48,6 +48,9 @@ const (
 	codeUnsupportedMedia  = "unsupported_media_type"
 	codeInternal          = "internal_error"
 	codeUnavailable       = "unavailable"
+	// codeConfigNotLoaded answers every API call of a dev-mode server whose config hasn't
+	// loaded yet (NewWaitingHandler).
+	codeConfigNotLoaded = "config_not_loaded"
 )
 
 // Detail points at one problem, e.g. a field failing schema validation.

@@ -221,3 +221,5 @@ Every release also attaches the same build as `admin-ui_vX.Y.Z.tar.gz`, for serv
 ## Trying it locally
 
 `make dev-examples` serves the interface at `https://localhost:8443/_ui/`. The `adminui` realm has one user for each level (`admin@adminui.example`, `viewer@adminui.example` and `support@adminui.example`); they gain their roles when they sign up, with the development password `dev-p4ssw0rd!`.
+
+Against a server in [dev mode](../../../build/functions/testing/#dev-mode) whose config hasn't loaded yet, the interface shows the server's message and a link to the report on its root page instead of the sign-in, and carries on by itself once a saved change loads.

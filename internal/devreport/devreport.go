@@ -1,4 +1,7 @@
-package server
+// Package devreport is what dev mode (BACKD_DEV) says when a config doesn't load: the
+// problems it holds, each with where it is, the tool's output and what to do, for the log
+// and for the dev landing page and API answers.
+package devreport
 
 import (
 	"errors"
@@ -11,9 +14,9 @@ import (
 
 // Problem kinds: what failed when a config didn't load in dev mode.
 const (
-	ProblemConfig = "config" // a file of CONFIG_DIR, or the config as a whole
-	ProblemRules  = "rules"  // a collection's rules
-	ProblemBuild  = "build"  // bundling a database's functions
+	Config = "config" // a file of CONFIG_DIR, or the config as a whole
+	Rules  = "rules"  // a collection's rules
+	Build  = "build"  // bundling a database's functions
 )
 
 // Problem is one reason a config didn't load, as dev mode reports it: in one log record
@@ -27,13 +30,14 @@ type Problem struct {
 	Hint    string `json:"hint"`
 }
 
-// buildError marks an error of bundling the functions, so its report has kind build.
-type buildError struct{ err error }
+// BuildError marks an error of bundling the functions, so its report has kind build.
+type BuildError struct{ Err error }
 
-func (e buildError) Error() string { return e.err.Error() }
-func (e buildError) Unwrap() error { return e.err }
+func (e BuildError) Error() string { return e.Err.Error() }
+func (e BuildError) Unwrap() error { return e.Err }
 
-const configPrefix = "invalid config:\n"
+// ConfigPrefix starts the error of a config that does not load.
+const ConfigPrefix = "invalid config:\n"
 
 var (
 	yamlLine    = regexp.MustCompile(`\bline (\d+):`)
@@ -41,14 +45,14 @@ var (
 	sourceLine  = regexp.MustCompile(`(?:file://)?(/[^\s:]+\.(?:ts|tsx|js|jsx|mjs|mts)):(\d+)(?::\d+)?`)
 )
 
-// problemsOf splits an error of loading the config into the problems it holds: one per file
+// Of splits an error of loading the config into the problems it holds: one per file
 // error of the config (errors.Join), and one for a build, with Deno's output.
-func problemsOf(err error, configDir string) []Problem {
+func Of(err error, configDir string) []Problem {
 	if err == nil {
 		return nil
 	}
-	if be, ok := errors.AsType[buildError](err); ok {
-		return []Problem{buildProblem(be.err.Error(), configDir)}
+	if be, ok := errors.AsType[BuildError](err); ok {
+		return []Problem{buildProblem(be.Err.Error(), configDir)}
 	}
 	var out []Problem
 	var walk func(error)
@@ -59,29 +63,29 @@ func problemsOf(err error, configDir string) []Problem {
 			}
 			return
 		}
-		if inner := errors.Unwrap(e); inner != nil && e.Error() == configPrefix+inner.Error() {
+		if inner := errors.Unwrap(e); inner != nil && e.Error() == ConfigPrefix+inner.Error() {
 			walk(inner)
 			return
 		}
-		out = append(out, configProblem(strings.TrimPrefix(e.Error(), configPrefix), configDir))
+		out = append(out, configProblem(strings.TrimPrefix(e.Error(), ConfigPrefix), configDir))
 	}
 	walk(err)
 	return out
 }
 
 func configProblem(msg, configDir string) Problem {
-	p := Problem{Kind: ProblemConfig, Message: msg}
+	p := Problem{Kind: Config, Message: msg}
 	if rel, rest, ok := underDir(msg, configDir); ok {
 		p.File, p.Message = rel, rest
 		if strings.HasPrefix(rest, "rules:") {
-			p.Kind = ProblemRules
+			p.Kind = Rules
 		}
 		if m := yamlLine.FindStringSubmatch(rest); m != nil {
 			p.Line, _ = strconv.Atoi(m[1])
 		}
 	}
 	switch {
-	case p.Kind == ProblemRules:
+	case p.Kind == Rules:
 		p.Hint = "fix the rules in " + p.File + " and save: backd loads the config again"
 	case p.File != "":
 		p.Hint = "fix " + p.File + " and save: backd loads the config again"
@@ -105,7 +109,7 @@ func underDir(msg, dir string) (rel, rest string, ok bool) {
 }
 
 func buildProblem(msg, configDir string) Problem {
-	p := Problem{Kind: ProblemBuild, Message: msg}
+	p := Problem{Kind: Build, Message: msg}
 	if head, output, ok := strings.Cut(msg, "deno bundle failed:\n"); ok {
 		p.Message, p.Output = strings.TrimSuffix(head, ": ")+": deno bundle failed", strings.TrimRight(output, "\n")
 	}
@@ -129,20 +133,20 @@ func buildProblem(msg, configDir string) Problem {
 	return p
 }
 
-// key identifies a problem, so a report repeated without change is logged once.
-func (p Problem) key() string {
+// Key identifies a problem, so a report repeated without change is logged once.
+func (p Problem) Key() string {
 	return p.Kind + "\x00" + p.File + "\x00" + strconv.Itoa(p.Line) + "\x00" + p.Message + "\x00" + p.Output
 }
 
-// logProblems writes one error record per problem not in seen (and adds it there), with msg
+// Log writes one error record per problem not in seen (and adds it there), with msg
 // saying what dev mode does about it.
-func logProblems(log *slog.Logger, msg string, problems []Problem, seen map[string]bool) {
+func Log(log *slog.Logger, msg string, problems []Problem, seen map[string]bool) {
 	for _, p := range problems {
 		if seen != nil {
-			if seen[p.key()] {
+			if seen[p.Key()] {
 				continue
 			}
-			seen[p.key()] = true
+			seen[p.Key()] = true
 		}
 		attrs := []any{"kind", p.Kind}
 		if p.File != "" {
@@ -158,4 +162,20 @@ func logProblems(log *slog.Logger, msg string, problems []Problem, seen map[stri
 		attrs = append(attrs, "hint", p.Hint)
 		log.Error(msg, attrs...)
 	}
+}
+
+// Location is where the problem is: "file:line", "file", or "" when it isn't in one file.
+func (p Problem) Location() string {
+	if p.File != "" && p.Line > 0 {
+		return p.File + ":" + strconv.Itoa(p.Line)
+	}
+	return p.File
+}
+
+// String is the problem on one line: where, then what ("app/realm.yaml:2: …").
+func (p Problem) String() string {
+	if loc := p.Location(); loc != "" {
+		return loc + ": " + p.Message
+	}
+	return p.Message
 }

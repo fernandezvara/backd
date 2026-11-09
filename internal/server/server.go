@@ -27,6 +27,7 @@ import (
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/buildinfo"
 	"github.com/fernandezvara/backd/internal/changefeed"
+	"github.com/fernandezvara/backd/internal/devreport"
 	"github.com/fernandezvara/backd/internal/executor"
 	"github.com/fernandezvara/backd/internal/httpapi"
 	"github.com/fernandezvara/backd/internal/metrics"
@@ -57,7 +58,7 @@ type App struct {
 	// metrics records what this process does; nil when METRICS_ADDR is unset.
 	metrics *metrics.Metrics
 	// reloadErrors reports why the last live reload failed (dev mode); nil otherwise.
-	reloadErrors func() []string
+	reloadErrors func() []devreport.Problem
 	// disablePreImages and yes are provision's --disable-preimages and --yes.
 	disablePreImages, yes bool
 	// feed is the change-stream source both consumers read through; it connects on first use.
@@ -76,7 +77,7 @@ type App struct {
 func loadConfig(cfg settings.Settings, log *slog.Logger) (*registry.Registry, string, error) {
 	reg, err := registry.Load(cfg.ConfigDir)
 	if err != nil {
-		return nil, "", fmt.Errorf(configPrefix+"%w", err)
+		return nil, "", fmt.Errorf(devreport.ConfigPrefix+"%w", err)
 	}
 	for _, w := range reg.AggregateWarnings() {
 		log.Warn(w)
@@ -98,7 +99,7 @@ func checkLoaded(reg *registry.Registry, cfg settings.Settings, log *slog.Logger
 		func() error { return reg.CheckTriggerLimits(cfg.TriggerLimits) },
 	} {
 		if err := check(); err != nil {
-			return "", fmt.Errorf(configPrefix+"%w", err)
+			return "", fmt.Errorf(devreport.ConfigPrefix+"%w", err)
 		}
 	}
 	if err := checkFunctions(reg, cfg, log); err != nil {
@@ -478,7 +479,7 @@ func (a *App) HandlerConfig() httpapi.Config {
 		Env:               a.cfg.Env,
 		Dev:               a.cfg.Dev,
 		DevLinks:          devLinks(a.cfg.DevLinks),
-		ReloadErrors:      a.reloadErrors,
+		DevProblems:       a.reloadErrors,
 		DisableAdminAPI:   a.cfg.DisableAdminAPI,
 		UI:                ui,
 		Metrics:           a.metrics,

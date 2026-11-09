@@ -70,9 +70,9 @@ func (a *adminAPI) config(w http.ResponseWriter, r *http.Request) {
 // instance keeps running the previous config until the files are fixed.
 func (a *adminAPI) warnings(s registry.RealmSettings) []map[string]any {
 	out := configWarnings(s)
-	if a.reloadErrors != nil {
-		for _, msg := range a.reloadErrors() {
-			out = append(out, map[string]any{"code": "reload_failed", "message": "the last config change was not applied, the previous config keeps running: " + msg})
+	if a.devProblems != nil {
+		for _, p := range a.devProblems() {
+			out = append(out, map[string]any{"code": "reload_failed", "message": "the last config change was not applied, the previous config keeps running: " + p.String()})
 		}
 	}
 	return out

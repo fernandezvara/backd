@@ -116,6 +116,7 @@ Every error uses the same JSON envelope. Success responses are never wrapped.
 | 500 | `secret_missing` | A [function](../functions/secrets/) declares a secret that isn't set for its database or realm |
 | 503 | `storage_unavailable` | A realm's [file storage](../../operate/providers/storage/) can't be reached, or its keys aren't set |
 | 503 | `unavailable` | Not ready, MongoDB unreachable, `MONGO_OP_TIMEOUT` exceeded, too many password operations at once, or the [functions](../../operate/functions-runtime/#running-the-executor) executor isn't configured, doesn't answer, or is at capacity (all with `Retry-After` where the caller can usefully retry) |
+| 503 | `config_not_loaded` | Dev mode only (`BACKD_DEV=true`): no config has loaded yet. Each detail is one problem of the report (`path` the file and line, `code` its kind: `config`, `rules` or `build`, `reason` what is wrong, the build output and what to do); the same report is on the server's root page ([Dev mode](../functions/testing/#dev-mode)) |
 | 504 | `function_timeout` | A [function](../functions/calling/#calling-a-function) didn't finish within its `timeout`; it was stopped |
 
 A function's own errors, thrown with `ctx.error(status, code, message)`, carry whatever 4xx status and lower-case code it chose — see [Calling a function](../functions/calling/#calling-a-function).
