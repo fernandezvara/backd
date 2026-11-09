@@ -268,7 +268,7 @@ echo "--- PROVISION_MODE=verify"
 mongo_as "$root_uri" 'db.getSiblingDB("blog__main").posts.dropIndexes()' >/dev/null
 # A second backd with the same settings, as after a restart.
 out=$(compose run --rm -T --no-deps backd 2>&1 || true)
-config_mismatch_refused() { printf '%s' "$out" | grep -q 'MongoDB does not match the config (run .backd provision.)'; }
+config_mismatch_refused() { printf '%s' "$out" | grep -q 'MongoDB does not match the config (run .backd-server provision.)'; }
 check "backd refuses to start when MongoDB differs from the config" config_mismatch_refused
 compose stop backd >/dev/null 2>&1
 check "while backd is down, nginx answers 503 with backd's error envelope" \
