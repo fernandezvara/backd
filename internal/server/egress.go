@@ -6,12 +6,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
-	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/fernandezvara/backd/internal/buildinfo"
@@ -66,26 +62,5 @@ func ServeEgress(getenv func(string) string, stderr io.Writer) error {
 	log.Info("egress ready", "version", buildinfo.Get(), "allow_private", allowPrivate)
 
 	srv := &http.Server{Handler: p.Handler(), ReadHeaderTimeout: 10 * time.Second}
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return err
-	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	errc := make(chan error, 1)
-	go func() {
-		log.Info("listening", "addr", ln.Addr().String())
-		errc <- srv.Serve(ln)
-	}()
-	select {
-	case err := <-errc:
-		return err
-	case <-ctx.Done():
-	}
-	shutdown, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(shutdown); err != nil && !errors.Is(err, context.DeadlineExceeded) {
-		return err
-	}
-	return nil
+	return runServer(context.Background(), srv, addr, log)
 }
