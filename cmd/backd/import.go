@@ -23,7 +23,7 @@ import (
 
 	"github.com/fernandezvara/kli"
 
-	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/authcore"
 	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/internal/exportpkg"
 )
@@ -120,13 +120,13 @@ func importAction(c *kli.CommandContext) error {
 	if err != nil {
 		return cmdutil.UsageErr(err)
 	}
-	var ek *auth.SecretCipher
+	var ek *authcore.SecretCipher
 	if spec := cmdutil.Str(c, "auth-key"); spec != "" {
 		text, err := readKeySource(spec, c.Getenv, stderr)
 		if err != nil {
 			return cmdutil.UsageErr(fmt.Errorf("--auth-key: %w", err))
 		}
-		if ek, err = auth.ExportKey(text); err != nil {
+		if ek, err = authcore.ExportKey(text); err != nil {
 			return cmdutil.UsageErr(fmt.Errorf("--auth-key: %w", err))
 		}
 		if m.AuthKey != "" && ek.KeyID != m.AuthKey {
@@ -283,7 +283,7 @@ func writeImportReport(path string, t *importTotals) error {
 }
 
 // runPhase sends every collection of the package, in chunks, to one phase of the import.
-func runPhase(t *target, dir string, m *exportpkg.Manifest, phase string, lease map[string]string, maxChunk int64, ek *auth.SecretCipher, dec *decryptor, stderr io.Writer) (*importTotals, error) {
+func runPhase(t *target, dir string, m *exportpkg.Manifest, phase string, lease map[string]string, maxChunk int64, ek *authcore.SecretCipher, dec *decryptor, stderr io.Writer) (*importTotals, error) {
 	totals := &importTotals{counts: map[string]int{}}
 	// Authentication data first, so the owners of the documents exist when they are checked.
 	for _, ap := range m.Auth {
@@ -587,7 +587,7 @@ func verifyPackage(dir string, stderr io.Writer) (*exportpkg.Manifest, error) {
 		}
 	}
 	for _, ap := range m.Auth {
-		if !slices.Contains(auth.PortableCollections, ap.Name) || ap.Part != exportpkg.AuthPart(ap.Name) {
+		if !slices.Contains(authcore.PortableCollections, ap.Name) || ap.Part != exportpkg.AuthPart(ap.Name) {
 			return nil, fmt.Errorf("the manifest names an authentication part this backd doesn't know: %q", ap.Part)
 		}
 		if _, ok := m.Checksums[ap.Part]; !ok {
@@ -605,14 +605,14 @@ func verifyPackage(dir string, stderr io.Writer) (*exportpkg.Manifest, error) {
 // key, the fields sealed under it are opened here and sent as plaintext for the target to seal
 // under its own key (the key never leaves this machine); without it, second factors and devices
 // are left out and the sealed fields of the rest removed.
-func prepareAuthChunk(collection string, chunk []byte, ek *auth.SecretCipher) ([]byte, error) {
+func prepareAuthChunk(collection string, chunk []byte, ek *authcore.SecretCipher) ([]byte, error) {
 	var out bytes.Buffer
 	err := exportpkg.ReadDocuments(bytes.NewReader(chunk), func(_ int, doc map[string]any) error {
 		if ek != nil {
-			if err := auth.PortableToPlain(collection, doc, ek); err != nil {
+			if err := authcore.PortableToPlain(collection, doc, ek); err != nil {
 				return err
 			}
-		} else if !auth.PortableWithoutSecrets(collection, doc) {
+		} else if !authcore.PortableWithoutSecrets(collection, doc) {
 			return nil
 		}
 		line, err := exportpkg.EncodeDocument(doc)

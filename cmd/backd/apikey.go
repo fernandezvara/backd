@@ -8,7 +8,7 @@ import (
 
 	"github.com/fernandezvara/kli"
 
-	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/authcore"
 	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/strutil"
@@ -49,7 +49,7 @@ func keyOptions(c *kli.CommandContext, body map[string]any) error {
 	}
 	if v := cmdutil.Str(c, "scopes"); v != "" {
 		grants := strings.Split(v, ",")
-		if _, err := auth.ParseScopes(grants); err != nil {
+		if _, err := authcore.ParseScopes(grants); err != nil {
 			return cmdutil.UsageErr(fmt.Errorf("--scopes: %w", err))
 		}
 		body["scopes"] = grants

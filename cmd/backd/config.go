@@ -6,7 +6,7 @@ import (
 	"github.com/fernandezvara/kli"
 
 	"github.com/fernandezvara/backd/internal/registry"
-	"github.com/fernandezvara/backd/internal/settings"
+	"github.com/fernandezvara/backd/internal/settings/limits"
 )
 
 // checkConfig and configFingerprint handle `backd config check|fingerprint`.
@@ -26,25 +26,25 @@ func configCommand(c *kli.CommandContext, fingerprintOnly bool) error {
 	}
 	if err == nil {
 		var max int64
-		if max, err = settings.ImageMaxPixels(c.Getenv); err == nil {
+		if max, err = limits.ImageMaxPixels(c.Getenv); err == nil {
 			err = reg.CheckImageLimits(max)
 		}
 	}
 	if err == nil {
 		var l registry.ExpandLimits
-		if l, err = settings.ExpandLimitsFrom(c.Getenv); err == nil {
+		if l, err = limits.Expand(c.Getenv); err == nil {
 			err = reg.CheckExpandLimits(l.MaxArray)
 		}
 	}
 	if err == nil {
 		var l registry.AggregateLimits
-		if l, err = settings.AggregateLimitsFrom(c.Getenv); err == nil {
+		if l, err = limits.Aggregate(c.Getenv); err == nil {
 			err = reg.CheckAggregateLimits(l)
 		}
 	}
 	if err == nil {
 		var l registry.TriggerLimits
-		if l, err = settings.TriggerLimitsFrom(c.Getenv); err == nil {
+		if l, err = limits.Trigger(c.Getenv); err == nil {
 			err = reg.CheckTriggerLimits(l)
 		}
 	}

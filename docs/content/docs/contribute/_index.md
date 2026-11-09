@@ -19,11 +19,13 @@ This section is for the **contributor**: whoever changes `backd` itself. To run 
 |---|---|
 | `cmd/backd/` | The `backd` binary: subcommand dispatch |
 | `internal/cmdutil/` | Helpers the command trees share: flag definitions and reads, the command wrapper, exit codes, terminal input and JSON output |
-| `internal/settings/` | Runtime settings from environment variables |
+| `internal/settings/` | Runtime settings from environment variables; `limits/` reads the instance limits `backd config check` also applies |
 | `internal/registry/` | Loads and validates the `CONFIG_DIR` tree into the registry |
 | `internal/jsonnum/` | JSON number normalization (int64 / float64) |
 | `internal/httpapi/` | HTTP layer: router, middleware, error envelope, document, `/_auth` and `/_admin` handlers, CORS |
 | `internal/auth/` | Users, sessions, API keys, invitations, roles, password hashing and login throttling (storage-neutral); `authtest/` has an in-memory store for tests |
+| `internal/authcore/` | The parts of authentication that need no store, shared with the CLI: API key scopes, the secrets cipher, field key encoding, the portable form of authentication data |
+| `internal/apiheaders/` | Names of the HTTP headers both the server and the CLI read |
 | `internal/rules/` | Checks, compiles and evaluates the `rules:` of `collection.yaml`; turns read rules into storage filters |
 | `internal/templates/` | Starter files for `backd template` |
 | `internal/query/` | Parses and checks `where` / `order_by` / `count` against the schema |

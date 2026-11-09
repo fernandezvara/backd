@@ -16,9 +16,9 @@ import (
 
 	"github.com/fernandezvara/kli"
 
+	"github.com/fernandezvara/backd/internal/apiheaders"
 	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/internal/functions"
-	"github.com/fernandezvara/backd/internal/httpapi"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/pkg/client"
 )
@@ -135,7 +135,7 @@ func functionsInvoke(c *kli.CommandContext) error {
 	elapsed := time.Since(start)
 
 	if hdr != nil {
-		if logs := hdr.Get(httpapi.DevLogsHeader); logs != "" {
+		if logs := hdr.Get(apiheaders.DevLogs); logs != "" {
 			var lines []struct{ Level, Line string }
 			if json.Unmarshal([]byte(logs), &lines) == nil && len(lines) > 0 {
 				fmt.Fprintln(stderr, "logs:")
@@ -144,7 +144,7 @@ func functionsInvoke(c *kli.CommandContext) error {
 				}
 			}
 		}
-		if ms := hdr.Get(httpapi.DevDurationHeader); ms != "" {
+		if ms := hdr.Get(apiheaders.DevDuration); ms != "" {
 			fmt.Fprintf(stderr, "time: %s (executor: %sms)\n", elapsed, ms)
 		} else {
 			fmt.Fprintf(stderr, "time: %s\n", elapsed)

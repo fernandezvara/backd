@@ -20,6 +20,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fernandezvara/backd/internal/apiheaders"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/xid"
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -949,21 +951,12 @@ func (f *functions) callback(realm, database, name string, fn *registry.Function
 
 var functionErrorCode = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 
-// DevDurationHeader and DevLogsHeader carry the function's timing and
-// console output back to the caller, only in dev mode (BACKD_DEV): a
-// production call never leaks another caller's function logs. `backd
-// functions invoke` reads them.
-const (
-	DevDurationHeader = "X-Backd-Dev-Duration-Ms"
-	DevLogsHeader     = "X-Backd-Dev-Logs"
-)
-
 // respond answers the caller from the executor's result.
 func (f *functions) respond(w http.ResponseWriter, r *http.Request, fn *registry.Function, res executor.Result) {
 	if f.dev {
-		w.Header().Set(DevDurationHeader, strconv.FormatInt(res.DurationMS, 10))
+		w.Header().Set(apiheaders.DevDuration, strconv.FormatInt(res.DurationMS, 10))
 		if data, err := json.Marshal(res.Logs); err == nil {
-			w.Header().Set(DevLogsHeader, string(data))
+			w.Header().Set(apiheaders.DevLogs, string(data))
 		}
 	}
 	switch res.Status {
