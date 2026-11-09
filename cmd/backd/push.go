@@ -11,6 +11,8 @@ import (
 	"text/tabwriter"
 
 	"github.com/fernandezvara/kli"
+
+	"github.com/fernandezvara/backd/internal/cmdutil"
 )
 
 // pushDevices lists a user's registered devices: never their tokens.
@@ -31,10 +33,10 @@ func pushDevices(c *userCtx) error {
 		return err
 	}
 	if len(out.Items) == 0 {
-		fmt.Fprintf(c.uio.stdout, "%s has no registered devices\n", u.Email)
+		fmt.Fprintf(c.uio.Stdout, "%s has no registered devices\n", u.Email)
 		return nil
 	}
-	w := tabwriter.NewWriter(c.uio.stdout, 0, 4, 2, ' ', 0)
+	w := tabwriter.NewWriter(c.uio.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(w, "ID\tPLATFORM\tNAME\tLAST SEEN")
 	for _, d := range out.Items {
 		name := "-"
@@ -52,11 +54,11 @@ func pushRemoveDevice(c *userCtx) error {
 	if err != nil {
 		return err
 	}
-	id := str(c.cmd, "id")
+	id := cmdutil.Str(c.cmd, "id")
 	if err := c.t.adm.Users.DeleteDevice(c.t.ctx, u.ID, id); err != nil {
 		return err
 	}
-	fmt.Fprintf(c.uio.stdout, "device %s of %s removed\n", id, u.Email)
+	fmt.Fprintf(c.uio.Stdout, "device %s of %s removed\n", id, u.Email)
 	return nil
 }
 
@@ -88,8 +90,8 @@ func pushSends(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	out := ioOf(c)
-	if id := str(c, "id"); id != "" {
+	out := cmdutil.IOOf(c)
+	if id := cmdutil.Str(c, "id"); id != "" {
 		var row pushSendRow
 		if err := t.adm.Push.Send(t.ctx, id, &row); err != nil {
 			return err
@@ -98,14 +100,14 @@ func pushSends(c *kli.CommandContext) error {
 		if row.Completed {
 			state = "completed " + *row.DoneAt
 		}
-		fmt.Fprintf(out.stdout, "send      %s\nkind      %s\nsender    %s\ncreated   %s\nstate     %s\n", row.ID, row.Kind, row.Sender, row.CreatedAt, state)
-		fmt.Fprintf(out.stdout, "users     queued %d, limited %d, no devices %d, no consent %d\ndevices   sent %d, invalid %d, failed %d\nwork      %d batches, %d of %d units done\n",
+		fmt.Fprintf(out.Stdout, "send      %s\nkind      %s\nsender    %s\ncreated   %s\nstate     %s\n", row.ID, row.Kind, row.Sender, row.CreatedAt, state)
+		fmt.Fprintf(out.Stdout, "users     queued %d, limited %d, no devices %d, no consent %d\ndevices   sent %d, invalid %d, failed %d\nwork      %d batches, %d of %d units done\n",
 			row.Queued, row.Limited, row.NoDevices, row.NoConsent, row.Sent, row.Invalid, row.Failed, row.Batches, row.UnitsDone, row.Units)
 		return nil
 	}
 	query := url.Values{}
 	for _, k := range []string{"kind", "function", "limit"} {
-		if v := str(c, k); v != "" {
+		if v := cmdutil.Str(c, k); v != "" {
 			query.Set(k, v)
 		}
 	}
@@ -116,10 +118,10 @@ func pushSends(c *kli.CommandContext) error {
 		return err
 	}
 	if len(page.Items) == 0 {
-		fmt.Fprintln(out.stdout, "no sends")
+		fmt.Fprintln(out.Stdout, "no sends")
 		return nil
 	}
-	w := tabwriter.NewWriter(out.stdout, 0, 4, 2, ' ', 0)
+	w := tabwriter.NewWriter(out.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(w, "ID\tKIND\tSENDER\tQUEUED\tLIMITED\tNO DEVICES\tSENT\tINVALID\tFAILED\tDONE")
 	for _, r := range page.Items {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%t\n", r.ID, r.Kind, r.Sender, r.Queued, r.Limited, r.NoDevices, r.Sent, r.Invalid, r.Failed, r.Completed)
@@ -131,11 +133,11 @@ func pushSends(c *kli.CommandContext) error {
 func pushTest(c *userCtx) error {
 	body := map[string]any{"email": c.email}
 	for flag, key := range map[string]string{"kind": "kind", "title": "title", "body": "body"} {
-		if v := str(c.cmd, flag); v != "" {
+		if v := cmdutil.Str(c.cmd, flag); v != "" {
 			body[key] = v
 		}
 	}
-	if raw := str(c.cmd, "data"); raw != "" {
+	if raw := cmdutil.Str(c.cmd, "data"); raw != "" {
 		var data map[string]any
 		if err := json.Unmarshal([]byte(raw), &data); err != nil {
 			return fmt.Errorf("--data must be a JSON object of strings: %w", err)
@@ -151,7 +153,7 @@ func pushTest(c *userCtx) error {
 	if err := c.t.adm.Push.Test(c.t.ctx, body, &out); err != nil {
 		return err
 	}
-	fmt.Fprintf(c.uio.stdout, "send %s: %s\n", out.SendID, map[bool]string{
+	fmt.Fprintf(c.uio.Stdout, "send %s: %s\n", out.SendID, map[bool]string{
 		true:  "queued for delivery; see it with `backd push sends --id " + out.SendID + "`",
 		false: fmt.Sprintf("nothing queued (limited %d, no devices %d)", out.Limited, out.NoDevices),
 	}[out.Queued > 0])
@@ -170,9 +172,9 @@ func pushWebKeys(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	out := ioOf(c)
-	name := orDefault(str(c, "name"), webKeysSecret)
-	rotate := flag(c, "rotate")
+	out := cmdutil.IOOf(c)
+	name := orDefault(cmdutil.Str(c, "name"), webKeysSecret)
+	rotate := cmdutil.Flag(c, "rotate")
 	var page struct{ Items []secret }
 	if err := t.adm.Secrets.List(t.ctx, &page); err != nil {
 		return err
@@ -208,10 +210,10 @@ func pushWebKeys(c *kli.CommandContext) error {
 		if err := t.adm.Push.DeleteDevices(t.ctx, url.Values{"platform": {"web"}}, &res); err != nil {
 			return fmt.Errorf("the key was replaced, but the web devices could not be removed: %w", err)
 		}
-		fmt.Fprintf(out.stderr, "rotated: %d web devices removed; apps subscribe again at their next launch\n", res.Removed)
+		fmt.Fprintf(out.Stderr, "rotated: %d web devices removed; apps subscribe again at their next launch\n", res.Removed)
 	}
-	fmt.Fprintf(out.stdout, "The private key is the realm secret %s. Put the public key in realm.yaml:\n\n", name)
-	fmt.Fprintf(out.stdout, "push:\n  web:\n    provider: webpush\n    public_key: %s\n    private_key: secret:%s\n    subject: secret:VAPID_SUBJECT\n\n", public, name)
-	fmt.Fprintf(out.stdout, "and set the contact the browsers' push services may use:\n  backd secret set --realm %s --name VAPID_SUBJECT   # mailto:ops@example.com or https://example.com\n", str(c, "realm"))
+	fmt.Fprintf(out.Stdout, "The private key is the realm secret %s. Put the public key in realm.yaml:\n\n", name)
+	fmt.Fprintf(out.Stdout, "push:\n  web:\n    provider: webpush\n    public_key: %s\n    private_key: secret:%s\n    subject: secret:VAPID_SUBJECT\n\n", public, name)
+	fmt.Fprintf(out.Stdout, "and set the contact the browsers' push services may use:\n  backd secret set --realm %s --name VAPID_SUBJECT   # mailto:ops@example.com or https://example.com\n", cmdutil.Str(c, "realm"))
 	return nil
 }

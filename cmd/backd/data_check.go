@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/fernandezvara/kli"
+
+	"github.com/fernandezvara/backd/internal/cmdutil"
 )
 
 // checkWarning is said before every check: it is a full read of the data.
@@ -44,13 +46,13 @@ type checkReport struct {
 // dataCheck handles `backd data check`: it starts a schema check, follows its
 // progress, prints the reports and exits non-zero when it found drift.
 func dataCheck(c *kli.CommandContext) error {
-	database, collection := str(c, "database"), str(c, "collection")
+	database, collection := cmdutil.Str(c, "database"), cmdutil.Str(c, "collection")
 	if collection != "" && database == "" {
-		return usageErr(errors.New("--collection needs --database"))
+		return cmdutil.UsageErr(errors.New("--collection needs --database"))
 	}
-	interval, err := time.ParseDuration(str(c, "interval"))
+	interval, err := time.ParseDuration(cmdutil.Str(c, "interval"))
 	if err != nil || interval <= 0 {
-		return usageErr(errors.New("--interval must be a duration such as 2s"))
+		return cmdutil.UsageErr(errors.New("--interval must be a duration such as 2s"))
 	}
 	t, err := targetOf(c, false)
 	if err != nil {
@@ -63,7 +65,7 @@ func dataCheck(c *kli.CommandContext) error {
 	if collection != "" {
 		body["collection"] = collection
 	}
-	if n := num(c, "limit"); n > 0 {
+	if n := cmdutil.Num(c, "limit"); n > 0 {
 		body["limit"] = n
 	}
 	stderr := c.Stderr()
@@ -86,7 +88,7 @@ func dataCheck(c *kli.CommandContext) error {
 		size = fmt.Sprintf(", about %d documents", *started.EstimatedDocuments)
 	}
 	fmt.Fprintf(stderr, "schema check %s started (%s: %d collections%s)\n", started.ID, started.Scope, len(started.Collections), size)
-	if flag(c, "no-wait") {
+	if cmdutil.Flag(c, "no-wait") {
 		fmt.Fprintln(c.Stdout(), started.ID)
 		return nil
 	}
@@ -130,8 +132,8 @@ func dataCheck(c *kli.CommandContext) error {
 		}
 		reports = append(reports, r)
 	}
-	if flag(c, "json") {
-		if err := encodeJSONLines(c.Stdout(), reports); err != nil {
+	if cmdutil.Flag(c, "json") {
+		if err := cmdutil.PrintJSONLines(c.Stdout(), reports); err != nil {
 			return err
 		}
 	} else {
@@ -148,9 +150,9 @@ func dataCheck(c *kli.CommandContext) error {
 	}
 	switch {
 	case invalid > 0:
-		return kli.Exit(1, fmt.Errorf("drift found: %d invalid documents in %d collections", invalid, countInvalid(reports)))
+		return cmdutil.Failed(fmt.Errorf("drift found: %d invalid documents in %d collections", invalid, countInvalid(reports)))
 	case incomplete > 0:
-		return kli.Exit(1, fmt.Errorf("%d collections were not checked to the end (the time limit)", incomplete))
+		return cmdutil.Failed(fmt.Errorf("%d collections were not checked to the end (the time limit)", incomplete))
 	}
 	return nil
 }
@@ -200,9 +202,9 @@ func printCheckReport(w io.Writer, r checkReport) {
 
 // dataChecks handles `backd data checks`: the latest reports (or one in full).
 func dataChecks(c *kli.CommandContext) error {
-	database, collection := str(c, "database"), str(c, "collection")
+	database, collection := cmdutil.Str(c, "database"), cmdutil.Str(c, "collection")
 	if collection != "" && database == "" {
-		return usageErr(errors.New("--collection needs --database"))
+		return cmdutil.UsageErr(errors.New("--collection needs --database"))
 	}
 	t, err := targetOf(c, false)
 	if err != nil {
@@ -213,8 +215,8 @@ func dataChecks(c *kli.CommandContext) error {
 		if err := t.adm.DataChecks.Get(t.ctx, database, collection, &r); err != nil {
 			return err
 		}
-		if flag(c, "json") {
-			return encodeJSONLines(c.Stdout(), []checkReport{r})
+		if cmdutil.Flag(c, "json") {
+			return cmdutil.PrintJSONLines(c.Stdout(), []checkReport{r})
 		}
 		printCheckReport(c.Stdout(), r)
 		return nil
@@ -230,8 +232,8 @@ func dataChecks(c *kli.CommandContext) error {
 	if err := t.adm.DataChecks.List(t.ctx, &out); err != nil {
 		return err
 	}
-	if flag(c, "json") {
-		return encodeJSONLines(c.Stdout(), []any{out})
+	if cmdutil.Flag(c, "json") {
+		return cmdutil.PrintJSONLines(c.Stdout(), []any{out})
 	}
 	if out.Running != nil {
 		p := "starting"

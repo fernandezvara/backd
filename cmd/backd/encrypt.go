@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -10,6 +9,8 @@ import (
 	"time"
 
 	"github.com/fernandezvara/kli"
+
+	"github.com/fernandezvara/backd/internal/cmdutil"
 )
 
 // encryptionStatus is the answer of GET /_admin/encryption.
@@ -55,9 +56,9 @@ type encryptionStatus struct {
 }
 
 func encryptScope(c *kli.CommandContext) (url.Values, error) {
-	database, collection := str(c, "database"), str(c, "collection")
+	database, collection := cmdutil.Str(c, "database"), cmdutil.Str(c, "collection")
 	if collection != "" && database == "" {
-		return nil, usageErr(errors.New("--collection needs --database"))
+		return nil, cmdutil.UsageErr(errors.New("--collection needs --database"))
 	}
 	q := url.Values{}
 	if database != "" {
@@ -84,8 +85,8 @@ func encryptStatus(c *kli.CommandContext) error {
 	if err := t.adm.Encryption.Status(t.ctx, q, &out); err != nil {
 		return err
 	}
-	if flag(c, "json") {
-		return json.NewEncoder(c.Stdout()).Encode(out)
+	if cmdutil.Flag(c, "json") {
+		return cmdutil.PrintJSON(c.Stdout(), out)
 	}
 	if len(out.Collections) == 0 {
 		fmt.Fprintln(c.Stdout(), "no collection of this realm encrypts fields")
@@ -139,43 +140,43 @@ func encryptRekey(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	uio := ioOf(c)
+	uio := cmdutil.IOOf(c)
 	proof, err := t.proof(uio)
 	if err != nil {
 		return err
 	}
-	body := map[string]any{"database": str(c, "database"), "collection": str(c, "collection"), "field": str(c, "field")}
+	body := map[string]any{"database": cmdutil.Str(c, "database"), "collection": cmdutil.Str(c, "collection"), "field": cmdutil.Str(c, "field")}
 	var out struct {
 		Generation int `json:"generation"`
 	}
 	if err := t.adm.Encryption.Rekey(t.ctx, body, &out, withProof(proof)...); err != nil {
 		return err
 	}
-	fmt.Fprintf(uio.stdout, "%s/%s.%s: new data key, generation %d. Values written from now on use it; run `backd encrypt migrate` to seal the existing ones with it.\n",
-		str(c, "database"), str(c, "collection"), str(c, "field"), out.Generation)
+	fmt.Fprintf(uio.Stdout, "%s/%s.%s: new data key, generation %d. Values written from now on use it; run `backd encrypt migrate` to seal the existing ones with it.\n",
+		cmdutil.Str(c, "database"), cmdutil.Str(c, "collection"), cmdutil.Str(c, "field"), out.Generation)
 	return nil
 }
 
 // encryptMigrate queues the migration of a collection and follows it.
 func encryptMigrate(c *kli.CommandContext) error {
-	interval, err := time.ParseDuration(str(c, "interval"))
+	interval, err := time.ParseDuration(cmdutil.Str(c, "interval"))
 	if err != nil || interval <= 0 {
-		return usageErr(errors.New("--interval must be a duration such as 2s"))
+		return cmdutil.UsageErr(errors.New("--interval must be a duration such as 2s"))
 	}
 	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}
-	uio := ioOf(c)
+	uio := cmdutil.IOOf(c)
 	proof, err := t.proof(uio)
 	if err != nil {
 		return err
 	}
-	body := map[string]any{"database": str(c, "database"), "collection": str(c, "collection")}
-	if f := str(c, "field"); f != "" {
+	body := map[string]any{"database": cmdutil.Str(c, "database"), "collection": cmdutil.Str(c, "collection")}
+	if f := cmdutil.Str(c, "field"); f != "" {
 		body["fields"] = strings.Split(f, ",")
 	}
-	if flag(c, "dry-run") {
+	if cmdutil.Flag(c, "dry-run") {
 		body["dry_run"] = true
 	}
 	var started struct {
@@ -188,9 +189,9 @@ func encryptMigrate(c *kli.CommandContext) error {
 		}
 		return err
 	}
-	fmt.Fprintf(uio.stderr, "migration %s started\n", started.ID)
-	if flag(c, "no-wait") {
-		fmt.Fprintln(uio.stdout, started.ID)
+	fmt.Fprintf(uio.Stderr, "migration %s started\n", started.ID)
+	if cmdutil.Flag(c, "no-wait") {
+		fmt.Fprintln(uio.Stdout, started.ID)
 		return nil
 	}
 	last := ""
@@ -200,7 +201,7 @@ func encryptMigrate(c *kli.CommandContext) error {
 			return err
 		}
 		if p := job.Progress; p != nil && p.Message != nil && *p.Message != last {
-			fmt.Fprintln(uio.stderr, *p.Message)
+			fmt.Fprintln(uio.Stderr, *p.Message)
 			last = *p.Message
 		}
 		if job.Status == "done" {
@@ -211,6 +212,6 @@ func encryptMigrate(c *kli.CommandContext) error {
 		}
 		time.Sleep(interval)
 	}
-	fmt.Fprintln(uio.stdout, "done"+map[bool]string{true: " (dry run: nothing was changed)", false: ""}[flag(c, "dry-run")])
+	fmt.Fprintln(uio.Stdout, "done"+map[bool]string{true: " (dry run: nothing was changed)", false: ""}[cmdutil.Flag(c, "dry-run")])
 	return nil
 }

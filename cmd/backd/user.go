@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -15,10 +14,10 @@ import (
 	"time"
 
 	"github.com/fernandezvara/kli"
-	"golang.org/x/term"
 
 	"github.com/fernandezvara/backd/internal/adminclient"
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/internal/mongodb"
 	"github.com/fernandezvara/backd/internal/registry"
 )
@@ -40,13 +39,8 @@ type userCtx struct {
 	t     *target
 	cmd   *kli.CommandContext
 	email string
-	uio   userIO
+	uio   cmdutil.IO
 	local *registry.RealmSettings // the realm's settings, when CONFIG_DIR has it
-}
-
-type userIO struct {
-	stdin          io.Reader
-	stdout, stderr io.Writer
 }
 
 // find looks a user up by email.
@@ -77,9 +71,9 @@ func (c *userCtx) onUser(do func(id string, out *adminUser) error) (adminUser, e
 
 func userCreate(c *userCtx) error {
 	body := map[string]any{"email": c.email}
-	noPassword := flag(c.cmd, "no-password")
+	noPassword := cmdutil.Flag(c.cmd, "no-password")
 	if !noPassword {
-		p, err := readSecret(c.uio, true, "Password")
+		p, err := cmdutil.ReadSecret(c.uio, true, "Password")
 		if err != nil {
 			return err
 		}
@@ -89,15 +83,15 @@ func userCreate(c *userCtx) error {
 	if err := c.t.adm.Users.Create(c.t.ctx, body, &u); err != nil {
 		return err
 	}
-	fmt.Fprintf(c.uio.stdout, "created user %s (id %s)\n", u.Email, u.ID)
+	fmt.Fprintf(c.uio.Stdout, "created user %s (id %s)\n", u.Email, u.ID)
 	if noPassword {
-		fmt.Fprintln(c.uio.stdout, "the user has no password yet; set one with `backd user set-password`")
+		fmt.Fprintln(c.uio.Stdout, "the user has no password yet; set one with `backd user set-password`")
 	}
 	return nil
 }
 
 func userList(c *userCtx) error {
-	tw := tabwriter.NewWriter(c.uio.stdout, 0, 0, 2, ' ', 0)
+	tw := tabwriter.NewWriter(c.uio.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "EMAIL\tID\tVERIFIED\tDISABLED\tROLES\tCREATED")
 	for after := ""; ; {
 		var page struct {
@@ -125,7 +119,7 @@ func userList(c *userCtx) error {
 }
 
 func userSetPassword(c *userCtx) error {
-	p, err := readSecret(c.uio, true, "Password")
+	p, err := cmdutil.ReadSecret(c.uio, true, "Password")
 	if err != nil {
 		return err
 	}
@@ -135,13 +129,13 @@ func userSetPassword(c *userCtx) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(c.uio.stdout, "password set for %s; all of their sessions were revoked\n", u.Email)
+	fmt.Fprintf(c.uio.Stdout, "password set for %s; all of their sessions were revoked\n", u.Email)
 	return nil
 }
 
 func userExpirePassword(c *userCtx) error {
 	body := map[string]string{}
-	if r := str(c.cmd, "reason"); r != "" {
+	if r := cmdutil.Str(c.cmd, "reason"); r != "" {
 		body["reason"] = r
 	}
 	u, err := c.onUser(func(id string, out *adminUser) error {
@@ -150,20 +144,20 @@ func userExpirePassword(c *userCtx) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(c.uio.stdout, "the password of %s expired; they can sign in again after a password reset or a new password from an administrator (their sessions were kept)\n", u.Email)
+	fmt.Fprintf(c.uio.Stdout, "the password of %s expired; they can sign in again after a password reset or a new password from an administrator (their sessions were kept)\n", u.Email)
 	return nil
 }
 
 func userExpirePasswords(c *userCtx) error {
-	if !flag(c.cmd, "yes") {
+	if !cmdutil.Flag(c.cmd, "yes") {
 		msg := "this expires the password of every account in the realm and ends every session"
-		if flag(c.cmd, "keep-sessions") {
+		if cmdutil.Flag(c.cmd, "keep-sessions") {
 			msg = "this expires the password of every account in the realm"
 		}
 		return errors.New(msg + ": add --yes to confirm")
 	}
-	body := map[string]any{"keep_sessions": flag(c.cmd, "keep-sessions"), "notify": flag(c.cmd, "notify")}
-	if r := str(c.cmd, "reason"); r != "" {
+	body := map[string]any{"keep_sessions": cmdutil.Flag(c.cmd, "keep-sessions"), "notify": cmdutil.Flag(c.cmd, "notify")}
+	if r := cmdutil.Str(c.cmd, "reason"); r != "" {
 		body["reason"] = r
 	}
 	var out struct {
@@ -179,9 +173,9 @@ func userExpirePasswords(c *userCtx) error {
 	if err := c.t.adm.Passwords.Expire(c.t.ctx, body, &out, withProof(proof)...); err != nil {
 		return err
 	}
-	fmt.Fprintf(c.uio.stdout, "every password set before %s expired: %d accounts with a password, %d sessions ended\nusers choose a new password with a reset (a sign-in with the old one queues the email), or you set one with `backd user set-password`\n", out.ValidAfter, out.Accounts, out.Sessions)
+	fmt.Fprintf(c.uio.Stdout, "every password set before %s expired: %d accounts with a password, %d sessions ended\nusers choose a new password with a reset (a sign-in with the old one queues the email), or you set one with `backd user set-password`\n", out.ValidAfter, out.Accounts, out.Sessions)
 	if out.NotifyJob != "" {
-		fmt.Fprintf(c.uio.stdout, "telling the users by email: job %s (follow it with `backd functions jobs`; `backd user notify-expired` starts it again if it is cancelled or fails)\n", out.NotifyJob)
+		fmt.Fprintf(c.uio.Stdout, "telling the users by email: job %s (follow it with `backd functions jobs`; `backd user notify-expired` starts it again if it is cancelled or fails)\n", out.NotifyJob)
 	}
 	return nil
 }
@@ -197,15 +191,15 @@ func userNotifyExpired(c *userCtx) error {
 	if err := c.t.adm.Passwords.Notify(c.t.ctx, &out, withProof(proof)...); err != nil {
 		return err
 	}
-	fmt.Fprintf(c.uio.stdout, "telling the users whose password expired: job %s; users already told are skipped (follow it with `backd functions jobs`)\n", out.ID)
+	fmt.Fprintf(c.uio.Stdout, "telling the users whose password expired: job %s; users already told are skipped (follow it with `backd functions jobs`)\n", out.ID)
 	return nil
 }
 
 func userRevokeSessions(c *userCtx) error {
-	if !flag(c.cmd, "all") {
-		return usageErr(errors.New("--all is required: it ends the sessions of every user (to end one user's, set a password or disable them)"))
+	if !cmdutil.Flag(c.cmd, "all") {
+		return cmdutil.UsageErr(errors.New("--all is required: it ends the sessions of every user (to end one user's, set a password or disable them)"))
 	}
-	if !flag(c.cmd, "yes") {
+	if !cmdutil.Flag(c.cmd, "yes") {
 		return errors.New("this ends every session in the realm: add --yes to confirm")
 	}
 	var out struct{ Sessions int64 }
@@ -216,13 +210,13 @@ func userRevokeSessions(c *userCtx) error {
 	if err := c.t.adm.Sessions.RevokeAll(c.t.ctx, &out, withProof(proof)...); err != nil {
 		return err
 	}
-	fmt.Fprintf(c.uio.stdout, "%d sessions ended\n", out.Sessions)
+	fmt.Fprintf(c.uio.Stdout, "%d sessions ended\n", out.Sessions)
 	return nil
 }
 
 func userResetLink(c *userCtx) error {
 	body := map[string]string{}
-	if r := str(c.cmd, "redirect-to"); r != "" {
+	if r := cmdutil.Str(c.cmd, "redirect-to"); r != "" {
 		body["redirect_to"] = r
 	}
 	u, err := c.find()
@@ -240,19 +234,19 @@ func userResetLink(c *userCtx) error {
 	if err := c.t.adm.Users.ResetLink(c.t.ctx, u.ID, body, &out, withProof(proof)...); err != nil {
 		return err
 	}
-	fmt.Fprintln(c.uio.stdout, out.Link)
-	fmt.Fprintf(c.uio.stderr, "reset link for %s, shown once; it works once and expires at %s. Hand it over by a channel you trust: whoever holds it can set the password. Nothing was sent.\n", u.Email, out.ExpiresAt)
+	fmt.Fprintln(c.uio.Stdout, out.Link)
+	fmt.Fprintf(c.uio.Stderr, "reset link for %s, shown once; it works once and expires at %s. Hand it over by a channel you trust: whoever holds it can set the password. Nothing was sent.\n", u.Email, out.ExpiresAt)
 	return nil
 }
 
 func userChangeEmail(c *userCtx) error {
 	u, err := c.onUser(func(id string, out *adminUser) error {
-		return c.t.adm.Users.ChangeEmail(c.t.ctx, id, map[string]string{"email": str(c.cmd, "new-email")}, out)
+		return c.t.adm.Users.ChangeEmail(c.t.ctx, id, map[string]string{"email": cmdutil.Str(c.cmd, "new-email")}, out)
 	})
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(c.uio.stdout, "email changed to %s; all of their sessions were revoked, and both addresses were told (the old one can undo it for 7 days)\n", u.Email)
+	fmt.Fprintf(c.uio.Stdout, "email changed to %s; all of their sessions were revoked, and both addresses were told (the old one can undo it for 7 days)\n", u.Email)
 	return nil
 }
 
@@ -264,16 +258,16 @@ func userPatch(body map[string]bool, message string) func(*userCtx) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(c.uio.stdout, message, u.Email)
+		fmt.Fprintf(c.uio.Stdout, message, u.Email)
 		return nil
 	}
 }
 
 func userDelete(c *userCtx) error {
-	if !flag(c.cmd, "yes") {
+	if !cmdutil.Flag(c.cmd, "yes") {
 		return errors.New("deleting a user can't be undone; add --yes to confirm")
 	}
-	wait, err := time.ParseDuration(str(c.cmd, "wait"))
+	wait, err := time.ParseDuration(cmdutil.Str(c.cmd, "wait"))
 	if err != nil {
 		return fmt.Errorf("--wait: %w (such as 2m, or 0s to not wait)", err)
 	}
@@ -288,7 +282,7 @@ func userDelete(c *userCtx) error {
 	if err := c.t.adm.Users.Erase(c.t.ctx, u.ID, &job); err != nil {
 		return err
 	}
-	out := c.uio.stdout
+	out := c.uio.Stdout
 	fmt.Fprintf(out, "erasing %s (id %s): the account is a tombstone now, with no sign-in methods or sessions; job %s applies the collections' policies\n", u.Email, u.ID, job.ID)
 	if wait <= 0 {
 		fmt.Fprintln(out, "not waiting: a worker finishes it (see `backd audit --action user.erased`)")
@@ -330,7 +324,7 @@ func printErased(c *userCtx, id string) error {
 	if err := c.t.adm.Audit.List(c.t.ctx, url.Values{"action": {"user.erased"}, "target": {"user:" + id}, "limit": {"1"}}, &page); err != nil {
 		return err
 	}
-	out := c.uio.stdout
+	out := c.uio.Stdout
 	if len(page.Items) == 0 {
 		fmt.Fprintln(out, "done")
 		return nil
@@ -389,7 +383,7 @@ func userOwned(c *userCtx) error {
 	if err := c.t.adm.Users.Owned(c.t.ctx, u.ID, &report); err != nil {
 		return err
 	}
-	out := c.uio.stdout
+	out := c.uio.Stdout
 	fmt.Fprintf(out, "%s (id %s): %s\n", u.Email, report.User.ID, report.User.Status)
 	if len(report.Collections) == 0 {
 		fmt.Fprintln(out, "no collection declares a policy: an erase leaves every document alone")
@@ -455,18 +449,18 @@ func userRole(c *userCtx, verb, role string) error {
 	}
 	realm := c.t.realm
 	if verb == "add" {
-		fmt.Fprintf(c.uio.stdout, "role %q assigned to %s\n", role, u.Email)
+		fmt.Fprintf(c.uio.Stdout, "role %q assigned to %s\n", role, u.Email)
 	} else {
-		fmt.Fprintf(c.uio.stdout, "role %q removed from %s\n", role, u.Email)
+		fmt.Fprintf(c.uio.Stdout, "role %q removed from %s\n", role, u.Email)
 	}
 	switch {
 	case c.local == nil:
-		fmt.Fprintf(c.uio.stderr, "note: role assignments that %s/realm.yaml doesn't list under roles.%s.users live only in the database, and those it lists come back at the next start.\n", realm, role)
+		fmt.Fprintf(c.uio.Stderr, "note: role assignments that %s/realm.yaml doesn't list under roles.%s.users live only in the database, and those it lists come back at the next start.\n", realm, role)
 	case verb == "add" && !slices.Contains(c.local.Roles[role].Users, u.Email):
-		fmt.Fprintf(c.uio.stderr, "warning: this assignment is stored only in the database. If the realm is rebuilt from its config, it won't come back.\n"+
+		fmt.Fprintf(c.uio.Stderr, "warning: this assignment is stored only in the database. If the realm is rebuilt from its config, it won't come back.\n"+
 			"To keep it, list %s under roles.%s.users in %s/realm.yaml.\n", u.Email, role, realm)
 	case verb == "remove" && slices.Contains(c.local.Roles[role].Users, u.Email):
-		fmt.Fprintf(c.uio.stderr, "warning: %s/realm.yaml assigns this role to %s, so it will be assigned again at the next `backd serve` or `backd provision`.\n"+
+		fmt.Fprintf(c.uio.Stderr, "warning: %s/realm.yaml assigns this role to %s, so it will be assigned again at the next `backd serve` or `backd provision`.\n"+
 			"Remove %s from roles.%s.users in realm.yaml too.\n", realm, u.Email, u.Email, role)
 	}
 	return nil
@@ -484,7 +478,7 @@ func userNetworks(c *userCtx) error {
 		flag string
 		list *[]string
 	}{{"admin", &admin}, {"login", &login}} {
-		v := str(c.cmd, n.flag)
+		v := cmdutil.Str(c.cmd, n.flag)
 		if v == "" {
 			continue
 		}
@@ -493,7 +487,7 @@ func userNetworks(c *userCtx) error {
 		if v != "none" {
 			nets, err := registry.ParseNetworks(strings.Split(v, ","))
 			if err != nil {
-				return usageErr(fmt.Errorf("--%s: want comma-separated IP addresses or CIDR networks, or none; got %q", n.flag, v))
+				return cmdutil.UsageErr(fmt.Errorf("--%s: want comma-separated IP addresses or CIDR networks, or none; got %q", n.flag, v))
 			}
 			*n.list = nets.Strings()
 		}
@@ -504,12 +498,12 @@ func userNetworks(c *userCtx) error {
 			return err
 		}
 	}
-	fmt.Fprintf(c.uio.stdout, "%s\n  admin networks: %s\n  login networks: %s\n", u.Email, orAny(u.AdminNetworks), orAny(u.LoginNetworks))
+	fmt.Fprintf(c.uio.Stdout, "%s\n  admin networks: %s\n  login networks: %s\n", u.Email, orAny(u.AdminNetworks), orAny(u.LoginNetworks))
 	if changed {
 		if c.local == nil {
-			fmt.Fprintf(c.uio.stderr, "note: if %s/realm.yaml sets networks for %s, they are restored at the next start.\n", c.t.realm, u.Email)
+			fmt.Fprintf(c.uio.Stderr, "note: if %s/realm.yaml sets networks for %s, they are restored at the next start.\n", c.t.realm, u.Email)
 		} else if _, ok := c.local.UserNetworks[u.Email]; ok {
-			fmt.Fprintf(c.uio.stderr, "warning: %s/realm.yaml sets networks for %s, so they will be restored at the next `backd serve` or `backd provision`. Change them in realm.yaml too.\n", c.t.realm, u.Email)
+			fmt.Fprintf(c.uio.Stderr, "warning: %s/realm.yaml sets networks for %s, so they will be restored at the next `backd serve` or `backd provision`. Change them in realm.yaml too.\n", c.t.realm, u.Email)
 		}
 	}
 	return nil
@@ -550,54 +544,6 @@ func (a *app) users(ctx context.Context, realm string) (*auth.Users, error) {
 	}, nil
 }
 
-// readSecret reads a password from the terminal without echo, twice when
-// confirm is set; otherwise it reads the first line of stdin.
-func readSecret(uio userIO, confirm bool, prompt string) (string, error) {
-	if f, ok := uio.stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
-		fmt.Fprintf(uio.stderr, "%s: ", prompt)
-		p1, err := term.ReadPassword(int(f.Fd()))
-		fmt.Fprintln(uio.stderr)
-		if err != nil {
-			return "", err
-		}
-		if !confirm {
-			return string(p1), nil
-		}
-		fmt.Fprint(uio.stderr, "Repeat password: ")
-		p2, err := term.ReadPassword(int(f.Fd()))
-		fmt.Fprintln(uio.stderr)
-		if err != nil {
-			return "", err
-		}
-		if string(p1) != string(p2) {
-			return "", errors.New("passwords don't match")
-		}
-		return string(p1), nil
-	}
-	line, err := bufio.NewReader(uio.stdin).ReadString('\n')
-	if err != nil && (!errors.Is(err, io.EOF) || line == "") {
-		return "", errors.New("no password on standard input")
-	}
-	return strings.TrimRight(line, "\r\n"), nil
-}
-
-// readSecretValue reads the value of a secret: a hidden prompt on a terminal, and all of
-// standard input otherwise, so a file (a service account's JSON, a .p8 key) can be piped in.
-// Only the line ending at the very end is dropped.
-func readSecretValue(uio userIO, prompt string) (string, error) {
-	if f, ok := uio.stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
-		return readSecret(uio, false, prompt)
-	}
-	data, err := io.ReadAll(io.LimitReader(uio.stdin, 1<<20))
-	if err != nil {
-		return "", err
-	}
-	if len(data) == 0 {
-		return "", errors.New("no secret on standard input")
-	}
-	return strings.TrimRight(string(data), "\r\n"), nil
-}
-
 // userIdentities lists the user's sign-in methods.
 func userIdentities(c *userCtx) error {
 	u, err := c.find()
@@ -616,7 +562,7 @@ func userIdentities(c *userCtx) error {
 	if err := c.t.adm.Users.Identities(c.t.ctx, u.ID, &out); err != nil {
 		return err
 	}
-	w := tabwriter.NewWriter(c.uio.stdout, 0, 4, 2, ' ', 0)
+	w := tabwriter.NewWriter(c.uio.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(w, "PROVIDER\tEMAIL\tVERIFIED\tLINKED\tLAST USED")
 	for _, i := range out.Items {
 		last := "-"
@@ -630,7 +576,7 @@ func userIdentities(c *userCtx) error {
 
 // userUnlinkIdentity removes one of the user's sign-in methods.
 func userUnlinkIdentity(c *userCtx) error {
-	provider := str(c.cmd, "provider")
+	provider := cmdutil.Str(c.cmd, "provider")
 	u, err := c.find()
 	if err != nil {
 		return err
@@ -638,13 +584,13 @@ func userUnlinkIdentity(c *userCtx) error {
 	if err := c.t.adm.Users.UnlinkIdentity(c.t.ctx, u.ID, provider); err != nil {
 		return err
 	}
-	fmt.Fprintf(c.uio.stdout, "%s can no longer sign in with %s\n", u.Email, provider)
+	fmt.Fprintf(c.uio.Stdout, "%s can no longer sign in with %s\n", u.Email, provider)
 	return nil
 }
 
 // userMFAStatus shows one user's second factor, or who must still set one up.
 func userMFAStatus(c *userCtx) error {
-	c.email = str(c.cmd, "email")
+	c.email = cmdutil.Str(c.cmd, "email")
 	if c.email != "" {
 		u, err := c.find()
 		if err != nil {
@@ -659,7 +605,7 @@ func userMFAStatus(c *userCtx) error {
 		if err := c.t.adm.Users.MFA(c.t.ctx, u.ID, &st); err != nil {
 			return err
 		}
-		fmt.Fprintf(c.uio.stdout, "%s: second factor %s; required by role: %t; recovery codes left: %d\n", u.Email, onOff(st.Enabled), st.Required, st.RecoveryCodesLeft)
+		fmt.Fprintf(c.uio.Stdout, "%s: second factor %s; required by role: %t; recovery codes left: %d\n", u.Email, onOff(st.Enabled), st.Required, st.RecoveryCodesLeft)
 		return nil
 	}
 	var out struct {
@@ -677,23 +623,23 @@ func userMFAStatus(c *userCtx) error {
 	}
 	switch {
 	case out.RequiredAll:
-		fmt.Fprintln(c.uio.stdout, "MFA is required for every user")
+		fmt.Fprintln(c.uio.Stdout, "MFA is required for every user")
 	case len(out.RequiredRole) > 0:
-		fmt.Fprintf(c.uio.stdout, "MFA is required for the roles: %s\n", strings.Join(out.RequiredRole, ", "))
+		fmt.Fprintf(c.uio.Stdout, "MFA is required for the roles: %s\n", strings.Join(out.RequiredRole, ", "))
 	default:
-		fmt.Fprintln(c.uio.stdout, "MFA is required for no role (mfa.required_roles in realm.yaml)")
+		fmt.Fprintln(c.uio.Stdout, "MFA is required for no role (mfa.required_roles in realm.yaml)")
 		return nil
 	}
 	if out.Total == 0 {
-		fmt.Fprintln(c.uio.stdout, "every user who must use it has set it up")
+		fmt.Fprintln(c.uio.Stdout, "every user who must use it has set it up")
 		return nil
 	}
-	fmt.Fprintf(c.uio.stdout, "%d user(s) have none yet and will be asked at their next sign-in:\n", out.Total)
+	fmt.Fprintf(c.uio.Stdout, "%d user(s) have none yet and will be asked at their next sign-in:\n", out.Total)
 	for _, u := range out.Users {
-		fmt.Fprintf(c.uio.stdout, "  %s (%s)\n", u.Email, strings.Join(u.Roles, ", "))
+		fmt.Fprintf(c.uio.Stdout, "  %s (%s)\n", u.Email, strings.Join(u.Roles, ", "))
 	}
 	if out.Total > len(out.Users) {
-		fmt.Fprintf(c.uio.stdout, "  … and %d more\n", out.Total-len(out.Users))
+		fmt.Fprintf(c.uio.Stdout, "  … and %d more\n", out.Total-len(out.Users))
 	}
 	return nil
 }
@@ -707,7 +653,7 @@ func onOff(b bool) string {
 
 // userMFAReset removes a user's second factor through the admin API.
 func userMFAReset(c *userCtx) error {
-	if !flag(c.cmd, "yes") {
+	if !cmdutil.Flag(c.cmd, "yes") {
 		return errors.New("resetting a second factor ends all of the user's sessions and can't be undone: add --yes to confirm")
 	}
 	u, err := c.find()
@@ -717,36 +663,36 @@ func userMFAReset(c *userCtx) error {
 	if err := c.t.adm.Users.ResetMFA(c.t.ctx, u.ID); err != nil {
 		return err
 	}
-	fmt.Fprintf(c.uio.stdout, "second factor of %s removed; their sessions ended\n", u.Email)
+	fmt.Fprintf(c.uio.Stdout, "second factor of %s removed; their sessions ended\n", u.Email)
 	return nil
 }
 
 // userMFAResetLocal is the break-glass form: it acts on the database directly, like
 // `backd bootstrap`, so an operator can recover the only administrator of a realm.
 func userMFAResetLocal(c *kli.CommandContext) error {
-	if !flag(c, "yes") {
+	if !cmdutil.Flag(c, "yes") {
 		return errors.New("resetting a second factor ends all of the user's sessions and can't be undone: add --yes to confirm")
 	}
 	ctx := context.Background()
-	uio := ioOf(c)
-	a, err := setup(ctx, c.Getenv, uio.stderr)
+	uio := cmdutil.IOOf(c)
+	a, err := setup(ctx, c.Getenv, uio.Stderr)
 	if err != nil {
 		return err
 	}
 	defer a.close()
-	users, err := a.users(ctx, str(c, "realm"))
+	users, err := a.users(ctx, cmdutil.Str(c, "realm"))
 	if err != nil {
 		return err
 	}
-	u, err := users.Find(ctx, str(c, "email"))
+	u, err := users.Find(ctx, cmdutil.Str(c, "email"))
 	if err != nil {
-		return fmt.Errorf("user not found: %s", str(c, "email"))
+		return fmt.Errorf("user not found: %s", cmdutil.Str(c, "email"))
 	}
 	ctx = auth.WithAuditSource(ctx, func() auth.AuditSource { return auth.AuditSource{Actor: auth.ActorInstance} })
 	if err := users.ResetMFA(ctx, u.ID, ""); err != nil {
 		return mfaResetError(u.Email, err)
 	}
-	fmt.Fprintf(uio.stdout, "second factor of %s removed; their sessions ended (audited as %s)\n", u.Email, auth.ActorInstance)
+	fmt.Fprintf(uio.Stdout, "second factor of %s removed; their sessions ended (audited as %s)\n", u.Email, auth.ActorInstance)
 	return nil
 }
 
@@ -762,20 +708,20 @@ func mfaResetError(email string, err error) error {
 // reason say why not.
 func userExport(c *userCtx) error {
 	body := map[string]any{}
-	if v := str(c.cmd, "ticket"); v != "" {
+	if v := cmdutil.Str(c.cmd, "ticket"); v != "" {
 		body["ticket"] = v
 	}
-	if flag(c.cmd, "no-notify") {
-		if strings.TrimSpace(str(c.cmd, "reason")) == "" {
+	if cmdutil.Flag(c.cmd, "no-notify") {
+		if strings.TrimSpace(cmdutil.Str(c.cmd, "reason")) == "" {
 			return errors.New("--no-notify needs --reason: say why the user is not told, it is kept in the audit record")
 		}
 		body["no_notify"] = true
-		body["reason"] = str(c.cmd, "reason")
-	} else if str(c.cmd, "reason") != "" {
+		body["reason"] = cmdutil.Str(c.cmd, "reason")
+	} else if cmdutil.Str(c.cmd, "reason") != "" {
 		return errors.New("--reason only goes with --no-notify: it is why the user is not told")
 	}
 	wait := 30 * time.Minute
-	if v := str(c.cmd, "timeout"); v != "" {
+	if v := cmdutil.Str(c.cmd, "timeout"); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil || d <= 0 {
 			return fmt.Errorf("--timeout %q: use a duration such as 10m", v)
@@ -806,14 +752,14 @@ func userExport(c *userCtx) error {
 	}
 	switch {
 	case rec.Silent:
-		fmt.Fprintf(c.uio.stderr, "export %s of %s started; the user is not told (audited with your reason)\n", rec.ID, u.Email)
+		fmt.Fprintf(c.uio.Stderr, "export %s of %s started; the user is not told (audited with your reason)\n", rec.ID, u.Email)
 	case rec.Notified != nil && !*rec.Notified:
-		fmt.Fprintf(c.uio.stderr, "export %s of %s started; the user could NOT be told: %s\n", rec.ID, u.Email, rec.NotifyErr)
+		fmt.Fprintf(c.uio.Stderr, "export %s of %s started; the user could NOT be told: %s\n", rec.ID, u.Email, rec.NotifyErr)
 	default:
-		fmt.Fprintf(c.uio.stderr, "export %s of %s started; the user is told by email\n", rec.ID, u.Email)
+		fmt.Fprintf(c.uio.Stderr, "export %s of %s started; the user is told by email\n", rec.ID, u.Email)
 	}
-	if flag(c.cmd, "no-wait") {
-		fmt.Fprintln(c.uio.stdout, rec.ID)
+	if cmdutil.Flag(c.cmd, "no-wait") {
+		fmt.Fprintln(c.uio.Stdout, rec.ID)
 		return nil
 	}
 
@@ -832,10 +778,10 @@ func userExport(c *userCtx) error {
 		}
 		if rec.Step != "" && rec.Step != last {
 			last = rec.Step
-			fmt.Fprintln(c.uio.stderr, "  "+last)
+			fmt.Fprintln(c.uio.Stderr, "  "+last)
 		}
 	}
-	out := str(c.cmd, "out")
+	out := cmdutil.Str(c.cmd, "out")
 	if out == "" {
 		out = "export-" + rec.ID + ".zip"
 	}
@@ -857,8 +803,8 @@ func userExportDownload(c *userCtx) error {
 	if err != nil {
 		return err
 	}
-	id := str(c.cmd, "export")
-	out := str(c.cmd, "out")
+	id := cmdutil.Str(c.cmd, "export")
+	out := cmdutil.Str(c.cmd, "out")
 	if out == "" {
 		out = "export-" + id + ".zip"
 	}
@@ -892,6 +838,6 @@ func downloadExport(c *userCtx, open func() (*adminclient.Stream, error), path, 
 	if expires != "" {
 		msg += "; the copy kept by the server is deleted on " + expires
 	}
-	fmt.Fprintln(c.uio.stdout, msg)
+	fmt.Fprintln(c.uio.Stdout, msg)
 	return nil
 }

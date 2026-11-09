@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/fernandezvara/kli"
+
+	"github.com/fernandezvara/backd/internal/cmdutil"
 )
 
 type appConfigView struct {
@@ -78,7 +80,7 @@ func appConfigGet(c *kli.CommandContext) error {
 	}
 	flat := map[string]any{}
 	flatConfig(v.Values, "", flat)
-	if key := str(c, "key"); key != "" {
+	if key := cmdutil.Str(c, "key"); key != "" {
 		var out map[string]any
 		for p, val := range flat {
 			if p == key || strings.HasPrefix(p, key+".") {
@@ -93,8 +95,8 @@ func appConfigGet(c *kli.CommandContext) error {
 		}
 		flat = out
 	}
-	if flag(c, "json") {
-		return encodeJSONLines(c.Stdout(), []any{map[string]any{"version": v.Version, "values": flat, "invalid": v.Invalid}})
+	if cmdutil.Flag(c, "json") {
+		return cmdutil.PrintJSONLines(c.Stdout(), []any{map[string]any{"version": v.Version, "values": flat, "invalid": v.Invalid}})
 	}
 	w := c.Stdout()
 	fmt.Fprintf(w, "version %s\n", v.Version)
@@ -121,7 +123,7 @@ func appConfigGet(c *kli.CommandContext) error {
 
 // currentConfigVersion reads the version a change is based on: --if-match, or the live one.
 func currentConfigVersion(c *kli.CommandContext, t *target) (string, error) {
-	if v := str(c, "if-match"); v != "" {
+	if v := cmdutil.Str(c, "if-match"); v != "" {
 		return strings.Trim(v, `"`), nil
 	}
 	hdr, err := t.adm.AppConfig.Get(t.ctx, nil)
@@ -132,8 +134,8 @@ func currentConfigVersion(c *kli.CommandContext, t *target) (string, error) {
 }
 
 func printConfigResult(c *kli.CommandContext, r appConfigResult) error {
-	if flag(c, "json") {
-		return encodeJSONLines(c.Stdout(), []appConfigResult{r})
+	if cmdutil.Flag(c, "json") {
+		return cmdutil.PrintJSONLines(c.Stdout(), []appConfigResult{r})
 	}
 	w := c.Stdout()
 	if !r.Changed {
@@ -166,7 +168,7 @@ func appConfigSet(c *kli.CommandContext) error {
 		return err
 	}
 	set := map[string]any{}
-	switch values, key := str(c, "values"), str(c, "key"); {
+	switch values, key := cmdutil.Str(c, "values"), cmdutil.Str(c, "key"); {
 	case values != "" && key != "":
 		return fmt.Errorf("use --key with --value, or --values, not both")
 	case values != "":
@@ -176,7 +178,7 @@ func appConfigSet(c *kli.CommandContext) error {
 			return fmt.Errorf("--values must be a JSON object of key path to value: %w", err)
 		}
 	case key != "":
-		set[key] = parseConfigValue(str(c, "value"))
+		set[key] = parseConfigValue(cmdutil.Str(c, "value"))
 	default:
 		return fmt.Errorf("give --key and --value, or --values with a JSON object")
 	}
@@ -190,7 +192,7 @@ func appConfigReset(c *kli.CommandContext) error {
 		return err
 	}
 	var keys []string
-	for k := range strings.SplitSeq(str(c, "keys"), ",") {
+	for k := range strings.SplitSeq(cmdutil.Str(c, "keys"), ",") {
 		if k = strings.TrimSpace(k); k != "" {
 			keys = append(keys, k)
 		}
@@ -220,7 +222,7 @@ func appConfigHistory(c *kli.CommandContext) error {
 		return err
 	}
 	q := url.Values{}
-	if l := str(c, "limit"); l != "" {
+	if l := cmdutil.Str(c, "limit"); l != "" {
 		q.Set("limit", l)
 	}
 	var out struct {
@@ -229,8 +231,8 @@ func appConfigHistory(c *kli.CommandContext) error {
 	if err := t.adm.AppConfig.History(t.ctx, q, &out); err != nil {
 		return err
 	}
-	if flag(c, "json") {
-		return encodeJSONLines(c.Stdout(), out.History)
+	if cmdutil.Flag(c, "json") {
+		return cmdutil.PrintJSONLines(c.Stdout(), out.History)
 	}
 	w := c.Stdout()
 	for _, e := range out.History {
@@ -257,7 +259,7 @@ func appConfigRollback(c *kli.CommandContext) error {
 		return err
 	}
 	var res appConfigResult
-	body := map[string]any{"version": str(c, "version")}
+	body := map[string]any{"version": cmdutil.Str(c, "version")}
 	if err := t.adm.AppConfig.Rollback(t.ctx, version, body, &res); err != nil {
 		return err
 	}

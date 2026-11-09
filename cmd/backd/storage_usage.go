@@ -9,6 +9,7 @@ import (
 
 	"github.com/fernandezvara/kli"
 
+	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/internal/strutil"
 )
 
@@ -65,8 +66,8 @@ func storageUsage(c *kli.CommandContext) error {
 	if err := t.adm.Storage.Usage(t.ctx, &st); err != nil {
 		return err
 	}
-	if flag(c, "json") {
-		return encodeJSONLines(c.Stdout(), []storageStatus{st})
+	if cmdutil.Flag(c, "json") {
+		return cmdutil.PrintJSONLines(c.Stdout(), []storageStatus{st})
 	}
 	printStorageStatus(c.Stdout(), st)
 	return nil
@@ -145,19 +146,19 @@ func storageReconcile(c *kli.CommandContext) error {
 		return err
 	}
 	kinds := []string{"private", "public"}
-	which := str(c, "storage")
+	which := cmdutil.Str(c, "storage")
 	switch which {
 	case "":
 	case "private", "public":
 		kinds = []string{which}
 	default:
-		return usageErr(errors.New("--storage must be private or public"))
+		return cmdutil.UsageErr(errors.New("--storage must be private or public"))
 	}
 	var reps []reconcileReport
 	var missing error
 	for _, kind := range kinds {
 		var rep reconcileReport
-		if err := t.adm.Storage.Reconcile(t.ctx, map[string]any{"delete": flag(c, "delete"), "storage": kind}, &rep); err != nil {
+		if err := t.adm.Storage.Reconcile(t.ctx, map[string]any{"delete": cmdutil.Flag(c, "delete"), "storage": kind}, &rep); err != nil {
 			// Doing every storage skips the one the realm doesn't have.
 			if ae, ok := errors.AsType[*apiError](err); ok && ae.Status == http.StatusNotFound && which == "" {
 				if missing == nil {
@@ -172,20 +173,20 @@ func storageReconcile(c *kli.CommandContext) error {
 	if len(reps) == 0 {
 		return missing
 	}
-	if flag(c, "json") {
-		if err := encodeJSONLines(c.Stdout(), reps); err != nil {
+	if cmdutil.Flag(c, "json") {
+		if err := cmdutil.PrintJSONLines(c.Stdout(), reps); err != nil {
 			return err
 		}
 	}
 	failed := 0
 	for _, rep := range reps {
 		failed += len(rep.Failed)
-		if !flag(c, "json") {
+		if !cmdutil.Flag(c, "json") {
 			printReconcile(c.Stdout(), rep, len(reps) > 1)
 		}
 	}
 	if failed > 0 {
-		return kli.Exit(1, fmt.Errorf("%d objects could not be deleted: run it again", failed))
+		return cmdutil.Failed(fmt.Errorf("%d objects could not be deleted: run it again", failed))
 	}
 	return nil
 }

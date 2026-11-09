@@ -1,11 +1,12 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 
 	"github.com/fernandezvara/kli"
+
+	"github.com/fernandezvara/backd/internal/cmdutil"
 )
 
 // secretCreate creates a field key: generated here by the server and printed once, or imported
@@ -16,14 +17,14 @@ func secretCreate(c *kli.CommandContext) error {
 		return err
 	}
 	defer closeT()
-	if typ := str(c, "type"); typ != "key" {
-		return usageErr(fmt.Errorf("--type must be key (plain secrets are set with `backd secret set`), got %q", typ))
+	if typ := cmdutil.Str(c, "type"); typ != "key" {
+		return cmdutil.UsageErr(fmt.Errorf("--type must be key (plain secrets are set with `backd secret set`), got %q", typ))
 	}
-	generate, src := flag(c, "generate"), str(c, "value")
+	generate, src := cmdutil.Flag(c, "generate"), cmdutil.Str(c, "value")
 	if generate == (src != "") {
-		return usageErr(errors.New("give exactly one of --generate and --value"))
+		return cmdutil.UsageErr(errors.New("give exactly one of --generate and --value"))
 	}
-	name := str(c, "name")
+	name := cmdutil.Str(c, "name")
 	body := map[string]any{"name": name, "type": "key"}
 	if generate {
 		body["generate"] = true
@@ -34,7 +35,7 @@ func secretCreate(c *kli.CommandContext) error {
 		}
 		body["value"] = v
 	}
-	uio := ioOf(c)
+	uio := cmdutil.IOOf(c)
 	proof, err := t.proof(uio)
 	if err != nil {
 		return err
@@ -46,22 +47,21 @@ func secretCreate(c *kli.CommandContext) error {
 	}
 	if err := t.adm.Secrets.Create(t.ctx, body, &out, withProof(proof)...); err != nil {
 		var ae *apiError
-		if flag(c, "skip-existing") && errors.As(err, &ae) && ae.Status == 409 {
-			fmt.Fprintf(uio.stderr, "Key %s exists already: left as it is.\n", name)
+		if cmdutil.Flag(c, "skip-existing") && errors.As(err, &ae) && ae.Status == 409 {
+			fmt.Fprintf(uio.Stderr, "Key %s exists already: left as it is.\n", name)
 			return nil
 		}
 		return err
 	}
-	if flag(c, "json") {
-		enc := json.NewEncoder(uio.stdout)
-		return enc.Encode(out)
+	if cmdutil.Flag(c, "json") {
+		return cmdutil.PrintJSON(uio.Stdout, out)
 	}
 	if out.Key != "" {
-		fmt.Fprintln(uio.stdout, out.Key)
-		fmt.Fprintf(uio.stderr, "Key %s created, fingerprint %s:%s.\nThis is the only time the key is shown. Store it somewhere safe outside backd: if it is lost, every value encrypted with it is lost.\n", out.Name, out.Name, out.Fingerprint)
+		fmt.Fprintln(uio.Stdout, out.Key)
+		fmt.Fprintf(uio.Stderr, "Key %s created, fingerprint %s:%s.\nThis is the only time the key is shown. Store it somewhere safe outside backd: if it is lost, every value encrypted with it is lost.\n", out.Name, out.Name, out.Fingerprint)
 		return nil
 	}
-	fmt.Fprintf(uio.stderr, "Key %s imported, fingerprint %s:%s. Check it matches your copy.\n", out.Name, out.Name, out.Fingerprint)
+	fmt.Fprintf(uio.Stderr, "Key %s imported, fingerprint %s:%s. Check it matches your copy.\n", out.Name, out.Name, out.Fingerprint)
 	return nil
 }
 
@@ -87,7 +87,7 @@ func secretRotate(c *kli.CommandContext) error {
 		return err
 	}
 	defer closeT()
-	generate, resume, src := flag(c, "generate"), flag(c, "resume"), str(c, "value")
+	generate, resume, src := cmdutil.Flag(c, "generate"), cmdutil.Flag(c, "resume"), cmdutil.Str(c, "value")
 	n := 0
 	for _, set := range []bool{generate, resume, src != ""} {
 		if set {
@@ -95,7 +95,7 @@ func secretRotate(c *kli.CommandContext) error {
 		}
 	}
 	if n != 1 {
-		return usageErr(errors.New("give exactly one of --generate, --value and --resume"))
+		return cmdutil.UsageErr(errors.New("give exactly one of --generate, --value and --resume"))
 	}
 	body := map[string]any{}
 	switch {
@@ -110,12 +110,12 @@ func secretRotate(c *kli.CommandContext) error {
 		}
 		body["value"] = v
 	}
-	uio := ioOf(c)
+	uio := cmdutil.IOOf(c)
 	proof, err := t.proof(uio)
 	if err != nil {
 		return err
 	}
-	name := str(c, "name")
+	name := cmdutil.Str(c, "name")
 	var out struct {
 		Fingerprint string `json:"fingerprint"`
 		Previous    string `json:"previous_fingerprint"`
@@ -125,14 +125,14 @@ func secretRotate(c *kli.CommandContext) error {
 	if err := t.adm.Secrets.Rotate(t.ctx, name, body, &out, withProof(proof)...); err != nil {
 		return err
 	}
-	if flag(c, "json") {
-		return json.NewEncoder(uio.stdout).Encode(out)
+	if cmdutil.Flag(c, "json") {
+		return cmdutil.PrintJSON(uio.Stdout, out)
 	}
 	if out.Key != "" {
-		fmt.Fprintln(uio.stdout, out.Key)
-		fmt.Fprintf(uio.stderr, "Key %s rotated: %s:%s replaces %s:%s, %d data key(s) wrapped again, no document rewritten.\nThis is the only time the new key is shown. Store it somewhere safe outside backd, and keep the old one for backups made before today.\n", name, name, out.Fingerprint, name, out.Previous, out.Rewrapped)
+		fmt.Fprintln(uio.Stdout, out.Key)
+		fmt.Fprintf(uio.Stderr, "Key %s rotated: %s:%s replaces %s:%s, %d data key(s) wrapped again, no document rewritten.\nThis is the only time the new key is shown. Store it somewhere safe outside backd, and keep the old one for backups made before today.\n", name, name, out.Fingerprint, name, out.Previous, out.Rewrapped)
 		return nil
 	}
-	fmt.Fprintf(uio.stderr, "Key %s rotated: %s:%s replaces %s:%s, %d data key(s) wrapped again, no document rewritten.\n", name, name, out.Fingerprint, name, out.Previous, out.Rewrapped)
+	fmt.Fprintf(uio.Stderr, "Key %s rotated: %s:%s replaces %s:%s, %d data key(s) wrapped again, no document rewritten.\n", name, name, out.Fingerprint, name, out.Previous, out.Rewrapped)
 	return nil
 }

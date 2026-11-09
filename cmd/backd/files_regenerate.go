@@ -6,24 +6,26 @@ import (
 	"time"
 
 	"github.com/fernandezvara/kli"
+
+	"github.com/fernandezvara/backd/internal/cmdutil"
 )
 
 // filesRegenerate handles `backd files regenerate`: it starts the job that
 // makes the stale image versions of a file field again and follows it.
 func filesRegenerate(c *kli.CommandContext) error {
-	interval, err := time.ParseDuration(str(c, "interval"))
+	interval, err := time.ParseDuration(cmdutil.Str(c, "interval"))
 	if err != nil || interval <= 0 {
-		return usageErr(errors.New("--interval must be a duration such as 2s"))
+		return cmdutil.UsageErr(errors.New("--interval must be a duration such as 2s"))
 	}
 	t, err := targetOf(c, false)
 	if err != nil {
 		return err
 	}
-	body := map[string]any{"database": str(c, "database"), "collection": str(c, "collection"), "field": str(c, "field"), "missing_only": flag(c, "missing-only")}
-	if v := str(c, "version"); v != "" {
+	body := map[string]any{"database": cmdutil.Str(c, "database"), "collection": cmdutil.Str(c, "collection"), "field": cmdutil.Str(c, "field"), "missing_only": cmdutil.Flag(c, "missing-only")}
+	if v := cmdutil.Str(c, "version"); v != "" {
 		body["version"] = v
 	}
-	if n := num(c, "rate"); n > 0 {
+	if n := cmdutil.Num(c, "rate"); n > 0 {
 		body["rate"] = n
 	}
 	var started struct {
@@ -38,7 +40,7 @@ func filesRegenerate(c *kli.CommandContext) error {
 	}
 	stderr := c.Stderr()
 	fmt.Fprintf(stderr, "regeneration %s started: a worker makes the versions again; the old copies are served until the new ones are ready\n", started.ID)
-	if flag(c, "no-wait") {
+	if cmdutil.Flag(c, "no-wait") {
 		fmt.Fprintln(c.Stdout(), started.ID)
 		return nil
 	}
@@ -64,7 +66,7 @@ func filesRegenerate(c *kli.CommandContext) error {
 				if job.Result != nil {
 					status = job.Result.Status
 				}
-				return kli.Exit(1, fmt.Errorf("the regeneration did not finish: %s (see `backd functions jobs --realm %s --job %s`)", status, t.realm, started.ID))
+				return cmdutil.Failed(fmt.Errorf("the regeneration did not finish: %s (see `backd functions jobs --realm %s --job %s`)", status, t.realm, started.ID))
 			}
 			fmt.Fprintln(c.Stdout(), "done")
 			return nil

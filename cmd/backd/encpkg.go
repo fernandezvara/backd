@@ -10,8 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/fernandezvara/kli"
+
+	"github.com/fernandezvara/backd/internal/cmdutil"
+	"github.com/fernandezvara/backd/internal/docutil"
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/exportpkg"
@@ -306,14 +308,14 @@ func decryptPackage(dir string, m *exportpkg.Manifest, d *decryptor) (int, error
 // opened, made offline.
 func exportDecrypt(c *kli.CommandContext) error {
 	stderr := c.Stderr()
-	keys, err := parseFieldKeys(str(c, "field"), c.Getenv, stderr)
+	keys, err := parseFieldKeys(cmdutil.Str(c, "field"), c.Getenv, stderr)
 	if err != nil {
-		return usageErr(err)
+		return cmdutil.UsageErr(err)
 	}
 	if len(keys) == 0 {
-		return usageErr(errors.New("--field names no key"))
+		return cmdutil.UsageErr(errors.New("--field names no key"))
 	}
-	dir, cleanup, err := openPackage(str(c, "from"))
+	dir, cleanup, err := openPackage(cmdutil.Str(c, "from"))
 	if err != nil {
 		return err
 	}
@@ -322,7 +324,7 @@ func exportDecrypt(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	out := strings.TrimRight(str(c, "out"), "/")
+	out := strings.TrimRight(cmdutil.Str(c, "out"), "/")
 	if entries, err := os.ReadDir(out); err == nil && len(entries) > 0 {
 		return fmt.Errorf("%s is not empty: choose another --out", out)
 	}
@@ -332,7 +334,7 @@ func exportDecrypt(c *kli.CommandContext) error {
 	}
 	dec, err := newDecryptor(m, keys, data)
 	if err != nil {
-		return usageErr(err)
+		return cmdutil.UsageErr(err)
 	}
 	if !dec.any() {
 		return fmt.Errorf("the package holds no encrypted field as ciphertext that these keys open")

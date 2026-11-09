@@ -26,6 +26,7 @@ import (
 	"github.com/fernandezvara/backd/internal/adminui"
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/changefeed"
+	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/internal/executor"
 	"github.com/fernandezvara/backd/internal/httpapi"
 	"github.com/fernandezvara/backd/internal/metrics"
@@ -57,22 +58,22 @@ func run(args []string, getenv func(string) string, stdin io.Reader, stdout, std
 		fmt.Fprint(stdout, groupedHelp(getenv))
 		return 0
 	}
-	return execute(newCLI(getenv, stdin, stdout, stderr), args, stderr)
+	return cmdutil.Execute(newCLI(getenv, stdin, stdout, stderr), "backd", args, stderr)
 }
 
 // role runs one of backd's server roles: it loads the settings, the config
 // and the MongoDB client, then hands the app to action.
 func role(name string, action func(context.Context, *app) error) kli.CommandFunc {
-	return act(name, func(c *kli.CommandContext) error {
+	return cmdutil.Act("backd "+name, func(c *kli.CommandContext) error {
 		ctx := context.Background()
 		a, err := setup(ctx, c.Getenv, c.Stderr())
 		if err != nil {
 			return err
 		}
 		defer a.close()
-		a.withWorker = name == "serve" && flag(c, "with-worker")
+		a.withWorker = name == "serve" && cmdutil.Flag(c, "with-worker")
 		if name == "provision" {
-			a.disablePreImages, a.yes = flag(c, "disable-preimages"), flag(c, "yes")
+			a.disablePreImages, a.yes = cmdutil.Flag(c, "disable-preimages"), cmdutil.Flag(c, "yes")
 		}
 		return action(ctx, a)
 	})
@@ -449,7 +450,7 @@ func templateRealm(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	files, err := templates.Realm(dir, str(c, "realm"), flag(c, "sample"))
+	files, err := templates.Realm(dir, cmdutil.Str(c, "realm"), cmdutil.Flag(c, "sample"))
 	printTemplateFiles(c.Stdout(), files)
 	return err
 }
@@ -459,8 +460,8 @@ func templateDatabase(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	realm, database := str(c, "realm"), str(c, "database")
-	files, err := templates.Database(dir, realm, database, flag(c, "sample"))
+	realm, database := cmdutil.Str(c, "realm"), cmdutil.Str(c, "database")
+	files, err := templates.Database(dir, realm, database, cmdutil.Flag(c, "sample"))
 	if err == nil {
 		fmt.Fprintf(c.Stdout(), "database  %s/%s/\n", realm, database)
 	}
@@ -473,7 +474,7 @@ func templateFunction(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	files, err := templates.Function(dir, str(c, "realm"), str(c, "database"), str(c, "name"))
+	files, err := templates.Function(dir, cmdutil.Str(c, "realm"), cmdutil.Str(c, "database"), cmdutil.Str(c, "name"))
 	printTemplateFiles(c.Stdout(), files)
 	return err
 }
@@ -483,10 +484,10 @@ func templateEmailCapture(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	files, err := templates.EmailCapture(dir, str(c, "realm"), str(c, "database"))
+	files, err := templates.EmailCapture(dir, cmdutil.Str(c, "realm"), cmdutil.Str(c, "database"))
 	printTemplateFiles(c.Stdout(), files)
 	if err == nil {
-		fmt.Fprintf(c.Stdout(), "\nnext: set `email.function: %s/email-capture` in %s/realm.yaml (see the file's comments), then run backd with BACKD_DEV=true\n", str(c, "database"), str(c, "realm"))
+		fmt.Fprintf(c.Stdout(), "\nnext: set `email.function: %s/email-capture` in %s/realm.yaml (see the file's comments), then run backd with BACKD_DEV=true\n", cmdutil.Str(c, "database"), cmdutil.Str(c, "realm"))
 	}
 	return err
 }
@@ -496,14 +497,14 @@ func templateCollectionPolicy(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	files, err := templates.CollectionPolicy(dir, str(c, "realm"), str(c, "database"), str(c, "collection"))
+	files, err := templates.CollectionPolicy(dir, cmdutil.Str(c, "realm"), cmdutil.Str(c, "database"), cmdutil.Str(c, "collection"))
 	printTemplateFiles(c.Stdout(), files)
 	return err
 }
 
 func templateProject(c *kli.CommandContext) error {
-	dir := str(c, "dir")
-	files, err := templates.Project(dir, str(c, "realm"))
+	dir := cmdutil.Str(c, "dir")
+	files, err := templates.Project(dir, cmdutil.Str(c, "realm"))
 	printTemplateFiles(c.Stdout(), files)
 	if err != nil {
 		return err
@@ -528,7 +529,7 @@ func printTemplateFiles(stdout io.Writer, files []templates.File) {
 // <database>.<collection>. It needs only CONFIG_DIR, so deploy scripts can
 // grant a least-privilege user access to exactly these.
 func listDatabases(c *kli.CommandContext) error {
-	collections := flag(c, "collections")
+	collections := cmdutil.Flag(c, "collections")
 	dir, err := configDir(c)
 	if err != nil {
 		return err

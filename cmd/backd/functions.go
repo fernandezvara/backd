@@ -16,6 +16,7 @@ import (
 
 	"github.com/fernandezvara/kli"
 
+	"github.com/fernandezvara/backd/internal/cmdutil"
 	"github.com/fernandezvara/backd/internal/functions"
 	"github.com/fernandezvara/backd/internal/httpapi"
 	"github.com/fernandezvara/backd/internal/registry"
@@ -34,7 +35,7 @@ func functionsBuild(c *kli.CommandContext) error {
 	built := 0
 	err = functions.Build(context.Background(), reg, functions.Options{
 		Deno:  c.Getenv("DENO"),
-		Check: flag(c, "check"),
+		Check: cmdutil.Flag(c, "check"),
 		Log: func(format string, a ...any) {
 			built++
 			fmt.Fprintf(c.Stdout(), format+"\n", a...)
@@ -52,9 +53,9 @@ func functionsBuild(c *kli.CommandContext) error {
 // functionTarget resolves --function <realm>/<database>/<name> and the
 // server to talk to.
 func functionTarget(c *kli.CommandContext) (t *target, database, name string, err error) {
-	realm, database, name, err := splitFunctionPath(str(c, "function"))
+	realm, database, name, err := splitFunctionPath(cmdutil.Str(c, "function"))
 	if err != nil {
-		return nil, "", "", usageErr(err)
+		return nil, "", "", cmdutil.UsageErr(err)
 	}
 	t, err = targetFor(c, realm, false)
 	return t, database, name, err
@@ -64,14 +65,14 @@ func functionTarget(c *kli.CommandContext) (t *target, database, name string, er
 // running backd, through the same route and rules any other caller goes
 // through (not a local shortcut), so what it shows is what production does.
 func functionsInvoke(c *kli.CommandContext) error {
-	realm, database, name, err := splitFunctionPath(str(c, "function"))
+	realm, database, name, err := splitFunctionPath(cmdutil.Str(c, "function"))
 	if err != nil {
-		return usageErr(err)
+		return cmdutil.UsageErr(err)
 	}
 	stderr := c.Stderr()
 
 	var body json.RawMessage
-	if p := str(c, "input"); p != "" {
+	if p := cmdutil.Str(c, "input"); p != "" {
 		var data []byte
 		if p == "-" {
 			data, err = io.ReadAll(c.Stdin())
@@ -92,7 +93,7 @@ func functionsInvoke(c *kli.CommandContext) error {
 		return err
 	}
 	reqHeaders := map[string]string{}
-	if email := str(c, "as"); email != "" {
+	if email := cmdutil.Str(c, "as"); email != "" {
 		var page struct{ Items []adminUser }
 		if err := t.adm.Users.List(t.ctx, url.Values{"email": {email}}, &page); err != nil {
 			return fmt.Errorf("--as %s: %w", email, err)
@@ -120,7 +121,7 @@ func functionsInvoke(c *kli.CommandContext) error {
 		if body == nil {
 			adminBody["input"] = nil
 		}
-		if email := str(c, "as"); email != "" {
+		if email := cmdutil.Str(c, "as"); email != "" {
 			adminBody["as"] = email
 		}
 		var viaAdmin json.RawMessage
@@ -241,7 +242,7 @@ func functionsHistory(c *kli.CommandContext) error {
 	q := url.Values{}
 	limit, err := invocationsQuery(c, q, time.Now())
 	if err != nil {
-		return usageErr(err)
+		return cmdutil.UsageErr(err)
 	}
 	t, database, name, err := functionTarget(c)
 	if err != nil {
@@ -252,8 +253,8 @@ func functionsHistory(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	if flag(c, "json") {
-		return encodeJSONLines(c.Stdout(), recs)
+	if cmdutil.Flag(c, "json") {
+		return cmdutil.PrintJSONLines(c.Stdout(), recs)
 	}
 	tw := tabwriter.NewWriter(c.Stdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "TIME\tSTATUS\tCODE\tDURATION\tLAST STEP\tACTOR\tREQUEST-ID\tORIGIN\tEVENT-ID")
@@ -295,32 +296,32 @@ type jobRecord struct {
 // functionsJobs handles `backd functions jobs`: the realm's async and
 // scheduled jobs, newest first, for one function or all of them.
 func functionsJobs(c *kli.CommandContext) error {
-	if id := str(c, "job"); id != "" {
+	if id := cmdutil.Str(c, "job"); id != "" {
 		return functionsJobDetail(c, id)
 	}
-	function, realm := str(c, "function"), str(c, "realm")
+	function, realm := cmdutil.Str(c, "function"), cmdutil.Str(c, "realm")
 	q := url.Values{}
 	switch {
 	case function != "" && realm != "":
-		return usageErr(errors.New("give --function <realm>/<database>/<name> or --realm, not both"))
+		return cmdutil.UsageErr(errors.New("give --function <realm>/<database>/<name> or --realm, not both"))
 	case function != "":
 		r, database, name, err := splitFunctionPath(function)
 		if err != nil {
-			return usageErr(err)
+			return cmdutil.UsageErr(err)
 		}
 		realm = r
 		q.Set("function", database+"/"+name)
 	case realm == "":
-		return usageErr(errors.New("give --function <realm>/<database>/<name>, or --realm to list every function's jobs"))
+		return cmdutil.UsageErr(errors.New("give --function <realm>/<database>/<name>, or --realm to list every function's jobs"))
 	}
 	limit, err := invocationsQuery(c, q, time.Now())
 	if err != nil {
-		return usageErr(err)
+		return cmdutil.UsageErr(err)
 	}
-	if v := str(c, "status"); v != "" {
+	if v := cmdutil.Str(c, "status"); v != "" {
 		q.Set("status", v)
 	}
-	if flag(c, "scheduled") {
+	if cmdutil.Flag(c, "scheduled") {
 		q.Set("scheduled", "true")
 	}
 	t, err := targetFor(c, realm, false)
@@ -344,8 +345,8 @@ func functionsJobs(c *kli.CommandContext) error {
 		}
 		skip += len(page.Items)
 	}
-	if flag(c, "json") {
-		return encodeJSONLines(c.Stdout(), jobs)
+	if cmdutil.Flag(c, "json") {
+		return cmdutil.PrintJSONLines(c.Stdout(), jobs)
 	}
 	tw := tabwriter.NewWriter(c.Stdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "CREATED\tFUNCTION\tSTATUS\tRESULT\tCODE\tDURATION\tTRIES\tNEXT ATTEMPT\tSCHEDULED\tPROGRESS\tID")
@@ -370,8 +371,8 @@ func functionsJobs(c *kli.CommandContext) error {
 // functionsJobDetail handles `backd functions jobs --job <id>`: one job with every
 // step its running or last attempt reported.
 func functionsJobDetail(c *kli.CommandContext, id string) error {
-	if str(c, "function") != "" || str(c, "realm") == "" {
-		return usageErr(errors.New("--job needs --realm (the job's id is unique within it) and no --function"))
+	if cmdutil.Str(c, "function") != "" || cmdutil.Str(c, "realm") == "" {
+		return cmdutil.UsageErr(errors.New("--job needs --realm (the job's id is unique within it) and no --function"))
 	}
 	t, err := targetOf(c, false)
 	if err != nil {
@@ -381,8 +382,8 @@ func functionsJobDetail(c *kli.CommandContext, id string) error {
 	if err := t.adm.Jobs.Get(t.ctx, id, &j); err != nil {
 		return err
 	}
-	if flag(c, "json") {
-		return encodeJSONLines(c.Stdout(), []jobRecord{j})
+	if cmdutil.Flag(c, "json") {
+		return cmdutil.PrintJSONLines(c.Stdout(), []jobRecord{j})
 	}
 	out := c.Stdout()
 	result := "-"
@@ -436,11 +437,11 @@ func jobControl(c *kli.CommandContext, op, verb string) error {
 		return err
 	}
 	var job jobRecord
-	if err := t.adm.Jobs.Control(t.ctx, str(c, "job"), op, &job); err != nil {
+	if err := t.adm.Jobs.Control(t.ctx, cmdutil.Str(c, "job"), op, &job); err != nil {
 		return err
 	}
-	if flag(c, "json") {
-		return encodeJSONLines(c.Stdout(), []jobRecord{job})
+	if cmdutil.Flag(c, "json") {
+		return cmdutil.PrintJSONLines(c.Stdout(), []jobRecord{job})
 	}
 	fmt.Fprintf(c.Stdout(), "%s %s (%s)\n", verb, job.ID, job.Function)
 	return nil
@@ -467,8 +468,8 @@ func functionsSchedules(c *kli.CommandContext) error {
 	if err := t.adm.Functions.Schedules(t.ctx, &out); err != nil {
 		return err
 	}
-	if flag(c, "json") {
-		return encodeJSONLines(c.Stdout(), out.Items)
+	if cmdutil.Flag(c, "json") {
+		return cmdutil.PrintJSONLines(c.Stdout(), out.Items)
 	}
 	tw := tabwriter.NewWriter(c.Stdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "FUNCTION\tSCHEDULE\tTIMEZONE\tOVERLAP\tSTATE\tCHANGED\tBY")
@@ -501,8 +502,8 @@ func scheduleControl(c *kli.CommandContext, op string) error {
 	if err := t.adm.Functions.Control(t.ctx, database, name, op, &s); err != nil {
 		return err
 	}
-	if flag(c, "json") {
-		return encodeJSONLines(c.Stdout(), []scheduleRecord{s})
+	if cmdutil.Flag(c, "json") {
+		return cmdutil.PrintJSONLines(c.Stdout(), []scheduleRecord{s})
 	}
 	state := "running"
 	if s.Paused {
@@ -517,22 +518,22 @@ func functionsLogs(c *kli.CommandContext) error {
 	q := url.Values{}
 	limit, err := invocationsQuery(c, q, time.Now())
 	if err != nil {
-		return usageErr(err)
+		return cmdutil.UsageErr(err)
 	}
 	t, database, name, err := functionTarget(c)
 	if err != nil {
 		return err
 	}
 	q.Set("function", database+"/"+name)
-	if v := str(c, "request-id"); v != "" {
+	if v := cmdutil.Str(c, "request-id"); v != "" {
 		q.Set("request_id", v)
 	}
 	recs, err := fetchInvocations(t, q, limit)
 	if err != nil {
 		return err
 	}
-	if flag(c, "json") {
-		return encodeJSONLines(c.Stdout(), recs)
+	if cmdutil.Flag(c, "json") {
+		return cmdutil.PrintJSONLines(c.Stdout(), recs)
 	}
 	for _, r := range recs {
 		for _, l := range r.Logs {
@@ -554,14 +555,14 @@ func splitFunctionPath(s string) (realm, database, name string, err error) {
 // invocationsQuery turns --since and --limit into query parameters and
 // returns the limit (same shape as audit.go's auditQuery).
 func invocationsQuery(c *kli.CommandContext, q url.Values, now time.Time) (int, error) {
-	if v := str(c, "since"); v != "" {
+	if v := cmdutil.Str(c, "since"); v != "" {
 		since, err := sinceParam(v, now)
 		if err != nil {
 			return 0, err
 		}
 		q.Set("since", since)
 	}
-	return int(num(c, "limit")), nil
+	return int(cmdutil.Num(c, "limit")), nil
 }
 
 // fetchInvocations pages through GET _admin/invocations until limit
@@ -585,16 +586,4 @@ func fetchInvocations(t *target, q url.Values, limit int) ([]invocationRecord, e
 		skip += len(page.Items)
 	}
 	return recs, nil
-}
-
-// encodeJSONLines writes one JSON object per line (--json), the same
-// format audit.go's printAudit uses.
-func encodeJSONLines[T any](stdout io.Writer, items []T) error {
-	enc := json.NewEncoder(stdout)
-	for _, it := range items {
-		if err := enc.Encode(it); err != nil {
-			return err
-		}
-	}
-	return nil
 }

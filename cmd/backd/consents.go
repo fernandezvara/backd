@@ -5,6 +5,8 @@ import (
 	"net/url"
 
 	"github.com/fernandezvara/kli"
+
+	"github.com/fernandezvara/backd/internal/cmdutil"
 )
 
 type consentNotice struct {
@@ -23,11 +25,11 @@ func consentsNotify(c *kli.CommandContext) error {
 		return err
 	}
 	var res consentNotice
-	if err := t.adm.Consents.Notify(t.ctx, map[string]any{"consent": str(c, "consent")}, &res); err != nil {
+	if err := t.adm.Consents.Notify(t.ctx, map[string]any{"consent": cmdutil.Str(c, "consent")}, &res); err != nil {
 		return err
 	}
-	if flag(c, "json") {
-		return encodeJSONLines(c.Stdout(), []consentNotice{res})
+	if cmdutil.Flag(c, "json") {
+		return cmdutil.PrintJSONLines(c.Stdout(), []consentNotice{res})
 	}
 	fmt.Fprintf(c.Stdout(), "%s %s: %d users hold an older version; %d emails queued", res.Consent, res.Version, res.Matched, res.Queued)
 	if res.Limited > 0 {
@@ -50,15 +52,15 @@ func consentsRecord(c *kli.CommandContext) error {
 			Email string `json:"email"`
 		} `json:"items"`
 	}
-	email := str(c, "email")
+	email := cmdutil.Str(c, "email")
 	if err := t.adm.Users.List(t.ctx, url.Values{"email": {email}}, &page); err != nil {
 		return err
 	}
 	if len(page.Items) == 0 {
 		return fmt.Errorf("user not found: %s", email)
 	}
-	body := map[string]any{"consent": str(c, "consent"), "action": str(c, "action"), "evidence": str(c, "evidence")}
-	if v := str(c, "version"); v != "" {
+	body := map[string]any{"consent": cmdutil.Str(c, "consent"), "action": cmdutil.Str(c, "action"), "evidence": cmdutil.Str(c, "evidence")}
+	if v := cmdutil.Str(c, "version"); v != "" {
 		body["version"] = v
 	}
 	var out struct {
