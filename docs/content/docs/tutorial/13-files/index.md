@@ -60,7 +60,7 @@ Files are declared in **`collection.yaml`**, not in `schema.json`: `backd` adds 
 {{< example-file path="shelf/main/assets/schema.json" lines="6-6" >}}
 
 ```sh
-docker compose restart backd
+docker compose logs --since 1m backd | grep 'config reloaded'   # backd follows config/: it loaded the change
 ```
 
 ## Upload, replace, remove

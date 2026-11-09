@@ -72,7 +72,7 @@ The digest needs "every member" — but realm users live in the **system databas
 
 **One document per user, keyed by the user.** `custom_id: user` makes the document's id the user's own id: the app creates it with `members.create({ id: user.id, email })`, backd refuses an id that isn't the caller's (`400 invalid_id`) and a second document for the same user (`409 id_taken`), and the app reads it back with `members.get(user.id)`. Nothing else is needed to keep one per user: no `user_id` field, no unique index, and no rule comparing the field to `user.id`. (An earlier version of this chapter stored a `user_id` field and kept it unique with an index; see [custom ids](../../build/configuration/config-dir/#custom-ids) to move a collection like that.)
 
-Rebuild and restart (`docker compose run --rm functions-build && docker compose restart backd`).
+Save it; backd bundles the function and reloads.
 
 ## Watching a job
 

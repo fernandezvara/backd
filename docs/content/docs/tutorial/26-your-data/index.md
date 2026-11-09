@@ -64,7 +64,7 @@ curl -s localhost:8080/v1/shelf/_admin/compliance/scope -H "Authorization: Beare
 
 It lists, per collection, what is included, which fields and every exclusion with its reason. The pins' private notes of [chapter 25](../25-private-notes/) are part of it: the server opens them for the member whose data they are, and for nobody else.
 
-Run `docker compose restart backd`. If you upgraded an existing stack, `docker compose run --rm backd provision` first: exports add one system collection.
+Save it; backd reloads and provisions the system collection exports add.
 
 ## The button
 

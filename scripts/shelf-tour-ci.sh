@@ -22,7 +22,7 @@ compose=$dir/compose.yaml
 cleanup() {
   trap - EXIT
   docker compose -f "$compose" down -v >/dev/null 2>&1 || true
-  # functions-build runs as root and leaves root-owned .build folders in the
+  # backd (dev mode) runs as root and leaves root-owned .build folders in the
   # mounted config: remove them from a container (the same image, as root),
   # then the rest. Cleaning up must never turn a green run red.
   docker run --rm --user root --entrypoint sh -v "$dir":/work backd-executor:shelf-tour \

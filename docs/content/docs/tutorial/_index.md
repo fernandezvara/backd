@@ -31,19 +31,18 @@ To start over at any point: `docker compose down -v` (deletes the database), the
 
 | Container | What it does | You touch |
 |---|---|---|
-| `backd` | the API: documents, sign-in, rules, functions' entry point, jobs and schedules (`serve --with-worker`) | `config/` (mounted read-only) |
+| `backd` | the API: documents, sign-in, rules, functions' entry point, jobs and schedules (`backd-server serve --with-worker`), in dev mode: it follows `config/` and bundles the functions itself | `config/` |
 | `mongo` | MongoDB, a one-node replica set | nothing — its data lives in a volume (`down -v` deletes it) |
 | `executor` | runs each function call in its own Deno process | nothing |
 | `egress` | the only way out for functions that declare `network:` (chapter 6) | nothing |
 | `nginx` | serves the app at `/` and the client at `/example/client/`, proxies `/v1` to backd — one origin for both | `app/` if you change the app |
 | `minio` | S3-compatible storage for files (chapter 13): the browser sends big files straight to it and follows download links to it, on `localhost:9000`; a one-shot `minio-setup` creates its bucket | nothing |
-| `functions-build` | a one-shot job that bundles the functions' TypeScript before backd starts | run again after editing a function |
 
 ## Conventions
 
 - `<angle brackets>` in a command are values you substitute. `$TOKEN` is a session token from `POST /_auth/login` (chapter 3 shows how); `$OP` is the operator's (chapter 4).
 - A `config/` path is relative to your starter folder: `config/shelf/main/assets/schema.json` is the `assets` collection of the `main` database in the `shelf` realm.
-- Rules, `realm.yaml` and schemas are read **at startup**: `docker compose restart backd` after changing them. Function code (and its `function.yaml`) is bundled by `functions-build`: run it, then restart.
+- The stack runs backd in **dev mode**: save a file under `config/` (rules, `realm.yaml`, schemas, function code) and backd reloads in a moment, bundling a changed function itself. `docker compose logs backd` says `config reloaded`, or what is wrong with the file you saved; the previous config keeps serving until it loads.
 
 ## The starter
 
@@ -121,7 +120,7 @@ Each chapter is a diff on the state the previous one left: the files to create o
 ## When something is off
 
 - `curl -s http://localhost:8080/readyz` answers once MongoDB is a replica set and backd serves; for a minute after `up` it may not. `docker compose ps` shows which container is down.
-- `docker compose logs backd` is the first place to look. A bad config file fails startup and the log names the file and line; every request is logged with its `request_id`, which also appears in every error body.
+- `docker compose logs backd` is the first place to look. A bad config file doesn't stop backd in dev mode: the log names the file and line, and the last good config keeps serving; every request is logged with its `request_id`, which also appears in every error body.
 - An error body is `{"error": {"code", "message", "details"}}`, and the status says what kind: **401** not signed in or the session ended (log in again; sessions last 30 days); **403** signed in but a rule or an `invoke` expression refuses it; **404** the thing doesn't exist *or you may not read it*; **400** invalid input, with the failing fields in `details`; **409** a unique index or an already-used value; **412** the document changed since you read it; **503** a function call while the executor is still starting.
-- A function change that does nothing: run `docker compose run --rm functions-build` (it prints one `bundled …` line per function; a TypeScript error stops here) and `docker compose restart backd`; `docker compose logs backd` shows the function's `console.log` lines and, when a call fails, its error.
+- A change that does nothing: `docker compose logs backd` says whether it reloaded (`config reloaded`) or why it refused (a TypeScript error in a function shows Deno's output, with the file and line). The log also shows the function's `console.log` lines and, when a call fails, its error.
 - Start over: `docker compose down -v`, then `up -d` — and sign up the three accounts again (chapter 2).

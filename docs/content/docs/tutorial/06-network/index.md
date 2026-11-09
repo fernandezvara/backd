@@ -36,7 +36,7 @@ Create the four files (the listings above; or fetch them) and rebuild:
 {{< tutorial-files "main/_functions/preview/function.yaml main/_functions/preview/index.ts main/_functions/preview/input.schema.json main/_functions/preview/index.test.ts" >}}
 
 ```sh
-docker compose run --rm functions-build && docker compose restart backd
+docker compose logs --since 1m backd | grep 'config reloaded'   # backd bundled the function and loaded it
 ```
 
 The tests run as in chapter 5 (`docker run … deno test config/shelf/main/_functions/preview/`).

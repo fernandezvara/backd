@@ -35,7 +35,7 @@ roles:
 ## Apply, and create the three accounts
 
 ```sh
-docker compose restart backd
+docker compose logs --since 1m backd | grep 'config reloaded'   # backd follows config/: it loaded the change
 ```
 
 Open `http://localhost:8080` and **sign up** (any password of 12 or more characters; the demo stack sends no email yet and `account.require_verified_email` is off, so nothing needs verifying — the `verify-email` and `welcome` messages only appear once chapter 10 wires email) as each of:
