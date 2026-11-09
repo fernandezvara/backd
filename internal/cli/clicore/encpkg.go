@@ -222,32 +222,20 @@ func (d *Decryptor) Part(dir, partPath, database, collection string) (ExportedPa
 		return ExportedPart{}, err
 	}
 	defer in.Close()
-	tmp := src + ".decrypting"
-	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-	if err != nil {
-		return ExportedPart{}, err
-	}
-	h := exportpkg.NewHasher()
-	w := io.MultiWriter(out, h)
 	var docs int64
-	err = eachLine(in, func(line []byte) error {
-		got, err := d.line(database, collection, line)
-		if err != nil {
-			return fmt.Errorf("%s: %w", partPath, err)
-		}
-		_, _ = w.Write(got)
-		_, _ = w.Write([]byte{'\n'})
-		docs++
-		return nil
+	h, err := exportpkg.WriteAtomic(src, func(w io.Writer) error {
+		return eachLine(in, func(line []byte) error {
+			got, err := d.line(database, collection, line)
+			if err != nil {
+				return fmt.Errorf("%s: %w", partPath, err)
+			}
+			_, _ = w.Write(got)
+			_, _ = w.Write([]byte{'\n'})
+			docs++
+			return nil
+		})
 	})
-	if cerr := out.Close(); err == nil {
-		err = cerr
-	}
-	if err == nil {
-		err = os.Rename(tmp, src)
-	}
 	if err != nil {
-		_ = os.Remove(tmp)
 		return ExportedPart{}, err
 	}
 	return ExportedPart{Checksum: h.Sum(), Size: h.Size(), Documents: docs}, nil
