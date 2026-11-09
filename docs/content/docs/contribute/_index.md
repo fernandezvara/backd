@@ -17,7 +17,12 @@ This section is for the **contributor**: whoever changes `backd` itself. To run 
 
 | Path | Contents |
 |---|---|
-| `cmd/backd/` | The `backd` binary: subcommand dispatch |
+| `cmd/backd/` | The `backd` binary: only `main`, which runs `internal/cli` |
+| `internal/cli/` | The command tree (`cli.go`) and every command, run in-process by `cli.Run` so tests drive it like the binary |
+| `internal/server/` | The server roles: settings and config loading, the startup checks, `serve`, `worker`, `provision`, the executor and egress bootstrap, and the dev-mode reloader |
+| `internal/e2e/` | End-to-end tests: a server started in the test, on MongoDB and Deno, driven through the CLI and the clients |
+| `internal/buildinfo/` | The version the binaries were built as |
+| `internal/cmdtest/` | Test helpers the CLI, server and end-to-end tests share |
 | `internal/cmdutil/` | Helpers the command trees share: flag definitions and reads, the command wrapper, exit codes, terminal input and JSON output |
 | `internal/settings/` | Runtime settings from environment variables; `limits/` reads the instance limits `backd config check` also applies |
 | `internal/registry/` | Loads and validates the `CONFIG_DIR` tree into the registry |
@@ -203,7 +208,7 @@ The workflow then:
 
 A second workflow, `pages.yml`, runs on the same tag and publishes this documentation site to GitHub Pages, so the site always shows the latest tagged version. It needs *Settings → Pages → Source: GitHub Actions* set once in the repository. To publish a documentation fix between releases, run it by hand: *Actions → pages → Run workflow*, on `main`.
 
-The version reaches the binary through `-X main.version`, in both GoReleaser and the Dockerfile (`--build-arg VERSION`); local builds report `dev`.
+The version reaches the binary through `-X github.com/fernandezvara/backd/internal/buildinfo.Version`, in both GoReleaser and the Dockerfile (`--build-arg VERSION`); local builds report `dev`.
 
 `make release-check` validates the configuration and builds every archive into `dist/` without publishing. CI runs `goreleaser check` on every push.
 

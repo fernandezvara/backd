@@ -20,7 +20,7 @@ builds:
     binary: backd
     env: [CGO_ENABLED=0]
     flags: [-trimpath]
-    ldflags: ["-s -w -X main.version={{ .Tag }}"]
+    ldflags: ["-s -w -X github.com/fernandezvara/backd/internal/buildinfo.Version={{ .Tag }}"]
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
 
