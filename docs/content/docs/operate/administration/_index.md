@@ -12,7 +12,7 @@ These pages are for whoever runs a realm — not for application code:
 |---|---|
 | Manage users and roles from a service | [Admin API](admin/) |
 | Point-and-click administration | [Admin UI](admin-ui/) |
-| `backd bootstrap`, `backd login`, day-to-day CLI | [Command line](cli/) |
+| `backd-server bootstrap`, `backd login`, day-to-day CLI | [Command line](cli/) |
 | See who did what | [Audit trail](audit/) |
 | Deactivate or erase a user | [Deleting and erasing users](erasure/) |
 | Personal data, consents, retention | [Compliance](compliance/) |

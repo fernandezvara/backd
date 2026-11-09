@@ -53,7 +53,7 @@ services:
   # or missing bundles). Does nothing until chapter 5 adds the first function.
   functions-build:
     image: ghcr.io/fernandezvara/backd-executor:v0.9.7   # backd plus the pinned Deno
-    entrypoint: ["/usr/local/bin/backd"]
+    entrypoint: ["/usr/local/bin/backd-server"]
     command: ["functions", "build"]
     user: root
     environment:

@@ -83,12 +83,12 @@ services:
       mongo: { condition: service_healthy }
 ```
 
-After changing schemas, rules or `realm.yaml`, restart `backd` (`docker compose up -d --build backd`). After changing a function, run `backd functions build` first: `backd` refuses stale bundles — or run `backd` locally (not in the container) with `BACKD_DEV=true` to reload the config and rebuild functions on save, and `backd functions invoke` to call one directly; see [Dev mode](../../build/functions/testing/#dev-mode).
+After changing schemas, rules or `realm.yaml`, restart `backd` (`docker compose up -d --build backd`). After changing a function, run `backd-server functions build` first: `backd` refuses stale bundles — or run `backd` locally (not in the container) with `BACKD_DEV=true` to reload the config and rebuild functions on save, and `backd functions invoke` to call one directly; see [Dev mode](../../build/functions/testing/#dev-mode).
 
 Before pushing, run the same checks CI will run:
 
 ```sh
-CONFIG_DIR=./config backd functions build     # if you have functions
+CONFIG_DIR=./config backd-server functions build     # if you have functions
 CONFIG_DIR=./config backd config check
 ```
 
@@ -117,7 +117,7 @@ jobs:
         run: |
           curl -fsSL "https://github.com/fernandezvara/backd/releases/download/v${BACKD_VERSION}/backd_${BACKD_VERSION}_linux_amd64.tar.gz" | tar -xz backd
           sudo mv backd /usr/local/bin/
-      - run: backd functions build
+      - run: backd-server functions build
         env: { CONFIG_DIR: ./config }
       - run: backd config check
         env: { CONFIG_DIR: ./config }
@@ -137,7 +137,7 @@ jobs:
 ## Promoting and rolling back
 
 1. **Tag** a commit (`v12`). CI publishes the image of that commit under the tag. Nothing is rebuilt.
-2. **Staging:** run the provision step with the tagged image and an admin `MONGO_URI` (`backd provision`), then roll out the instances with `PROVISION_MODE=verify`.
+2. **Staging:** run the provision step with the tagged image and an admin `MONGO_URI` (`backd-server provision`), then roll out the instances with `PROVISION_MODE=verify`.
 3. **Production:** the same two steps with the **same image**.
 4. **Rollback:** deploy the previous tag the same way: provision, then roll out.
 
@@ -145,14 +145,14 @@ Provision before rolling out, every time. The [production reference](../producti
 
 ## What backd enforces
 
-`backd provision` (and `backd serve` in `apply` mode) records the config's fingerprint in MongoDB, for each realm it serves: in the `backd___deployment` database, one record per realm, so separate deployments sharing a MongoDB cluster keep their own.
+`backd-server provision` (and `backd-server serve` in `apply` mode) records the config's fingerprint in MongoDB, for each realm it serves: in the `backd___deployment` database, one record per realm, so separate deployments sharing a MongoDB cluster keep their own.
 
 Instances in `PROVISION_MODE=verify` compare their config's fingerprint with the one recorded for each of their realms, and **refuse to start** when it differs or none was recorded:
 
 ```
-backd serve: the config differs from the one last provisioned: this instance's config is 7c1e…, but
+backd-server serve: the config differs from the one last provisioned: this instance's config is 7c1e…, but
   realm shop: provisioned 4a90… (at 2026-09-28T10:00:00Z by backd v0.9.6)
-provision this config (`backd provision`) or deploy the config that was provisioned
+provision this config (`backd-server provision`) or deploy the config that was provisioned
 ```
 
 Instances that are already running aren't stopped: during a rollout, old instances keep serving until they're replaced.

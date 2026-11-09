@@ -54,7 +54,7 @@ Anyone else gets `"health_notes": null` and `"_meta": {"redacted": ["health_note
 
 1. Create and **save** the key: `backd secret create --realm clinic --type key --generate --name HEALTH`.
 2. Add `fields.<path>.encrypt` to `collection.yaml`.
-3. `backd provision` (or start with `PROVISION_MODE=apply`): the database validator now expects binary there. Documents already stored stay readable, in plaintext.
+3. `backd-server provision` (or start with `PROVISION_MODE=apply`): the database validator now expects binary there. Documents already stored stay readable, in plaintext.
 4. Check what would change: `backd encrypt migrate --realm clinic --database main --collection patients --dry-run`.
 5. Run it: `backd encrypt migrate --realm clinic --database main --collection patients`. It works in the background, at most 1,000 documents a second, and never changes a version.
 6. `backd encrypt status --realm clinic` says **complete** when no plaintext (and, for a searchable field, no missing index) is left.
@@ -64,7 +64,7 @@ Until step 5 ends, values written before are plaintext in the database, and an e
 ## Move a field to another key, or turn it off
 
 - **Another key:** create the new key, change `key:` in `collection.yaml`, restart (a new generation starts under the new key), then `backd encrypt migrate`. Old values stay readable meanwhile. When it ends the old key's data keys are retired and the old field key can be deleted.
-- **Turn it off:** remove `encrypt` from the field, `backd provision`, restart, `backd encrypt migrate`: values are opened and stored as plain text. Reads work throughout.
+- **Turn it off:** remove `encrypt` from the field, `backd-server provision`, restart, `backd encrypt migrate`: values are opened and stored as plain text. Reads work throughout.
 
 ## Seed staging from production
 

@@ -1,4 +1,4 @@
-package cli
+package servercli
 
 import (
 	"bytes"
@@ -12,6 +12,7 @@ import (
 	"github.com/rs/xid"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/cmdtest"
 	"github.com/fernandezvara/backd/internal/exportpkg"
 	"github.com/fernandezvara/backd/internal/mongodb"
 )
@@ -57,7 +58,7 @@ func TestExportImportDirect(t *testing.T) {
 		t.Skip("MONGO_TEST_URI not set; skipping integration test")
 	}
 	realm := "t" + xid.New().String()
-	root := writeConfig(t, map[string]string{
+	root := cmdtest.Write(t, map[string]string{
 		realm + "/realm.yaml":            "signup: open\n",
 		realm + "/app/notes/schema.json": `{"type": "object", "properties": {"title": {"type": "string"}}, "required": ["title"]}`,
 	})
@@ -73,7 +74,7 @@ func TestExportImportDirect(t *testing.T) {
 		_ = client.Disconnect(ctx)
 	})
 	env := map[string]string{"CONFIG_DIR": root, "MONGO_URI": uri, "LOG_LEVEL": "error"}
-	if code := Run([]string{"provision"}, func(k string) string { return env[k] }, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}); code != 0 {
+	if code := runAny([]string{"provision"}, func(k string) string { return env[k] }, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}); code != 0 {
 		t.Fatal("provision failed")
 	}
 	c := &cliEnv{t: t, env: map[string]string{"CONFIG_DIR": root, "MONGO_URI": uri, "LOG_LEVEL": "error", "HOME": t.TempDir()}}
@@ -142,7 +143,7 @@ func TestExportAuthDirectNeedsTheMasterKey(t *testing.T) {
 		t.Skip("MONGO_TEST_URI not set; skipping integration test")
 	}
 	realm := "t" + xid.New().String()
-	root := writeConfig(t, map[string]string{realm + "/realm.yaml": "signup: open\n", realm + "/app/notes/schema.json": `{}`})
+	root := cmdtest.Write(t, map[string]string{realm + "/realm.yaml": "signup: open\n", realm + "/app/notes/schema.json": `{}`})
 	ctx := context.Background()
 	client, err := mongodb.Connect(ctx, uri)
 	if err != nil {
@@ -156,7 +157,7 @@ func TestExportAuthDirectNeedsTheMasterKey(t *testing.T) {
 	})
 	const master = "0123456789012345678901234567890123"
 	env := map[string]string{"CONFIG_DIR": root, "MONGO_URI": uri, "LOG_LEVEL": "error", "HOME": t.TempDir(), "MASTER": master}
-	if code := Run([]string{"provision"}, func(k string) string { return env[k] }, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}); code != 0 {
+	if code := runAny([]string{"provision"}, func(k string) string { return env[k] }, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}); code != 0 {
 		t.Fatal("provision failed")
 	}
 	cipher, _ := auth.NewSecretCipher([]byte(master))

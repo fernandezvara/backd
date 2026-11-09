@@ -8,13 +8,13 @@ This is a [backd](https://github.com/fernandezvara/backd) config repository, cre
 - **Realm** — `config/<realm>/` with a `realm.yaml`. A realm is a tenant: it owns its users, roles, email and push templates, storage and app_config. This project has one realm, `__REALM__`; a config can hold several.
 - **Database** — `config/<realm>/<db>/`. Each database maps to one MongoDB database named `<realm>__<db>` (`__REALM__` ships `main` → `__REALM____main`). Its directory holds collections and one `_functions/` project.
 - **Collection** — `config/<realm>/<db>/<collection>/` with a required `schema.json` (JSON Schema for its documents) and `collection.yaml` (`rules:` who may read/write, `soft_delete`, `erasure`, `indexes` live in `indexes.json`). `rules.test.yaml` (optional) defines access-rule cases that `backd rules test` runs without a database.
-- **Function** — `config/<realm>/<db>/_functions/<name>/` with `function.yaml` (permissions, schedule, dev_only) and `index.ts` (a `defineFunction` handler with `ctx`: `ctx.db`, `ctx.user`, `ctx.call`, `ctx.email`, `ctx.push`, `ctx.files`, `ctx.http`). Deno TypeScript, bundled by `backd functions build` into `.build/` — generated, gitignored, never edited. `lib/` is shared code; `deno.json` pins its imports.
+- **Function** — `config/<realm>/<db>/_functions/<name>/` with `function.yaml` (permissions, schedule, dev_only) and `index.ts` (a `defineFunction` handler with `ctx`: `ctx.db`, `ctx.user`, `ctx.call`, `ctx.email`, `ctx.push`, `ctx.files`, `ctx.http`). Deno TypeScript, bundled by `backd-server functions build` into `.build/` — generated, gitignored, never edited. `lib/` is shared code; `deno.json` pins its imports.
 
 ## Working rules
 
 - Secrets never go into config files — reference them as `secret:NAME` and set them with `backd secret set` against the running instance.
 - Every collection needs `schema.json` and `collection.yaml`; validate with `CONFIG_DIR=./config backd config check` and `backd rules test`.
-- After editing function code, the bundle must be rebuilt: locally `docker compose up` already rebuilds on save (BACKD_DEV); in CI or production run `backd functions build`.
+- After editing function code, the bundle must be rebuilt: locally `docker compose up` already rebuilds on save (BACKD_DEV); in CI or production run `backd-server functions build`.
 - Scaffold more pieces with the CLI: `backd template collection-policy`, `template function`, `template database`, `template realm`, `template email-capture`.
 - Don't hand-edit generated files: `_functions/.build/`, `_functions/.backd/`, `.backd-importmap.json` (all gitignored), and `backd.d.ts` (regenerated, committed).
 

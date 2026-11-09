@@ -1,4 +1,4 @@
-package cli
+package servercli
 
 import (
 	"bytes"
@@ -13,6 +13,7 @@ import (
 	"github.com/rs/xid"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/cmdtest"
 	"github.com/fernandezvara/backd/internal/exportpkg"
 	"github.com/fernandezvara/backd/internal/fieldcrypt"
 	"github.com/fernandezvara/backd/internal/mongodb"
@@ -41,7 +42,7 @@ func newClinic(t *testing.T, uri string, keys map[string]string) *clinicRealm {
 	t.Helper()
 	ctx := context.Background()
 	realm := "t" + xid.New().String()
-	root := writeConfig(t, map[string]string{
+	root := cmdtest.Write(t, map[string]string{
 		realm + "/realm.yaml":                    "signup: open\n",
 		realm + "/main/patients/schema.json":     clinicSchema,
 		realm + "/main/patients/collection.yaml": clinicConfig,
@@ -57,7 +58,7 @@ func newClinic(t *testing.T, uri string, keys map[string]string) *clinicRealm {
 		_ = client.Disconnect(ctx)
 	})
 	env := map[string]string{"CONFIG_DIR": root, "MONGO_URI": uri, "LOG_LEVEL": "error"}
-	if code := Run([]string{"provision"}, func(k string) string { return env[k] }, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}); code != 0 {
+	if code := runAny([]string{"provision"}, func(k string) string { return env[k] }, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}); code != 0 {
 		t.Fatal("provision failed")
 	}
 	reg, err := registry.Load(root)

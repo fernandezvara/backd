@@ -13,7 +13,6 @@ import (
 	"github.com/fernandezvara/kli"
 
 	"github.com/fernandezvara/backd/internal/cmdutil"
-	"github.com/fernandezvara/backd/internal/strutil"
 )
 
 type auditRecord struct {
@@ -52,7 +51,7 @@ func auditQuery(c *kli.CommandContext, q url.Values, now time.Time) (int, error)
 		return 0, errors.New("use --user or --target, not both")
 	}
 	if v := cmdutil.Str(c, "since"); v != "" {
-		since, err := sinceParam(v, now)
+		since, err := cmdutil.SinceParam(v, now)
 		if err != nil {
 			return 0, err
 		}
@@ -65,18 +64,6 @@ func auditQuery(c *kli.CommandContext, q url.Values, now time.Time) (int, error)
 		q.Set("until", v)
 	}
 	return int(cmdutil.Num(c, "limit")), nil
-}
-
-// sinceParam turns --since (an RFC 3339 time, or a duration back from now
-// such as 24h or 7d) into the time the API takes.
-func sinceParam(v string, now time.Time) (string, error) {
-	if d, err := strutil.ParseDuration(v); err == nil && d > 0 {
-		return now.Add(-d).UTC().Format(time.RFC3339), nil
-	}
-	if _, err := time.Parse(time.RFC3339, v); err == nil {
-		return v, nil
-	}
-	return "", fmt.Errorf("--since: want an RFC 3339 time or a duration such as 24h or 7d, got %q", v)
 }
 
 func printAudit(t *target, q url.Values, c *kli.CommandContext, limit int, uio cmdutil.IO) error {

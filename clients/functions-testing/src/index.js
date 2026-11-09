@@ -961,7 +961,7 @@ function projectBody(doc, fields) {
  * @param {number} [o.depth]
  * @param {string} [o.root]
  * @param {string} [o.at]
- * @param {string} [o.rescan] a run id: the input of a `backd triggers rescan`
+ * @param {string} [o.rescan] a run id: the input of a `backd-server triggers rescan`
  */
 export function fakeTrigger({ event, collection = 'items', before = null, after = null, by, fields, id, depth = 0, root, at, rescan } = {}) {
   if (!['created', 'updated', 'removed'].includes(event)) {

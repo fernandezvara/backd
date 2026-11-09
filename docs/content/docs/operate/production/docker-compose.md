@@ -154,7 +154,7 @@ MONGO_URI=mongodb://backd:<password>@mongo:27017/?replicaSet=rs0&authSource=admi
 
 `backd` runs with `PROVISION_MODE=verify`. It never changes collections, validators or indexes; if MongoDB differs from the config, it refuses to start and lists the differences (see [Provisioning](../../#provisioning)). Changes are applied by the provision job (`ops/provision.sh`), which runs with the admin user before `backd` starts:
 
-1. `backd provision` creates or updates collections, validators, indexes and system databases.
+1. `backd-server provision` creates or updates collections, validators, indexes and system databases.
 2. `ops/grants.js` gives `backd`'s user a custom role, `backdApp`, allowing exactly this:
 
 | On | Actions | Why |
@@ -175,14 +175,14 @@ docker compose --env-file .env run --rm --no-deps provision
 docker compose --env-file .env up -d backd
 ```
 
-If you use a different platform, the same two commands do the job: `backd provision` with an admin `MONGO_URI`, and the grants for each line of `backd databases --collections`.
+If you use a different platform, the same two commands do the job: `backd-server provision` with an admin `MONGO_URI`, and the grants for each line of `backd databases --collections`.
 
 ## Administrators and API keys
 
 Create the realm's first administrator once, with the running container (it writes to MongoDB with the least-privilege user):
 
 ```sh
-docker compose --env-file .env exec backd /backd bootstrap --realm blog --email ops@example.com
+docker compose --env-file .env exec backd backd-server bootstrap --realm blog --email ops@example.com
 ```
 
 From then on, administrators work through the admin API with the `backd` CLI ([command-line administration](../../administration/cli/)). The edge only lets `ADMIN_ALLOW_FROM` reach `/v1/{realm}/_admin`, so log in from there:
@@ -209,7 +209,7 @@ To change a MongoDB password, edit it in `.env`. For `backd`'s user and the `bac
 
 The stack runs [functions](../../../build/functions/) with the network placement the [security model](../../administration/security/#server-side-functions-egress-and-network-placement) describes as layer 3, wired up for real:
 
-- **`executor`** runs one Deno process per function call. It's on its own network, `func`, whose only other member is `backd`; it has no route to `data` (MongoDB) or the internet at all — not even for a raw TCP connection that bypasses `backd egress` entirely (layer 3). Read-only filesystem, no Linux capabilities, a tmpfs for its bundle cache.
+- **`executor`** runs one Deno process per function call. It's on its own network, `func`, whose only other member is `backd`; it has no route to `data` (MongoDB) or the internet at all — not even for a raw TCP connection that bypasses `backd-server egress` entirely (layer 3). Read-only filesystem, no Linux capabilities, a tmpfs for its bundle cache.
 - **`egress`** is `func`'s only way out: it also joins `uplink` (a network with a route to the internet) and bridges the two, refusing loopback, private, link-local (cloud metadata), CGNAT, multicast and unspecified addresses (layer 2). `backd`'s own address (`EGRESS_ALLOW_PRIVATE`) is its one exception, so functions can still reach `backd` through it.
 - **`worker`** claims and runs [async jobs](../../../build/functions/jobs/), as its own deployment (scale it independently of `backd`) rather than folded in with `serve --with-worker` — the [local stack](#try-it) uses the smaller, folded-in form instead, since it's a single-user convenience, not a hardened deployment.
 - **`prometheus`** scrapes the private [metrics](../../metrics/) port of `backd`, `worker`, `executor` and `egress` (each asks for `METRICS_TOKEN`, which function processes never have) and evaluates the sample alert rules. It is on `func`, which has no route out, and its own web port listens on its container's loopback, so function processes can't reach it. Nothing about metrics is reachable from the internet.

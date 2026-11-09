@@ -1,4 +1,4 @@
-# Proves F4's layer 2 (backd egress) and layer 3 (network placement): a
+# Proves F4's layer 2 (backd-server egress) and layer 3 (network placement): a
 # real backd + executor + egress stack, with the executor's network
 # isolated from MongoDB and the internet. Run with: make egress-test
 # (docker/egress-test/test.sh). Build context is the repository root.
@@ -22,7 +22,7 @@ services:
     build:
       context: ../..
       dockerfile: docker/executor/Dockerfile
-    entrypoint: ["/usr/local/bin/backd"]
+    entrypoint: ["/usr/local/bin/backd-server"]
     command: ["functions", "build"]
     user: root
     environment:

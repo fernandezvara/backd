@@ -38,7 +38,7 @@ output "mongo_uri" {
 }
 
 output "mongo_admin_uri" {
-  description = "MONGO_URI of doadmin, for `backd provision` only."
+  description = "MONGO_URI of doadmin, for `backd-server provision` only."
   value       = local.mongo_admin_uri
   sensitive   = true
 }

@@ -22,7 +22,7 @@ Each database may have one `_functions` directory: a Deno project for that appli
       index.ts              the code: index.ts or index.js
       input.schema.json     optional JSON Schema of the input
       output.schema.json    optional JSON Schema of the output
-    .build/                 bundles, written by `backd functions build`
+    .build/                 bundles, written by `backd-server functions build`
 ```
 
 - Function names follow the same rules as collection names; `lib` is reserved for shared code.
@@ -205,7 +205,7 @@ export default defineFunction("main/place", async (ctx) => {
 
 Plain JavaScript gets the same checking in editors with `// @ts-check`. What the context holds follows `function.yaml`: `ctx.admin` only with `admin: true` (and `ctx.admin.config` with `config: write`), `ctx.email` and `ctx.push` only when declared, `ctx.request` only for webhooks, and `ctx.secrets` has exactly the names the function lists.
 
-- **No setup for builds.** `defineFunction` returns its handler unchanged, so it costs nothing at run time. `backd functions build` maps `@backd/functions` to a small module it keeps in the project's hidden `.backd/` folder; add the mapping yourself (`"@backd/functions": "./.backd/functions.js"` under `imports` in `deno.json`) for `deno test` and editors that read `deno.json`.
+- **No setup for builds.** `defineFunction` returns its handler unchanged, so it costs nothing at run time. `backd-server functions build` maps `@backd/functions` to a small module it keeps in the project's hidden `.backd/` folder; add the mapping yourself (`"@backd/functions": "./.backd/functions.js"` under `imports` in `deno.json`) for `deno test` and editors that read `deno.json`.
 - **The name is checked.** A `defineFunction` whose name isn't the function's own location stops startup and says the name to use.
 - **Functions without it keep working**, untyped.
 - **In dev mode** (`BACKD_DEV=true`) `backd.d.ts` is rewritten after every config reload, so a change to a schema shows up in your editor as you save it ([Dev mode](../testing/#dev-mode)). Otherwise run the command above, commit `backd.d.ts`, and run it with `--check` in CI next to `backd config check`: it fails when the file is missing or no longer matches the config.

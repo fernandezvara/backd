@@ -175,3 +175,12 @@ func PrintJSONLines[T any](w io.Writer, items []T) error {
 	}
 	return nil
 }
+
+// ConfigDir is CONFIG_DIR, required by commands that read the config.
+func ConfigDir(c *kli.CommandContext) (string, error) {
+	dir := c.Getenv("CONFIG_DIR")
+	if dir == "" {
+		return "", errors.New("CONFIG_DIR is required")
+	}
+	return dir, nil
+}

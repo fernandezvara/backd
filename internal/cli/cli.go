@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
 	"io"
 
@@ -9,8 +8,6 @@ import (
 
 	"github.com/fernandezvara/backd/internal/buildinfo"
 	"github.com/fernandezvara/backd/internal/cmdutil"
-	"github.com/fernandezvara/backd/internal/registry"
-	"github.com/fernandezvara/backd/internal/server"
 )
 
 // newCLI builds backd's command tree. Commands read their flags with str,
@@ -85,7 +82,7 @@ func newCLI(getenv func(string) string, stdin io.Reader, stdout, stderr io.Write
 		Func(cmdutil.Act("backd config check", checkConfig)).
 		Config(func(*kli.CommandConfig) {})
 	conf.SubCommand("fingerprint").ShortHelp("print the fingerprint of CONFIG_DIR").
-		LongHelp("Prints one hash of every file backd reads, function bundles included.\n`backd provision` records it; instances in PROVISION_MODE=verify refuse to\nstart with a different one.").
+		LongHelp("Prints one hash of every file backd reads, function bundles included.\n`backd-server provision` records it; instances in PROVISION_MODE=verify refuse to\nstart with a different one.").
 		Func(cmdutil.Act("backd config fingerprint", configFingerprint)).
 		Config(func(*kli.CommandConfig) {})
 
@@ -100,27 +97,9 @@ func newCLI(getenv func(string) string, stdin io.Reader, stdout, stderr io.Write
 			cmdutil.Boolean(cc, "strict", "fail when a collection with rules has no rules.test.yaml")
 		})
 
-	cfg.Command("bootstrap").ShortHelp("create a realm's first administrator").
-		LongHelp("Creates a realm's first administrator: a user holding an admin role (one with\nadmin: true in realm.yaml), with the password read from the terminal without\necho, or as the first line of standard input when it isn't a terminal.\n\nIt refuses when a user of the realm already holds an admin role, or the email\nis already registered: from then on, administrators log in (`backd login`) and\nmanage users through the admin API.\n\nUnlike user and apikey, bootstrap writes to MongoDB directly, so it needs the\nserver's CONFIG_DIR and MONGO_URI, and a provisioned realm: run it where backd\nruns, for example\n  docker compose exec backd /backd bootstrap --realm <realm> --email <email>").
-		Func(cmdutil.Act("backd bootstrap", bootstrapAction)).
-		Config(func(cc *kli.CommandConfig) {
-			cmdutil.Required(cc, "realm", "the realm")
-			cmdutil.Required(cc, "email", "the administrator's email")
-			cmdutil.Optional(cc, "role", "the admin role, when realm.yaml declares several")
-		})
-	registerRoles(cfg)
 	registerRemote(cfg)
 	registerTriggers(cfg)
 	return cfg
-}
-
-// configDir is CONFIG_DIR, required by commands that read the config.
-func configDir(c *kli.CommandContext) (string, error) {
-	dir := c.Getenv("CONFIG_DIR")
-	if dir == "" {
-		return "", errors.New("CONFIG_DIR is required")
-	}
-	return dir, nil
 }
 
 // remote adds the flags every command that talks to a running backd has.
@@ -162,7 +141,7 @@ func registerRemote(cfg *kli.Config) {
 		Func(cmdutil.Act("backd account recovery-codes", accountRecoveryCodes)).Config(remote)
 
 	u := cfg.Command("user").ShortHelp("manage a realm's users").
-		LongHelp(adminAPINote + " The first administrator of a realm is\ncreated with `backd bootstrap`. Passwords are read from the terminal without\necho, or as the first line of standard input when it isn't a terminal. Emails\ncan't be changed.")
+		LongHelp(adminAPINote + " The first administrator of a realm is\ncreated with `backd-server bootstrap`. Passwords are read from the terminal without\necho, or as the first line of standard input when it isn't a terminal. Emails\ncan't be changed.")
 	user := func(name, short string, withEmail bool, run func(*userCtx) error, extra func(*kli.CommandConfig)) {
 		u.SubCommand(name).ShortHelp(short).Func(cmdutil.Act("backd user "+name, userAction(withEmail, run))).
 			Config(func(cc *kli.CommandConfig) {
@@ -220,17 +199,11 @@ func registerRemote(cfg *kli.Config) {
 		cmdutil.Optional(cc, "email", "the user to show (default: the users of required roles who have no second factor yet)")
 	})
 	u.SubCommand("mfa-reset").ShortHelp("remove a user's second factor and recovery codes and end their sessions").
-		LongHelp(adminAPINote + " An administrator can't reset their own second factor; for the only administrator of a\nrealm who lost it, --local acts on the instance's database directly (it needs\nCONFIG_DIR and MONGO_URI where backd runs, and is audited as `instance`).").
-		Func(cmdutil.Act("backd user mfa-reset", func(c *kli.CommandContext) error {
-			if cmdutil.Flag(c, "local") {
-				return userMFAResetLocal(c)
-			}
-			return userAction(true, userMFAReset)(c)
-		})).
+		LongHelp(adminAPINote + " An administrator can't reset their own second factor; for the only administrator of a\nrealm who lost it, `backd-server user mfa-reset` acts on the instance's database directly.").
+		Func(cmdutil.Act("backd user mfa-reset", userAction(true, userMFAReset))).
 		Config(func(cc *kli.CommandConfig) {
 			remote(cc)
 			cmdutil.Required(cc, "email", "the user's email")
-			cmdutil.Boolean(cc, "local", "break glass: act on the instance's database directly instead of the admin API")
 			cmdutil.Boolean(cc, "yes", "confirm the reset, which ends all of the user's sessions")
 		})
 	user("owned", "show what erasing the user would do, per collection that declares a policy", true, userOwned, nil)
@@ -444,39 +417,9 @@ func registerRemote(cfg *kli.Config) {
 	sec.SubCommand("set").ShortHelp("create or replace a secret's value").
 		LongHelp("The value is read from the terminal without echo, or the first line of\nstandard input when it isn't a terminal. Without --database it's the realm\nscope (realm.NAME in function.yaml); with it, that database's scope (NAME, for\nfunctions of that database only, never another's). With --org it is an organization's\nsecret (its sign-in client secrets): sealed like the others, but nobody can read it back, functions included.").
 		Func(cmdutil.Act("backd secret set", secretSet)).Config(secretFlags)
-	sec.SubCommand("create").ShortHelp("create a field key: generated and shown once, or imported").
-		LongHelp("Creates a key for field encryption (design: a `key` secret). With --generate the server makes 32\nrandom bytes and prints them, base64url, on standard output ONCE, with the fingerprint on standard error:\nsave the key outside backd, because nothing ever shows it again and a lost key means the values encrypted\nwith it are lost. With --value it imports a key you already hold (key:<base64url>, env:VAR or file:PATH),\nfor a restore or a staging copy. Needs a full administrator and a fresh proof that it is you. Audited with the\nname and fingerprint, never the key. With --direct it works straight on MongoDB and CONFIG_DIR, with no running backd: how\nyou create the key a field names when backd refuses to start without it, or restore keys after losing the secrets. " + adminAPINote).
-		Func(cmdutil.Act("backd secret create", secretCreate)).Config(func(cc *kli.CommandConfig) {
-		remote(cc)
-		cmdutil.Required(cc, "name", "the key's name, such as HEALTH")
-		cmdutil.Required(cc, "type", "the kind of secret to create: key")
-		cmdutil.Boolean(cc, "generate", "make a new random key and show it once")
-		cmdutil.Optional(cc, "value", "import this key: key:<base64url>, env:VAR or file:PATH")
-		cmdutil.Boolean(cc, "skip-existing", "succeed, changing nothing, when a secret with that name exists (for scripts)")
-		cmdutil.Boolean(cc, "json", "print the answer as JSON")
-		directFlags(cc)
-	})
-	sec.SubCommand("rotate").ShortHelp("give a field key a new value, without rewriting any document").
-		LongHelp("Replaces the value of a field key and wraps every data key it protected again, so nothing in the database\nis rewritten and the change is instant. With --generate the new key is printed once on standard output; with\n--value you bring your own (key:<base64url>, env:VAR or file:PATH). --resume finishes a rotation that stopped\nhalf way: until it finishes the previous value is kept and nothing is lost. Keep your old copy for backups made\nbefore the rotation. Needs a full administrator and a fresh proof. " + adminAPINote).
-		Func(cmdutil.Act("backd secret rotate", secretRotate)).Config(func(cc *kli.CommandConfig) {
-		remote(cc)
-		cmdutil.Required(cc, "name", "the key's name")
-		cmdutil.Boolean(cc, "generate", "make a new random key and show it once")
-		cmdutil.Optional(cc, "value", "the new key: key:<base64url>, env:VAR or file:PATH")
-		cmdutil.Boolean(cc, "resume", "finish a rotation that stopped before it ended")
-		cmdutil.Boolean(cc, "json", "print the answer as JSON")
-		directFlags(cc)
-	})
-	sec.SubCommand("list").ShortHelp("list the realm's secrets (never their values)").
-		Func(cmdutil.Act("backd secret list", secretList)).Config(func(cc *kli.CommandConfig) {
-		remote(cc)
-		directFlags(cc)
-	})
+	RegisterFieldKeys(sec, Remote)
 	sec.SubCommand("delete").ShortHelp("delete a secret; a function that declares it answers secret_missing again").
 		Func(cmdutil.Act("backd secret delete", secretDelete)).Config(secretFlags)
-	sec.SubCommand("rotate-key").ShortHelp("re-encrypt every realm's secrets under a new master key").
-		LongHelp("Re-encrypts every realm's secrets from BACKD_SECRETS_KEY (the currently\nconfigured, old key) to BACKD_SECRETS_NEW_KEY (the new one; BACKD_SECRETS_NEW_KEY_FILE\nalso works). Unlike the commands above, this writes to MongoDB directly, so it\nneeds the server's CONFIG_DIR and MONGO_URI: run it where backd runs, for example\n  docker compose exec backd /backd secret rotate-key\nRestart every backd instance with BACKD_SECRETS_KEY set to the new key afterward.").
-		Func(cmdutil.Act("backd secret rotate-key", secretRotateKey)).Config(func(*kli.CommandConfig) {})
 
 	cfg.Command("audit").ShortHelp("print the realm's audit trail, newest first").
 		LongHelp("Prints who created, changed or deleted users, roles, network restrictions,\nAPI keys and invitations, administrators' logins, and admin requests refused\nby network. " + adminAPINote).
@@ -517,27 +460,7 @@ func registerRemote(cfg *kli.Config) {
 		cmdutil.Boolean(cc, "delete", "remove the unreferenced objects instead of only reporting them")
 		cmdutil.Boolean(cc, "json", "print the report as JSON")
 	})
-	cfg.Command("export").ShortHelp("write a realm, database or collection as a package").
-		LongHelp("Reads the realm's documents and files from a running backd into a package: a directory with manifest.json,\n<database>/<collection>.jsonl (the API representation of every document, soft-deleted ones included, with dates and\nbinary values in Extended JSON) and <database>/_files/<file id>, or one .tar.gz with --archive. The package is lossless;\nbackd import reads it. Each part is verified as it arrives and recorded in <out>/.export-progress.json, so running the\nsame command again after an interruption continues from the last complete part. Only one export of a realm runs at a time.\n--fields and --where narrow it to a reporting extract (a --fields package is partial and can't be imported) and --format csv writes one flat, lossy table per collection for spreadsheets, without files. --include auth adds the realm's authentication data, audited as export.auth. --anonymize makes a copy for staging (see its flags); the manifest says so, and import warns about a package that doesn't fit the instance's BACKD_ENV. Never exported: sessions, tokens, counters, jobs, history, secrets and the audit trail. Needs full admin access and a fresh\nproof that it is you. Audited as export and export.done. " + adminAPINote).
-		Func(cmdutil.Act("backd export", exportAction)).Config(func(cc *kli.CommandConfig) {
-		remote(cc)
-		cmdutil.Required(cc, "out", "the package directory to write (with --archive, the archive is <out>.tar.gz)")
-		cmdutil.Optional(cc, "db", "only this database")
-		cmdutil.Optional(cc, "collection", "only these collections of --db: comma-separated names")
-		cmdutil.Optional(cc, "fields", "only these fields: comma-separated paths such as name,address.city (id is always there); the package is marked partial and can't be imported")
-		cmdutil.Optional(cc, "where", "only the documents matching this filter (the API's where syntax), for one --collection")
-		cmdutil.Optional(cc, "format", "jsonl (a package, the default) or csv (a flat table per collection for spreadsheets: lossy, no files, can't be imported)")
-		cmdutil.Optional(cc, "include", "auth: also export the realm's users with their password hashes, organizations, memberships, teams, second factors and push devices (whole realm only); a one-time export key is shown once")
-		cmdutil.Boolean(cc, "anonymize", "make a staging copy: each collection's on_owner_delete remove/replace rules are applied to every document, files are left out, and with --include auth emails become user-<id>@example.invalid and password hashes, second factors and devices are dropped")
-		cmdutil.Optional(cc, "anonymize-config", "with --anonymize: a YAML file adding or overriding rules per collection (collections: {<database>/<collection>: {remove: [...], replace: {...}}}), checked against the schemas")
-		cmdutil.Optional(cc, "staging-password", "with --anonymize --include auth: one password every user gets (env:<VAR>, file:<path> or key:<value>)")
-		cmdutil.Optional(cc, "anonymize-files", "with --anonymize: keep, to export the files too (they often hold personal data)")
-		cmdutil.Optional(cc, "auth-key-out", "write the export key of --include auth to this file (readable only by you) instead of showing it")
-		cmdutil.Optional(cc, "field", "open encrypted fields with their keys: <path>=<key:|env:|file:…> entries separated by ';' (path as health_notes, or main/patients.health_notes); the others stay ciphertext")
-		directFlags(cc)
-		cmdutil.Boolean(cc, "archive", "write one <out>.tar.gz instead of a directory")
-		cmdutil.Boolean(cc, "no-files", "leave the files out: only the documents")
-	})
+	RegisterTransfer(cfg, Remote)
 
 	cfg.Command("export-decrypt").ShortHelp("open encrypted fields of an export package, offline").
 		LongHelp("Copies a package (--from: its directory or .tar.gz) to --out with the encrypted fields you give a key for opened (--field, as in backd export): no server, no database and no master key are involved, only the package's wrapped data keys and your field keys. Every key is checked against the fingerprint the manifest records, and a wrong one is reported by field and key name. Fields without a key stay ciphertext, and the manifest says which are which. The result holds plaintext: keep it as carefully as the keys.").
@@ -545,20 +468,6 @@ func registerRemote(cfg *kli.Config) {
 		cmdutil.Required(cc, "from", "the package: its directory, or the .tar.gz that export --archive wrote")
 		cmdutil.Required(cc, "out", "the directory to write the opened package to")
 		cmdutil.Required(cc, "field", "the keys: <path>=<key:|env:|file:…> entries separated by ';'")
-	})
-
-	cfg.Command("import").ShortHelp("read an export package into a realm").
-		LongHelp("Reads a package made by backd export (--from: its directory or .tar.gz) into the realm. First every checksum of the package\nis verified, then the running backd validates every document against the target's own configuration (ids, schemas,\nfile limits, unique values, the documents already there) and nothing is written until all of it is known; --dry-run stops\nthere and prints what would happen. Then the files are uploaded and the documents written with their ids and _meta kept, so\nreferences and file links stay valid. --mode create (the default) refuses a different document with the same id, skip leaves\nexisting documents alone and replace overwrites them. Invalid documents stop the import unless --skip-invalid, which writes\nthem to --report (default import-report.json). Running the same command again after an interruption finishes the job: what\nwas written is found identical and left alone. Partial packages and CSV extracts are refused. Needs full admin access and a\nfresh proof that it is you. Audited as import and import.done. " + adminAPINote).
-		Func(cmdutil.Act("backd import", importAction)).Config(func(cc *kli.CommandConfig) {
-		remote(cc)
-		cmdutil.Required(cc, "from", "the package: its directory, or the .tar.gz that export --archive wrote")
-		cc.Define("mode").String().Flag("mode").Default("create").Description("create (fail on an existing id), skip (keep existing documents) or replace (overwrite them)")
-		cmdutil.Boolean(cc, "dry-run", "validate everything and write nothing")
-		cmdutil.Boolean(cc, "skip-invalid", "leave out the documents that are invalid for the target instead of stopping")
-		cmdutil.Optional(cc, "report", "write the problems found to this JSON file")
-		cmdutil.Optional(cc, "auth-key", "the export key of a package exported with --include auth: key:<value>, env:<VAR> or file:<path>; without it users arrive without second factors and push devices")
-		cmdutil.Optional(cc, "field", "keys for encrypted fields the package holds as ciphertext: <path>=<key:|env:|file:…> entries separated by ';'; needed when the target does not hold the same key (the dry run lists which fields need which)")
-		directFlags(cc)
 	})
 
 	cons := cfg.Command("consents").ShortHelp("manage the consents users accept")
@@ -745,11 +654,6 @@ func registerRemote(cfg *kli.Config) {
 		cc.Define("interval").String().Flag("interval").Default("2s").Description("how often to ask the server for progress")
 	})
 	fn := cfg.Command("functions").ShortHelp("build, call and inspect server-side functions")
-	fn.SubCommand("build").ShortHelp("bundle every function in CONFIG_DIR with deno").
-		LongHelp("Bundles every function in CONFIG_DIR with `deno bundle` into\n<realm>/<database>/_functions/.build/, one file per function named by its\ncontent hash, and records them in .build/manifest.json. Needs only CONFIG_DIR\nand Deno " + registry.DenoVersion + " (DENO, or deno on the PATH). --check also type-checks\nTypeScript. backd refuses to start while any bundle is missing or stale, so\nbuild after every change to a functions project, before provisioning or\ndeploying.").
-		Func(cmdutil.Act("backd functions build", functionsBuild)).Config(func(cc *kli.CommandConfig) {
-		cmdutil.Boolean(cc, "check", "also type-check TypeScript")
-	})
 	fn.SubCommand("types").ShortHelp("print JSDoc types generated from the functions' schemas").
 		LongHelp("Prints JSDoc types generated from every function's input and output JSON\nSchemas, for editor autocomplete in ctx.input and the return value. Needs only\nCONFIG_DIR.").
 		Func(cmdutil.Act("backd functions types", functionsTypes)).Config(func(*kli.CommandConfig) {})
@@ -852,32 +756,6 @@ func userAction(withEmail bool, run func(*userCtx) error) kli.CommandFunc {
 	}
 }
 
-// registerRoles adds the commands that run backd's server roles. Plain `backd` starts
-// none of them: it prints the help (see isGlobalHelp).
-func registerRoles(cfg *kli.Config) {
-	serveHelp := "Loads CONFIG_DIR, provisions or verifies MongoDB (PROVISION_MODE), and serves\nHTTP. --with-worker also runs the worker role (async jobs) in this process; it\nneeds BACKD_EXECUTOR_URL."
-	withWorker := func(cc *kli.CommandConfig) {
-		cmdutil.Boolean(cc, "with-worker", "also run the worker role (async jobs) in this process")
-	}
-	cfg.Command("serve").ShortHelp("load config, provision or verify MongoDB, serve HTTP").LongHelp(serveHelp).
-		Func(role("serve")).Config(withWorker)
-	cfg.Command("worker").ShortHelp("run the worker role alone: claims and runs async jobs").
-		LongHelp("Claims and runs async jobs (mode: async) and scheduled functions. Needs\nBACKD_EXECUTOR_URL; WORKER_CONCURRENCY caps jobs running at once (default 10).").
-		Func(role("worker")).Config(func(*kli.CommandConfig) {})
-	cfg.Command("provision").ShortHelp("load config, apply provisioning once and exit").
-		LongHelp("Creates missing collections, validators and indexes, and enables pre-change images on\nrealtime collections. Nothing is ever removed, except with --disable-preimages --yes:\nthat switches the images off on collections that no longer need them, and deletes the\nimages stored so far for good.").
-		Func(role("provision")).Config(func(cc *kli.CommandConfig) {
-		cmdutil.Boolean(cc, "disable-preimages", "switch off pre-change images on collections that no longer need them (irreversible)")
-		cmdutil.Boolean(cc, "yes", "confirm --disable-preimages")
-	})
-	cfg.Command("executor").ShortHelp("run server-side functions for backd").LongHelp(server.ExecutorHelp).
-		Func(cmdutil.Act("backd executor", func(c *kli.CommandContext) error { return server.ServeExecutor(c.Getenv, c.Stderr()) })).
-		Config(func(*kli.CommandConfig) {})
-	cfg.Command("egress").ShortHelp("run the egress role, the executor's only way out").LongHelp(server.EgressHelp).
-		Func(cmdutil.Act("backd egress", func(c *kli.CommandContext) error { return server.ServeEgress(c.Getenv, c.Stderr()) })).
-		Config(func(*kli.CommandConfig) {})
-}
-
 // registerTriggers adds `backd triggers`: what the dispatcher is doing and has not been able to
 // do (status, gaps), and a way to re-emit the changes of a collection after a gap (rescan).
 func registerTriggers(cfg *kli.Config) {
@@ -897,21 +775,10 @@ func registerTriggers(cfg *kli.Config) {
 		cmdutil.Boolean(cc, "all", "include the resolved gaps")
 	})
 	tr.SubCommand("resolve").ShortHelp("mark a gap as dealt with").
-		LongHelp("Closes a gap: use it once you have run `backd triggers rescan` for it, or decided that\nnothing that matters was lost. Audited as triggers.gap_resolve. " + adminAPINote).
+		LongHelp("Closes a gap: use it once you have run `backd-server triggers rescan` for it, or decided that\nnothing that matters was lost. Audited as triggers.gap_resolve. " + adminAPINote).
 		Func(cmdutil.Act("backd triggers resolve", triggersResolve)).Config(func(cc *kli.CommandConfig) {
 		cmdutil.Required(cc, "realm", "the realm")
 		cmdutil.Required(cc, "id", "the gap's id (see `backd triggers gaps`)")
 		cmdutil.Optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
-	})
-	tr.SubCommand("rescan").ShortHelp("queue a collection's recently written documents again").
-		LongHelp("Re-emits the documents of a collection written in a time range as synthetic `updated`\nevents, to the triggers that can be evaluated from a document alone, after a gap. It is not a\nreplay of history: a document changed twice is read once, as it is now; deletions can't be\nfound; and a trigger whose condition needs `before` or `changed()` is reported and skipped.\nThe jobs carry `rescan` in their input and have ids of their own, so handlers (which must be\nidempotent anyway) see them as new work.\n\nIt runs here, not through the API: it reads CONFIG_DIR and MONGO_URI like `backd provision`,\nand may read a whole collection (over 10,000 documents it asks for --confirm). Without an\nindex on _meta.updated_at, that is a scan of the collection. Audited as triggers.rescan.").
-		Func(cmdutil.Act("backd triggers rescan", triggersRescan)).Config(func(cc *kli.CommandConfig) {
-		cmdutil.Required(cc, "realm", "the realm")
-		cmdutil.Required(cc, "database", "the database")
-		cmdutil.Required(cc, "collection", "the collection")
-		cmdutil.Optional(cc, "trigger", "only this trigger (default: every one that can be rescanned)")
-		cmdutil.Optional(cc, "updated-since", "documents written from this time: RFC 3339, or a duration back from now such as 24h or 7d")
-		cmdutil.Optional(cc, "until", "...before this time (default: now)")
-		cmdutil.Boolean(cc, "confirm", "allow reading more than 10,000 documents")
 	})
 }

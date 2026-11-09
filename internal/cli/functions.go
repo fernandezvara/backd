@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,33 +21,6 @@ import (
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/pkg/client"
 )
-
-func functionsBuild(c *kli.CommandContext) error {
-	dir, err := configDir(c)
-	if err != nil {
-		return err
-	}
-	reg, err := registry.Load(dir)
-	if err != nil {
-		return fmt.Errorf("invalid config:\n%w", err)
-	}
-	built := 0
-	err = functions.Build(context.Background(), reg, functions.Options{
-		Deno:  c.Getenv("DENO"),
-		Check: cmdutil.Flag(c, "check"),
-		Log: func(format string, a ...any) {
-			built++
-			fmt.Fprintf(c.Stdout(), format+"\n", a...)
-		},
-	})
-	if err != nil {
-		return err
-	}
-	if built == 0 {
-		fmt.Fprintln(c.Stdout(), "no functions in CONFIG_DIR")
-	}
-	return nil
-}
 
 // functionTarget resolves --function <realm>/<database>/<name> and the
 // server to talk to.
@@ -162,7 +134,7 @@ func functionsInvoke(c *kli.CommandContext) error {
 }
 
 func functionsTypes(c *kli.CommandContext) error {
-	dir, err := configDir(c)
+	dir, err := cmdutil.ConfigDir(c)
 	if err != nil {
 		return err
 	}
@@ -556,7 +528,7 @@ func splitFunctionPath(s string) (realm, database, name string, err error) {
 // returns the limit (same shape as audit.go's auditQuery).
 func invocationsQuery(c *kli.CommandContext, q url.Values, now time.Time) (int, error) {
 	if v := cmdutil.Str(c, "since"); v != "" {
-		since, err := sinceParam(v, now)
+		since, err := cmdutil.SinceParam(v, now)
 		if err != nil {
 			return 0, err
 		}

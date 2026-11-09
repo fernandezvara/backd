@@ -1,4 +1,4 @@
-package cli
+package servercli
 
 import (
 	"bytes"
@@ -10,6 +10,7 @@ import (
 	"github.com/rs/xid"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/cmdtest"
 	"github.com/fernandezvara/backd/internal/mongodb"
 	"github.com/fernandezvara/backd/internal/registry"
 )
@@ -23,7 +24,7 @@ func TestSecretRotateKey(t *testing.T) {
 		t.Skip("MONGO_TEST_URI not set; skipping integration test")
 	}
 	realm := "t" + xid.New().String()
-	root := writeConfig(t, map[string]string{
+	root := cmdtest.Write(t, map[string]string{
 		realm + "/realm.yaml":            "signup: open\n",
 		realm + "/app/notes/schema.json": `{}`,
 	})
@@ -45,7 +46,7 @@ func TestSecretRotateKey(t *testing.T) {
 		m := map[string]string{"CONFIG_DIR": root, "MONGO_URI": uri, "LOG_LEVEL": "error", "BACKD_SECRETS_KEY": oldKey}
 		return m[k]
 	}
-	if code := Run([]string{"provision"}, getenv, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}); code != 0 {
+	if code := runAny([]string{"provision"}, getenv, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}); code != 0 {
 		t.Fatal("provision failed")
 	}
 

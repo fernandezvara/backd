@@ -52,7 +52,7 @@ Revoke every key that could be in the leak and give its users a new one. Keys ar
 If the master key leaked, generate a new one and re-encrypt, as described in [Secrets](../../build/functions/secrets/#storage-and-the-master-key):
 
 ```sh
-BACKD_SECRETS_KEY=$OLD_KEY BACKD_SECRETS_NEW_KEY=$NEW_KEY backd secret rotate-key
+BACKD_SECRETS_KEY=$OLD_KEY BACKD_SECRETS_NEW_KEY=$NEW_KEY backd-server secret rotate-key
 ```
 
 Rotating the key protects the stored values from now on; it does not change the values. If the secrets themselves may have been read (a dump with the key), replace each one at its source (the payment provider's key, the OAuth client secrets, the storage keys) and store the new value with `backd secret set`.

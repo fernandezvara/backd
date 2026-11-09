@@ -127,12 +127,12 @@ The same is available as `POST /_admin/functions/{database}/{name}/pause` and `/
 - **A resume doesn't make up what was missed.** The next scheduled time after the resume runs; a time that fell inside the pause never does, even if the pause ended seconds later.
 - **The state is stored in the realm's database**, not in an instance: it survives restarts and redeploys and applies to every instance and worker at once, within a worker's 15-second check. Changing the schedule in `function.yaml` keeps it paused.
 - **Pausing a paused schedule (or resuming a running one) changes nothing** and isn't audited twice. Only a function with a `schedule` can be paused: any other answers `409`.
-- **It adds a system collection** (`schedules`) to the realm's system database: run `backd provision` (or start with `PROVISION_MODE=apply`) after upgrading, as for any new system collection.
+- **It adds a system collection** (`schedules`) to the realm's system database: run `backd-server provision` (or start with `PROVISION_MODE=apply`) after upgrading, as for any new system collection.
 
 ## A worker must be running
 
 {{< hint warning >}}
-Runs go through the async queue, so schedules fire **only while at least one [worker](../../../operate/functions-runtime/#running-the-worker) is running**: `backd worker` as its own deployment, or `backd serve --with-worker` folded into an API instance. `serve` without `--with-worker` logs a reminder per scheduled function, because it can't know about a separate worker.
+Runs go through the async queue, so schedules fire **only while at least one [worker](../../../operate/functions-runtime/#running-the-worker) is running**: `backd-server worker` as its own deployment, or `backd-server serve --with-worker` folded into an API instance. `serve` without `--with-worker` logs a reminder per scheduled function, because it can't know about a separate worker.
 {{< /hint >}}
 
 ```yaml

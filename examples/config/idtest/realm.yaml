@@ -24,7 +24,7 @@ sessions:
     enabled: true
     same_site: lax
 
-# The realm's administrators: `backd bootstrap --realm idtest --email <email>`
+# The realm's administrators: `backd-server bootstrap --realm idtest --email <email>`
 # creates the first one; needed for `backd secret set`, user and identity
 # management and the audit commands the testing guide uses.
 roles:

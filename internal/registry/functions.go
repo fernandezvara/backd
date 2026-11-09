@@ -29,7 +29,7 @@ import (
 // Function layout inside a database directory.
 const (
 	FunctionsDir = "_functions" // one Deno project per database
-	BuildDir     = ".build"     // bundles and their manifest, written by `backd functions build`
+	BuildDir     = ".build"     // bundles and their manifest, written by `backd-server functions build`
 	// TypesFile is the generated registry of the project's types (`backd types --functions`): it
 	// shapes no bundle, so it is not part of the source hash or the config fingerprint.
 	TypesFile = "backd.d.ts"
@@ -44,7 +44,7 @@ const (
 )
 
 // DenoVersion is the Deno version functions are bundled and run with.
-// `backd functions build` requires exactly this version, and the executor
+// `backd-server functions build` requires exactly this version, and the executor
 // image is built from it.
 const DenoVersion = "2.9.8"
 
@@ -823,7 +823,7 @@ func SourceHash(dir string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// Manifest describes the bundles `backd functions build` wrote for one
+// Manifest describes the bundles `backd-server functions build` wrote for one
 // functions project.
 type Manifest struct {
 	Deno      string                    `json:"deno"`
@@ -865,7 +865,7 @@ func (r *Registry) CheckBundles() error {
 		if fns == nil {
 			continue
 		}
-		fix := fmt.Sprintf("run `backd functions build` (for %s/%s)", db.Realm, db.Name)
+		fix := fmt.Sprintf("run `backd-server functions build` (for %s/%s)", db.Realm, db.Name)
 		m, err := ReadManifest(fns.Dir)
 		if errors.Is(err, os.ErrNotExist) {
 			errs = append(errs, fmt.Errorf("%s: functions are not built: %s", fns.Dir, fix))

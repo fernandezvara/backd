@@ -32,7 +32,7 @@ A wrong, used, expired or mismatched token gets the same `403` — the answer ne
 If you skipped chapter 2's accounts, nobody holds the `admin` role and nobody can invite. Create the operator where `backd` runs — it asks for a password and refuses when an administrator already exists:
 
 ```sh
-docker compose exec backd /backd bootstrap --realm shelf --email operator@shelf.example
+docker compose exec backd backd-server bootstrap --realm shelf --email operator@shelf.example
 ```
 
 ([Create the first administrator](../../operate/administration/cli/) has the details.)

@@ -12,7 +12,7 @@ Each realm with `auth: enabled` keeps an **audit trail**: one record per securit
 
 | Action | When | Details |
 |---|---|---|
-| `user.create` | An administrator (or `backd bootstrap`) creates a user | `password` (whether one was set), `roles` (seeded from `realm.yaml`) |
+| `user.create` | An administrator (or `backd-server bootstrap`) creates a user | `password` (whether one was set), `roles` (seeded from `realm.yaml`) |
 | `user.signup` | A user signs up | `invited`, `roles` |
 | `user.password` | An administrator sets a user's password | |
 | `password.expire` | An administrator [expires](../../../build/auth/users/#expiring-a-password) a user's password, or [every password](../../../build/auth/users/#expiring-every-password) of the realm (target `realm`) | `scope` (`user` or `realm`), `reason`; for the realm also `accounts`, `sessions`, `keep_sessions` |
@@ -38,7 +38,7 @@ Each realm with `auth: enabled` keeps an **audit trail**: one record per securit
 | `data.check` | An administrator starts a [schema check](../../../build/configuration/validation/#finding-documents-that-no-longer-match) ([admin API](../admin/)); the target is `data:<database>/<collection>`, `data:<database>` or `data:*`; never the report | `collections`, `limit`, `job_id` |
 | `schedule.pause`, `schedule.resume` | An administrator pauses or resumes a function's schedule ([admin API](../admin/)); only a change is recorded; the target is `schedule:<database>/<function>` | none |
 | `triggers.gap_resolve` | An administrator closes a [gap of the trigger dispatcher](../../change-feed/#seeing-and-repairing-what-the-dispatcher-did) ([admin API](../admin/), `backd triggers resolve`); the target is `trigger-gap:<id>` | none |
-| `triggers.rescan` | An operator runs `backd triggers rescan` for a collection; the actor is `cli`; the target is `<database>/<collection>` | `trigger`, `since`, `scanned`, `queued`, `run` |
+| `triggers.rescan` | An operator runs `backd-server triggers rescan` for a collection; the actor is `cli`; the target is `<database>/<collection>` | `trigger`, `since`, `scanned`, `queued`, `run` |
 | `job.cancel`, `job.rerun` | An administrator cancels a job, or queues a finished one again ([admin API](../admin/)); the target is `job:<id>` | `function`; for a re-run also `new_job` |
 | `user.disable`, `user.enable` | An administrator disables or re-enables a user | |
 | `user.delete` | An administrator erases a user (the tombstone is made; the data work is in the job) | `job_id` |
@@ -74,7 +74,7 @@ Each realm with `auth: enabled` keeps an **audit trail**: one record per securit
 | `data.create`, `data.update`, `data.delete`, `data.restore`, `data.purge` | A document is written through the [admin data route](../admin/#data) (a batch audits each operation) | `database`, `collection`, `id`; the target is `doc:<database>/<collection>/<id>`; never content |
 | `session.revoke` | An administrator ends a user's session ([admin API](../admin/)) | `session` |
 | `admin.refused` | An admin API request is refused: by a network restriction, or because the administrator's roles don't open the [area](../admin/#admin-rights) or hold the rights of the user or role involved | `reason`, `method`, `path` |
-| `realm.bootstrap` | `backd bootstrap` creates the realm's first administrator | `role` |
+| `realm.bootstrap` | `backd-server bootstrap` creates the realm's first administrator | `role` |
 
 Failed logins aren't recorded here: they are [throttled](../../../build/auth/sessions/#brute-force-protection) and counted, and every request is in the access log.
 

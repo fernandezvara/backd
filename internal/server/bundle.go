@@ -30,7 +30,7 @@ func staleFunctions(reg *registry.Registry) ([]string, error) {
 }
 
 // buildStaleFunctions bundles the functions of reg with deno (the DENO setting; "" finds it
-// on PATH) when any project is stale, as `backd functions build` would, and does nothing
+// on PATH) when any project is stale, as `backd-server functions build` would, and does nothing
 // when every bundle is fresh. The dev reloader runs it before checking a new config.
 func buildStaleFunctions(ctx context.Context, reg *registry.Registry, deno string, log *slog.Logger) error {
 	stale, err := staleFunctions(reg)

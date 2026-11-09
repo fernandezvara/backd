@@ -49,10 +49,12 @@ AGENTS.md                      repo guide for AI coding assistants
 
    <http://127.0.0.1:8080/> itself is a small landing page, only while `BACKD_DEV=true`: the realms and databases currently loaded, links into the admin UI and each realm's OpenAPI, `/healthz`/`/readyz` and the docs — plus whatever `BACKD_DEV_LINKS` adds (MinIO console by default).
 
-3. Create the first administrator, once the realm is provisioned:
+   Install the `backd` command line on this machine, from the [release archives](https://github.com/fernandezvara/backd/releases) (Linux, macOS and Windows): `backd login`, `backd types`, `backd functions invoke` and the other admin commands run from here against <http://127.0.0.1:8080>. Without it, every image has it too: `docker compose exec backd backd <command>`.
+
+3. Create the first administrator, once the realm is provisioned (a server tool, so it runs in the container):
 
    ```sh
-   docker compose exec backd /backd bootstrap --realm __REALM__ --email ops@example.com
+   docker compose exec backd backd-server bootstrap --realm __REALM__ --email ops@example.com
    ```
 
 4. Test a function's own logic without any of the above — no MongoDB, no running backd:
@@ -84,7 +86,7 @@ The stack includes an S3-compatible store for realms' `storage:` (see the commen
 
 ## CI
 
-`.github/workflows/backd.yml` — **Backd config check** — runs on every push inside the released `backd-executor` image (pin a tag in the file to fix the version): `deno test` each function, `backd functions build` + `backd config check`, `backd rules test`. It builds and publishes nothing. It's deliberately named `backd.yml`, not `ci.yml`: that name stays free for your own pipeline.
+`.github/workflows/backd.yml` — **Backd config check** — runs on every push inside the released `backd-executor` image (pin a tag in the file to fix the version): `deno test` each function, `backd-server functions build` + `backd config check`, `backd rules test`. It builds and publishes nothing. It's deliberately named `backd.yml`, not `ci.yml`: that name stays free for your own pipeline.
 
 ## Before production
 

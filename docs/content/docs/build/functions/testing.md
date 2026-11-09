@@ -11,7 +11,7 @@ toc: true
 Functions are bundled before `backd` starts: each function, with everything it imports (`lib/`, npm and JSR packages), becomes one JavaScript file.
 
 ```sh
-CONFIG_DIR=./config backd functions build
+CONFIG_DIR=./config backd-server functions build
 # bundled blog/main/stats → stats-3f2a9c0d1e4b5a6c.js (1843 bytes)
 ```
 
@@ -20,10 +20,10 @@ CONFIG_DIR=./config backd functions build
 
   ```sh
   docker run --rm -v "$PWD/config:/config" -v "$PWD/backd:/usr/local/bin/backd:ro" \
-    -e CONFIG_DIR=/config docker.io/denoland/deno:alpine-2.9.8 backd functions build
+    -e CONFIG_DIR=/config docker.io/denoland/deno:alpine-2.9.8 backd-server functions build
   ```
 - Bundles go to `_functions/.build/`, one file per function named by its content hash, listed in `.build/manifest.json` with the Deno version and a hash of the project's sources. The same sources always give the same bundles.
-- TypeScript is compiled, not type-checked; `backd functions build --check` type-checks too.
+- TypeScript is compiled, not type-checked; `backd-server functions build --check` type-checks too.
 - Dependencies are downloaded only at build time. When `deno.lock` exists, the build fails if it's out of date, so every build uses exactly the pinned versions.
 - If a function fails to bundle, the build stops and the previous bundles stay in place.
 
@@ -31,19 +31,19 @@ At startup, `backd` (`serve`, `provision`) refuses to run when a database's bund
 
 ### Dev mode
 
-`BACKD_DEV=true` follows your config files while you edit them: function code is rebuilt and schemas, rules and the other config are reloaded, with no restart and no `backd functions build` by hand:
+`BACKD_DEV=true` follows your config files while you edit them: function code is rebuilt and schemas, rules and the other config are reloaded, with no restart and no `backd-server functions build` by hand:
 
 ```sh
-CONFIG_DIR=./config BACKD_DEV=true HTTP_ADDR=127.0.0.1:8080 backd serve
+CONFIG_DIR=./config BACKD_DEV=true HTTP_ADDR=127.0.0.1:8080 backd-server serve
 ```
 
-- **At startup** `serve` builds the bundles that are missing or stale, the same way, so a fresh checkout or a function edited while `backd` was stopped needs no `backd functions build`. A standalone `worker` never builds: it waits until the bundles the API built are there.
+- **At startup** `serve` builds the bundles that are missing or stale, the same way, so a fresh checkout or a function edited while `backd` was stopped needs no `backd-server functions build`. A standalone `worker` never builds: it waits until the bundles the API built are there.
 - **An error doesn't stop it.** When the config, a collection's rules or a function's build fails at startup, `serve` and `worker` keep running instead of exiting: they log what is wrong and load the config again when a file under `CONFIG_DIR` changes; the first change that loads starts everything, as a reload would (provisioning, roles, `backd.d.ts`). Until then `serve` answers `/healthz` (the process is fine, so a container isn't restarted), `GET /` shows the report, and everything else, `/readyz` and every `/v1/...` route included, answers `503` with the error code [`config_not_loaded`](../../api/#errors) and the report in its details; the admin UI says so and links the report. What you don't edit still stops it at startup: invalid settings, an address dev mode refuses, MongoDB unreachable or not a replica set, a port in use, and no Deno when a function's bundle needs building (run dev mode on the `backd-executor` image, which has it; with every bundle already built, it starts and warns that a changed function can't be built again).
 - **What failed is one log record per problem**, JSON as always: `kind` (`config`, `rules` or `build`), `file` (relative to `CONFIG_DIR`) and `line` when known, `error`, `output` (Deno's output as it is, for a build) and `hint`. The same problem isn't logged again until a file changes.
 - Every second, `backd` checks the files under `CONFIG_DIR` (hidden entries such as `.git` and `.build`, and `node_modules`, are skipped): `realm.yaml`; each collection's `schema.json`, `collection.yaml`, `rules.yaml` and `indexes.json`; `function.yaml` and function code; `_realm/` (the app configuration, email, push and page templates, consent texts and compliance files).
-- When something changed, the whole config is loaded and validated exactly as at startup, function sources that changed are bundled with the same `deno bundle` that `backd functions build` does, and index changes are applied as at provisioning. Only then is the new config swapped in: requests already running finish on the old one, and the next ones use the new one. The log says `config reloaded` with the new fingerprint, the realms and the files that changed.
+- When something changed, the whole config is loaded and validated exactly as at startup, function sources that changed are bundled with the same `deno bundle` that `backd-server functions build` does, and index changes are applied as at provisioning. Only then is the new config swapped in: requests already running finish on the old one, and the next ones use the new one. The log says `config reloaded` with the new fingerprint, the realms and the files that changed.
 - After a config has loaded, a change that doesn't validate (a syntax error in a function, a broken `schema.json`) is **refused**: the previous config keeps running and stays ready, the errors are logged as above, and the realm's [configuration view](../../../operate/administration/admin/) in the admin API and UI shows them as a `reload_failed` warning until the files are fixed. A failed change isn't retried until a file changes again.
-- A standalone `backd worker` with `BACKD_DEV=true` follows the config as well: when a change loads and validates, it restarts its job loop on the new config (jobs running at that moment are cancelled and queued again when their lease expires), and it keeps trying while the new config doesn't load yet, because the API builds the bundles after a change. The `--with-worker` loop inside `serve` keeps the config it started with; restart to give it a new one. The [development stack](../../../contribute/local-development/) runs the API and the worker apart for this.
+- A standalone `backd-server worker` with `BACKD_DEV=true` follows the config as well: when a change loads and validates, it restarts its job loop on the new config (jobs running at that moment are cancelled and queued again when their lease expires), and it keeps trying while the new config doesn't load yet, because the API builds the bundles after a change. The `--with-worker` loop inside `serve` keeps the config it started with; restart to give it a new one. The [development stack](../../../contribute/local-development/) runs the API and the worker apart for this.
 - While dev mode is on, `GET /` is a small landing page: the report of the last change that failed (what, where, the build output, what to do), the realms and databases currently loaded, links into the admin UI, each realm's OpenAPI document, `/healthz` and `/readyz`, and the links `BACKD_DEV_LINKS` adds. It does not exist otherwise.
 - After each reload, every functions project's [`backd.d.ts`](../writing/#typed-functions) is rewritten, so the types of `defineFunction` follow your schemas.
 - `backd` refuses to start with `BACKD_DEV=true` unless `HTTP_ADDR` is bound to localhost (`127.0.0.1:port`, `[::1]:port` or `localhost:port`) — dev mode must never be reachable off the machine — and logs a warning while it runs, as a reminder this is a local-only, hot-reload exception. The one exception is a container whose ports are published on the host's `127.0.0.1` only (the local docker stack): it sets `BACKD_DEV_ANY_ADDR=true`, and `backd` logs a warning.

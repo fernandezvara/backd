@@ -155,7 +155,7 @@ One entry of the array can be a **full-text index** instead of a list of fields:
 - **One per collection**, a limit of the database; put every field in the same entry.
 - **`default_language`** (default `english`) is the language of documents that say none: a language name or two-letter code the database stems and stops words for (`danish`, `dutch`, `english`, `finnish`, `french`, `german`, `hungarian`, `italian`, `norwegian`, `portuguese`, `romanian`, `russian`, `spanish`, `swedish`, `turkish`), or `none` for no stemming.
 - **`language_field`** is optional: a declared string field of each document that holds a **locale code** (`es`, `en-GB`, `pt_BR`). backd maps it to the database's language when it writes the document, in a hidden field the index reads (`_search_lang`, which is never part of a document and can't be declared in `schema.json`). A locale with no language of its own is indexed without stemming.
-- **Rebuilds.** `backd provision` creates the index, and **replaces it when the declaration changes** (weights, fields or languages), logging a warning at startup: until it is built, searches answer `503 index_building`. Documents written before the index get their language from `language_field` when it is first created. An index that exists in MongoDB but that backd didn't create is never dropped: a second text index isn't possible, so provisioning stops and says which to drop.
+- **Rebuilds.** `backd-server provision` creates the index, and **replaces it when the declaration changes** (weights, fields or languages), logging a warning at startup: until it is built, searches answer `503 index_building`. Documents written before the index get their language from `language_field` when it is first created. An index that exists in MongoDB but that backd didn't create is never dropped: a second text index isn't possible, so provisioning stops and says which to drop.
 - Searching with it is `$search` in `where`: see the [search guide](../../api/search/) for weights, languages and syntax.
 
 ## `collection.yaml`
@@ -203,7 +203,7 @@ on_owner_delete:
 - `pull` and `unset` reach **every** document of the collection, whoever owns it. Each field says what it holds, `email` (the user's address, in the lower-case form `backd` stores) or `id`.
 - Only realms with `auth: enabled` have users, so the file is an error in a realm with `auth: disabled`.
 - `backd` checks the policy against `schema.json` at startup, so an erase leaves every document valid: named fields must exist; a required field can't be removed or unset (make it optional, or `replace` it); `replace` values must satisfy the schema and can't be in a unique index; `pull` fields must be arrays of strings without `minItems`; `unset` fields must be strings.
-- `backd provision` creates the indexes an erase searches by, so large collections aren't scanned: `_meta.owner` when the policy has an `action`, and one on each `pull` and `unset` field (they are checked in `verify` mode like the ones in `indexes.json`). Adding a policy to an existing collection builds them at the next provision.
+- `backd-server provision` creates the indexes an erase searches by, so large collections aren't scanned: `_meta.owner` when the policy has an `action`, and one on each `pull` and `unset` field (they are checked in `verify` mode like the ones in `indexes.json`). Adding a policy to an existing collection builds them at the next provision.
 - The file is part of the [config fingerprint](../../../operate/deploying/). Applying a policy is an erase, which is an administrator's action.
 
 ### Soft delete
@@ -219,8 +219,8 @@ soft_delete:
 
 - **`DELETE` marks the document** (`_meta.deleted_at`, `deleted_by` and, with a retention, `purge_at`, at the next version) instead of removing it. No read, list, count, write or batch sees it; a unique value it held is free for a new document at once.
 - **The trash is a separate view**: `?deleted=only|include` on list and get, `POST /{id}/restore`, and `DELETE /{id}?purge=true`, each under its own rule (`restore` and `purge` in the [`rules:`](../../auth/rules/#operations), denied unless declared). See [Soft delete](../../api/documents/#soft-delete).
-- **A retention is MongoDB's TTL index**: `backd provision` creates it on `_meta.purge_at` and MongoDB removes the documents in the background, within about a minute of that time. Without a retention a deleted document stays until it is purged by hand.
-- **Unique indexes** from `indexes.json` get `_meta.deleted_at` as their last key, so live documents stay unique among themselves, a deleted one never clashes with anything, and documents that existed before count as live. Turning `soft_delete` on for a collection that already has a unique index builds the new index next to the old one, and `backd provision` warns about the old one: it also covers deleted documents, so **drop it** once the new one exists (`db.<collection>.dropIndex("<name>")`) or a deleted document's values stay taken. `backd` never drops an index itself.
+- **A retention is MongoDB's TTL index**: `backd-server provision` creates it on `_meta.purge_at` and MongoDB removes the documents in the background, within about a minute of that time. Without a retention a deleted document stays until it is purged by hand.
+- **Unique indexes** from `indexes.json` get `_meta.deleted_at` as their last key, so live documents stay unique among themselves, a deleted one never clashes with anything, and documents that existed before count as live. Turning `soft_delete` on for a collection that already has a unique index builds the new index next to the old one, and `backd-server provision` warns about the old one: it also covers deleted documents, so **drop it** once the new one exists (`db.<collection>.dropIndex("<name>")`) or a deleted document's values stay taken. `backd` never drops an index itself.
 - **Erasing a user** still deletes, anonymizes and clears documents that are in the trash: it works on everything the user owns.
 - It doesn't need users: a realm with `auth: disabled` can soft-delete, though it has no rules to restrict the trash.
 
@@ -263,7 +263,7 @@ With `organization: required`, every document is created inside an organization 
 - A collection with an organization can't also use `custom_id: user`: it would allow one document per user across every organization.
 - `on_org_delete` is required, and only valid next to `organization`.
 - When a user is [erased](../../../operate/administration/erasure/), their documents in an organization **stay**, with the owner cleared; with `in_org: apply` the erase's `action` applies to them as it does outside organizations (`in_org` needs an `action`).
-- `_meta.org` is a system field: it can be queried, sorted and used in `indexes.json` (`[_meta.org, slug]` makes `slug` unique per organization). `backd provision` adds the index `(_meta.org, _meta.created_at, id)`, which serves a list of one organization in the default order.
+- `_meta.org` is a system field: it can be queried, sorted and used in `indexes.json` (`[_meta.org, slug]` makes `slug` unique per organization). `backd-server provision` adds the index `(_meta.org, _meta.created_at, id)`, which serves a list of one organization in the default order.
 - [Access rules](../../auth/rules/#organizations) read it with `inOrg`, `hasOrgRole` and `orgClaims`, applied inside the query.
 
 #### Teams
@@ -279,7 +279,7 @@ on_team_delete:
   action: keep               # keep | delete
 ```
 
-`_meta.team` is a system field like `_meta.org`: it can be queried (`?team=<id>` is the shorthand), sorted and used in `indexes.json`, and `backd provision` adds the index `(_meta.org, _meta.team, _meta.created_at, id)` for the lists of one team. It is server-owned: set at creation with `?team=<id>` (in the organization of the session), by a member of the team or a holder of a [team role](../../organizations/team-roles/) in it, and fixed afterwards (administrators move documents with the [transfer](../../api/documents/#fixing-data-as-an-administrator)). `on_team_delete` is required next to `team`: `delete` removes the team's documents when it is deleted (a job, in batches), `keep` leaves them with the old team id, readable through organization-level rules. [Access rules](../../auth/rules/#organizations) read it with `inTeam` and `hasTeamRole`.
+`_meta.team` is a system field like `_meta.org`: it can be queried (`?team=<id>` is the shorthand), sorted and used in `indexes.json`, and `backd-server provision` adds the index `(_meta.org, _meta.team, _meta.created_at, id)` for the lists of one team. It is server-owned: set at creation with `?team=<id>` (in the organization of the session), by a member of the team or a holder of a [team role](../../organizations/team-roles/) in it, and fixed afterwards (administrators move documents with the [transfer](../../api/documents/#fixing-data-as-an-administrator)). `on_team_delete` is required next to `team`: `delete` removes the team's documents when it is deleted (a job, in batches), `keep` leaves them with the old team id, readable through organization-level rules. [Access rules](../../auth/rules/#organizations) read it with `inTeam` and `hasTeamRole`.
 
 ### References
 
@@ -366,7 +366,7 @@ realtime: true      # the collection's changes may be streamed to subscribed cli
 
 `realtime: true` marks the collection as one whose changes are read from MongoDB's change stream. Without it (or with `false`) nothing is read for the collection, and anything but `true` or `false` stops startup, naming the file.
 
-Clients follow the collection with [`POST /v1/{realm}/_realtime`](../../api/realtime/), which streams only what the caller may read; its `read` rule is evaluated in memory per change, so a realtime collection whose read rule can't be (it never happens with the rule language today) stops startup. The collection needs [pre-change images](../../../operate/change-feed/#requirements), which `backd provision` enables; the cost is described on the [change feed](../../../operate/change-feed/#what-it-costs) page.
+Clients follow the collection with [`POST /v1/{realm}/_realtime`](../../api/realtime/), which streams only what the caller may read; its `read` rule is evaluated in memory per change, so a realtime collection whose read rule can't be (it never happens with the rule language today) stops startup. The collection needs [pre-change images](../../../operate/change-feed/#requirements), which `backd-server provision` enables; the cost is described on the [change feed](../../../operate/change-feed/#what-it-costs) page.
 
 ### Triggers
 
@@ -398,7 +398,7 @@ triggers:
 - **Chains are bounded.** A trigger's function may write documents that fire other triggers: that is how a pipeline works, and how a bug becomes a loop. Every write a trigger run makes is stamped, so the events it causes know their `depth`; an event deeper than `triggers.max_chain` (default 16, at most the instance's `BACKD_TRIGGER_MAX_CHAIN`) is **not queued**, and neither is a trigger's chained event past `triggers.max_chained_per_minute` (default 60). Both are logged and counted (`trigger_dropped_total`). The transition `when` above makes the common loop impossible to write.
 - **Events that nobody chained are never dropped for being many.** Importing 10,000 documents fires 10,000 events and every one is queued. What protects the database is a ceiling per realm, `triggers.max_backlog` (default 100,000 queued trigger jobs): past it, further events of that realm are recorded as a [gap](../../../operate/change-feed/#the-trigger-dispatcher) instead of queued, and other realms carry on.
 - **At most 20 triggers per collection**, lowered with `triggers.max_per_collection` in `realm.yaml`. The `triggers:` section of `realm.yaml` holds `max_per_collection`, `max_chain`, `max_chained_per_minute` and `max_backlog`; the realm may lower `max_chain` and `max_per_collection` below the instance's, never raise them.
-- A collection with triggers needs [pre-change images](../../../operate/change-feed/#requirements), which `backd provision` enables.
+- A collection with triggers needs [pre-change images](../../../operate/change-feed/#requirements), which `backd-server provision` enables.
 
 The [trigger dispatcher](../../../operate/change-feed/#the-trigger-dispatcher) queues one background job for each change a trigger matches, and a worker runs it like any [async function](../../functions/jobs/) (a realm needs auth enabled, and a running worker). The job's input is:
 

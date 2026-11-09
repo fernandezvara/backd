@@ -1,6 +1,6 @@
 # The functions executor image (backd-executor): the official Deno image,
 # pinned to the version backd runs functions with (registry.DenoVersion),
-# plus the backd binary, running `backd executor`. Build context: the repository root.
+# plus the backd binary, running `backd-server executor`. Build context: the repository root.
 #
 # Run it non-root with a read-only root filesystem and a tmpfs for its
 # working directory (EXECUTOR_DIR), on a network that reaches only backd's
@@ -25,6 +25,8 @@ RUN go mod download
 COPY . .
 COPY --from=ui /src/internal/adminui/dist ./internal/adminui/dist
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -trimpath -ldflags="-s -w -X github.com/fernandezvara/backd/internal/buildinfo.Version=${VERSION}" -o /out/backd-server ./cmd/backd-server \
+    && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags="-s -w -X github.com/fernandezvara/backd/internal/buildinfo.Version=${VERSION}" -o /out/backd ./cmd/backd
 
 FROM docker.io/denoland/deno:alpine-2.9.8
@@ -32,10 +34,10 @@ FROM docker.io/denoland/deno:alpine-2.9.8
 # on OpenSSL once), so pick them up at build time.
 USER root
 RUN apk upgrade --no-cache
-COPY --from=build /out/backd /usr/local/bin/backd
-# /backd is a link to it, for `docker compose exec backd /backd <command>`; the same in every image.
-RUN ln -s /usr/local/bin/backd /backd
+COPY --from=build /out/backd /out/backd-server /usr/local/bin/
+# /backd and /backd-server are links to them, the same in every image.
+RUN ln -s /usr/local/bin/backd /backd && ln -s /usr/local/bin/backd-server /backd-server
 ENV EXECUTOR_DIR=/tmp/backd-executor
 USER deno
 EXPOSE 9100
-ENTRYPOINT ["/usr/local/bin/backd", "executor"]
+ENTRYPOINT ["/usr/local/bin/backd-server", "executor"]

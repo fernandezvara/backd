@@ -1,4 +1,6 @@
-// Command backd is backd's command line and, until the split, its server.
+// Command backd is backd's command line, for developers and administrators: the project
+// tools (templates, checks, types) and a running backd's admin API. The server is
+// backd-server.
 package main
 
 import (

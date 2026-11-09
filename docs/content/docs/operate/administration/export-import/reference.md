@@ -123,11 +123,10 @@ Opens [encrypted fields](../encrypted-fields/) of a package, offline.
 
 ### Direct-mode flags
 
-On both commands; see [direct mode](../direct-mode/).
+On `backd-server export` and `import`, which work with no running server; see [direct mode](../direct-mode/).
 
 | Flag | Effect |
 |---|---|
-| `--direct` | Work on MongoDB and `CONFIG_DIR` |
 | `--mongo-uri` | A URI, or `env:` / `file:`; default `BACKD_MONGO_URI`, then `MONGO_URI` |
 | `--master-key` | `env:` / `file:`; default `BACKD_SECRETS_KEY` |
 | `--storage-key`, `--storage-secret` | Storage credentials instead of the realm's secrets |

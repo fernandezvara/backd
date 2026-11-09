@@ -36,7 +36,7 @@ Whatever the first factor, a user with a second factor is still asked for it —
 
 ## Operating it
 
-- [Command-line administration](../../operate/administration/cli/): `backd bootstrap`, `backd login`, `backd user`.
+- [Command-line administration](../../operate/administration/cli/): `backd-server bootstrap`, `backd login`, `backd user`.
 - [Admin API](../../operate/administration/admin/): server-side user management.
 - [Audit trail](../../operate/administration/audit/) of security-sensitive actions.
 - [Deactivating and erasing users](../../operate/administration/erasure/), with per-collection policies for their data; [compliance](../../operate/administration/compliance/) covers personal-data scope, retention and recipes.

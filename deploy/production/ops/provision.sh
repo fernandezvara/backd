@@ -1,6 +1,6 @@
 #!/bin/sh
 # Deploy step, run with admin credentials in MONGO_URI:
-#   1. `backd provision`: collections, validators, indexes, system databases;
+#   1. `backd-server provision`: collections, validators, indexes, system databases;
 #   2. grants.js: the service user BACKD_APP_USER gets document access to
 #      exactly the collections `backd databases --collections` lists, and
 #      listCollections on every database `backd databases` lists (the two
@@ -10,7 +10,7 @@
 set -eu
 : "${MONGO_URI:?}" "${BACKD_APP_USER:?}" "${BACKD_APP_PASSWORD:?}"
 
-backd provision
+backd-server provision
 COLLECTIONS=$(backd databases --collections)
 DATABASES=$(backd databases)
 export COLLECTIONS DATABASES

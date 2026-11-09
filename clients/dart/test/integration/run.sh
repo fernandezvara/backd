@@ -27,7 +27,7 @@ run_id=$(date +%s)
 key() {
   local out err
   err=$(mktemp)
-  printf 'dev-p4ssw0rd!\n' | compose exec -T backd /backd bootstrap --realm "$1" --email ops@example.com --role ops >/dev/null 2>"$err" ||
+  printf 'dev-p4ssw0rd!\n' | compose exec -T backd backd-server bootstrap --realm "$1" --email ops@example.com --role ops >/dev/null 2>"$err" ||
     grep -q 'already has an administrator' "$err" || { cat "$err" >&2; return 1; }
   printf 'dev-p4ssw0rd!\n' | compose exec -T backd /backd login --realm "$1" --url http://localhost:8080 --email ops@example.com >/dev/null 2>"$err" || { cat "$err" >&2; return 1; }
   # (A key is made by a person who proves it is them again: the password, on standard input.)

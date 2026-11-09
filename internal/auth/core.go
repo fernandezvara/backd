@@ -40,4 +40,5 @@ var (
 	PortableToPlain        = authcore.PortableToPlain
 	PortableWithoutSecrets = authcore.PortableWithoutSecrets
 	ExportKey              = authcore.ExportKey
+	OrgScope               = authcore.OrgScope
 )

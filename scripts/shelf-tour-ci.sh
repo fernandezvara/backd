@@ -51,7 +51,7 @@ find "$dir/config" -name .build -prune -exec rm -rf {} +
 # refuses to start without it: provision the database, create the key offline (the chapter does
 # the same by hand), then start everything.
 docker compose -f "$compose" run --rm backd provision >/dev/null
-docker compose -f "$compose" run --rm --no-deps backd secret create --direct --realm shelf --type key --generate --name SHELF_NOTES >/dev/null
+docker compose -f "$compose" run --rm --no-deps backd secret create --realm shelf --type key --generate --name SHELF_NOTES >/dev/null
 
 docker compose -f "$compose" up -d
 

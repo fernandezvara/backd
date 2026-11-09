@@ -97,7 +97,7 @@ services:
     build:
       context: .
       dockerfile: docker/executor/Dockerfile
-    entrypoint: ["/usr/local/bin/backd"]
+    entrypoint: ["/usr/local/bin/backd-server"]
     user: root
     command: ["serve", "--with-worker"]
     environment:
@@ -171,7 +171,7 @@ services:
     depends_on:
       - backd
 
-  # backd egress: the only route out for function processes (docs: "Egress:
+  # backd-server egress: the only route out for function processes (docs: "Egress:
   # the network allowlist, completed").
   egress:
     build: .

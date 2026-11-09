@@ -15,7 +15,7 @@
 # Functions (docs: Functions): the executor runs on its
 # own network, `func`, reaching only backd's internal listener and egress
 # — never MongoDB or the internet directly (F4's network placement).
-# `backd egress` bridges `func` to the internet (`uplink`) for functions
+# `backd-server egress` bridges `func` to the internet (`uplink`) for functions
 # that declare outbound hosts. A dedicated worker runs async jobs.
 name: backd-production
 
@@ -133,7 +133,7 @@ services:
     depends_on: [minio]
     restart: "no"
 
-  # One-shot deploy step, run with admin credentials: `backd provision`,
+  # One-shot deploy step, run with admin credentials: `backd-server provision`,
   # then least-privilege grants on exactly the databases the config uses
   # (ops/provision.sh). Run it again after every config change.
   provision:

@@ -1,5 +1,5 @@
 {{/*
-One Deployment and one Service of `backd serve`. The three differ by a few settings:
+One Deployment and one Service of `backd-server serve`. The three differ by a few settings:
 
   backd           the public API: no admin API, no change stream
   backd-realtime  the only instances that read the change stream (realtime) and hold the trigger lease

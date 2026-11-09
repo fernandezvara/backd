@@ -16,7 +16,6 @@ import (
 	"github.com/pquerna/otp/totp"
 	"github.com/rs/xid"
 
-	"github.com/fernandezvara/backd/internal/cli"
 	"github.com/fernandezvara/backd/internal/cmdtest"
 	"github.com/fernandezvara/backd/internal/functions"
 	"github.com/fernandezvara/backd/internal/mongodb"
@@ -57,7 +56,7 @@ func TestTemplatesServeSample(t *testing.T) {
 	runCLI := func(args ...string) string {
 		t.Helper()
 		var stdout, stderr bytes.Buffer
-		if code := cli.Run(args, getenv, strings.NewReader(stdin), &stdout, &stderr); code != 0 {
+		if code := runAny(args, getenv, strings.NewReader(stdin), &stdout, &stderr); code != 0 {
 			t.Fatalf("%v: exit %d: %s", args, code, stderr.String())
 		}
 		return stdout.String()
@@ -114,7 +113,7 @@ func TestTemplatesServeSample(t *testing.T) {
 			return c + "\n"
 		},
 	}}
-	if code := cli.Run([]string{"login", "--realm", realm, "--url", srv.URL, "--email", "ops@example.com"}, getenv, enrol, &loginOut, &loginErr); code != 0 {
+	if code := runAny([]string{"login", "--realm", realm, "--url", srv.URL, "--email", "ops@example.com"}, getenv, enrol, &loginOut, &loginErr); code != 0 {
 		t.Fatalf("login: exit %d: %s%s", code, loginOut.String(), loginErr.String())
 	}
 	// A key is made by a person who proves it is them again: the code of the next time step.

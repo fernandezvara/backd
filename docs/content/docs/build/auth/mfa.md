@@ -82,7 +82,7 @@ backd user mfa-reset --realm acme --email ada@example.com --yes
 
 - It removes the TOTP secret and the recovery codes, **ends every session** of the user, sends them an `mfa-reset` email and is audited as `user.mfa_reset` with the administrator as the actor. A user in a [required role](#required-by-role) sets one up again at their next sign-in.
 - It needs the `users` [admin area](../../../operate/administration/admin/), and it is **never available on yourself** (`403 self_reset_not_allowed`): an administrator who is the only one of the realm can't lock themselves out of the way back, but can't talk themselves in either.
-- **Break glass.** For the only administrator of a realm who lost their factor, an operator with access to the instance runs `backd user mfa-reset --local --realm acme --email … --yes` where `backd` runs (it needs `CONFIG_DIR` and `MONGO_URI`, like `backd bootstrap`). It acts on the database directly and is audited as the actor `instance`.
+- **Break glass.** For the only administrator of a realm who lost their factor, an operator with access to the instance runs `backd-server user mfa-reset --realm acme --email … --yes` where `backd` runs (it needs `CONFIG_DIR` and `MONGO_URI`, like `backd-server bootstrap`). It acts on the database directly and is audited as the actor `instance`.
 - **There is no reset by email**: anyone who controls a mailbox would be able to remove the second factor that protects the account. A recovery flow with a waiting period is a possible future addition.
 
 ## How a sign-in goes

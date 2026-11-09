@@ -11,12 +11,13 @@ import (
 
 // secretCreate creates a field key: generated here by the server and printed once, or imported
 // from --value. The key goes to standard output alone, so it can be redirected to a file.
-func secretCreate(c *kli.CommandContext) error {
-	t, closeT, _, err := openTarget(c)
+func secretCreate(c *kli.CommandContext, o Opener) error {
+	s, err := o.Open(c)
 	if err != nil {
 		return err
 	}
-	defer closeT()
+	defer s.Close()
+	t := s.t
 	if typ := cmdutil.Str(c, "type"); typ != "key" {
 		return cmdutil.UsageErr(fmt.Errorf("--type must be key (plain secrets are set with `backd secret set`), got %q", typ))
 	}
@@ -29,7 +30,7 @@ func secretCreate(c *kli.CommandContext) error {
 	if generate {
 		body["generate"] = true
 	} else {
-		v, err := readKeySource(src, c.Getenv, c.Stderr())
+		v, err := cmdutil.ReadKeySource(src, c.Getenv, c.Stderr())
 		if err != nil {
 			return err
 		}
@@ -81,12 +82,13 @@ func keyIsHeld(t *target, name string) (bool, error) {
 
 // secretRotate gives a key a new value and re-wraps what it protects. A generated key goes to
 // standard output once, like a created one.
-func secretRotate(c *kli.CommandContext) error {
-	t, closeT, _, err := openTarget(c)
+func secretRotate(c *kli.CommandContext, o Opener) error {
+	s, err := o.Open(c)
 	if err != nil {
 		return err
 	}
-	defer closeT()
+	defer s.Close()
+	t := s.t
 	generate, resume, src := cmdutil.Flag(c, "generate"), cmdutil.Flag(c, "resume"), cmdutil.Str(c, "value")
 	n := 0
 	for _, set := range []bool{generate, resume, src != ""} {
@@ -104,7 +106,7 @@ func secretRotate(c *kli.CommandContext) error {
 	case resume:
 		body["resume"] = true
 	default:
-		v, err := readKeySource(src, c.Getenv, c.Stderr())
+		v, err := cmdutil.ReadKeySource(src, c.Getenv, c.Stderr())
 		if err != nil {
 			return err
 		}

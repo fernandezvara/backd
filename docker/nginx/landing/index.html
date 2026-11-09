@@ -143,7 +143,7 @@ if (accounts.length) {
   credsBox.append(el('p', 'warn', null))
   const hint = credsBox.querySelector('.warn')
   hint.textContent = info.credentials_hint ??
-    'No seeded accounts yet. Create the first administrator of a realm with `make dev-backd ARGS="bootstrap --realm <realm> --email you@example.com"`; its sign-in details then appear here when the seed script runs.'
+    'No seeded accounts yet. Create the first administrator of a realm with `make dev-server ARGS="bootstrap --realm <realm> --email you@example.com"`; its sign-in details then appear here when the seed script runs.'
 }
 
 // The stack's link sections, from local-seed/stack.json.

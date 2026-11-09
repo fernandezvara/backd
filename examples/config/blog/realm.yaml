@@ -7,7 +7,7 @@
 auth: enabled
 signup: open
 
-# The realm's administrators: `backd bootstrap --realm blog --email <email>` creates the
+# The realm's administrators: `backd-server bootstrap --realm blog --email <email>` creates the
 # first one; they manage users and API keys through the admin API.
 roles:
   admin:

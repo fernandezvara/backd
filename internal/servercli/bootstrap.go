@@ -1,4 +1,4 @@
-package cli
+package servercli
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	"github.com/fernandezvara/backd/internal/server"
 )
 
-// bootstrapAction handles `backd bootstrap`.
+// bootstrapAction handles `backd-server bootstrap`.
 func bootstrapAction(c *kli.CommandContext) error {
 	ctx := context.Background()
 	uio := cmdutil.IOOf(c)

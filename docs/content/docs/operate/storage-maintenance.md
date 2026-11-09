@@ -6,7 +6,7 @@ weight: 350
 toc: true
 ---
 
-backd never lists the bucket while it runs. Instead, every change that stops a document referencing a file **queues that file's object for deletion**, and the workers (`backd worker`, or `backd serve --with-worker`) delete it, retrying with a growing wait when the storage fails. An upload that never became part of a document is journaled, and the workers delete its object after a grace period (one hour), or when a pending or direct upload expires.
+backd never lists the bucket while it runs. Instead, every change that stops a document referencing a file **queues that file's object for deletion**, and the workers (`backd-server worker`, or `backd-server serve --with-worker`) delete it, retrying with a growing wait when the storage fails. An upload that never became part of a document is journaled, and the workers delete its object after a grace period (one hour), or when a pending or direct upload expires.
 
 ## What queues an object
 

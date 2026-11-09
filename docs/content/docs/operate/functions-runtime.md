@@ -12,16 +12,16 @@ Functions add up to four kinds of process. All are the same `backd` binary (the 
 
 | Process | Command | Needed for | How many |
 |---|---|---|---|
-| API | `backd serve` | calling functions over HTTP | as many as you like, all with the same config |
-| Executor | `backd executor` | running any function | one or more, reachable only from `backd` and workers |
-| Worker | `backd worker`, or `backd serve --with-worker` | [async jobs](../../build/functions/jobs/) and [cron schedules](../../build/functions/cron/) | one or more; each job and each scheduled run is done by exactly one |
-| Egress | `backd egress` | functions that declare [`network`](../../build/functions/network/) | one or more; the executor's only way out |
+| API | `backd-server serve` | calling functions over HTTP | as many as you like, all with the same config |
+| Executor | `backd-server executor` | running any function | one or more, reachable only from `backd` and workers |
+| Worker | `backd-server worker`, or `backd-server serve --with-worker` | [async jobs](../../build/functions/jobs/) and [cron schedules](../../build/functions/cron/) | one or more; each job and each scheduled run is done by exactly one |
+| Egress | `backd-server egress` | functions that declare [`network`](../../build/functions/network/) | one or more; the executor's only way out |
 
 {{< hint note >}}
-**`backd executor` runs only on Linux**: it enforces each function's CPU time, memory and process group with Linux features, and on Windows or macOS it refuses to start and says so, rather than run functions without limits. Use the `backd-executor` container image (or WSL2 on Windows). `serve`, `worker`, `egress` and the command line run on any system, pointing `BACKD_EXECUTOR_URL` at an executor.
+**`backd-server executor` runs only on Linux**: it enforces each function's CPU time, memory and process group with Linux features, and on Windows or macOS it refuses to start and says so, rather than run functions without limits. Use the `backd-executor` container image (or WSL2 on Windows). `serve`, `worker`, `egress` and the command line run on any system, pointing `BACKD_EXECUTOR_URL` at an executor.
 {{< /hint >}}
 
-The smallest useful deployment is `backd serve --with-worker` plus an executor (add egress once a function declares `network`). The [production reference](../production/docker-compose/#functions-executor-egress-and-worker) runs them as separate services with the executor on a network of its own, and the project template's `compose.yaml` runs the same set for local development.
+The smallest useful deployment is `backd-server serve --with-worker` plus an executor (add egress once a function declares `network`). The [production reference](../production/docker-compose/#functions-executor-egress-and-worker) runs them as separate services with the executor on a network of its own, and the project template's `compose.yaml` runs the same set for local development.
 
 ## Sizing
 
@@ -47,38 +47,38 @@ The smallest useful deployment is `backd serve --with-worker` plus an executor (
 | `500 secret_missing` | The function declares a secret that isn't set | `backd secret set --realm … --name …` (`--database …` for a database secret) |
 | `500 function_failed` | The function threw something other than `ctx.error`, crashed, or exceeded memory | `backd functions logs`; catch client errors and use [`relay`](../../build/functions/writing/#errors) |
 | `504 function_timeout` | It ran longer than its `timeout` | Raise `timeout` (up to 60 s), or make it `async` |
-| `backd` refuses to start: functions are not built | Missing, stale or modified bundles | `backd functions build`, then redeploy ([Building](../../build/functions/testing/#building)) |
+| `backd` refuses to start: functions are not built | Missing, stale or modified bundles | `backd-server functions build`, then redeploy ([Building](../../build/functions/testing/#building)) |
 | `--with-worker requires BACKD_EXECUTOR_URL` | A worker needs the executor | Set `BACKD_EXECUTOR_URL`/`BACKD_EXECUTOR_TOKEN` |
 | A job stays `queued` | No worker is running | [When a job doesn't finish](../../build/functions/jobs/#when-a-job-doesnt-finish) |
 | A scheduled run is missing | No worker was up within five minutes of its time | [Scheduled functions](../../build/functions/cron/#how-runs-are-created) |
-| Calls to an outside host fail | The host isn't in `network`, or `backd egress` isn't reachable | [Outbound network](../../build/functions/network/) |
+| Calls to an outside host fail | The host isn't in `network`, or `backd-server egress` isn't reachable | [Outbound network](../../build/functions/network/) |
 
 ## Running the executor
 
-Functions run in the **executor**, `backd executor`: a supervisor that starts one Deno process per call and stops it at its deadline. It runs in its own container, from the `backd-executor` image (the official Deno image plus `backd`; build it from `docker/executor/Dockerfile`). It never reads `CONFIG_DIR` or MongoDB: it fetches each function's bundle from `backd` by its hash, and functions reach data only through `backd`.
+Functions run in the **executor**, `backd-server executor`: a supervisor that starts one Deno process per call and stops it at its deadline. It runs in its own container, from the `backd-executor` image (the official Deno image plus `backd`; build it from `docker/executor/Dockerfile`). It never reads `CONFIG_DIR` or MongoDB: it fetches each function's bundle from `backd` by its hash, and functions reach data only through `backd`.
 
 `backd` talks to the executor, and the executor and functions talk back to `backd` on an **internal listener** that must never be published:
 
 {{< hint danger >}}
-The executor and the internal listener must **never be published** to the internet, or reachable from anything but `backd`, the workers and `backd egress`. The executor runs whatever it is given; its token and network placement are what stop others from using it.
+The executor and the internal listener must **never be published** to the internet, or reachable from anything but `backd`, the workers and `backd-server egress`. The executor runs whatever it is given; its token and network placement are what stop others from using it.
 {{< /hint >}}
 
 | Variable | On | Meaning |
 |---|---|---|
-| `BACKD_EXECUTOR_URL` | `backd serve` | Where the executor listens, e.g. `http://executor:9100`. Without it, calls to functions answer `503` (startup warns) |
+| `BACKD_EXECUTOR_URL` | `backd-server serve` | Where the executor listens, e.g. `http://executor:9100`. Without it, calls to functions answer `503` (startup warns) |
 | `BACKD_EXECUTOR_TOKEN` | both | A shared secret, 32 characters or more: `backd` calls the executor with it, and the executor fetches bundles with it |
-| `BACKD_INTERNAL_ADDR` | `backd serve` | The internal listener's address (default `:8081`), served when functions exist and the executor is configured |
-| `BACKD_CALLBACK_URL` | `backd serve` | The internal listener as the executor and functions reach it, e.g. `http://backd:8081` |
-| `BACKD_URL` | `backd serve`, `backd worker` | `backd`'s public address, e.g. `https://api.example.com`: the base of the links in [emails](../../build/functions/email/). A realm's `email.public_url` overrides it; startup fails when a realm sends email and neither is set |
-| `BACKD_CALLBACK_KEY` | `backd serve` | A secret, 32 characters or more, signing the short-lived credentials functions call back with. Every `backd` instance of a deployment needs the same one; the executor never gets it |
+| `BACKD_INTERNAL_ADDR` | `backd-server serve` | The internal listener's address (default `:8081`), served when functions exist and the executor is configured |
+| `BACKD_CALLBACK_URL` | `backd-server serve` | The internal listener as the executor and functions reach it, e.g. `http://backd:8081` |
+| `BACKD_URL` | `backd-server serve`, `backd-server worker` | `backd`'s public address, e.g. `https://api.example.com`: the base of the links in [emails](../../build/functions/email/). A realm's `email.public_url` overrides it; startup fails when a realm sends email and neither is set |
+| `BACKD_CALLBACK_KEY` | `backd-server serve` | A secret, 32 characters or more, signing the short-lived credentials functions call back with. Every `backd` instance of a deployment needs the same one; the executor never gets it |
 | `EXECUTOR_ADDR` | executor | Listen address (default `:9100`) |
 | `EXECUTOR_DIR` | executor | Writable directory for the bundle cache (the image uses `/tmp/backd-executor`: mount a tmpfs) |
 | `EXECUTOR_MAX_PROCESSES` | executor | Functions running at once (default 64); beyond it, calls answer `503` |
-| `EXECUTOR_PROXY` | executor, `backd worker`, `backd serve --with-worker` | `backd egress`'s base URL, e.g. `http://egress:3128`. Without it, function processes get no outbound network beyond `--allow-net` on this host. A worker uses it too, to reach the [push providers](../../build/push/) (FCM, APNs, Web Push); without it the worker dials them directly, public addresses only |
+| `EXECUTOR_PROXY` | executor, `backd-server worker`, `backd-server serve --with-worker` | `backd-server egress`'s base URL, e.g. `http://egress:3128`. Without it, function processes get no outbound network beyond `--allow-net` on this host. A worker uses it too, to reach the [push providers](../../build/push/) (FCM, APNs, Web Push); without it the worker dials them directly, public addresses only |
 | `BACKD_EGRESS_KEY` | executor, egress, workers | A shared secret, 32 characters or more, required with `EXECUTOR_PROXY`: the executor signs each invocation's egress credentials with it, egress verifies them |
 | `EGRESS_ADDR` | egress | Listen address (default `:3128`) |
 | `EGRESS_ALLOW_PRIVATE` | egress | Comma-separated `host:port` exceptions to the private-address block; only `backd`'s internal listener belongs here |
-| `WORKER_CONCURRENCY` | `backd worker`, `backd serve --with-worker` | [Async jobs](../../build/functions/jobs/) one worker process runs at once (default 10) |
+| `WORKER_CONCURRENCY` | `backd-server worker`, `backd-server serve --with-worker` | [Async jobs](../../build/functions/jobs/) one worker process runs at once (default 10) |
 
 The internal listener serves only bundles (to the executor) and the data routes, for functions calling back with their short-lived credentials; sessions and API keys aren't accepted there, and those credentials aren't accepted on the public listener.
 
@@ -86,8 +86,8 @@ Run the executor as a non-root user, with a read-only root filesystem, no capabi
 
 ### Running the worker
 
-**`backd worker`** claims and runs [async jobs](../../build/functions/jobs/) — same binary and image as `serve`, a different role. It needs `BACKD_EXECUTOR_URL` and `BACKD_EXECUTOR_TOKEN` (it calls the executor directly, the same way `serve` does for `sync` calls) and `BACKD_CALLBACK_URL`/`BACKD_CALLBACK_KEY` (functions it runs still reach data through `backd`'s API, via whichever instance's internal listener `BACKD_CALLBACK_URL` points at — the worker doesn't need to run one itself). It also needs `BACKD_SECRETS_KEY` if any async function declares secrets, and reads `CONFIG_DIR`/`MONGO_URI` like `serve`.
+**`backd-server worker`** claims and runs [async jobs](../../build/functions/jobs/) — same binary and image as `serve`, a different role. It needs `BACKD_EXECUTOR_URL` and `BACKD_EXECUTOR_TOKEN` (it calls the executor directly, the same way `serve` does for `sync` calls) and `BACKD_CALLBACK_URL`/`BACKD_CALLBACK_KEY` (functions it runs still reach data through `backd`'s API, via whichever instance's internal listener `BACKD_CALLBACK_URL` points at — the worker doesn't need to run one itself). It also needs `BACKD_SECRETS_KEY` if any async function declares secrets, and reads `CONFIG_DIR`/`MONGO_URI` like `serve`.
 
-Run it as its own deployment (scale workers independently of API instances) with `backd worker`, or fold it into an API instance with `backd serve --with-worker` for a smaller deployment — both drive the same claim loop, so several workers (or several `--with-worker` instances) safely share one queue: each job is claimed by exactly one of them at a time.
+Run it as its own deployment (scale workers independently of API instances) with `backd-server worker`, or fold it into an API instance with `backd-server serve --with-worker` for a smaller deployment — both drive the same claim loop, so several workers (or several `--with-worker` instances) safely share one queue: each job is claimed by exactly one of them at a time.
 
 Scheduled functions ([cron](../../build/functions/cron/)) run only while at least one worker is running.

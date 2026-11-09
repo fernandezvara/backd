@@ -3,8 +3,8 @@
 // posts the caller couldn't list without being their author, since
 // posts/collection.yaml only lets a reader list what they're allowed to see.
 //
-// Build it with `backd functions build` after every change, or run
-// `backd serve` with BACKD_DEV=true while you edit (see the docs).
+// Build it with `backd-server functions build` after every change, or run
+// `backd-server serve` with BACKD_DEV=true while you edit (see the docs).
 
 type Context = {
   db: (name: string) => { collection: (name: string) => Collection };

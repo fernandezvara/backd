@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -50,10 +51,27 @@ func credentialsPath(getenv func(string) string) (string, error) {
 	if dir := getenv("XDG_CONFIG_HOME"); dir != "" {
 		return filepath.Join(dir, "backd", "credentials"), nil
 	}
-	if home := getenv("HOME"); home != "" {
+	if home := userHomeDir(getenv, runtime.GOOS); home != "" {
 		return filepath.Join(home, ".config", "backd", "credentials"), nil
 	}
-	return "", errors.New("can't find where to keep credentials: set HOME, XDG_CONFIG_HOME or BACKD_CREDENTIALS")
+	return "", fmt.Errorf("can't find where to keep credentials: set %s, XDG_CONFIG_HOME or BACKD_CREDENTIALS", homeVar(runtime.GOOS))
+}
+
+// userHomeDir is the user's home directory the way os.UserHomeDir finds it (USERPROFILE on
+// Windows, home on Plan 9, HOME elsewhere), read through getenv so commands stay testable in
+// process; "" when it isn't set.
+func userHomeDir(getenv func(string) string, goos string) string {
+	return getenv(homeVar(goos))
+}
+
+func homeVar(goos string) string {
+	switch goos {
+	case "windows":
+		return "USERPROFILE"
+	case "plan9":
+		return "home"
+	}
+	return "HOME"
 }
 
 func loadCredentials(getenv func(string) string) (*credentials, string, error) {
@@ -352,7 +370,8 @@ func (t *target) explain(path string, e *apiError) error {
 	return e
 }
 
-// offlineTarget is the target of an in-process handler (the --direct tools): there is no network
+// offlineTarget is the target of an in-process handler (backd-server's export, import and field
+// key commands): there is no network
 // and no credential, only the handler the transport calls.
 func offlineTarget(u, realm string, hc *http.Client) *target {
 	t, err := makeTarget(u, realm, "", true, hc)

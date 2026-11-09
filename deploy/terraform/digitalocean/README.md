@@ -111,7 +111,7 @@ The Spaces keys are not here: backd keeps them as **realm secrets** in MongoDB (
 |---|---|---|
 | `executor_token` | `backd`, `backd-admin`, `backd-realtime`, `worker` and `executor` together | — (requests fail between the first and the last restart) |
 | `callback_key`, `egress_key`, `metrics_token` | every workload that has it | — |
-| `secrets_key` | every `backd` workload | **`backd secret rotate-key` first** (it re-encrypts the secrets stored in MongoDB with `BACKD_SECRETS_KEY` and `BACKD_SECRETS_NEW_KEY`); replacing the key without it makes every stored secret unreadable |
+| `secrets_key` | every `backd` workload | **`backd-server secret rotate-key` first** (it re-encrypts the secrets stored in MongoDB with `BACKD_SECRETS_KEY` and `BACKD_SECRETS_NEW_KEY`); replacing the key without it makes every stored secret unreadable |
 | the registry push credential | — | `-replace=digitalocean_container_registry_docker_credentials.push`, then update the CI secret |
 
 Copy `BACKD_SECRETS_KEY` to a password manager once (`terraform output` does not print it; read it with `kubectl get secret backd-keys -n backd -o jsonpath='{.data.BACKD_SECRETS_KEY}' | base64 -d`): the state holds it, and losing the state without a copy makes the stored secrets unrecoverable.

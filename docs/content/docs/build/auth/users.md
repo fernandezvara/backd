@@ -6,7 +6,7 @@ weight: 510
 toc: true
 ---
 
-The `backd user` commands manage the users of a realm with `auth: enabled`. They call the realm's [admin API](../../../operate/administration/admin/) on a running `backd`, so you first [log in](../../../operate/administration/cli/#logging-in) as an administrator (or set `BACKD_API_KEY` to an admin API key). The realm's first administrator is created with [`backd bootstrap`](../../../operate/administration/cli/#the-first-administrator). Server-side services can call the admin API directly.
+The `backd user` commands manage the users of a realm with `auth: enabled`. They call the realm's [admin API](../../../operate/administration/admin/) on a running `backd`, so you first [log in](../../../operate/administration/cli/#logging-in) as an administrator (or set `BACKD_API_KEY` to an admin API key). The realm's first administrator is created with [`backd-server bootstrap`](../../../operate/administration/cli/#the-first-administrator). Server-side services can call the admin API directly.
 
 ```sh
 backd login --realm blog --url https://api.example.com
@@ -30,7 +30,7 @@ Every command also takes `--url`, to pick the server for that command.
 | `backd user revoke-sessions --realm <realm> --all --yes` | End every session of the realm and leave passwords alone |
 | `backd user change-email --realm <realm> --email <email> --new-email <email>` | Change the user's address at once, as an administrator (needs [`email`](../../functions/email/); see [the admin API](../../../operate/administration/admin/#changing-a-users-email)) |
 | `backd user identities --realm <realm> --email <email>` | List the user's ways to sign in: a password and the [providers](../providers/) they use, with the address each reported and when it was linked and last used |
-| `backd user mfa-reset --realm <realm> --email <email> --yes` | Remove a user's [second factor](../mfa/#when-a-user-loses-it) and recovery codes and end their sessions; `--local` is the break-glass form that acts on the database |
+| `backd user mfa-reset --realm <realm> --email <email> --yes` | Remove a user's [second factor](../mfa/#when-a-user-loses-it) and recovery codes and end their sessions; `backd-server user mfa-reset` is the break-glass form that acts on the database |
 | `backd user mfa-status --realm <realm> [--email <email>]` | A user's [second factor](../mfa/), or without `--email` the users of the roles that must use one and have none yet |
 | `backd user unlink-identity --realm <realm> --email <email> --provider <name>` | Remove one of them (`password`, `google`, …); never the last one |
 | `backd user owned --realm <realm> --email <email>` | Show what erasing the user would do, per collection that declares a [policy](../../configuration/config-dir/#collectionyaml) |
@@ -125,7 +125,7 @@ backd user add-role --realm demo --email ada@example.com --role editor
 - Changes apply from the user's next request. There's no need to sign in again.
 
 {{< hint warning >}}
-Roles you assign with the CLI live **only in the database**. If the realm is rebuilt from its config they are gone, and a role that `realm.yaml` assigns comes back at the next `backd serve` or `backd provision` even if you removed it. Put assignments that matter in `realm.yaml`.
+Roles you assign with the CLI live **only in the database**. If the realm is rebuilt from its config they are gone, and a role that `realm.yaml` assigns comes back at the next `backd-server serve` or `backd-server provision` even if you removed it. Put assignments that matter in `realm.yaml`.
 {{< /hint >}}
 - Removing your own last admin role ends your access to the admin API; see [Command-line administration](../../../operate/administration/cli/#errors).
 

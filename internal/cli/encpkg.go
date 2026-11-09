@@ -68,7 +68,7 @@ func parseFieldKeys(spec string, getenv func(string) string, warn io.Writer) ([]
 		} else {
 			k.path = target
 		}
-		text, err := readKeySource(source, getenv, warn)
+		text, err := cmdutil.ReadKeySource(source, getenv, warn)
 		if err != nil {
 			return nil, fmt.Errorf("--field %s: %w", target, err)
 		}

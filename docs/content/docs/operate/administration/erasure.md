@@ -35,7 +35,7 @@ A worker then applies the [`collection.yaml`](../../../build/configuration/confi
 - **Apple tokens** of a user who signed in with Apple are revoked with Apple by a [separate job](../../../build/auth/providers/#apple-and-account-deletion), queued before the sign-in methods are deleted.
 - **The result** is one audit record, `user.erased`, with the counts per collection (deleted, anonymized, pulled, cleared), never content. The job is in the jobs list with `origin: backd:account.erase`.
 - **If it fails** (a database unreachable, a document that doesn't fit), the job is retried; when its attempts run out it ends **failed**, visible in the jobs list, and the audit record says `needs_attention`. Nothing is skipped silently. Repeating the `DELETE` for that user queues the same job again: it holds the email the policies match by until it succeeds, so resume it before the job expires (`functions.job_retention`).
-- `backd user delete --yes` waits for the job (`--wait`, 2 minutes by default) and prints the counts. A worker (`backd worker`, or `serve --with-worker`) must be running.
+- `backd user delete --yes` waits for the job (`--wait`, 2 minutes by default) and prints the counts. A worker (`backd-server worker`, or `serve --with-worker`) must be running.
 
 Preview it first: `backd user owned --email …` (or [`GET /_admin/users/{id}/owned`](../admin/#previewing-an-erase)) counts, per collection with a policy, what the erase would touch.
 

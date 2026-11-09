@@ -32,7 +32,7 @@ This tutorial ran on a dev stack: `BACKD_DEV` on, `email-capture` storing mail, 
 
 - Swap `email.function` to `mail/postmark` (or your provider), set its secrets — and `email-capture`'s `dev_only` already guards you: `backd` won't start with it outside dev mode.
 - Set real function secrets (`IMPORT_WEBHOOK_SECRET`, Postmark's) — `dev-secret` signs nothing an attacker can't forge.
-- Remove the seeded `roles.*.users` demo accounts and create your own administrator with `backd bootstrap` (chapter 4). Removing a seed from `realm.yaml` does **not** take the role away from the account that already has it — remove it from that user with the admin API (`DELETE /_admin/users/{id}/roles/{role}`, see [Admin API](../../operate/administration/admin/)).
+- Remove the seeded `roles.*.users` demo accounts and create your own administrator with `backd-server bootstrap` (chapter 4). Removing a seed from `realm.yaml` does **not** take the role away from the account that already has it — remove it from that user with the admin API (`DELETE /_admin/users/{id}/roles/{role}`, see [Admin API](../../operate/administration/admin/)).
 - Keep `signup: invite`: it is the right setting for a team library. Anything else puts the door back.
 - Give every API key a scope and an expiry — the app already creates them that way.
 - Review the `rules:` of each `collection.yaml` and run `backd rules test` in CI.

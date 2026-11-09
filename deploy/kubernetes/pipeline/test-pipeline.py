@@ -53,7 +53,7 @@ if not re.search(r'^FROM ghcr.io/fernandezvara/backd-executor:\$\{BACKD_VERSION\
 if not re.search(r'^FROM ghcr.io/fernandezvara/backd:\$\{BACKD_VERSION\}$', dockerfile, re.M):
     fail("the deployable image is the released backd image")
 build_stage, final = dockerfile.split("FROM ghcr.io/fernandezvara/backd:")
-if "backd config check" not in build_stage or "backd functions build" not in build_stage:
+if "backd config check" not in build_stage or "backd-server functions build" not in build_stage:
     fail("the build stage bundles the functions and checks the configuration")
 if '["/backd", "config", "check"]' not in final:
     fail("the final image checks the configuration again, as it will run")

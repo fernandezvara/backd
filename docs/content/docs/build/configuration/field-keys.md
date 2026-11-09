@@ -35,7 +35,7 @@ backd secret create --realm clinic --type key --name HEALTH --value env:HEALTH_K
 
 `--value` takes `key:<base64url>`, `env:<VAR>` or `file:<path>`; a key is 32 bytes written in base64url. Importing never prints the key: it answers with the fingerprint.
 
-With `--direct` the command works straight on MongoDB and `CONFIG_DIR`, with no running `backd` and no sign-in: how you create a key before the first start of a realm whose configuration already names it (`backd` refuses to start without it), and how you restore keys after losing the secrets. Add `--skip-existing` in a script to leave a key that exists as it is.
+[`backd-server secret create`](../../../operate/administration/server/) works straight on MongoDB and `CONFIG_DIR`, with no running `backd` and no sign-in: how you create a key before the first start of a realm whose configuration already names it (`backd` refuses to start without it), and how you restore keys after losing the secrets. Add `--skip-existing` in a script to leave a key that exists as it is.
 
 A name that is taken, by a key or by any other secret, is refused (`409`): creating a key never overwrites one. Names follow the rule of every secret: upper-case letters, digits and `_`, starting with a letter. Keys live in the realm scope.
 
@@ -182,7 +182,7 @@ The migration runs on a worker, reads the collection in id order and rewrites on
 
 - **Searching while it runs.** An equality search finds a document only once its blind index is built, so it can miss documents until the job ends; `status` shows the coverage.
 - **Retiring.** When the job ends and no value is left under an old generation (or a field is no longer encrypted and none is left at all), those data keys become `retired`. A retired key still opens a backup you restore; it only stops counting as in use, so the field key can be deleted when no active key is wrapped by it.
-- **Before the new configuration.** Run `backd provision` (or start with `PROVISION_MODE=apply`) so the database validator matches the configuration. It expects binary where a field is encrypted; documents already stored the old way stay valid to update.
+- **Before the new configuration.** Run `backd-server provision` (or start with `PROVISION_MODE=apply`) so the database validator matches the configuration. It expects binary where a field is encrypted; documents already stored the old way stay valid to update.
 
 ## Rotate a key
 

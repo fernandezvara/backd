@@ -121,3 +121,6 @@ func (s Scopes) Allows(op ScopeOp, database, name string) bool {
 	}
 	return false
 }
+
+// OrgScope is the scope of an organization's secrets: "org:<id>".
+func OrgScope(orgID string) string { return "org:" + orgID }

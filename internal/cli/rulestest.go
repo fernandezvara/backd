@@ -19,7 +19,7 @@ import (
 // rulesTest handles `backd rules test`: it runs every collection's
 // rules.test.yaml against its rules, with no database. Needs only CONFIG_DIR.
 func rulesTest(c *kli.CommandContext) error {
-	dir, err := configDir(c)
+	dir, err := cmdutil.ConfigDir(c)
 	if err != nil {
 		return err
 	}

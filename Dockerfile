@@ -18,16 +18,20 @@ COPY go.mod go.sum* ./
 RUN go mod download
 COPY . .
 COPY --from=ui /src/internal/adminui/dist ./internal/adminui/dist
-# The binary lives at /usr/local/bin/backd in every backd image; /backd is a link to it, for
-# `docker compose exec backd /backd <command>`. The distroless image has no shell, so both are
-# laid out here and copied as a tree (a copied tree keeps the link).
+# Both binaries live in /usr/local/bin in every backd image: backd-server (the server roles and
+# the tools on MongoDB) and backd (the CLI, for `docker compose exec backd backd whoami`).
+# /backd and /backd-server are links to them. The distroless image has no shell, so the tree is
+# laid out here and copied whole (a copied tree keeps the links).
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -trimpath -ldflags="-s -w -X github.com/fernandezvara/backd/internal/buildinfo.Version=${VERSION}" -o /out/backd-server ./cmd/backd-server \
+    && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags="-s -w -X github.com/fernandezvara/backd/internal/buildinfo.Version=${VERSION}" -o /out/backd ./cmd/backd \
-    && mkdir -p /rootfs/usr/local/bin && cp /out/backd /rootfs/usr/local/bin/backd && ln -s /usr/local/bin/backd /rootfs/backd
+    && mkdir -p /rootfs/usr/local/bin && cp /out/backd /out/backd-server /rootfs/usr/local/bin/ \
+    && ln -s /usr/local/bin/backd /rootfs/backd && ln -s /usr/local/bin/backd-server /rootfs/backd-server
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /rootfs/ /
 EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/backd"]
-# `backd` without a command prints the help; the image serves unless told otherwise.
+ENTRYPOINT ["/usr/local/bin/backd-server"]
+# The image serves unless told otherwise (`command: worker`, `egress`, `provision`…).
 CMD ["serve"]

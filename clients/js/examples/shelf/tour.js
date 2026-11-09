@@ -120,8 +120,10 @@ async function enrol(/** @type {any} */ backd, /** @type {any} */ result) {
 }
 
 const composeArgs = process.env.SHELF_COMPOSE ? ['compose', '-f', process.env.SHELF_COMPOSE] : ['compose']
+// backd-server's tools in the stack's backd container (bootstrap, a break-glass reset, an
+// offline export: all work on MongoDB directly).
 function inStack(/** @type {string[]} */ args, /** @type {string} */ input = '') {
-  execFileSync('docker', [...composeArgs, 'exec', '-T', 'backd', '/backd', ...args], { input, stdio: ['pipe', 'ignore', 'pipe'] })
+  execFileSync('docker', [...composeArgs, 'exec', '-T', 'backd', '/backd-server', ...args], { input, stdio: ['pipe', 'ignore', 'pipe'] })
 }
 
 // The operator is a different case: signup is invite-only and only an admin
@@ -139,7 +141,7 @@ async function operatorClient() {
       console.log(`  (bootstrapped ${OPERATOR} through docker compose exec)`)
     } catch (e) {
       console.log(`no operator yet and bootstrap failed (${/** @type {any} */(e).message}).`)
-      console.log(`Run by hand in the stack's directory:\n  echo ${PASSWORD} | docker compose exec -T backd /backd bootstrap --realm shelf --email ${OPERATOR}`)
+      console.log(`Run by hand in the stack's directory:\n  echo ${PASSWORD} | docker compose exec -T backd backd-server bootstrap --realm shelf --email ${OPERATOR}`)
       process.exit(1)
     }
     result = await backd.auth.signIn({ email: OPERATOR, password: PASSWORD })
@@ -147,7 +149,7 @@ async function operatorClient() {
   if (result.mfaRequired) {
     // A run on a stack the tour used before: its secret is gone. The break-glass
     // reset (on the instance, never over HTTP) lets the operator enrol again.
-    inStack(['user', 'mfa-reset', '--local', '--realm', 'shelf', '--email', OPERATOR, '--yes'])
+    inStack(['user', 'mfa-reset', '--realm', 'shelf', '--email', OPERATOR, '--yes'])
     console.log(`  (reset the second factor of ${OPERATOR} on the instance)`)
     result = await backd.auth.signIn({ email: OPERATOR, password: PASSWORD })
   }
@@ -989,7 +991,7 @@ heading('Private notes (ch25)')
   const dir = `/tmp/shelf-pins-${STAMP}`
   const mine = mkdtempSync(join(tmpdir(), 'shelf-export-'))
   const exportPins = (/** @type {string} */ out, /** @type {string[]} */ extra = []) =>
-    inStack(['export', '--direct', '--realm', 'shelf', '--db', 'main', '--collection', 'pins', '--no-files', '--out', out, ...extra])
+    inStack(['export', '--realm', 'shelf', '--db', 'main', '--collection', 'pins', '--no-files', '--out', out, ...extra])
   const pinsOut = (/** @type {string} */ out, /** @type {string} */ name) => {
     execFileSync('docker', [...composeArgs, 'cp', `backd:${out}/main/pins.jsonl`, join(mine, name)], { stdio: 'ignore' })
     return readFileSync(join(mine, name), 'utf8')

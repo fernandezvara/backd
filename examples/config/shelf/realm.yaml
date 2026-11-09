@@ -5,7 +5,7 @@
 # Chapter 2 turns auth on; chapter 4 closes the door: new members sign up
 # only with an invitation (signup: invite). The seeded addresses below gain
 # their roles when they sign up — demo users like these belong in local
-# stacks only. `backd bootstrap --realm shelf --email <email>` creates the
+# stacks only. `backd-server bootstrap --realm shelf --email <email>` creates the
 # first administrator on a fresh database.
 auth: enabled
 signup: invite

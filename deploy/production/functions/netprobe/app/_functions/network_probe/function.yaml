@@ -1,5 +1,5 @@
 # Proves this deployment's network placement (layer 3 of the egress
-# design) and backd egress (layer 2) from a real function call, in this
+# design) and backd-server egress (layer 2) from a real function call, in this
 # stack's own topology — see deploy/production/test.sh and the docs,
 # Functions -> Outbound network.
 # Not a usable app function; admin-only.

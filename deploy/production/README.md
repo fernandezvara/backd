@@ -17,7 +17,7 @@ docker compose --env-file .env up -d --build
 | `prometheus/` | Prometheus' scrape config and the sample alert rules |
 | `nginx/backd.conf.template` | TLS, rate limits, body size, `X-Forwarded-For`, JSON errors |
 | `ops/Dockerfile` | MongoDB tools plus the backd binary, for ops jobs |
-| `ops/provision.sh`, `ops/grants.js` | `backd provision`, then per-collection grants for backd's user (and the backup user) |
+| `ops/provision.sh`, `ops/grants.js` | `backd-server provision`, then per-collection grants for backd's user (and the backup user) |
 | `ops/backup.sh`, `ops/restore.sh` | Encrypted backups (`mongodump` into age) and restores; Compose profile `ops` |
 | `functions/netprobe/` | A function-only realm this deployment's own test calls, to prove the executor's network isolation from a real function |
 | `setup.sh` | Generates `secrets/` and `.env` |

@@ -15,4 +15,4 @@ A realm sends push notifications through the providers named in its `push:` sect
 | [Web Push](web-push/) | browsers, with a VAPID key pair `backd` generates |
 | [Local development](local/) | the `capture` provider of the local stacks: no vendor account, deliveries inspected in the Mailbox |
 
-Sends go out from the **worker**, not the API process: a deployment that queues pushes needs `backd worker` (or `serve --with-worker`) running, and a route to the provider's hosts — through the egress proxy when the deployment has one.
+Sends go out from the **worker**, not the API process: a deployment that queues pushes needs `backd-server worker` (or `serve --with-worker`) running, and a route to the provider's hosts — through the egress proxy when the deployment has one.

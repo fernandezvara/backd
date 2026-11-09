@@ -14,7 +14,6 @@ import (
 
 	"github.com/rs/xid"
 
-	"github.com/fernandezvara/backd/internal/cli"
 	"github.com/fernandezvara/backd/internal/cmdtest"
 	"github.com/fernandezvara/backd/internal/executor"
 	"github.com/fernandezvara/backd/internal/functions"
@@ -81,7 +80,7 @@ export default async (ctx: Ctx) => {
 	if err := functions.Build(ctx, reg0, functions.Options{}); err != nil {
 		t.Fatal(err)
 	}
-	if code := cli.Run([]string{"provision"}, getenv, nil, io.Discard, io.Discard); code != 0 {
+	if code := runAny([]string{"provision"}, getenv, nil, io.Discard, io.Discard); code != 0 {
 		t.Fatal("provision failed")
 	}
 	a, err := server.Setup(ctx, getenv, io.Discard)

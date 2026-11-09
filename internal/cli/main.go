@@ -3,7 +3,6 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"slices"
@@ -11,9 +10,8 @@ import (
 	"github.com/fernandezvara/kli"
 
 	"github.com/fernandezvara/backd/internal/cmdutil"
-	"github.com/fernandezvara/backd/internal/mongodb"
+	"github.com/fernandezvara/backd/internal/dbnames"
 	"github.com/fernandezvara/backd/internal/registry"
-	"github.com/fernandezvara/backd/internal/server"
 	"github.com/fernandezvara/backd/internal/templates"
 )
 
@@ -29,22 +27,11 @@ func Run(args []string, getenv func(string) string, stdin io.Reader, stdout, std
 	return cmdutil.Execute(newCLI(getenv, stdin, stdout, stderr), "backd", args, stderr)
 }
 
-// role runs one of backd's server roles with its flags (see server.Run).
-func role(name string) kli.CommandFunc {
-	return cmdutil.Act("backd "+name, func(c *kli.CommandContext) error {
-		o := server.Options{WithWorker: name == "serve" && cmdutil.Flag(c, "with-worker")}
-		if name == "provision" {
-			o.DisablePreImages, o.Yes = cmdutil.Flag(c, "disable-preimages"), cmdutil.Flag(c, "yes")
-		}
-		return server.Run(context.Background(), name, c.Getenv, c.Stderr(), o)
-	})
-}
-
 // templateRealm, templateDatabase, templateFunction and templateProject
 // handle `backd template ...`: they write files under CONFIG_DIR (the
 // project template, a whole directory) and list what they created.
 func templateRealm(c *kli.CommandContext) error {
-	dir, err := configDir(c)
+	dir, err := cmdutil.ConfigDir(c)
 	if err != nil {
 		return err
 	}
@@ -54,7 +41,7 @@ func templateRealm(c *kli.CommandContext) error {
 }
 
 func templateDatabase(c *kli.CommandContext) error {
-	dir, err := configDir(c)
+	dir, err := cmdutil.ConfigDir(c)
 	if err != nil {
 		return err
 	}
@@ -68,7 +55,7 @@ func templateDatabase(c *kli.CommandContext) error {
 }
 
 func templateFunction(c *kli.CommandContext) error {
-	dir, err := configDir(c)
+	dir, err := cmdutil.ConfigDir(c)
 	if err != nil {
 		return err
 	}
@@ -78,7 +65,7 @@ func templateFunction(c *kli.CommandContext) error {
 }
 
 func templateEmailCapture(c *kli.CommandContext) error {
-	dir, err := configDir(c)
+	dir, err := cmdutil.ConfigDir(c)
 	if err != nil {
 		return err
 	}
@@ -91,7 +78,7 @@ func templateEmailCapture(c *kli.CommandContext) error {
 }
 
 func templateCollectionPolicy(c *kli.CommandContext) error {
-	dir, err := configDir(c)
+	dir, err := cmdutil.ConfigDir(c)
 	if err != nil {
 		return err
 	}
@@ -128,7 +115,7 @@ func printTemplateFiles(stdout io.Writer, files []templates.File) {
 // grant a least-privilege user access to exactly these.
 func listDatabases(c *kli.CommandContext) error {
 	collections := cmdutil.Flag(c, "collections")
-	dir, err := configDir(c)
+	dir, err := cmdutil.ConfigDir(c)
 	if err != nil {
 		return err
 	}
@@ -155,11 +142,11 @@ func listDatabases(c *kli.CommandContext) error {
 	}
 	for _, rl := range reg.SortedRealms() {
 		if rl.Settings.AuthEnabled {
-			add(mongodb.SystemDatabaseName(rl.Name), mongodb.SystemCollectionNames())
+			add(dbnames.SystemDatabase(rl.Name), dbnames.SystemCollections())
 		}
 	}
 	// Where provisioning records the config fingerprint (read by verify).
-	add(mongodb.DeploymentDatabase, []string{mongodb.DeploymentCollection})
+	add(dbnames.DeploymentDatabase, []string{dbnames.DeploymentCollection})
 	slices.Sort(names)
 	for _, n := range names {
 		fmt.Fprintln(c.Stdout(), n)

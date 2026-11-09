@@ -124,7 +124,7 @@ const (
 	AuditVersionsRegenerate = "files.versions.regenerate"
 	AuditSecretSet          = "secret.set"        // details: database ("": realm scope); never the value
 	AuditSecretDelete       = "secret.delete"     // details: database
-	AuditSecretsRotated     = "secret.rotate_key" // by backd secret rotate-key; details: count
+	AuditSecretsRotated     = "secret.rotate_key" // by backd-server secret rotate-key; details: count
 	// A field key was created, imported or deleted; target secret:realm/NAME, details: fingerprint,
 	// generated. Never the key.
 	AuditKeyCreate = "secret.key.create"
@@ -146,14 +146,14 @@ const (
 
 // Actors that aren't a credential.
 const (
-	// ActorOffline is the CLI working directly on MongoDB (export and import --direct).
+	// ActorOffline is the CLI working directly on MongoDB (export and import).
 	ActorOffline = "cli:offline"
 	// ActorConfig applies realm.yaml's role and network seeds.
 	ActorConfig = "config:realm.yaml"
 	// ActorInstance is an operator with direct access to the instance's database and key
-	// (`backd user mfa-reset --local`).
+	// (`backd-server user mfa-reset`).
 	ActorInstance = "instance"
-	// ActorBootstrap is `backd bootstrap`.
+	// ActorBootstrap is `backd-server bootstrap`.
 	ActorBootstrap = "cli:bootstrap"
 	// ActorSystem is backd itself, in the background (purging unverified accounts).
 	ActorSystem = "system"

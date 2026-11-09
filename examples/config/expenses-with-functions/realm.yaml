@@ -42,7 +42,7 @@ push:
   web:
     provider: capture
 
-# The realm's administrators: `backd bootstrap --realm expenses-with-functions
+# The realm's administrators: `backd-server bootstrap --realm expenses-with-functions
 # --email <email>` creates the first one; they manage users and API keys through
 # the admin API.
 roles:

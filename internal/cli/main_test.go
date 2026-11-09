@@ -22,16 +22,10 @@ func TestRun(t *testing.T) {
 		wantOut  string
 	}{
 		{"no arguments print the help and start nothing", nil, missingDir, 0, "Usage: backd <command>"},
-		{"invalid settings", []string{"serve"}, nil, 1, "CONFIG_DIR is required"},
-		{"invalid config", []string{"serve"}, missingDir, 1, "invalid config"},
-		{"provision", []string{"provision"}, missingDir, 1, "backd provision:"},
 		{"help", []string{"help"}, nil, 0, "Usage: backd <command>"},
 		{"help lists version", []string{"help"}, nil, 0, "print the version"},
 		{"unknown command", []string{"nope"}, nil, 2, `unknown command: "nope"`},
-		{"extra arguments", []string{"serve", "x"}, nil, 2, "unexpected arguments"},
-		{"serve with-worker parses", []string{"serve", "--with-worker"}, missingDir, 1, "invalid config"},
-		{"worker no config", []string{"worker"}, nil, 1, "CONFIG_DIR is required"},
-		{"worker extra arguments", []string{"worker", "x"}, nil, 2, "unexpected arguments"},
+		{"the server roles are backd-server's", []string{"serve"}, nil, 2, `unknown command: "serve"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

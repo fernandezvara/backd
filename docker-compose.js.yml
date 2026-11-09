@@ -69,7 +69,7 @@ services:
     build:
       context: .
       dockerfile: docker/executor/Dockerfile
-    entrypoint: ["/usr/local/bin/backd"]
+    entrypoint: ["/usr/local/bin/backd-server"]
     user: root
     # --with-worker: sync and async functions both run in this one
     # process, so the integration tests need no separate worker service.

@@ -30,7 +30,7 @@ email:
 account:
   require_verified_email: true
 
-# The realm's administrators: `backd bootstrap --realm expenses --email <email>` creates the
+# The realm's administrators: `backd-server bootstrap --realm expenses --email <email>` creates the
 # first one; they manage users and API keys through the admin API.
 roles:
   admin:

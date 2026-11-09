@@ -28,9 +28,9 @@ organizations:
 
 ## What the instance needs
 
-- **`BACKD_SECRETS_KEY`.** The client secrets of the connections are stored sealed with the instance key, in the realm's secret store, at a scope of their own (an organization's). Without the key, setting a connection answers `503`. Nobody can read a client secret back, not the managers and not functions; realm administrators can replace and delete one (`backd secret set|delete --org <id>`) and `backd secret rotate-key` re-seals them with the rest.
+- **`BACKD_SECRETS_KEY`.** The client secrets of the connections are stored sealed with the instance key, in the realm's secret store, at a scope of their own (an organization's). Without the key, setting a connection answers `503`. Nobody can read a client secret back, not the managers and not functions; realm administrators can replace and delete one (`backd secret set|delete --org <id>`) and `backd-server secret rotate-key` re-seals them with the rest.
 - **A public address.** The redirect address a company registers with its provider is built from the realm's `email.public_url` or `BACKD_URL`; without either, starting a sign-in answers `503 provider_unavailable`.
-- **`backd provision`.** The feature adds the system collection `org_connections` and replaces the two unique indexes of `identities` with ones that include the organization; `provision` creates the new ones and drops the old, and with `PROVISION_MODE=verify` instances refuse to start until it has run. Nothing is rewritten.
+- **`backd-server provision`.** The feature adds the system collection `org_connections` and replaces the two unique indexes of `identities` with ones that include the organization; `provision` creates the new ones and drops the old, and with `PROVISION_MODE=verify` instances refuse to start until it has run. Nothing is rewritten.
 
 ## Limits and trust
 

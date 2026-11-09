@@ -413,7 +413,7 @@ func Load(getenv func(string) string) (Settings, error) {
 // LoadKeyMaterial reads secret key material from the environment
 // variable name, or from the file named by name+"_FILE" (trimmed of
 // surrounding whitespace); the two are mutually exclusive. Returns "" if
-// neither is set. Exported for `backd secret rotate-key`, which reads
+// neither is set. Exported for `backd-server secret rotate-key`, which reads
 // BACKD_SECRETS_NEW_KEY the same way outside of Load.
 func LoadKeyMaterial(getenv func(string) string, name string) (string, error) {
 	v, file := getenv(name), getenv(name+"_FILE")

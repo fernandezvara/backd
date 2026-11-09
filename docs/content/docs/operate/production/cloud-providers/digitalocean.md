@@ -98,7 +98,7 @@ The workflow checks the configuration, builds and pushes the image, upgrades the
 Create the first administrator of each realm from inside the cluster, then give the realm its storage keys (they are *realm secrets*, kept encrypted in MongoDB, not environment variables):
 
 ```sh
-kubectl exec -n backd deploy/backd-admin -- /backd bootstrap --realm shop --email me@example.com
+kubectl exec -n backd deploy/backd-admin -- backd-server bootstrap --realm shop --email me@example.com
 
 terraform output -json spaces_private_key      # access_key, secret_key
 backd secret set --realm shop --name STORAGE_ACCESS_KEY --url https://admin.example.com
