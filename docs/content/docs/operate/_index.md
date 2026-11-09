@@ -176,7 +176,8 @@ backd becomes two binaries, released together with one version: **`backd-server`
 
 - **Images.** Both images carry both binaries. The `backd` image's entrypoint is now `backd-server` (its command is still `serve`), and the `backd-executor` image's is `backd-server executor`. A compose file or chart that passes only a role as the command keeps working; one that sets `entrypoint: ["/usr/local/bin/backd"]` for a server role sets `/usr/local/bin/backd-server`. `docker compose exec backd /backd bootstrap` becomes `docker compose exec backd backd-server bootstrap`.
 - **Release archives.** `backd` ships for Linux, macOS and Windows, and `backd-server` for Linux; install the CLI on the machines you administer from.
-- **Dev mode** builds the functions at startup and waits for a config that loads instead of exiting ([Dev mode](../build/functions/testing/#dev-mode)): the local stacks' one-shot `functions-build` service is gone.
+- **Dev mode** builds the functions at startup and waits for a config that loads instead of exiting ([Dev mode](../build/functions/testing/#dev-mode)): the local stacks' one-shot `functions-build` service is gone. If you copied one of those stacks, delete the service and the `depends_on` on it; scripts that waited for `/healthz` wait for `/ready` now, because `/health` answers before a config has loaded.
+- **Version check.** The CLI sends `User-Agent: backd/<version>` and warns once when an authenticated admin answer says the server's version differs. A CLI built from source (`backd/dev`) is refused with `403 dev_client_refused` by a released server outside dev mode. See [the CLI](administration/cli/#conventions).
 
 ### Upgrading to v0.9.7
 

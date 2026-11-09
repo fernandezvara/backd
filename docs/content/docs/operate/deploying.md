@@ -46,7 +46,7 @@ RUN ["/backd", "config", "check"]
 
 Pinning a version isn't trusting one. Each tagged release is published automatically, checked and verifiable:
 
-- the binaries (Linux, macOS, Windows; amd64 and arm64) come with `checksums.txt` and an SPDX SBOM each (`*.sbom.json`) on the [GitHub Releases](https://github.com/fernandezvara/backd/releases) page;
+- the binaries (`backd` for Linux, macOS and Windows; `backd-server` for Linux; amd64 and arm64) come with `checksums.txt` and an SPDX SBOM each (`*.sbom.json`) on the [GitHub Releases](https://github.com/fernandezvara/backd/releases) page;
 - the image is scanned for known vulnerabilities before it's published, and carries SBOM and provenance attestations;
 - the image is signed with [cosign](https://docs.sigstore.dev/) using GitHub's identity — no keys to manage:
 
@@ -115,8 +115,11 @@ jobs:
         with: { deno-version: 2.9.8 }   # the Deno this backd version bundles with
       - name: Install backd
         run: |
-          curl -fsSL "https://github.com/fernandezvara/backd/releases/download/v${BACKD_VERSION}/backd_${BACKD_VERSION}_linux_amd64.tar.gz" | tar -xz backd
-          sudo mv backd /usr/local/bin/
+          # two archives: backd (the CLI) and backd-server (bundles the functions)
+          for b in backd backd-server; do
+            curl -fsSL "https://github.com/fernandezvara/backd/releases/download/v${BACKD_VERSION}/${b}_${BACKD_VERSION}_linux_amd64.tar.gz" | tar -xz "$b"
+            sudo mv "$b" /usr/local/bin/
+          done
       - run: backd-server functions build
         env: { CONFIG_DIR: ./config }
       - run: backd config check

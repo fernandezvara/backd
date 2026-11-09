@@ -49,6 +49,13 @@ An error body is `{"error": {"code", "message", "details"}}`, and the status say
 | `412` | The document changed since you read it (`If-Match` did not match). |
 | `503` | A function call while the executor is still starting. |
 
+## The CLI and the server disagree
+
+- **`warning: the server runs a newer backd than this CLI`** (or `an older`): the CLI and the server are different versions. Nothing is refused; install the release that matches the server ([Install](../operate/administration/cli/#install)).
+- **`403 dev_client_refused`**: the CLI was built from source (it sends `backd/dev`) and the server is a released one outside dev mode. Use a released `backd`, or run the server in [dev mode](../build/functions/testing/#dev-mode) on localhost.
+- **`503 config_not_loaded`** on every `/v1/…` route: dev mode only. No config has loaded yet; the API root (`/`) and the log say which file or function failed. Fix it and save: the server loads it without a restart.
+- **`backd: unknown command: "serve"`** (or `provision`, `bootstrap`, `worker`, …): the server commands moved to [`backd-server`](../operate/administration/server/).
+
 ## A function change does nothing
 
 Functions are bundled before they run. In dev mode saving the file rebuilds the bundle; otherwise run `backd-server functions build` (or `docker compose run --rm functions-build` in the tutorial stack) and restart `backd`. A TypeScript error stops the build and names the line. `console.log` lines and a failed call's error are in the log of `backd`.

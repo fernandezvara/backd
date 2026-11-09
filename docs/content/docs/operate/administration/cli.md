@@ -10,10 +10,22 @@ backd ships two binaries. **`backd`**, this page, is the command line for develo
 
 **[`backd-server`](../server/)** runs the server roles (`serve`, `worker`, `executor`, `egress`, `provision`) and the tools that work on MongoDB or run Deno directly, such as `bootstrap`, which creates a realm's first administrator, and `functions build`. Both images carry both binaries.
 
+## Install
+
+Download the `backd` archive for your system from the [releases](https://github.com/fernandezvara/backd/releases) and put the binary on your `PATH`:
+
+| System | Archive |
+|---|---|
+| Linux, macOS | `backd_<version>_<linux\|darwin>_<amd64\|arm64>.tar.gz` |
+| Windows | `backd_<version>_windows_<amd64\|arm64>.zip` |
+
+`checksums.txt` lists the SHA-256 of every archive (see [Verifying a release](../../deploying/#verifying-a-release)). With Go installed, `go install github.com/fernandezvara/backd/cmd/backd@v<version>` builds the same CLI. `backd version` prints what you have. Both container images carry the CLI too, for `docker compose exec backd backd whoami`.
+
 ## Conventions
 
 - **Every value is a flag.** There are no positional arguments: `backd user create --realm blog --email ada@example.com`. `--realm` (and `--email`, `--name`, …) are required where the command needs them, and `--url` picks the server (below). `backd <command> --help`, or `backd <command> help`, lists a command's flags; `backd help` lists the commands.
 - **Exit codes.** `0` on success (and after help); `1` when the command ran and failed (a server error, a wrong password, a missing `CONFIG_DIR`); `2` when it was invoked wrongly (an unknown command or flag, a missing or invalid flag value). Scripts can tell the two failures apart.
+- **Versions.** The CLI sends its version in its `User-Agent` (`backd/<version>`). When the server runs another one, an authenticated admin command prints one line on standard error, `warning: the server runs a newer backd than this CLI (…); update the CLI` (or `an older backd`), and carries on: a difference is never refused. The server never states its version. A CLI built from a working tree is `backd/dev`, and a released server outside [dev mode](../../../build/functions/testing/#dev-mode) refuses it with `403 dev_client_refused`: use a released CLI against a released server. See [the security model](../security/).
 - **Output.** Help and results go to standard output; warnings, errors and prompts go to standard error, so `KEY=$(backd apikey create --realm blog --name ci)` captures only the key.
 
 ## Local and remote commands
@@ -24,7 +36,7 @@ backd ships two binaries. **`backd`**, this page, is the command line for develo
 | `backd types` | `CONFIG_DIR`, or `--from <url>` | `CONFIG_DIR`, or the running instance |
 | `backd config check\|fingerprint`, `backd functions types` | `CONFIG_DIR` | `CONFIG_DIR` (`config check` also applies the [instance limits](../../../build/configuration/#which-binary-reads-them) set in the environment) |
 | `backd login`, `backd logout`, `backd whoami`, `backd account …` | A running `backd` | Its URL |
-| `backd user …`, `backd apikey …`, `backd data transfer\|assign-org`, `backd orgs list\|show\|create\|set-slug\|owned\|delete\|reactivate\|members\|add-member\|invite\|invitations\|revoke-invitation\|assign-owner\|claims-set\|sso\|sso-set\|sso-delete\|sso-required-off`, `backd push devices\|remove-device\|sends\|test`, `backd audit …`, `backd secret set\|create\|rotate\|list\|delete`, `backd encrypt status\|rekey\|migrate`, `backd functions invoke\|history\|logs\|jobs`, `backd triggers status\|gaps\|resolve`, `backd storage check\|usage\|reconcile`, `backd export`, `backd compliance scope`, `backd consents notify\|record`, `backd app-config get\|set\|reset\|history\|rollback` | A running `backd`, through the [admin API](../admin/) or the function's own route | Its URL, and a stored session or `BACKD_API_KEY` |
+| `backd user …`, `backd apikey …`, `backd data check\|checks\|transfer\|assign-org`, `backd orgs list\|show\|create\|set-slug\|owned\|delete\|reactivate\|members\|add-member\|invite\|invitations\|revoke-invitation\|assign-owner\|claims-set\|sso\|sso-set\|sso-delete\|sso-required-off`, `backd push devices\|remove-device\|sends\|test\|web-keys`, `backd audit …`, `backd secret set\|create\|rotate\|list\|delete`, `backd encrypt status\|rekey\|migrate`, `backd functions invoke\|history\|logs\|jobs\|cancel\|rerun\|schedules\|pause\|resume`, `backd triggers status\|gaps\|resolve`, `backd storage check\|usage\|reconcile`, `backd export`, `backd compliance scope`, `backd consents notify\|record`, `backd app-config get\|set\|reset\|history\|rollback` | A running `backd`, through the [admin API](../admin/) or the function's own route | Its URL, and a stored session or `BACKD_API_KEY` |
 | `backd export-decrypt` | An export package | The field keys |
 | `backd version` | Nothing | Nothing |
 
@@ -92,7 +104,7 @@ backd whoami --realm blog
 - **`--magic-link`.** `backd login --realm blog --email ops@example.com --magic-link` asks for a message instead of a password (the realm needs [`magic_link`](../../../build/auth/magic-links/)) and then for the 6-digit code in it.
 - **Server:** `--url`, else the `BACKD_URL` environment variable, else the server of the last login.
 - **Email:** `--email`, or a prompt. When standard input isn't a terminal, `--email` is required and the password is the first line of standard input.
-- **Sessions are stored** per server and realm in `~/.config/backd/credentials` (or `$XDG_CONFIG_HOME/backd/credentials`, or the file named by `BACKD_CREDENTIALS`). The file is created readable only by you, in a directory only you can open. Anyone who can read it can act as you until the sessions expire, so log out on shared machines.
+- **Sessions are stored** per server and realm in `~/.config/backd/credentials` (`%USERPROFILE%\.config\backd\credentials` on Windows), or `$XDG_CONFIG_HOME/backd/credentials`, or the file named by `BACKD_CREDENTIALS`. The file is created readable only by you, in a directory only you can open. Anyone who can read it can act as you until the sessions expire, so log out on shared machines.
 - **TLS:** `backd` verifies the server's certificate against the system's CAs. For a private CA, such as the local stack's, point `BACKD_CA_CERT` at its PEM file. Logging in over plain HTTP to anything but `localhost`, a loopback address, or a host name without dots (a container on a private network, such as `http://backd:8080`) prints a warning: the password would travel unencrypted.
 
 ## Using an API key instead
@@ -145,16 +157,16 @@ Be careful when taking an admin role away from yourself: once no one holds an ad
 
 | Command | Purpose |
 |---|---|
-| `backd user <command>` | Manage a realm's users through the admin API (see [Users and passwords](../../../build/auth/users/)) |
+| `backd user <command>` | Manage a realm's users through the admin API: `list`, `create`, `delete`, `disable`, `enable`, `set-password`, `reset-link`, `add-role`, `remove-role`, `change-email`, `verify-email`, `expire-password`, `expire-passwords`, `notify-expired`, `revoke-sessions`, `mfa-status`, `mfa-reset`, `identities`, `unlink-identity`, `networks`, `owned`, `export`, `export-download` (see [Users and passwords](../../../build/auth/users/)); `backd user --help` describes each |
 | `backd orgs <command>` | Manage a realm's organizations, members, teams and claims, and their [sign-in connections](../../organization-sign-in/) (`sso`, `sso-set`, `sso-delete`, `sso-required-off`) (see [Organizations](../../../build/organizations/)) |
 | `backd apikey <command>` | Manage a realm's API keys (see [API keys](../../../build/auth/api-keys/)) |
-| `backd push devices\|sends\|test` | See a realm's push devices and send records, and send an audited test push (see [Records and test send](../../../build/push/records/)) |
+| `backd push devices\|remove-device\|sends\|test\|web-keys` | See a realm's push devices and send records, remove a device, show the Web Push keys, and send an audited test push (see [Records and test send](../../../build/push/records/)) |
 | `backd secret set\|create\|rotate\|list\|delete` | Manage [function secrets](../../../build/functions/secrets/) and [field keys](../../../build/configuration/field-keys/) (`create --type key --generate`, or `--value key:\|env:\|file:`; `rotate --generate\|--value\|--resume`); `rotate-key` re-encrypts them under a new master key, on MongoDB directly |
 | `backd audit` | Print the realm's [audit trail](../audit/), newest first |
-| `backd data check\|transfer\|assign-org` | Check stored documents against their schemas, move documents between collections, or assign them an organization |
+| `backd data check\|checks\|transfer\|assign-org` | Check stored documents against their schemas, move documents between collections, or assign them an organization |
 | `backd storage check\|usage\|reconcile` | Check a realm's [object storage](../../providers/storage/), report its usage, or clean up orphans (see [Keeping storage tidy](../../storage-maintenance/)) |
 | `backd export`, `backd import` | Write a realm, database or collections, with their files, as a [package](../export-import/), or read one into a realm |
-| `backd functions invoke\|history\|logs\|jobs\|types` | Call a function through a running `backd`, and see its recent calls, console output and jobs (see [Calling functions](../../../build/functions/calling/), [Async jobs](../../../build/functions/jobs/)) | (`types`, the functions' JSDoc types, is local)
+| `backd functions invoke\|history\|logs\|jobs\|cancel\|rerun\|schedules\|pause\|resume\|types` | Call a function through a running `backd`, see its recent calls, console output and jobs, cancel or re-run a job, and list, pause or resume [schedules](../../../build/functions/cron/) (see [Calling functions](../../../build/functions/calling/), [Async jobs](../../../build/functions/jobs/)); `types`, the functions' JSDoc types, is local |
 | `backd files regenerate` | Rebuild [image versions](../../../build/files/file-fields/#image-versions) the documents already hold |
 | `backd compliance scope` | What a user's [personal data export](../compliance/) covers |
 | `backd consents notify\|record` | Manage the [consents](../../../build/auth/consents/) users accept |

@@ -15,11 +15,11 @@ CONFIG_DIR=./config backd-server functions build
 # bundled blog/main/stats → stats-3f2a9c0d1e4b5a6c.js (1843 bytes)
 ```
 
-- **On Windows and macOS**, `backd` itself runs, but its executor doesn't (see [what runs where](../../../operate/functions-runtime/#what-runs-where)): develop with the local stack's containers, which include one.
-- The build runs `deno bundle` and needs **Deno 2.9.8** on the `PATH` (or the binary named by `DENO`); it refuses any other version, because bundles must match the Deno that runs them. Without Deno installed, run it in the official Deno image with a Linux `backd` binary (from the release archives):
+- **On Windows and macOS**, only the `backd` CLI runs; `backd-server` is Linux-only (see [what runs where](../../../operate/functions-runtime/#what-runs-where)). Develop with the local stack's containers, which carry `backd-server`, Deno and the executor.
+- The build runs `deno bundle` and needs **Deno 2.9.8** on the `PATH` (or the binary named by `DENO`); it refuses any other version, because bundles must match the Deno that runs them. Without Deno installed, run it in the official Deno image with the Linux `backd-server` binary (from the release archives), or in the `backd-executor` image, which has both:
 
   ```sh
-  docker run --rm -v "$PWD/config:/config" -v "$PWD/backd:/usr/local/bin/backd:ro" \
+  docker run --rm -v "$PWD/config:/config" -v "$PWD/backd-server:/usr/local/bin/backd-server:ro" \
     -e CONFIG_DIR=/config docker.io/denoland/deno:alpine-2.9.8 backd-server functions build
   ```
 - Bundles go to `_functions/.build/`, one file per function named by its content hash, listed in `.build/manifest.json` with the Deno version and a hash of the project's sources. The same sources always give the same bundles.

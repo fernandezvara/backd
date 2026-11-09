@@ -16,7 +16,7 @@ The conventions are the CLI's: [every value is a flag](../cli/#conventions), exi
 
 `backd-server help` lists them in the same three groups, **Daemons**, **Server commands** and **General**; `backd-server <command> --help` shows a command's flags.
 
-**Daemons** and `provision` (see [Deploying config](../../deploying/) and [Executor, workers and egress](../../functions-runtime/)):
+**Daemons**, the long-running roles, and `provision` (see [Deploying config](../../deploying/) and [Executor, workers and egress](../../functions-runtime/)):
 
 | Command | Purpose |
 |---|---|
