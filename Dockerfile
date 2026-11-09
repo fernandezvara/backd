@@ -22,7 +22,7 @@ COPY --from=ui /src/internal/adminui/dist ./internal/adminui/dist
 # `docker compose exec backd /backd <command>`. The distroless image has no shell, so both are
 # laid out here and copied as a tree (a copied tree keeps the link).
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/backd ./cmd/backd \
+    go build -trimpath -ldflags="-s -w -X github.com/fernandezvara/backd/internal/buildinfo.Version=${VERSION}" -o /out/backd ./cmd/backd \
     && mkdir -p /rootfs/usr/local/bin && cp /out/backd /rootfs/usr/local/bin/backd && ln -s /usr/local/bin/backd /rootfs/backd
 
 FROM gcr.io/distroless/static-debian12:nonroot
