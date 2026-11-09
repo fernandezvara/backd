@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"slices"
-	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -76,22 +75,9 @@ func printAudit(t *clicore.Target, q url.Values, c *kli.CommandContext, limit in
 		}
 		q.Set("target", "user:"+u.ID)
 	}
-	var recs []AuditRecord
-	for skip := 0; len(recs) < limit; {
-		var page struct {
-			Items   []AuditRecord
-			HasMore bool `json:"has_more"`
-		}
-		q.Set("limit", strconv.Itoa(min(100, limit-len(recs))))
-		q.Set("skip", strconv.Itoa(skip))
-		if err := t.Adm.Audit.List(t.Ctx, q, &page); err != nil {
-			return err
-		}
-		recs = append(recs, page.Items...)
-		if !page.HasMore {
-			break
-		}
-		skip += len(page.Items)
+	recs, err := fetchPages[AuditRecord](t.Ctx, q, limit, t.Adm.Audit.List)
+	if err != nil {
+		return err
 	}
 	if cmdutil.Flag(c, "json") {
 		return cmdutil.PrintJSONLines(uio.Stdout, recs)

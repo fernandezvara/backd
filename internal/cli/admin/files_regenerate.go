@@ -46,33 +46,13 @@ func FilesRegenerate(c *kli.CommandContext) error {
 		fmt.Fprintln(c.Stdout(), started.ID)
 		return nil
 	}
-	last := ""
-	for {
-		var job jobRecord
-		if err := t.Adm.Jobs.Get(t.Ctx, started.ID, &job); err != nil {
-			return err
-		}
-		if p := job.Progress; p != nil {
-			line := fmt.Sprintf("%s %.0f%%", p.Name, p.Current)
-			if p.Message != nil {
-				line += " (" + *p.Message + ")"
-			}
-			if line != last {
-				fmt.Fprintln(stderr, line)
-				last = line
-			}
-		}
-		if job.Status == "done" {
-			if job.Result == nil || job.Result.Status != "ok" {
-				status := "no result"
-				if job.Result != nil {
-					status = job.Result.Status
-				}
-				return cmdutil.Failed(fmt.Errorf("the regeneration did not finish: %s (see `backd functions jobs --realm %s --job %s`)", status, t.Realm, started.ID))
-			}
-			fmt.Fprintln(c.Stdout(), "done")
-			return nil
-		}
-		time.Sleep(interval)
+	job, err := followJob(t, started.ID, interval, stderr, stepProgress)
+	if err != nil {
+		return err
 	}
+	if status := resultStatus(job); status != "ok" {
+		return cmdutil.Failed(fmt.Errorf("the regeneration did not finish: %s (see `backd functions jobs --realm %s --job %s`)", status, t.Realm, started.ID))
+	}
+	fmt.Fprintln(c.Stdout(), "done")
+	return nil
 }

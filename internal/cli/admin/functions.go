@@ -287,22 +287,9 @@ func FunctionsJobs(c *kli.CommandContext) error {
 	if err != nil {
 		return err
 	}
-	var jobs []jobRecord
-	for skip := 0; len(jobs) < limit; {
-		var page struct {
-			Items   []jobRecord
-			HasMore bool `json:"has_more"`
-		}
-		q.Set("limit", strconv.Itoa(min(100, limit-len(jobs))))
-		q.Set("skip", strconv.Itoa(skip))
-		if err := t.Adm.Jobs.List(t.Ctx, q, &page); err != nil {
-			return err
-		}
-		jobs = append(jobs, page.Items...)
-		if !page.HasMore {
-			break
-		}
-		skip += len(page.Items)
+	jobs, err := fetchPages[jobRecord](t.Ctx, q, limit, t.Adm.Jobs.List)
+	if err != nil {
+		return err
 	}
 	if cmdutil.Flag(c, "json") {
 		return cmdutil.PrintJSONLines(c.Stdout(), jobs)
@@ -527,22 +514,5 @@ func invocationsQuery(c *kli.CommandContext, q url.Values, now time.Time) (int, 
 // fetchInvocations pages through GET _admin/invocations until limit
 // records are collected or the server has no more.
 func fetchInvocations(t *clicore.Target, q url.Values, limit int) ([]invocationRecord, error) {
-	var recs []invocationRecord
-	for skip := 0; len(recs) < limit; {
-		var page struct {
-			Items   []invocationRecord
-			HasMore bool `json:"has_more"`
-		}
-		q.Set("limit", strconv.Itoa(min(100, limit-len(recs))))
-		q.Set("skip", strconv.Itoa(skip))
-		if err := t.Adm.Functions.Invocations(t.Ctx, q, &page); err != nil {
-			return nil, err
-		}
-		recs = append(recs, page.Items...)
-		if !page.HasMore {
-			break
-		}
-		skip += len(page.Items)
-	}
-	return recs, nil
+	return fetchPages[invocationRecord](t.Ctx, q, limit, t.Adm.Functions.Invocations)
 }
