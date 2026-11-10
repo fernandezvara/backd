@@ -4,11 +4,11 @@ All notable changes to `backd` and to its JavaScript client `backd-js`, which ar
 
 Until a stable release is declared, a minor release may have breaking changes; they are listed first.
 
-## Unreleased
+## 0.9.8
 
 ### Breaking
 
-- **Two binaries: `backd` (the CLI) and `backd-server`.** What opens MongoDB or runs Deno moved to `backd-server`, with no alias: `serve`, `worker`, `executor`, `egress`, `provision`, `functions build`, `bootstrap`, `secret rotate-key`, the field key commands' `--direct` form (`backd-server secret create|rotate|list`), `user mfa-reset --local` (`backd-server user mfa-reset`), `export`/`import --direct` (`backd-server export|import`) and `triggers rescan`. The `backd` CLI keeps every other command with its name and never links the server; it ships for Linux, macOS and Windows, `backd-server` for Linux. Both images carry both binaries, and their entrypoints are now `backd-server` (`serve` and `executor`). See [Upgrading](https://fernandezvara.github.io/backd/docs/operate/#upgrading-to-the-next-release-unreleased).
+- **Two binaries: `backd` (the CLI) and `backd-server`.** What opens MongoDB or runs Deno moved to `backd-server`, with no alias: `serve`, `worker`, `executor`, `egress`, `provision`, `functions build`, `bootstrap`, `secret rotate-key`, the field key commands' `--direct` form (`backd-server secret create|rotate|list`), `user mfa-reset --local` (`backd-server user mfa-reset`), `export`/`import --direct` (`backd-server export|import`) and `triggers rescan`. The `backd` CLI keeps every other command with its name and never links the server; it ships for Linux, macOS and Windows, `backd-server` for Linux. Both images carry both binaries, and their entrypoints are now `backd-server` (`serve` and `executor`). See [Upgrading](https://fernandezvara.github.io/backd/docs/operate/#upgrading-to-v098).
 
 ### Added
 
@@ -18,6 +18,7 @@ Until a stable release is declared, a minor release may have breaking changes; t
 
 ### Changed
 
+- **The Go client sends a `User-Agent` and reports a version skew:** `client.Options` gains `UserAgent` (sent on every call, including the realtime stream) and `OnVersionSkew`, called once with `newer` or `older` when a response carries `X-Backd-Version-Skew`. The `backd` CLI uses both.
 - **The CLI warns when the server runs another version, without the server disclosing it:** the CLI sends `User-Agent: backd/<version>`; authenticated admin answers carry `X-Backd-Version-Skew: newer|older` when the versions differ, and the CLI prints one line. A released server outside dev mode refuses a development CLI (`backd/dev`) with `403 dev_client_refused`. Both binaries fall back to the module version, so `go install …@vX.Y.Z` reports it. See [the server's version](https://fernandezvara.github.io/backd/docs/operate/administration/security/#the-servers-version).
 - **Dev mode starts without a build step and waits instead of exiting:** with `BACKD_DEV=true`, `serve` builds missing or stale function bundles at startup, and an error in the config, its rules or a function's build no longer stops `serve` or `worker`: they log one record per problem (`kind`, `file`, `line`, `error`, `output`, `hint`) and start on the first save that loads, answering `/healthz` meanwhile; the root page shows the report, every other route answers `503 config_not_loaded` with it, and the admin UI says so. The local stacks lose their one-shot `functions-build` service, and their `backd` runs on the executor image. See [Dev mode](https://fernandezvara.github.io/backd/docs/build/functions/testing/#dev-mode).
 

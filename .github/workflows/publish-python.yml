@@ -2,9 +2,9 @@ name: Publish Python client
 
 # Publishes clients/python to PyPI (package "backd") when a py- tag is pushed:
 #   1. set "__version__" in clients/python/src/backd/__init__.py, merge it
-#   2. git tag py-v0.9.7 && git push origin py-v0.9.7
-# The tag must match the version, and point at a commit on main. A version with a suffix (py-v0.9.7-rc.1, which
-# PyPI writes 0.9.7rc1) is a pre-release: pip installs it only when asked (--pre or an exact version).
+#   2. git tag py-v0.9.8 && git push origin py-v0.9.8
+# The tag must match the version, and point at a commit on main. A version with a suffix (py-v0.9.8-rc.1, which
+# PyPI writes 0.9.8rc1) is a pre-release: pip installs it only when asked (--pre or an exact version).
 #
 # Publishing uses PyPI's trusted publishing (OIDC): no token is stored in the repository. Set it up once on pypi.org
 # (Your projects -> Publishing -> add a pending publisher for the project name "backd": owner fernandezvara,
