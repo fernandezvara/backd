@@ -232,6 +232,15 @@ func bindParentRules(rl *Realm) []error {
 			}) {
 				errs = append(errs, fmt.Errorf("%s: rules: %w", c.Rules.File, err))
 			}
+			// A stream is told of a change of a parent by the change feed, which only watches
+			// collections that opted in.
+			if c.Realtime {
+				for _, ref := range c.ParentTargets() {
+					if t := rl.Databases[ref.Database].Collections[ref.Collection]; t != nil && !t.Realtime {
+						errs = append(errs, fmt.Errorf("%s: realtime: the read rule follows reference %q with parent(), so %s/%s needs `realtime: true` too: streams learn of a change of a parent from the same change feed", c.ConfigPath(), ref.Name, ref.Database, ref.Collection))
+					}
+				}
+			}
 		}
 	}
 	return errs

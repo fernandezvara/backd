@@ -60,9 +60,25 @@ func TestParentRulesErrors(t *testing.T) {
 	}
 }
 
-func TestParentReadRuleRefusesRealtimeForNow(t *testing.T) {
-	_, err := refTree(t, parentRefs+"realtime: true\nrules:\n  read: user != nil && parent(document.category).slug == user.id\n", nil)
-	if err == nil || !strings.Contains(err.Error(), "parent()") {
+func TestParentReadRuleNeedsARealtimeParent(t *testing.T) {
+	rule := "rules:\n  read: user != nil && parent(document.category).slug == user.id\n"
+	// Streams hear of a parent's change from the change feed, which only watches collections that opted in.
+	_, err := refTree(t, parentRefs+"realtime: true\n"+rule, nil)
+	if err == nil || !strings.Contains(err.Error(), "needs `realtime: true` too") {
 		t.Fatalf("err = %v", err)
+	}
+	reg, err := refTree(t, parentRefs+"realtime: true\n"+rule, func(f map[string]string) {
+		f["shop/main/categories/collection.yaml"] = "realtime: true\n"
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := reg.Collection("shop", "main", "posts")
+	if got := c.ParentTargets(); len(got) != 1 || got[0].Collection != "categories" {
+		t.Fatalf("targets = %+v", got)
+	}
+	// Without realtime on the child nothing is asked of the parent.
+	if _, err := refTree(t, parentRefs+rule, nil); err != nil {
+		t.Fatal(err)
 	}
 }

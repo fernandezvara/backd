@@ -972,3 +972,38 @@ func metaOf(d map[string]any) map[string]any {
 	m, _ := d["_meta"].(map[string]any)
 	return m
 }
+
+// A change in a collection that a stream's read rule follows with parent() makes that stream
+// (and only that one) read its access again; closing the stream stops the watching.
+func TestParentChangeReloadsStreamsThatFollowIt(t *testing.T) {
+	src := newFakeSource()
+	h := newHub(t, src, Limits{StreamsPerUser: 10})
+	var follows, plain atomic.Int64
+	mk := func(n *atomic.Int64, parents ...string) *Access {
+		return &Access{SessionID: "s", UserID: "u", Parents: parents, Reload: func(context.Context) (Reloaded, error) {
+			n.Add(1)
+			return Reloaded{}, nil
+		}}
+	}
+	a := openWith(t, h, "user:a", mk(&follows, CollKey("db", "lists")), sub("s", "a"))
+	openWith(t, h, "user:b", mk(&plain), sub("s", "b"))
+	src.settle()
+	// A change of an unrelated collection, then of the parent.
+	src.add(changefeed.Change{Realm: "r", DB: "db", Coll: "other", Op: changefeed.Updated, Key: "1", Before: doc("1", "x", 1), After: doc("1", "x", 2), Version: 2})
+	src.add(changefeed.Change{Realm: "r", DB: "db", Coll: "lists", Op: changefeed.Updated, Key: "l1", Before: doc("l1", "x", 1), After: doc("l1", "x", 2), Version: 2})
+	waitFor := time.Now().Add(2 * time.Second)
+	for follows.Load() == 0 && time.Now().Before(waitFor) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if follows.Load() != 1 || plain.Load() != 0 {
+		t.Fatalf("reloads: %d for the stream following the parent, %d for the other", follows.Load(), plain.Load())
+	}
+	a.Close()
+	h.imu.RLock()
+	left := len(h.watchers)
+	h.imu.RUnlock()
+	if left != 0 {
+		t.Fatalf("%d collections still watched after the stream closed", left)
+	}
+}

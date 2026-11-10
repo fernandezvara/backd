@@ -90,6 +90,7 @@ type realtimeFixture struct {
 	svc  *auth.Users
 	mdb  string // the MongoDB database of acme/app
 	reg  *registry.Registry
+	f    *fixture
 }
 
 func newRealtimeFixture(t *testing.T, lim realtime.Limits) *realtimeFixture {
@@ -100,8 +101,13 @@ func newRealtimeFixture(t *testing.T, lim realtime.Limits) *realtimeFixture {
 		"acme/app/items/schema.json":     itemSchema,
 		"acme/app/items/collection.yaml": "realtime: true\nrules:\n  read: user != nil && document._meta.owner == user.id\n",
 		"acme/app/plain/schema.json":     itemSchema,
-		"acme/_realm/config/schema.json": appConfigSchema,
-		"acme/_realm/config/rules.yaml":  appConfigRules,
+		// Rules that follow a reference: entries are for the members of their list.
+		"acme/app/lists/schema.json":       `{"type":"object","properties":{"members":{"type":"array","items":{"type":"string"}}}}`,
+		"acme/app/lists/collection.yaml":   "realtime: true\nrules:\n  read: user != nil && user.id in document.members\n",
+		"acme/app/entries/schema.json":     `{"type":"object","properties":{"name":{"type":"string"},"list_id":{"type":"string"}}}`,
+		"acme/app/entries/collection.yaml": "realtime: true\nreferences:\n  list: {field: list_id, collection: lists}\nrules:\n  read: user != nil && user.id in parent(document.list_id).members\n",
+		"acme/_realm/config/schema.json":   appConfigSchema,
+		"acme/_realm/config/rules.yaml":    appConfigRules,
 	}
 	for p, content := range files {
 		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, p)), 0o755); err != nil {
@@ -143,7 +149,7 @@ func newRealtimeFixture(t *testing.T, lim realtime.Limits) *realtimeFixture {
 	})
 	srv := httptest.NewServer(f.h)
 	t.Cleanup(srv.Close)
-	return &realtimeFixture{srv: srv, feed: feed, svc: svc, mdb: c.MongoDatabase, reg: reg}
+	return &realtimeFixture{srv: srv, feed: feed, svc: svc, mdb: c.MongoDatabase, reg: reg, f: f}
 }
 
 type sseEvent struct {
@@ -497,5 +503,64 @@ func TestRealtimeFollowsTheConfiguration(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(got.Data), &data); err != nil || got.Event != "config_changed" || data.ID != "cfg" || data.Version != "c1" || len(data.Paths) != 1 || data.Paths[0] != "maintenance.enabled" {
 		t.Fatalf("got %+v (%v)", got, err)
+	}
+}
+
+// A stream on a collection whose read rule follows a reference shows the items of the lists the
+// caller is in, and learns when a change of a list changes that: it resets and from then on
+// follows the new set.
+func TestRealtimeFollowsAParentRule(t *testing.T) {
+	f := newRealtimeFixture(t, realtime.Limits{})
+	ctx := context.Background()
+	ada, adaID := f.signup(t, "ada@example.com")
+	_, bobID := f.signup(t, "bob@example.com")
+	lists, _ := f.reg.Collection("acme", "app", "lists")
+	put := func(id string, members ...string) {
+		ms := make([]any, len(members))
+		for i, m := range members {
+			ms[i] = m
+		}
+		doc := map[string]any{"id": id, "members": ms, "_meta": map[string]any{"version": int64(1)}}
+		repo := f.f.store.Repository(lists)
+		if _, err := repo.Get(ctx, id); err == nil {
+			doc["_meta"] = map[string]any{"version": int64(2)}
+			if err := repo.Replace(ctx, doc, 1); err != nil {
+				t.Fatal(err)
+			}
+			return
+		}
+		if err := repo.Create(ctx, doc); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put("l1", adaID)
+	put("l2", bobID)
+
+	_, evs := f.subscribe(t, ada, `{"subscriptions":[{"id":"mine","db":"app","collection":"entries"}]}`)
+	if ev := next(t, evs); ev.Event != "ready" {
+		t.Fatalf("got %+v", ev)
+	}
+	f.feed.settle()
+	entry := func(id, list string, v int) changefeed.Change {
+		d := map[string]any{"id": id, "name": id, "list_id": list, "_meta": map[string]any{"version": int64(v)}}
+		return changefeed.Change{Realm: "acme", DB: f.mdb, Coll: "entries", Op: changefeed.Created, Key: id, After: d, Version: int64(v)}
+	}
+	f.feed.add(entry("e2", "l2", 1)) // not ada's list: nothing
+	f.feed.add(entry("e1", "l1", 1))
+	if ev := next(t, evs); ev.Event != "created" || !strings.Contains(ev.Data, `"e1"`) {
+		t.Fatalf("got %+v", ev)
+	}
+
+	// Bob adds ada to his list: her stream is told its access changed.
+	put("l2", bobID, adaID)
+	f.feed.add(changefeed.Change{Realm: "acme", DB: f.mdb, Coll: "lists", Op: changefeed.Updated, Key: "l2", Version: 2,
+		Before: map[string]any{"id": "l2", "members": []any{bobID}, "_meta": map[string]any{"version": int64(1)}},
+		After:  map[string]any{"id": "l2", "members": []any{bobID, adaID}, "_meta": map[string]any{"version": int64(2)}}})
+	if ev := next(t, evs); ev.Event != "reset" || !strings.Contains(ev.Data, "access_changed") {
+		t.Fatalf("got %+v", ev)
+	}
+	f.feed.add(entry("e3", "l2", 1))
+	if ev := next(t, evs); ev.Event != "created" || !strings.Contains(ev.Data, `"e3"`) {
+		t.Fatalf("after joining: %+v", ev)
 	}
 }

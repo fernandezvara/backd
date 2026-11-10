@@ -36,6 +36,10 @@ type Access struct {
 	// factor, consents). Resume tokens carry it: replaying history made while the access was
 	// different would show states the caller couldn't see then.
 	Fingerprint string
+	// Parents are the collections (as CollKey names them) that the subscribed read rules follow
+	// with parent(): a change in one of them can change what the caller sees, so the stream
+	// reads its access again.
+	Parents []string
 	// UsesConfig says a subscribed collection's rules read the app configuration, so a change of
 	// the configuration changes what is visible.
 	UsesConfig bool
