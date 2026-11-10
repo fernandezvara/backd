@@ -221,7 +221,9 @@ example-attacks:
 
 # Tags the current commit for the server (and the Go client, which is this
 # module), backd-js, the Dart client and the Python client, and pushes the tags
-# (each starts its own release or publish workflow). Usage:
+# (each starts its own release or publish workflow). GitHub starts no workflow for
+# any tag of a push that carries more than three tags, so the server tag goes alone
+# and the three client tags together. Usage:
 #   make release-tag VERSION=v0.9.8
 # Run it on main, up to date with origin, after the release PR is merged.
 release-tag:
@@ -235,4 +237,5 @@ release-tag:
 		if git rev-parse -q --verify "refs/tags/$$t" >/dev/null; then echo "release-tag: tag $$t already exists" >&2; exit 1; fi; \
 	done
 	@for t in $(VERSION) js-$(VERSION) dart-$(VERSION) py-$(VERSION); do git tag -s -a "$$t" -m "$$t"; done
-	git push --atomic origin $(VERSION) js-$(VERSION) dart-$(VERSION) py-$(VERSION)
+	git push origin $(VERSION)
+	git push --atomic origin js-$(VERSION) dart-$(VERSION) py-$(VERSION)
