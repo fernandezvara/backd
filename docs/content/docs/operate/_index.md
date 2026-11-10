@@ -159,9 +159,9 @@ blog__main.posts
 shop__orders.items
 ```
 
-### Upgrading to the next release (unreleased)
+### Upgrading to v0.9.8
 
-backd becomes two binaries, released together with one version: **`backd-server`** runs the server and the tools that work on MongoDB or run Deno, and **`backd`** is the [command line](administration/cli/) for developers and administrators. Nothing changes in the data or the configuration, but the commands below moved, with no alias:
+v0.9.8 changes nothing in the data, the provisioned indexes or the configuration: run `backd-server provision` as usual (it was `backd provision` until v0.9.7). What changes is the command line: backd becomes two binaries, released together with one version: **`backd-server`** runs the server and the tools that work on MongoDB or run Deno, and **`backd`** is the [command line](administration/cli/) for developers and administrators. Nothing changes in the data or the configuration, but the commands below moved, with no alias:
 
 | Was | Now |
 |---|---|
@@ -176,8 +176,11 @@ backd becomes two binaries, released together with one version: **`backd-server`
 
 - **Images.** Both images carry both binaries. The `backd` image's entrypoint is now `backd-server` (its command is still `serve`), and the `backd-executor` image's is `backd-server executor`. A compose file or chart that passes only a role as the command keeps working; one that sets `entrypoint: ["/usr/local/bin/backd"]` for a server role sets `/usr/local/bin/backd-server`. `docker compose exec backd /backd bootstrap` becomes `docker compose exec backd backd-server bootstrap`.
 - **Release archives.** `backd` ships for Linux, macOS and Windows, and `backd-server` for Linux; install the CLI on the machines you administer from.
-- **Dev mode** builds the functions at startup and waits for a config that loads instead of exiting ([Dev mode](../build/functions/testing/#dev-mode)): the local stacks' one-shot `functions-build` service is gone. If you copied one of those stacks, delete the service and the `depends_on` on it; scripts that waited for `/healthz` wait for `/ready` now, because `/health` answers before a config has loaded.
+- **Dev mode** builds the functions at startup and waits for a config that loads instead of exiting ([Dev mode](../build/functions/testing/#dev-mode)): the local stacks' one-shot `functions-build` service is gone. If you copied one of those stacks, delete the service and the `depends_on` on it; scripts that waited for `/healthz` wait for `/readyz` now, because `/healthz` answers before a config has loaded.
 - **Version check.** The CLI sends `User-Agent: backd/<version>` and warns once when an authenticated admin answer says the server's version differs. A CLI built from source (`backd/dev`) is refused with `403 dev_client_refused` by a released server outside dev mode. See [the CLI](administration/cli/#conventions).
+- **Rules that follow a reference are new, and optional.** A child collection can use `parent(document.list_id).members` in its rules ([Rules that follow a reference](../build/auth/rules/#rules-that-follow-a-reference)); nothing existing changes meaning. If you use it, index the parent's field the rule reads and the child's reference field, and give both collections `realtime: true` if the child streams.
+- **Running on Kubernetes and DigitalOcean** is documented and shipped (a Helm chart and Terraform): see [Kubernetes](production/kubernetes/) and [Deploying on DigitalOcean](production/cloud-providers/digitalocean/). Compose deployments need nothing.
+- **Move the clients with the server.** `backd-js`, `package:backd`, the Python `backd` and the Go client are released on the same version: `0.9.8` (for Dart, `backd: ^0.9.8`).
 
 ### Upgrading to v0.9.7
 
