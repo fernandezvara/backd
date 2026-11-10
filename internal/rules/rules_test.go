@@ -94,6 +94,9 @@ func TestParseErrors(t *testing.T) {
 		{"unknown data field", "create: data.owner == 'x'", []string{"unknown field data.owner"}},
 		{"meta not in data", "create: data._meta.owner == nil", []string{"unknown field data._meta.owner"}},
 		{"computed property", "read: document[document.title] == 'x'", []string{"use dot paths"}},
+		{"array index on data", "create: user != nil && data.members[0] == user.id", []string{"use dot paths with literal names on data"}},
+		{"computed key on data", "create: user != nil && data[user.id] == 'x'", []string{"use dot paths with literal names on data"}},
+		{"method call on data", "create: data.title.lower() == 'x'", []string{"use dot paths with literal names on data"}},
 
 		{"undeclared role", "read: hasRole(user, 'root')", []string{`role "root" is not declared`}},
 		{"undeclared role with in", "read: user != nil && 'root' in user.roles", []string{`role "root" is not declared`}},
@@ -151,6 +154,9 @@ func TestParseAccepted(t *testing.T) {
 		"read: \"'x' in document.members\"",
 		"update: user != nil && !('status' in changed())",
 		"create: hasRole(user, 'editor') && data.author.name != nil",
+		"create: user != nil && data.members == [user.id]",
+		"update: user != nil && document.members == data.members && user.id in document.members",
+		"create: data['title'] != nil",
 	} {
 		if _, errs := parseYAML(src, testSchema); len(errs) > 0 {
 			t.Errorf("%q: %v", src, errs)
