@@ -325,6 +325,32 @@ tests:
 ```
 
 - **Organizations and teams.** A user may belong to organizations, for rules that use [`inOrg`, `hasOrgRole`, `inTeam` and `hasTeamRole`](#organizations): `orgs: { acme: { roles: [member, hr], teams: [sales], team_roles: { sales: [manager] }, claims: { plan: pro } } }` (keys are organization ids; `roles` are the effective roles, `team_roles` map a team id to the roles held there, in force). A document's `_meta` may hold `org` and `team`, and a `create` takes `org` and `team` for `data._meta.org` and `data._meta.team`.
+- **Parents.** For [rules that follow a reference](#rules-that-follow-a-reference), a top-level `parents:` gives the documents each reference points to, by the reference's name and then by id; a parent with `_meta.deleted_at` counts as deleted, like on the server. The items collection of that section is tested with:
+
+  ```yaml
+  # items/rules.test.yaml
+  users:
+    ada: { id: u1 }
+    bob: { id: u2 }
+  parents:
+    list:
+      groceries: { name: Groceries, members: [u1] }
+      chores:    { name: Chores, members: [u2] }
+  documents:
+    milk:  { title: Milk, list_id: groceries }
+    sweep: { title: Sweep, list_id: chores }
+    lost:  { title: Lost, list_id: nowhere }       # its list does not exist
+  tests:
+    - as: ada
+      read:   { allow: [milk], deny: [sweep, lost] }
+      create:
+        - { data: { title: Eggs, list_id: groceries }, expect: allow }
+        - { data: { title: Mop, list_id: chores }, expect: deny }
+      update:
+        - { document: milk, patch: { list_id: chores }, expect: deny }   # can't move it to a list she isn't in
+    - as: bob
+      read:   { allow: [sweep], deny: [milk] }
+  ```
 - `read`, `delete`, `restore` and `purge` list document names under `allow` and `deny` (`restore` and `purge` are for [soft-deleting](../../configuration/config-dir/#soft-delete) collections; a fixture document is in the trash when its `_meta` has `deleted_at`, and a trashed document is seen through the read and restore rules both); `create` takes `data` (the body) with `expect: allow` or `deny`; `update` takes a `document` and either `patch` or `data`, with `expect`.
 - The decisions are the server's. A `read` rule becomes the same database filter, evaluated the way MongoDB does (a missing field, an array, `null`); `update` and `delete` first need the stored document to be readable, so a document the caller can't read is a denial there too (the server answers `404`); a rule that fails while being evaluated denies. A document or body that breaks `schema.json` is a mistake in the fixture, reported as such: the server would answer `400` before it asked the rules.
 - Stored documents get `_meta.owner: null` and `created_at` and `updated_at` equal to `now`, unless the fixture sets `_meta` (`owner`, `org`, `team`, `created_by`, `updated_by`, `version`, `created_at`, `updated_at`, `deleted_at`, `deleted_by`, `purge_at`). Their `id` is their name, unless they have an `id`.

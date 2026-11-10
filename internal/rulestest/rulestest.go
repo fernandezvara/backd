@@ -11,6 +11,9 @@
 //	  ada: { id: u1, email: ada@example.com, roles: [] }
 //	documents:                      # stored documents, by name
 //	  draft: { title: Draft, published: false, _meta: { owner: u1 } }
+//	parents:                        # for rules that use parent(): the documents each reference points to
+//	  list:                         #   the reference's name, from `references:`
+//	    l1: { members: [u1] }       #   by id (a `_meta: { deleted_at: … }` makes one deleted)
 //	tests:
 //	  - as: ada
 //	    read:   { allow: [draft], deny: [] }
@@ -62,7 +65,10 @@ type File struct {
 	Config    map[string]any            `yaml:"config"`
 	Users     map[string]UserDef        `yaml:"users"`
 	Documents map[string]map[string]any `yaml:"documents"`
-	Tests     []Test                    `yaml:"tests"`
+	// Parents are the documents the references of the collection point to, for parent():
+	// reference name → id → fields.
+	Parents map[string]map[string]map[string]any `yaml:"parents"`
+	Tests   []Test                               `yaml:"tests"`
 }
 
 // UserDef is a caller.
@@ -179,6 +185,7 @@ type runner struct {
 	users    map[string]*rules.User
 	docs     map[string]map[string]any // stored documents, as the server reads them
 	config   map[string]any            // app configuration values, by dot path
+	parents  fixtureParents            // the documents references point to
 	checks   []Check
 	problems []error
 }
@@ -223,6 +230,7 @@ func (r *runner) load(f File) {
 			r.docs[name] = doc
 		}
 	}
+	r.loadParents(f.Parents)
 	if len(f.Tests) == 0 {
 		r.problem("tests: none; add at least one")
 	}
@@ -606,7 +614,7 @@ func (r *runner) write(user *rules.User, now time.Time, op rules.Op, doc, data m
 
 // values is what the rules see for a caller: the user with their memberships, and the clock.
 func (r *runner) values(user *rules.User, now time.Time) rules.Values {
-	v := rules.Values{User: user, Now: now, Config: r.config}
+	v := rules.Values{User: user, Now: now, Config: r.config, Parents: r.parents}
 	if user != nil {
 		v.Orgs = user.Orgs
 	}
