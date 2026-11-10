@@ -51,7 +51,7 @@ Both paths use one predicate and one `Match`, so they agree by construction; `Te
 ## 5. Cost
 
 - A read request costs one more indexed query on the parent collection (the members must be indexed for that to be cheap: `indexes.json` with a multikey index on `members`). A write costs one `Get` per unit.
-- The number of keys is capped (`BACKD_PARENT_MAX_KEYS`); a user who is a member of more lists than that gets an error, not a partial list.
+- The number of keys is capped (2,000, a constant of the HTTP layer); a user who is a member of more lists than that gets an error (answered as a denial), not a partial list.
 - Realtime: see §6.
 
 ## 6. Realtime (step 4)

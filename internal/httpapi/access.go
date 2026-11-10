@@ -210,6 +210,18 @@ type access struct {
 	ruled  bool // false: API key or auth disabled, everything is allowed
 	caller auth.Caller
 	values rules.Values
+	// parents reaches the parent documents of a collection's rules (parent()), for the
+	// requests that address several collections (a batch).
+	parents func(c *registry.Collection) rules.Parents
+}
+
+// valuesIn are the values rules of collection c are evaluated with.
+func (a access) valuesIn(c *registry.Collection) rules.Values {
+	v := a.values
+	if v.Parents == nil && a.parents != nil && c.Rules.UsesParents() {
+		v.Parents = a.parents(c)
+	}
+	return v
 }
 
 // accessFor returns how rules apply to the request, for the collection it addresses.
@@ -226,7 +238,7 @@ func (d *documents) accessIn(r *http.Request, c *registry.Collection) access {
 	if !ok || caller.BypassesRules() || adminData(r) {
 		return access{}
 	}
-	a := access{ruled: true, caller: caller, values: rules.Values{Now: d.now().UTC()}}
+	a := access{ruled: true, caller: caller, values: rules.Values{Now: d.now().UTC()}, parents: func(c *registry.Collection) rules.Parents { return d.parentsOf(r, c) }}
 	if caller.User != nil {
 		u := caller.User.User
 		mfa, methods := caller.SignInMethods()
@@ -243,6 +255,10 @@ func (d *documents) accessIn(r *http.Request, c *registry.Collection) access {
 		orgs := d.userOrgs(r, c.Realm, caller)
 		a.values.Orgs = orgs
 		a.values.User.Orgs = orgs
+	}
+	// parent(): rules that follow a reference read the parent documents.
+	if c != nil && c.Rules.UsesParents() {
+		a.values.Parents = d.parentsOf(r, c)
 	}
 	return a
 }
@@ -304,7 +320,7 @@ func readRuleFilter(a access, c *registry.Collection) (storage.Filter, string) {
 	if rule == nil {
 		return nil, "no read rule"
 	}
-	f, err := rule.Filter(a.values)
+	f, err := rule.Filter(a.valuesIn(c))
 	if err != nil {
 		return nil, "rule error: " + err.Error()
 	}
@@ -328,7 +344,7 @@ func allowWrite(w http.ResponseWriter, r *http.Request, a access, c *registry.Co
 		deny(w, r, a, c, op, "no "+string(op)+" rule")
 		return false
 	}
-	v := a.values
+	v := a.valuesIn(c)
 	v.Document, v.Data = document, data
 	ok, err := rule.Allow(v)
 	switch {
