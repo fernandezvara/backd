@@ -361,6 +361,13 @@ func (d *documents) accessOf(r *http.Request, realm string, caller auth.Caller, 
 		if b.c.Rules.UsesConfig() {
 			acc.UsesConfig = true
 		}
+		for _, ref := range b.c.ParentTargets() {
+			if t, ok := d.reg.Collection(b.c.Realm, ref.Database, ref.Collection); ok {
+				if k := realtime.CollKey(t.MongoDatabase, t.Name); !slices.Contains(acc.Parents, k) {
+					acc.Parents = append(acc.Parents, k)
+				}
+			}
+		}
 	}
 	reid := d.reidentifier(r, realm, caller)
 	acc.Reload = func(ctx context.Context) (realtime.Reloaded, error) {

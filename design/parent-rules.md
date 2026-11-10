@@ -54,9 +54,17 @@ Both paths use one predicate and one `Match`, so they agree by construction; `Te
 - The number of keys is capped (2,000, a constant of the HTTP layer); a user who is a member of more lists than that gets an error (answered as a denial), not a partial list.
 - Realtime: see §6.
 
-## 6. Realtime (step 4)
+## 6. Realtime
 
-A stream's filter now depends on documents of another collection, so it must be rebuilt when they change, like it is for sessions and organization memberships: a change in a parent collection that a subscribed rule follows schedules an access reload (rate limited), which re-resolves the keys and sends `reset` when they differ. The parent's rule source and collection become part of the collection's visibility key.
+The subscription's filter is resolved once, when it is made, to `list_id in keys`, which `storage.Match` evaluates per change like any other filter. It depends on documents of another collection, so it must be rebuilt when they change, like it is for sessions and organization memberships:
+
+- `realtime.Access.Parents` lists the parent collections the subscribed read rules follow; the hub keeps a watcher index by collection, and `Hub.Change` makes the watching streams reload their access (coalesced, at most one per stream every 250 ms, as for organizations).
+- A reload re-resolves the filter. If the set of keys changed, the subscription gets `reset` (`access_changed`); if not, nothing is sent.
+- The parent collection must have `realtime: true` (checked at startup) so the change feed delivers its changes.
+- A change in a child between two reloads is judged with the keys in force at that time; the reload that follows a membership change resets the client, which re-reads. Nothing is shown that the old keys did not allow.
+- The collection's visibility key includes where the references the read rule follows point, so changing a reference ends the subscriptions made under the old configuration.
+
+Any change in the parent collection triggers a reload of its watchers, not only changes of the fields the rule reads; parents are expected to change at the pace of memberships.
 
 ## 7. Decisions
 

@@ -113,11 +113,14 @@ type Hub struct {
 	Observer          Observer
 	Now               func() time.Time
 
-	semOnce  sync.Once
-	sem      chan struct{}
-	imu      sync.RWMutex
-	index    map[string]*collIndex // by CollKey
-	attached func()                // releases the feed while there are streams
+	semOnce sync.Once
+	sem     chan struct{}
+	imu     sync.RWMutex
+	index   map[string]*collIndex // by CollKey
+	// watchers are the streams that follow a collection through parent(), by CollKey; guarded
+	// by imu like index.
+	watchers map[string]map[*Stream]struct{}
+	attached func() // releases the feed while there are streams
 
 	mu       sync.Mutex
 	streams  map[*Stream]struct{}
@@ -243,6 +246,7 @@ func (h *Hub) refused(realm, reason string) {
 
 func (h *Hub) remove(s *Stream, subs []*Subscription) {
 	h.unindex(subs)
+	h.unwatch(s)
 	h.mu.Lock()
 	if _, ok := h.streams[s]; ok {
 		delete(h.streams, s)
@@ -272,6 +276,17 @@ func (h *Hub) attach(s *Stream) {
 		}
 		ci.add(sub)
 	}
+	if s.access != nil {
+		if h.watchers == nil {
+			h.watchers = map[string]map[*Stream]struct{}{}
+		}
+		for _, k := range s.access.Parents {
+			if h.watchers[k] == nil {
+				h.watchers[k] = map[*Stream]struct{}{}
+			}
+			h.watchers[k][s] = struct{}{}
+		}
+	}
 	if h.attached == nil {
 		h.attached = h.Feed.Acquire(h)
 	}
@@ -293,6 +308,36 @@ func (h *Hub) detach() {
 	h.imu.Unlock()
 	if release != nil {
 		release()
+	}
+}
+
+func (h *Hub) unwatch(s *Stream) {
+	if s.access == nil || len(s.access.Parents) == 0 {
+		return
+	}
+	h.imu.Lock()
+	for _, k := range s.access.Parents {
+		delete(h.watchers[k], s)
+		if len(h.watchers[k]) == 0 {
+			delete(h.watchers, k)
+		}
+	}
+	h.imu.Unlock()
+}
+
+// parentChanged makes the streams whose read rules follow the changed collection read their
+// access again: the parents that qualify for them may have changed.
+func (h *Hub) parentChanged(c changefeed.Change) {
+	h.imu.RLock()
+	var streams []*Stream
+	for s := range h.watchers[CollKey(c.DB, c.Coll)] {
+		if s.realm == c.Realm {
+			streams = append(streams, s)
+		}
+	}
+	h.imu.RUnlock()
+	for _, s := range streams {
+		s.reload()
 	}
 }
 
@@ -319,6 +364,7 @@ func (h *Hub) Change(_ context.Context, c changefeed.Change, at changefeed.Posit
 		h.systemChange(c)
 		return
 	}
+	h.parentChanged(c)
 	key := CollKey(c.DB, c.Coll)
 	h.imu.RLock()
 	ci := h.index[key]

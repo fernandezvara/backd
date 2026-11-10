@@ -81,7 +81,26 @@ func (c *Collection) visibilityKey() string {
 	if rule := c.Rules.For(rules.Read); rule != nil {
 		src = rule.Source
 	}
-	return fmt.Sprintf("%t|%t|%s", c.Realtime, c.SoftDelete != nil, src)
+	// A rule that follows a reference depends on where the reference points.
+	var targets []string
+	for _, pc := range c.ParentTargets() {
+		targets = append(targets, pc.Database+"/"+pc.Collection)
+	}
+	return fmt.Sprintf("%t|%t|%s|%v", c.Realtime, c.SoftDelete != nil, src, targets)
+}
+
+// ParentTargets are the references the collection's read rule follows with parent(), in the
+// order the rule uses them.
+func (c *Collection) ParentTargets() []*Reference {
+	var out []*Reference
+	if rule := c.Rules.For(rules.Read); rule != nil {
+		for _, u := range rule.ParentUses() {
+			if ref := c.References[u.Ref]; ref != nil && !slices.Contains(out, ref) {
+				out = append(out, ref)
+			}
+		}
+	}
+	return out
 }
 
 // RealtimeChanged lists the realtime collections of old (as "<mongo database>\x00<name>")
@@ -110,10 +129,6 @@ func checkRealtimeRead(c *Collection, path string) error {
 	rule := c.Rules.For(rules.Read)
 	if rule == nil {
 		return nil
-	}
-	if rule.UsesParents() {
-		// Lifted when streams learn to follow a change of the parent (see design/parent-rules.md).
-		return fmt.Errorf("%s: realtime: true can't be used yet with a read rule that follows a reference with parent()", path)
 	}
 	for _, u := range []*rules.User{nil, {ID: "probe", Roles: []string{"probe"}}} {
 		f, err := rule.Filter(rules.Values{User: u})

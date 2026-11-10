@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
+	"strings"
 
 	"github.com/fernandezvara/backd/internal/docutil"
 	"github.com/fernandezvara/backd/internal/registry"
@@ -75,5 +77,7 @@ func (p *parentResolver) Keys(ref string, f storage.Filter) ([]any, error) {
 			keys = append(keys, v)
 		}
 	}
+	// The same set is the same filter: a stream compares filters to know whether its access changed.
+	slices.SortFunc(keys, func(a, b any) int { return strings.Compare(fmt.Sprint(a), fmt.Sprint(b)) })
 	return keys, nil
 }

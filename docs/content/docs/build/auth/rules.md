@@ -216,7 +216,7 @@ Startup fails, naming the file, when a field isn't the source of a reference, or
 
 **Cost.** Index the parent's field the rule reads (`members`) and the child's `list_id`: a read first finds the parents that qualify for the caller, then the items in them. That is one more query per request, and a writing request costs one more read of the parent. The first query returns at most 2,000 parents: a caller who qualifies through more gets `403`, never a shorter list.
 
-**Realtime.** Streams don't follow `parent()` rules yet: `realtime: true` is refused on a collection whose `read` rule uses it.
+**Realtime.** A collection with `realtime: true` can use `parent()` in its `read` rule if the parent collection has `realtime: true` too. A stream reads the caller's access again when a document of the parent changes, and tells the client with `reset` when what it can see changed: see [when access changes](../../api/realtime/#when-access-changes). Every change of a parent collection makes the streams that follow it reload (at most one reload per stream every quarter second), so it is meant for parents that change at the pace of memberships, not of data.
 
 ## How rules are applied
 
