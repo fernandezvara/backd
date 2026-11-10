@@ -86,6 +86,25 @@ YAML reads a value starting with `'`, `!`, `[` or `{` specially, so quote such r
 
 Rules have no access to the request itself (headers, address) and can't look up other documents. For shared documents, store member ids in an array and check `user.id in document.members`.
 
+### Paths on `document` and `data`
+
+A rule names a field with a dot path whose parts are literal names declared in `schema.json`: `document.title`, `data.address.city`, `document._meta.owner` (`document['title']` with a string literal is the same). That is what lets `backd` check every field at startup. These are refused, with the error `use dot paths with literal names on data, e.g. data.title`:
+
+| Refused | Why | Use instead |
+|---|---|---|
+| `data.members[0]`, `document.tags[1]` | an array index | compare the whole array, or test membership with `in` |
+| `data.member_emails[user.id]`, `document[data.kind]` | a key computed at request time | name the field: `data.member_emails.owner` |
+| `data.title.lower()` | a method call | compare with the value as stored |
+
+To check the array a create or update writes, compare it as a whole value:
+
+```yaml
+rules:
+  create: user != nil && data.members == [user.id] && data.member_emails == [user.email]
+```
+
+A create that sends any other `members` (an extra member, a different order, an empty list) is denied. To allow several shapes, combine comparisons with `||`; to test one element of the stored document, use `user.id in document.members` (on a `read` rule this becomes a database filter, see below). Whole-array `==` works on `data` and on `document` in `update`, `delete` and `write` rules; a `read` rule can't compare an array field, only test membership with `in`.
+
 ### Anonymous callers
 
 A request without credentials is anonymous: `user` is `nil`. So `read: "true"` makes a collection public, and `user != nil` means "any signed-in user".
@@ -208,6 +227,7 @@ At `LOG_LEVEL=debug`, every denial is logged (`"msg":"access denied"`) with the 
 - isn't a mapping of the keys above to expressions, or has an unknown key;
 - has a syntax error, or uses an unknown variable or `user` field;
 - uses a `document` or `data` field that isn't in `schema.json`;
+- reaches into `document`, `data` or `before` other than with literal names (an array index, a computed key, a method call);
 - uses `document` on create, `data` on read or delete, or `changed()` outside update (a `write` rule is checked for each operation it covers);
 - uses an undeclared role, or a role name that isn't a string literal;
 - uses a `user` field without a guard;
