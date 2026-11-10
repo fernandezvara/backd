@@ -94,10 +94,6 @@ func changed(before, after map[string]any) []string {
 	return out
 }
 
-// prepareFilter compiles every document-independent part of a read rule,
-// to be evaluated once per request by Filter.
-func (r *Rule) prepareFilter() error { return r.prepare(true) }
-
 // prepare compiles the document-independent parts of the rule (when root is set) and of its
 // parent units.
 func (r *Rule) prepare(root bool) error {

@@ -9,7 +9,7 @@ import (
 const parentRefs = "references:\n  category:\n    collection: categories\n  tags:\n    collection: categories\n    many: true\n"
 
 func TestParentRulesLoad(t *testing.T) {
-	reg, err := refTree(t, parentRefs+`rules:
+	_, err := refTree(t, parentRefs+`rules:
   read: user != nil && user.id in parent(document.category).name
 `, func(f map[string]string) {
 		f["shop/main/categories/schema.json"] = `{"type":"object","properties":{"name":{"type":"string"},"slug":{"type":"string"},"members":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}`
@@ -18,7 +18,7 @@ func TestParentRulesLoad(t *testing.T) {
 		// name is a string, `in` needs an array: the error is about the parent's schema
 		t.Fatalf("err = %v", err)
 	}
-	reg, err = refTree(t, parentRefs+`rules:
+	reg, err := refTree(t, parentRefs+`rules:
   read: user != nil && user.id in parent(document.category).members
   create: user != nil && user.id in parent(data.category).members
 `, func(f map[string]string) {
