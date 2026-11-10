@@ -441,13 +441,14 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 	if err := loadIndexes(coll, filepath.Join(dir, indexesFile)); err != nil {
 		return nil, err
 	}
+	// References come first: a rule can follow one with parent(); erasure needs the rules (cache policy).
+	if err := loadReferences(coll, collPath, collData); err != nil {
+		return nil, err
+	}
 	if err := loadRules(coll, settings, dir); err != nil {
 		return nil, err
 	}
 	if err := loadErasure(coll, settings, collPath, collData); err != nil {
-		return nil, err
-	}
-	if err := loadReferences(coll, collPath, collData); err != nil {
 		return nil, err
 	}
 	if err := loadAggregate(coll, collPath, collData); err != nil {
@@ -562,7 +563,18 @@ func (c *Collection) ruleSchema(settings RealmSettings) rules.Schema {
 		InOrgs:          c.InOrganizations(),
 		TeamRoles:       teamRoles(settings),
 		InTeams:         c.InTeams(),
+		ParentRef:       c.parentRef,
 	}
+}
+
+// parentRef is the reference whose source field is path, for parent(document.path) in rules.
+func (c *Collection) parentRef(path string) (rules.ParentRef, bool) {
+	for _, name := range slices.Sorted(maps.Keys(c.References)) {
+		if r := c.References[name]; r.Field == path {
+			return rules.ParentRef{Name: name, Many: r.Many}, true
+		}
+	}
+	return rules.ParentRef{}, false
 }
 
 // checkSchema enforces backd's rules on top of JSON Schema validity.

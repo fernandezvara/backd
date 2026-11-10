@@ -250,7 +250,7 @@ func check(r *Rule, schema Schema) error {
 	// Read rules become database filters, and so do restore rules (they decide
 	// which deleted documents a list shows).
 	if r.Op == Read || r.Op == Restore {
-		if err := filterable(r.tree, schema); err != nil {
+		if err := filterable(r.root(), schema); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -357,6 +357,9 @@ func filterable(n ast.Node, schema Schema) error {
 	}
 	if _, ok := claimRef(n); ok {
 		return nil
+	}
+	if _, _, ok := parentUnitCall(n); ok {
+		return nil // checked once the realm is loaded (Set.BindParents)
 	}
 	switch n := n.(type) {
 	case *ast.BinaryNode:

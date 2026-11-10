@@ -111,6 +111,10 @@ func checkRealtimeRead(c *Collection, path string) error {
 	if rule == nil {
 		return nil
 	}
+	if rule.UsesParents() {
+		// Lifted when streams learn to follow a change of the parent (see design/parent-rules.md).
+		return fmt.Errorf("%s: realtime: true can't be used yet with a read rule that follows a reference with parent()", path)
+	}
 	for _, u := range []*rules.User{nil, {ID: "probe", Roles: []string{"probe"}}} {
 		f, err := rule.Filter(rules.Values{User: u})
 		if err != nil {
