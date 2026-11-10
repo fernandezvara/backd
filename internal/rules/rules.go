@@ -109,6 +109,9 @@ type Schema struct {
 	// InTeams says the collection's documents can belong to a team, so rules may name
 	// document._meta.team (and data._meta.team on create).
 	InTeams bool
+	// ParentRef reports the reference whose source field is the dot path, for parent(document.path);
+	// nil when the collection declares none.
+	ParentRef func(path string) (ParentRef, bool)
 }
 
 // Set is a collection's compiled rules. A nil rule denies the operation.
@@ -125,6 +128,9 @@ type Rule struct {
 	prog   *vm.Program
 	tree   ast.Node
 	consts map[ast.Node]*vm.Program // read rules: document-independent parts
+	// ftree is tree with each term that reads from a parent replaced by a hidden call; units are those terms.
+	ftree ast.Node
+	units []*parentUnit
 }
 
 // For returns the rule of op, or nil if none allows it.
@@ -176,6 +182,7 @@ func compileEnv() map[string]any {
 		"changed":  func() []string { return nil },
 		"config":   map[string]any{},
 		orgsVar:    map[string]*UserOrg{},
+		envVar:     map[string]any{},
 	}
 }
 
@@ -348,18 +355,27 @@ func compile(op Op, key, src string, schema Schema) (*Rule, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", where, err)
 	}
-	prog, err := expr.Compile(src, compileOptions(expr.AsBool())...)
+	// The rule as written must compile; terms that read from a parent are then rewritten.
+	if _, err := expr.Compile(src, compileOptions(expr.AsBool(), parentStub)...); err != nil {
+		return nil, fmt.Errorf("%s: %w", where, err)
+	}
+	r := &Rule{Op: op, Key: key, Source: src, tree: tree.Node}
+	ftree, err := parser.Parse(src)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", where, err)
 	}
-	r := &Rule{Op: op, Key: key, Source: src, prog: prog, tree: tree.Node}
+	if r.ftree, err = r.extractParents(ftree.Node, schema); err != nil {
+		return nil, fmt.Errorf("%s: %w", where, err)
+	}
+	r.prog, err = expr.Compile(r.ftree.String(), compileOptions(append([]expr.Option{expr.AsBool()}, r.parentOptions()...)...)...)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", where, err)
+	}
 	if err := check(r, schema); err != nil {
 		return nil, fmt.Errorf("%s: %w", where, err)
 	}
-	if op == Read || op == Restore {
-		if err := r.prepareFilter(); err != nil {
-			return nil, fmt.Errorf("%s: %w", where, err)
-		}
+	if err := r.prepare(op == Read || op == Restore); err != nil {
+		return nil, fmt.Errorf("%s: %w", where, err)
 	}
 	return r, nil
 }

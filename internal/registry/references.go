@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/fernandezvara/backd/internal/rules"
 )
 
 // ExpandLimits are what a reference expansion may cost on this instance (BACKD_EXPAND_MAX_*);
@@ -201,6 +203,34 @@ func checkReferences(rl *Realm) []error {
 				if ref.Key != "id" && !target.hasUniqueIndexOn(ref.Key) {
 					errs = append(errs, fmt.Errorf("%s: key %q of %s/%s needs a unique index of its own in its indexes.json, so each value matches at most one document: add {\"fields\": [%q], \"unique\": true}", where, ref.Key, ref.Database, ref.Collection, ref.Key))
 				}
+			}
+		}
+	}
+	errs = append(errs, bindParentRules(rl)...)
+	return errs
+}
+
+// bindParentRules checks the rules that follow a reference (parent()) against the collection
+// the reference points to.
+func bindParentRules(rl *Realm) []error {
+	var errs []error
+	for _, dbName := range slices.Sorted(maps.Keys(rl.Databases)) {
+		for _, c := range rl.Databases[dbName].SortedCollections() {
+			if c.Rules == nil || !c.Rules.UsesParents() {
+				continue
+			}
+			for _, err := range c.Rules.BindParents(func(name string) (rules.ParentTarget, bool) {
+				ref, ok := c.References[name]
+				if !ok || rl.Databases[ref.Database] == nil {
+					return rules.ParentTarget{}, false
+				}
+				target := rl.Databases[ref.Database].Collections[ref.Collection]
+				if target == nil {
+					return rules.ParentTarget{}, false
+				}
+				return rules.ParentTarget{Schema: target.ruleSchema(rl.Settings)}, true
+			}) {
+				errs = append(errs, fmt.Errorf("%s: rules: %w", c.Rules.File, err))
 			}
 		}
 	}

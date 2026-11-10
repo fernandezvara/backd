@@ -29,6 +29,9 @@ type Values struct {
 	// Config is the app configuration, by dot path of each value, for appConfig();
 	// only filled in when a rule reads it.
 	Config map[string]any
+	// Parents reaches the parent documents for parent(); only filled in when a rule reads them
+	// (Rule.UsesParents).
+	Parents Parents
 }
 
 func (v Values) env() map[string]any {
@@ -40,7 +43,7 @@ func (v Values) env() map[string]any {
 	if before == nil {
 		before = map[string]any{}
 	}
-	return map[string]any{
+	env := map[string]any{
 		"user":     v.User,
 		"document": v.Document,
 		"before":   before,
@@ -49,7 +52,10 @@ func (v Values) env() map[string]any {
 		"changed":  diff,
 		"config":   v.configMap(),
 		orgsVar:    v.orgsMap(),
+		parentsVar: v.Parents,
 	}
+	env[envVar] = env // for the hidden parent call
+	return env
 }
 
 // Allow evaluates the rule. An evaluation error (for example comparing
@@ -88,10 +94,12 @@ func changed(before, after map[string]any) []string {
 	return out
 }
 
-// prepareFilter compiles every document-independent part of a read rule,
-// to be evaluated once per request by Filter.
-func (r *Rule) prepareFilter() error {
-	r.consts = map[ast.Node]*vm.Program{}
+// prepare compiles the document-independent parts of the rule (when root is set) and of its
+// parent units.
+func (r *Rule) prepare(root bool) error {
+	if r.consts == nil {
+		r.consts = map[ast.Node]*vm.Program{}
+	}
 	var err error
 	var visit func(n ast.Node)
 	visit = func(n ast.Node) {
@@ -106,19 +114,35 @@ func (r *Rule) prepareFilter() error {
 		if _, call, ok := orgCall(n); ok {
 			cs = call.Arguments // the callee is a function, not a value
 		}
+		if _, _, ok := parentUnitCall(n); ok {
+			return // its predicate is prepared on its own
+		}
 		for _, c := range cs {
 			visit(c)
 		}
 	}
-	visit(r.tree)
+	if root {
+		visit(r.root())
+	}
+	for _, u := range r.units {
+		visit(u.Pred)
+	}
 	return err
+}
+
+// root is the tree the filter is built from: the rule with its parent terms replaced.
+func (r *Rule) root() ast.Node {
+	if r.ftree != nil {
+		return r.ftree
+	}
+	return r.tree
 }
 
 // Filter turns a read rule into a storage filter for the given caller. The
 // result is simplified: Const(true) allows every document, Const(false)
 // none, whatever they contain.
 func (r *Rule) Filter(v Values) (storage.Filter, error) {
-	f, err := r.build(r.tree, v.env())
+	f, err := r.build(r.root(), v.env())
 	if err != nil {
 		return nil, err
 	}
@@ -164,6 +188,9 @@ func (r *Rule) build(n ast.Node, env map[string]any) (storage.Filter, error) {
 	case *ast.CallNode:
 		if name, c, ok := orgCall(n); ok {
 			return r.buildOrgCall(name, c, orgs)
+		}
+		if idx, _, ok := parentUnitCall(n); ok {
+			return r.buildParent(idx, env)
 		}
 	case *ast.MemberNode, *ast.ChainNode:
 		path, _ := docPath(n)
