@@ -432,7 +432,7 @@ func checkReadable(a access, c *registry.Collection) (storage.Filter, error) {
 	if rule == nil {
 		return nil, accessDeniedErr{anonymous: a.caller.User == nil}
 	}
-	f, err := rule.Filter(a.values)
+	f, err := rule.Filter(a.valuesIn(c))
 	if err != nil {
 		return nil, accessDeniedErr{anonymous: a.caller.User == nil}
 	}
@@ -454,7 +454,7 @@ func checkWrite(a access, c *registry.Collection, op rules.Op, document, data ma
 	if rule == nil {
 		return accessDeniedErr{anonymous: a.caller.User == nil}
 	}
-	v := a.values
+	v := a.valuesIn(c)
 	v.Document, v.Data = document, data
 	ok, err := rule.Allow(v)
 	if err != nil || !ok {

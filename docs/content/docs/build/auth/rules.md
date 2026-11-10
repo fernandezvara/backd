@@ -82,9 +82,10 @@ YAML reads a value starting with `'`, `!`, `[` or `{` specially, so quote such r
 | `hasTeamRole(document._meta.team, 'manager')` | collections with a `team` | True when the caller holds that [team role](../../organizations/team-roles/) in the document's team, now (a window that isn't open doesn't count). The role is a string literal |
 | `hasOrgRole(document._meta.org, 'editor')` | collections with an organization | True when the caller holds the [organization role](../../configuration/realm/#organizations) there; the role may also be a field of the document |
 | `orgClaims(document._meta.org).plan == 'pro'` | collections with an organization | A claim of the organization, for the organizations the caller belongs to |
+| `parent(document.list_id)` | read, create, update, delete, restore, purge | The document a [reference](../../api/references/) points to, to read its fields: [see below](#rules-that-follow-a-reference) |
 | `changed()` | update | The top-level fields whose value differs between `document` and `data` |
 
-Rules have no access to the request itself (headers, address) and can't look up other documents. For shared documents, store member ids in an array and check `user.id in document.members`.
+Rules have no access to the request itself (headers, address). They see the document they are about, and the one document a declared [reference](../../api/references/) points to, with [`parent()`](#rules-that-follow-a-reference). For shared documents, store member ids in an array and check `user.id in document.members`; for documents that belong to a shared one (the items of a list), follow the reference.
 
 ### Paths on `document` and `data`
 
@@ -184,6 +185,58 @@ update: user != nil && document._meta.owner == user.id && !('author' in changed(
 
 `changed()` compares top-level fields, so a change anywhere inside `author` (for example `author.email`) counts as `author` changing.
 
+## Rules that follow a reference
+
+A child document often belongs to a shared parent: the items of a list are for the list's members. Copying the members onto every item would rewrite all of them whenever a member joins or leaves. Instead, declare the [reference](../../api/references/) and let the child's rules read the parent with `parent()`:
+
+```yaml
+# lists/collection.yaml: who is in a list is stored once, on the list
+rules:
+  read: user != nil && user.id in document.members
+  create: user != nil && data.members == [user.id]
+  update: user != nil && user.id in document.members
+  delete: user != nil && user.id in document.members
+```
+
+```yaml
+# items/collection.yaml: an item is for the members of its list
+references:
+  list: {field: list_id, collection: lists}
+rules:
+  read: user != nil && user.id in parent(document.list_id).members
+  create: user != nil && user.id in parent(data.list_id).members
+  update: >
+    user != nil && user.id in parent(document.list_id).members
+    && user.id in parent(data.list_id).members
+  delete: user != nil && user.id in parent(document.list_id).members
+```
+
+```json
+// lists/indexes.json: find the lists of a user
+[{"fields": ["members"]}]
+```
+
+```json
+// items/indexes.json: find the items of those lists
+[{"fields": ["list_id"]}]
+```
+
+Adding someone to `members` of a list gives them its items at once, without touching the items; removing them takes the items away, and so does deleting the list. The `update` rule checks both the list the item is in and the list it is being moved to, so nobody can move an item into a list they aren't in.
+
+`parent(document.list_id)` is the document the reference whose source field is `list_id` points to. Name the field as `document.field` (the stored value) or `data.field` (the value being written), then read a field of the parent: `parent(document.list_id).members`, `parent(document.list_id).owner == user.id`. Each comparison that reads from the parent is true only if **the parent exists and is not deleted**, and the comparison holds; a missing parent is never "no members", so `!(…)` of it is true, and a document whose parent is gone is only reachable as the rules otherwise allow.
+
+What a comparison on a parent can be:
+
+- The same as a [read rule](#read-rules-are-database-filters) on the parent's own fields: a field compared with a value (`==`, `!=`, `<`, `in`, …) or `value in parent(…).array`, combined with `&&`, `||` and `!`. The other side can use `user`, constants, `hasRole` and `appConfig`, **not** `document`, `data` or `changed()`: the parent is looked up first.
+- Only fields of the parent, one level: no `parent` of a parent, and the parent's own `rules:` are not applied (the condition you write is the rule).
+- Not on encrypted fields, with `now`, with the organization helpers, in triggers, or on references with `many: true`.
+
+Startup fails, naming the file, when a field isn't the source of a reference, or the parent's field isn't in its `schema.json`.
+
+**Cost.** Index the parent's field the rule reads (`members`) and the child's `list_id`: a read first finds the parents that qualify for the caller, then the items in them. That is one more query per request, and a writing request costs one more read of the parent. The first query returns at most 2,000 parents: a caller who qualifies through more gets `403`, never a shorter list.
+
+**Realtime.** Streams don't follow `parent()` rules yet: `realtime: true` is refused on a collection whose `read` rule uses it.
+
 ## How rules are applied
 
 In a realm with `auth: enabled`, every data request is decided like this:
@@ -233,6 +286,7 @@ At `LOG_LEVEL=debug`, every denial is logged (`"msg":"access denied"`) with the 
 - uses a `user` field without a guard;
 - uses `now` other than to compare with a timestamp (a `_meta` timestamp or a field stored as a date), or compares a field stored as a date with text or a `user` field;
 - has a `read` rule that can't be a database filter, or that compares an array field or a field without a declared type;
+- uses `parent()` on a field that isn't the source of a reference, with `many: true`, or on a parent's field that isn't in its `schema.json`;
 - exists in a realm with `auth: disabled`.
 
 ## Files

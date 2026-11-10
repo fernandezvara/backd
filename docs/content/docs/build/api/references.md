@@ -183,3 +183,4 @@ The [Shelf tutorial](../../../tutorial/21-authors/) builds exactly this.
 - **Rules see the whole document** before the selected fields are chosen, so a selection can't reveal what a direct read wouldn't.
 - **Organizations.** A target in organizations applies its `inOrg` rule as for any read: a document of an organization the caller isn't in is `null`.
 - **Only declared relations**, checked at startup; clients can't join arbitrary collections.
+- **Rules can follow a reference too**: a child collection can allow what the members of its parent list may see with `parent(document.list_id).members`, see [rules that follow a reference](../../auth/rules/#rules-that-follow-a-reference).
