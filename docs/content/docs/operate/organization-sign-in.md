@@ -22,7 +22,7 @@ organizations:
     owner: { manage: [org, members, roles, teams, sso] }
 ```
 
-- `organizations` and authentication must be on; Apple and generic OpenID Connect are **planned**, not available to organizations yet.
+- `organizations` and authentication must be on; Apple and generic OpenID Connect are **planned** ([#598](https://github.com/fernandezvara/backd/issues/598), [#599](https://github.com/fernandezvara/backd/issues/599)), not available to organizations yet.
 - At least one role needs `manage: sso`, or no member could set a connection up (realm administrators still can, with `backd orgs sso-set` or the admin API). Startup refuses the section otherwise.
 - Turning the feature off or removing a provider makes its connections unavailable at once; the stored connections stay.
 

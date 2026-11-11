@@ -33,6 +33,7 @@ Whatever the first factor, a user with a second factor is still asked for it —
 | [Access rules](rules/) | Per-collection `rules:` in `collection.yaml`: which callers may read, create, update and delete |
 | [Consents](consents/) | Versioned texts, records, re-acceptance, withdrawal, gating |
 | [API keys](api-keys/) | Server-side services, with full access to the realm's data |
+| [Personal data export](personal-data/) | A user downloads everything the realm holds about them; the same package for a formal request |
 
 ## Operating it
 
@@ -42,4 +43,4 @@ Whatever the first factor, a user with a second factor is still asked for it —
 - [Deactivating and erasing users](../../operate/administration/erasure/), with per-collection policies for their data; [compliance](../../operate/administration/compliance/) covers personal-data scope, retention and recipes.
 - Provider sign-in in the clients: [JavaScript](../clients/js/#sign-in-with-google-microsoft-or-apple) and [Dart](../clients/dart/#sign-in-with-a-provider-on-desktop) — `signInWith`, `completeSignIn`, `signInWithIdToken`.
 
-See the [security model](../../operate/administration/security/) for what `backd` protects, and the [hardening checklist](../../operate/checklist/) before exposing a realm. **Planned:** personal-data export as a downloadable package; other OpenID Connect providers (`type: oidc`).
+See the [security model](../../operate/administration/security/) for what `backd` protects, and the [hardening checklist](../../operate/checklist/) before exposing a realm. **Planned:** other OpenID Connect providers (`type: oidc`, [#157](https://github.com/fernandezvara/backd/issues/157)).

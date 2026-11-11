@@ -241,14 +241,14 @@ A published version can't be changed or reused: fix a mistake with a new version
 
 ### Releasing the Python client
 
-The client is published to PyPI as [`backd`](https://pypi.org/project/backd/) by `.github/workflows/publish-python.yml`, on its own `py-v` tags. Versions were `0.0.x` while the client was being built; from its first release they follow the server's:
+The client is published to PyPI as [`backd`](https://pypi.org/project/backd/) by `.github/workflows/publish-python.yml`, on its own `py-v` tags. Versions follow the server's (the first release was 0.9.6):
 
 1. Set `__version__` in `clients/python/src/backd/__init__.py` to the server's version (done with the server's release preparation) and merge it to `main`.
 2. Tag and push: `git tag py-vX.Y.Z && git push origin py-vX.Y.Z`. The tag must match the version and point at a commit on `main`; a version with a suffix, `py-v0.10.0-rc.1` (PyPI writes it `0.10.0rc1`), is a pre-release that `pip install backd` skips unless asked.
 
 The workflow checks the generated sync code is current, runs `ruff`, `mypy --strict` and the unit tests, then `scripts/check-python-package.sh` (`make python-package`): it builds the sdist and the wheel, validates their metadata with `twine check`, checks what the wheel holds (the library, its generated sync half, the `py.typed` marker and the licence; no tests or examples), installs the wheel into a fresh virtualenv and uses both clients from a script. The same build runs, without publishing, on every pull request that touches `clients/python` and on every push (`python.yml`). Publishing uses PyPI's [trusted publishing](https://docs.pypi.org/trusted-publishers/): no token is stored in the repository.
 
-**One-time setup, on pypi.org.** The project does not exist yet, so add a *pending publisher* (*Your account → Publishing*): the project name `backd`, the owner `fernandezvara`, the repository `backd`, the workflow filename `publish-python.yml` and the environment `pypi` (create the environment in the repository's *Settings → Environments*, and require a reviewer if you want a pause before each release). The first release then creates the project.
+**One-time setup, on pypi.org (done for `backd`).** The publisher is configured under the project's *Publishing* settings: the project name `backd`, the owner `fernandezvara`, the repository `backd`, the workflow filename `publish-python.yml` and the environment `pypi` (create the environment in the repository's *Settings → Environments*, and require a reviewer if you want a pause before each release). A new project would need a *pending publisher* with the same values; its first release creates the project.
 
 A published version can't be changed or reused. Fix a mistake with a new version and *yank* the bad one on PyPI (it stays installable by exact version but is skipped by `pip install backd`).
 
