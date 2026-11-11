@@ -15,7 +15,7 @@ sections:
     cta:
       - text: "Get started"
         icon: "rocket-launch"
-        url: "docs/getting-started/"
+        url: "docs/build/quickstart/"
       - text: "Functions"
         icon: function
         url: "docs/build/functions/"

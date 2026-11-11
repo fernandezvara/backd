@@ -8,6 +8,8 @@ toc: true
 
 This tutorial builds **Shelf**, a team asset library: members save links and notes, curators publish them, public links share them, a digest emails the news. Each chapter adds one `backd` feature because the app needs it, and ends in a working state with a checklist of what now works.
 
+Short on time? The [Quickstart](../build/quickstart/) runs one realm and a few `curl` calls on the `backd template project` stack. The Tutorial uses its **own** stack, downloaded from this site, so nothing from the Quickstart carries over.
+
 You do **not** need a `backd` checkout: the app, the client and the released containers all download from this site. You need only **Docker** and a text editor.
 
 ## Words used here
