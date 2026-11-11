@@ -942,4 +942,4 @@ trail.items                                                        // newest fir
 const jobs = await backd.admin.jobs.list({ function: 'main/nightly_cleanup', status: 'done', limit: 10 })   // state and outcome, never input or output
 ```
 
-A client signed in as a user holding one of the realm's [admin roles](../../configuration/realm/#roles) can use `client.admin` too, for example in a back-office app. Calling `client.admin` without an API key or a session throws at once; the server decides the rest. Acting on behalf of a user from the client is planned.
+A client signed in as a user holding one of the realm's [admin roles](../../configuration/realm/#roles) can use `client.admin` too, for example in a back-office app. Calling `client.admin` without an API key or a session throws at once; the server decides the rest. Acting on behalf of a user from the client is planned ([#33](https://github.com/fernandezvara/backd/issues/33)).
