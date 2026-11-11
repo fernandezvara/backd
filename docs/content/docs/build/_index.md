@@ -19,5 +19,6 @@ This section is for the **developer** building an application on backd. New here
 | Reach users' devices | [Push](push/) |
 | Talk to it from JavaScript, Dart, Go or Python, or generate clients and types | [Clients](clients/) |
 | See a complete application | [Examples](examples/) |
+| Look up a word | [Glossary](glossary/) |
 
 Running the service itself — deployment, providers, administration — lives in [Operate](../operate/).

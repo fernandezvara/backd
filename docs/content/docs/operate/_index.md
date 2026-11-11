@@ -25,6 +25,29 @@ This section is for the **operator**: whoever deploys, secures, monitors, backs 
 | Something leaked | [If credentials leak](if-credentials-leak/) |
 | Let companies sign in with their own Google or Microsoft account | [Organization sign-in](organization-sign-in/) |
 | Move to a new version | *Upgrading to* below |
+| Find a word I don't know | [Glossary](../build/glossary/) |
+
+## How the pieces fit
+
+A deployment is a few processes around MongoDB. The reverse proxy and the storage are yours; the rest are `backd-server` in different roles, plus the executor's Deno processes.
+
+```mermaid
+flowchart LR
+    client["browsers, apps, services"] --> proxy["reverse proxy<br/>TLS, rate limits<br/>(yours, not part of backd)"]
+    proxy --> api["backd-server serve<br/>the API; add --with-worker<br/>to run jobs too"]
+    api --> mongo[("MongoDB<br/>a replica set")]
+    api --> storage[("S3-compatible storage<br/>files")]
+    api --> exec["executor<br/>one Deno process per call"]
+    exec -. "ctx.db, over an<br/>internal listener" .-> api
+    worker["backd-server worker<br/>async jobs, cron"] --> mongo
+    worker --> exec
+    exec --> egress["egress<br/>only declared hosts"] --> net["the internet"]
+```
+
+- **API** (`backd-server serve`): authenticates callers, applies rules, validates documents, answers. Run as many as you like with the same config.
+- **Worker**: claims async jobs and creates the runs of cron schedules. Without one, jobs stay `queued`.
+- **Executor** and **egress**: run the functions, and give them their only way out. See [Executor, workers and egress](functions-runtime/).
+- **MongoDB** holds all the state; the processes keep none, which is why you can run several side by side.
 
 ## MongoDB
 
