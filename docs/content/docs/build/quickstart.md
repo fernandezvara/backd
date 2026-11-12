@@ -6,7 +6,39 @@ weight: 50
 toc: true
 ---
 
-This page is the shortest honest path to a `backd` you can build against: download the binary, generate a project, run it with Docker, call it.
+This page is the shortest honest path to a `backd` you can build against: install the command line, generate a project, run it with Docker, call it.
+
+## What you need
+
+- **Docker with Compose** (Docker Desktop, or Docker Engine and the Compose plugin; rootless Podman with `podman-compose` also works). The first `up` pulls the images for MongoDB, MinIO and `backd`, so allow for a download; later runs start from the local copies.
+- **The `backd` command line**, from the [release archives](https://github.com/fernandezvara/backd/releases) (Linux, macOS, Windows). The server itself runs in the containers.
+- **A shell with `openssl` and `curl`** (on Windows, WSL2).
+- **An authenticator app on your phone** (any TOTP app). The template's `admin` role requires a second factor, so the first `backd login` asks you to enroll one before you see a document. A development realm without that step is planned ([#889](https://github.com/fernandezvara/backd/issues/889)).
+
+## The short version
+
+From an empty directory. Two commands ask you for something: `backd-server bootstrap` asks for a new password, and `backd login` asks for that password and then a code from your authenticator app. `apikey create` asks for the password once more, as a fresh proof for a sensitive action.
+
+```sh
+backd template project --dir ./my-app --realm demo && cd my-app
+cat > .env <<EOF
+EXECUTOR_TOKEN=$(openssl rand -base64 32)
+CALLBACK_KEY=$(openssl rand -base64 32)
+EGRESS_KEY=$(openssl rand -base64 32)
+EOF
+docker compose up -d
+until curl -sf http://127.0.0.1:8080/readyz >/dev/null; do sleep 2; done   # MongoDB takes a moment
+docker compose exec backd backd-server bootstrap --realm demo --email me@example.com
+backd login --realm demo --url http://127.0.0.1:8080 --email me@example.com
+KEY=$(backd apikey create --realm demo --name local --expires 1d)
+curl -X POST http://127.0.0.1:8080/v1/demo/main/posts \
+  -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+  -d '{"title": "Hello", "published": true}'
+```
+
+The last command answers `201` with the new document. On Docker (not rootless Podman) also add `DEV_UID` and `DEV_GID` to `.env`, as step 3 explains. If a command is refused, see [Troubleshooting](../../troubleshooting/).
+
+The rest of the page explains each step, then the Docker-free setup and the commands you will use.
 
 ## 1. Get backd
 
@@ -76,7 +108,7 @@ docker compose up
 docker compose exec backd backd-server bootstrap --realm demo --email me@example.com
 ```
 
-Sign in with the CLI — the template's `admin` role requires a second factor, so the first login enrolls an authenticator app — and create an API key for calls:
+Sign in with the CLI. The template's `admin` role requires a second factor, so this first login enrolls an authenticator app (see [Multi-factor authentication](../auth/mfa/) for what it shows and asks). Then create an API key for calls:
 
 ```sh
 backd login --realm demo --url http://127.0.0.1:8080 --email me@example.com
