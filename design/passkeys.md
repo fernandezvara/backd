@@ -1,7 +1,7 @@
 # Design: passkeys (WebAuthn)
 
-- **Issues:** not created yet (§14 proposes the split)
-- **Status:** proposed (for review; §15 lists the questions that need an answer)
+- **Issues:** not created yet (§15 proposes the split)
+- **Status:** proposed (for review; §16 lists the questions that need an answer)
 - **Builds on:** [mfa-passwordless.md](./mfa-passwordless.md) (challenges, `methods`, reauth, recovery, limits). That design deferred passkeys to this one (its §17 and §18).
 - **Related designs:** [scoped-sessions.md](./scoped-sessions.md) (sessions in realms with organizations), [account-lifecycle.md](./account-lifecycle.md), [email-delivery.md](./email-delivery.md) (hosted pages, `allowed_redirects`), [identity-providers.md](./identity-providers.md), [admin-ui.md](./admin-ui.md)
 
@@ -23,7 +23,7 @@ Standing rules carried over from the MFA design:
 - **Challenges are stored hash-only with a TTL** and used once.
 - **Docs and tests are part of every issue.**
 
-**What this is not:** a replacement for the password (nothing removes it), passkey-only sign-up (§15, question 3), attestation or hardware allow-lists, or the CLI signing in with a passkey (§11).
+**What this is not:** a replacement for the password (nothing removes it), passkey-only sign-up (§16, question 3), attestation or hardware allow-lists, or the CLI signing in with a passkey (§11).
 
 ## 2. Decisions at a glance
 
@@ -39,7 +39,7 @@ Standing rules carried over from the MFA design:
 | Counts as MFA | a passkey sign-in records `methods: ["passkey"]` and `mfa: true`; rules see `user.mfa` and `user.methods` as for TOTP (§7.3). |
 | Second factor | `passkey` joins `methods` in an MFA challenge; any one second factor is enough (§7.1). |
 | Role requirement | `mfa.required_roles` is satisfied by a passkey or by TOTP; forced enrollment offers both (§7.2). |
-| Sign-up | passkeys are **added** to an account after any other sign-in; no account is created from a passkey alone (open: §15, question 3). |
+| Sign-up | passkeys are **added** to an account after any other sign-in; no account is created from a passkey alone (open: §16, question 3). |
 | Last sign-in method | passkeys count as a sign-in method; the last method of any kind cannot be removed (`last_sign_in_method`). |
 | Management | register, rename and remove need `X-Backd-Reauth`; at most 10 per user; each change sends a `security-notice` (§8). |
 | Recovery | recovery codes and the admin reset work as before; the admin reset also removes passkeys. No new recovery path (§9). |
@@ -99,6 +99,89 @@ passkeys:
 
 Every ceremony has two calls: `options` (the server issues a challenge) and the second call with the authenticator's answer (the server verifies it). The JSON follows the WebAuthn specification's `PublicKeyCredentialCreationOptions` and `…RequestOptions`, so a client passes the `options` to the browser unchanged and returns the result unchanged. Binary fields are base64url, as in the specification.
 
+**The three actors.** The *app* (the JS client, or the platform code in Dart) only relays data. The *authenticator* (device, password manager or security key) holds the private key and signs only after the user verifies. *backd* holds the public key and issues one-time challenges. Nothing secret travels to backd: it receives a signature, and checks it with a public key.
+
+### 5.1 Registration (signed in, with reauth)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant A as App (client)
+    participant B as Browser / platform
+    participant K as Authenticator
+    participant S as backd
+
+    A->>S: POST /_auth/passkeys/register/options (X-Backd-Reauth)
+    S->>S: new challenge, stored hash-only (5 min, single use)
+    S-->>A: { challenge_id, options: challenge, rp_id, user handle, exclude existing, UV required }
+    A->>B: navigator.credentials.create(options)
+    B->>U: "Create a passkey?"
+    U->>K: verify (PIN, fingerprint, face)
+    K->>K: new key pair for this domain
+    K-->>B: public key, credential id, signed statement (challenge + origin)
+    B-->>A: credential
+    A->>S: POST /_auth/passkeys/register/verify { challenge_id, credential, name }
+    S->>S: challenge is mine, unused? origin and rp_id match? user verified?
+    S->>S: store public key and credential id
+    S-->>A: 201 passkey (never key material)
+    S-)U: security-notice "passkey-added"
+```
+
+### 5.2 Sign-in as a first factor
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant A as App (client)
+    participant B as Browser / platform
+    participant K as Authenticator
+    participant S as backd
+
+    A->>S: POST /_auth/passkey/login/options (no email, no auth)
+    S->>S: new challenge, stored hash-only (5 min, single use)
+    S-->>A: { challenge_id, options: challenge, rp_id, UV required, no allowCredentials }
+    A->>B: navigator.credentials.get(options)
+    B->>U: pick an account
+    U->>K: verify (PIN, fingerprint, face)
+    K->>K: sign (challenge + origin + counter) with the private key
+    K-->>B: assertion (credential id, user handle, signature)
+    B-->>A: credential
+    A->>S: POST /_auth/passkey/login/verify { challenge_id, credential }
+    S->>S: find public key by credential id; user handle matches?
+    S->>S: signature valid? challenge mine and unused? origin and rp_id? user verified? counter?
+    S->>S: user active? consents to accept? (as every sign-in)
+    alt all good
+        S-->>A: session (methods: [passkey], mfa: true) or a consent challenge
+    else anything wrong
+        S-->>A: 401 invalid_passkey (the same for every cause)
+    end
+```
+
+### 5.3 Sign-in with a passkey as the second factor
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as App (client)
+    participant B as Browser / platform
+    participant S as backd
+
+    A->>S: POST /_auth/login (password)
+    S-->>A: { mfa_required, challenge, methods: [passkey, totp, recovery_code] }
+    A->>S: POST /_auth/mfa/passkey/options { challenge }
+    S-->>A: { options } (allowCredentials: this user's passkeys)
+    A->>B: navigator.credentials.get(options)
+    Note over B: the user verifies; the authenticator signs
+    B-->>A: credential
+    A->>S: POST /_auth/mfa/verify { challenge, method: passkey, credential }
+    S->>S: same checks as 5.2, plus the MFA challenge's attempts and the per-user limit
+    S-->>A: session (methods: [password, passkey], mfa: true)
+```
+
+Re-authentication (§7.4) is the same shape as 5.3: options bound to the current session, then the credential in `POST /_auth/reauth`.
+
 ## 6. Passkeys as a first factor
 
 ### 6.1 Flow
@@ -107,7 +190,8 @@ Every ceremony has two calls: `options` (the server issues a challenge) and the 
 2. The browser asks the user to pick an account and verify (PIN, fingerprint, face), or offers it in the username field through *conditional UI* (`mediation: "conditional"`).
 3. `POST /_auth/passkey/login/verify { challenge_id, credential }`.
    - The server finds the credential by `credential_id`, checks that its user handle matches, verifies the signature, the origin, the `rp_id` hash, the challenge and that user verification happened, then updates `sign_count`, `last_used_at` and the backup flags.
-   - It continues exactly like another first factor: banned or erased users are refused, then a session with `methods: ["passkey"]` and `mfa: true` is issued. **No second step follows**, because user verification already was one. (A realm that wants TOTP on top of a passkey does not exist; see §15, question 2.)
+   - Banned or erased users are refused, then the sign-in ends through `finishSignIn` with `methods: ["passkey"]` and `mfa: true`: a session, or the **consent challenge** when the realm's consents are pending, exactly as for every other sign-in. It does **not** go through `afterFirstFactor`, so **no MFA step follows**: user verification already was the second factor. (A realm that wants TOTP on top of a passkey does not exist; see §16, question 2.)
+   - Today `finishSignIn` sets `mfa` from `len(methods) > 1`, which would record this session as `mfa: false`. §14.2 replaces that with a rule on the method names.
 4. **Any failure** is `401 invalid_passkey`, whatever the reason (unknown credential, bad signature, wrong origin, expired challenge, user banned). The reason goes to the audit log, not to the caller.
 
 ### 6.2 Realms with organizations
@@ -153,7 +237,7 @@ A passkey kept in iCloud Keychain or a Google account can be used from every dev
 - `user.passkey_synced` is `true` when the passkey used is backup eligible (flag from the authenticator); absent otherwise;
 - a rule for the most sensitive data can require `!user.passkey_synced`, forcing a hardware key. The docs show the example.
 
-This is the biggest judgment call in the design (§15, question 1).
+This is the biggest judgment call in the design (§16, question 1).
 
 ### 7.4 Re-authentication
 
@@ -249,12 +333,78 @@ Every route is documented in `api/openapi.yaml` in the issue that adds it; reque
 - **Library risk:** parsing is done by `go-webauthn`; backd pins it and watches its advisories like other dependencies (`govulncheck`, Dependabot).
 - **Dev mode:** `localhost` over `http` is allowed as an origin only with `BACKD_DEV`, never in production. Realms with `auth: disabled` have no sign-in and are untouched.
 
-## 14. Proposed issue split
+## 14. Fit with the existing auth code
+
+Passkeys are the first feature since MFA that adds a *kind* of factor rather than a provider, so this is where the auth code can drift into special cases. This section records what the code does today, where passkeys would strain it, and the small preparatory change that keeps the result consistent. (Checked against `main` at v0.9.8.)
+
+### 14.1 The shape today
+
+- **First factors converge.** Password (five call sites), magic links, OAuth (two) and organization sign-in all end in `afterFirstFactor`, which decides between a session, an MFA challenge and an enrollment challenge, and then `finishSignIn`, which handles consents and starts the session.
+- **Second factors are one switch.** `VerifyMFA` takes `(challenge, method, code string)` and switches on `totp` or `recovery`; `Reauthenticate` has the same shape (`method, proof string`).
+- **"Has a second factor" is a TOTP lookup.** `Store.MFAOf` (the TOTP record) is called from eleven places, with three meanings:
+  - *"Is MFA on for this user?"*: `afterFirstFactor`, `ReauthMethodsOf`, `memberHasMFA` (the managers' view of who lacks a second factor) and password update. These must also see passkeys.
+  - *TOTP-specific*: setup (`ErrMFAAlreadyEnabled`), `DisableMFA`, recovery-code regeneration, the account export of the TOTP state. These stay as they are.
+  - *Remove everything*: the magic-link path that makes an account passwordless deletes the MFA record, and the admin reset does the same. These must also remove passkeys.
+- **Password update restates the reauth methods** (`ReauthTOTP` or `ReauthRecovery`) instead of asking `ReauthMethodsOf`, so it is a twelfth place that needs the passkey.
+- **`mfa` is derived from the method count.** `finishSignIn` calls `startSessionWith(..., len(methods) > 1, ...)`.
+- **Method names are string constants** (17 uses of `MethodTOTP` and `MethodRecovery`), and the MFA challenge's method list is written out in `issueChallenge`.
+
+### 14.2 Where passkeys would strain it
+
+| Strain | If done naively | Result |
+|---|---|---|
+| "Has MFA" means a TOTP record | a user with only a passkey looks like a user without MFA at the "is MFA on?" call sites | `afterFirstFactor` skips the challenge, reauth falls back to password, role requirements fail |
+| `mfa` from `len(methods) > 1` | a passkey session has one method (`["passkey"]`) | recorded as `mfa: false` although it is the strongest sign-in; rules that require `user.mfa` refuse it |
+| `code string` | the credential is a JSON object | a second parameter next to `code` in two signatures, each with a "one of the two" rule |
+| Hard-coded method list in the challenge | add `passkey` in one place and forget another | the challenge says one thing and `VerifyMFA` accepts another |
+| Three nearly identical challenge writers (`issueChallenge`, `issueConsentChallenge`, now the ceremony) | a third copy with its own TTL and hashing | drift in expiry or single-use rules |
+
+### 14.3 The preparatory step (P0, no behavior change)
+
+One commit before any passkey code, with the existing tests unchanged and passing:
+
+1. **One question, one answer:** `SecondFactorsOf(ctx, user) ([]string, error)` returns the second factors the user has (today: `totp` or nothing). The "is MFA on?" call sites (`afterFirstFactor`, `ReauthMethodsOf`, `memberHasMFA`, password update) use it, and password update stops restating the method list; the TOTP-specific ones keep `MFAOf`. The two "remove everything" paths (passwordless conversion, admin reset) go through one `RemoveSecondFactors(ctx, user)`. Adding `passkey` later changes these functions and nothing else.
+2. **`mfa` from the names, not the count:** `IsSecondFactor(method)` classifies every method name as a first factor, a second factor or both. `startSessionWith` sets `mfa` when the methods contain a second factor, or a first factor that includes user verification (`passkey`).
+3. **A `Proof` type:** `Proof{Code string; Credential []byte}` for `VerifyMFA` and `Reauthenticate`, parsed once in the HTTP layer; each method reads the field it needs and rejects the other.
+4. **One list of methods:** the challenge's `methods` and the reauth `methods` are built from `SecondFactorsOf`, not written out.
+5. **One challenge writer:** `issueChallenge` and `issueConsentChallenge` share a helper that owns the TTL, hashing and single-use rules; the passkey ceremony uses it with an extra `Ceremony []byte` field for the library's session data.
+
+This is a refactor of code that already has tests; it does not need passkeys to be justified, and it removes the duplication the next factor would otherwise copy.
+
+### 14.4 Where the passkey code sits
+
+```
+internal/auth/
+  passkeys.go          the ceremonies: begin/finish for registration and for assertion
+  passkeys_manage.go   list, rename, remove, limits, notices (like mfa_manage.go)
+  mfa.go, reauth.go    each gains one case: method "passkey" calls verifyAssertion
+```
+
+- **One verification, three exits.** `verifyAssertion(ctx, challenge, credential, expectedUser)` is the only place that checks origin, `rp_id`, user verification, challenge, signature, counter and the throttle. What differs is what happens next: the **first factor** goes to `finishSignIn` (§6.1), the **second factor** continues `VerifyMFA`, **reauth** returns a grant.
+- **No new sign-in flow.** There is no parallel session-creation path: every session still starts in `startSessionWith`, so revocation, `methods`, scoping by organization and consents stay in one place.
+- **HTTP:** `internal/httpapi/auth_passkeys.go` next to `auth_mfa.go`, parsing and error mapping only.
+- **No plug-in framework.** A `Factor` interface with registration would be speculative for three methods. If a fourth second factor appears, it is introduced then, with the call sites already funneled through the functions in §14.3.
+
+### 14.5 Keeping it consistent
+
+- **Classification test:** a test lists every `Method*` constant and fails when one is not classified in `IsSecondFactor`, so a new method cannot be added without deciding what it counts as.
+- **Entry-point test:** a table test lists the sign-in entry points (password, magic link, OAuth, organization sign-in, passkey) and asserts each ends in `finishSignIn`, so none creates a session on its own.
+- **Invariant tests for the matrix:** passkey as first factor, second factor and reauth, each with and without organizations, with consents pending, with a banned user and with `required_roles`, run on the software authenticator (§12).
+- **A recipe in the code:** a comment at `afterFirstFactor` says how to add a first factor (prove it, call `afterFirstFactor`, or `finishSignIn` when it already includes user verification) and a second factor (classify it, add it to `SecondFactorsOf`, add a case to `VerifyMFA` and `Reauthenticate`).
+- **The older design points here:** a note at the top of [mfa-passwordless.md](./mfa-passwordless.md) says it is extended by this design, as [scoped-sessions.md](./scoped-sessions.md) does.
+- **Other planned work** (generic OIDC #157, SCIM) adds first factors only: it calls `afterFirstFactor` and needs none of the above, but it benefits from P0.
+
+### 14.6 The honest cost
+
+The server code is comparable to MFA: a ceremony file, a management file and a few cases in `mfa.go` and `reauth.go`, plus the HTTP file. The complexity that stays is the **matrix** (three uses, organization-scoped or not, five client stories), which tests and the single verification function contain rather than remove. The risk is not size but a missed call site, which is why P0 and the classification test come first.
+
+## 15. Proposed issue split
 
 Each is one step and one commit; docs and tests are in the same commit.
 
 | # | Step | Contents |
 |---|---|---|
+| P0 | Prepare the auth code | §14.3: `SecondFactorsOf`, `IsSecondFactor`, `Proof`, one list of methods, one challenge writer; no behavior change |
 | P1 | Foundation | `passkeys:` config and startup checks, `go-webauthn` dependency, storage and indexes, user handle, the software authenticator in `authtest` |
 | P2 | Register and manage | the registration ceremony, `GET/PATCH/DELETE /_auth/passkeys`, limits, security notices, export and erase, audit events, OpenAPI |
 | P3 | First factor | `passkey/login/*` and the org-scoped routes, sessions with `methods`/`mfa`, counter rule, `user.passkey_synced` in rules and functions |
@@ -266,7 +416,7 @@ Each is one step and one commit; docs and tests are in the same commit.
 
 P1 to P4 are the server and can ship together as a release; P5 is the first thing a user can try.
 
-## 15. Open questions (please answer; each changes the design)
+## 16. Open questions (please answer; each changes the design)
 
 1. **Does a synced passkey count as `mfa: true`?** Recommended: yes, with `user.passkey_synced` for stricter rules (§7.3). The alternative is `mfa: true` only for device-bound passkeys, which would make most users' passkeys *not* satisfy `required_roles`, so admins would still need TOTP and passkeys would not remove the enrollment friction.
 2. **Should a realm be able to require a password or TOTP after a passkey?** Recommended: no; a user-verified passkey is the strongest factor backd has, and a knob that makes it weaker than a password is confusing. A `passkeys.require_second_factor` switch can be added later without breaking anything.
@@ -276,7 +426,7 @@ P1 to P4 are the server and can ship together as a release; P5 is the first thin
 6. **The CLI** (§11): is "no passkey sign-in in the terminal" acceptable? The only alternative is a browser hand-off, which the MFA design rejected.
 7. **Sequence:** the roadmap places passkeys after generic OIDC, atomic operators and rate limiting. Nothing here depends on them, so it can move; this is the user's call.
 
-## 16. Alternatives considered
+## 17. Alternatives considered
 
 - **Writing the WebAuthn verification ourselves:** rejected; CBOR, COSE and the many authenticator quirks are exactly where subtle bugs live.
 - **Passkeys as only a second factor:** rejected; the first-factor use is the reason people want passkeys, and it costs one route pair.
@@ -286,7 +436,7 @@ P1 to P4 are the server and can ship together as a release; P5 is the first thin
 - **The PRF extension (keys derived from passkeys for field encryption):** out of scope; interesting for [field-encryption.md](./field-encryption.md) later, not for sign-in.
 - **Removing the password when a passkey is added:** rejected; users choose, and `last_sign_in_method` protects them.
 
-## 17. Follow-ups
+## 18. Follow-ups
 
 - Passkey sign-up with a verified email (question 3).
 - `passkeys.attestation` and an AAGUID allow-list.
