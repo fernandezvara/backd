@@ -1,8 +1,8 @@
 # Design: authentication strategies
 
 - **Issues:** not created yet
-- **Status:** proposed (for review; §14 lists the questions that need an answer)
-- **Changes:** [mfa-passwordless.md](./mfa-passwordless.md) (`mfa.required_roles` and the way a second step is chosen), [identity-providers.md](./identity-providers.md) (where `providers:` and `sign_in:` live), and `support_docs/decisions.md` (`auth:` as an enabled/disabled scalar; the top-level sign-in keys). Nothing is changed until this is decided.
+- **Status:** decided (2026-11-12; §14 records the answers)
+- **Changes:** [mfa-passwordless.md](./mfa-passwordless.md) (`mfa.required_roles` and the way a second step is chosen), [identity-providers.md](./identity-providers.md) (where `providers:` and `sign_in:` live), and `support_docs/decisions.md` (`auth:` as an enabled/disabled scalar; the top-level sign-in keys). The decisions are in §14; `support_docs/decisions.md` gets its lines in issue A1.
 - **Comes before:** the passkeys design (`design/passkeys.md`, PR #917). Passkeys become one *method* of a strategy, which removes several of its open problems (§12).
 - **Related designs:** [scoped-sessions.md](./scoped-sessions.md), [account-lifecycle.md](./account-lifecycle.md), [email-delivery.md](./email-delivery.md)
 
@@ -47,9 +47,9 @@ Standing rules carried over: no session in a URL; challenges hash-only with a TT
 | Weaker strategy | signing in with a strategy a role does not allow still succeeds, **without** that role, and says which roles stayed inactive (§5) |
 | Enrollment | a strategy that needs `totp` or `passkey` from someone who has none sends them to enroll it, as the forced enrollment of [mfa-passwordless.md §5.3](./mfa-passwordless.md) does today |
 | Configuration | **all** sign-in settings live under `auth:` (§3); `mfa.required_roles` is removed |
-| Disabled realms | `auth: disabled` stays as the one explicit way to run without authentication (§3.3; open question 1) |
+| Disabled realms | `auth: disabled` stays as the one explicit way to run without authentication (§3.3) |
 | Rules and functions | see `user.strategy`, `user.methods` and `user.mfa`; `user.roles` holds only the **active** roles |
-| Existing behavior | a user's own TOTP keeps adding its step (open question 3); passkeys apply only where a strategy lists them |
+| Existing behavior | **only the strategy decides the steps.** A user's own TOTP no longer adds one: "any user may turn TOTP on and is then always asked" ends, and the upgrade note says so (§6) |
 
 ## 3. Configuration (`realm.yaml`)
 
@@ -117,7 +117,7 @@ Two small differences from the draft this design started from: `sign_in:` sits u
 
 ### 3.3 Disabled realms
 
-Today `auth: disabled` makes a realm that has no users, keys or rules, with a startup warning, and it must never face the internet. Proposed: that stays **an explicit scalar**, `auth: disabled`; `auth:` with a map of settings and strategies is enabled; **a missing `auth` key, or a map with no `strategies`, is an error**, not "disabled". Reason: if "no strategies" meant "no authentication", one mistyped or deleted key would silently open a production realm. (This is open question 1; the draft that started this design suggested removing the scalar.)
+Today `auth: disabled` makes a realm that has no users, keys or rules, with a startup warning, and it must never face the internet. Proposed: that stays **an explicit scalar**, `auth: disabled`; `auth:` with a map of settings and strategies is enabled; **a missing `auth` key, or a map with no `strategies`, is an error**, not "disabled". Reason: if "no strategies" meant "no authentication", one mistyped or deleted key would silently open a production realm. (The draft that started this design suggested removing the scalar; keeping the explicit `disabled` was chosen, §14.)
 
 ### 3.4 Migration (0.x, breaking)
 
@@ -130,7 +130,7 @@ Today `auth: disabled` makes a realm that has no users, keys or rules, with a st
 | `mfa:` | `auth.totp:` |
 | top-level `sign_in:`, `providers:`, `magic_link:`, `signup:`, `sessions:`, `password:`, `login_throttle:`, `reauth:` | the same, under `auth:` |
 
-A realm.yaml in the old shape **fails to start** with a message that names the key and the new place; there is no silent compatibility layer (it would double the paths the tests must cover). The changelog lists this first under "Breaking", and a table like the one above goes in the upgrade note. The same commit migrates `internal/templates/files/realm.yaml`, every `examples/config/*/realm.yaml`, the tutorial and the docs pages that show the old keys (about 14 files carry an `auth:` line today, and the pages that show `mfa:` or `required_roles` are `docs/content/docs/build/auth/mfa.md`, `…/auth/_index.md`, `…/configuration/realm.md`, `troubleshooting.md` and the tutorial chapter on the second factor).
+A realm that relied on users turning TOTP on by themselves must now say where it applies: add `totp` to the strategies that need it. A realm.yaml in the old shape **fails to start** with a message that names the key and the new place; there is no silent compatibility layer (it would double the paths the tests must cover). The changelog lists this first under "Breaking", and a table like the one above goes in the upgrade note. The same commit migrates `internal/templates/files/realm.yaml`, every `examples/config/*/realm.yaml`, the tutorial and the docs pages that show the old keys (about 14 files carry an `auth:` line today, and the pages that show `mfa:` or `required_roles` are `docs/content/docs/build/auth/mfa.md`, `…/auth/_index.md`, `…/configuration/realm.md`, `troubleshooting.md` and the tutorial chapter on the second factor).
 
 ## 4. Signing in with a strategy
 
@@ -195,7 +195,7 @@ sequenceDiagram
 
 - **Adding credentials** (a TOTP secret, passkeys, a password) works as designed in [mfa-passwordless.md §5.2](./mfa-passwordless.md) and the passkeys design, for any signed-in user, with reauth. It is allowed when `auth.totp.enabled` or `auth.passkeys.enabled`.
 - **Forced enrollment** is a result of the strategy: a person completing `admin_password: [password, totp]` without a TOTP secret gets the `enroll` challenge, which allows only the setup calls and then ends in the session. The same for a passkey step.
-- **A user's own TOTP** keeps its existing meaning (open question 3): someone who turned it on is asked for it whatever the strategy, when the strategy has no `totp` step yet. A passkey is different: it is used **only where a strategy lists it**, so registering one never changes how the same person signs in elsewhere.
+- **A login is complete when its strategy's steps are met, nothing more.** TOTP and passkeys are enrolled so that strategies listing them can be completed; a user's own enrollment never adds a step to another strategy. This ends today's opt-in (a regular user who turned TOTP on is asked for it on every sign-in): a realm that wants it for everyone writes it into the strategy (`users_password: [password, totp]`). Enrolling is therefore mostly something the strategy *requires* (forced enrollment, above), not something users choose on their own.
 - **Reauth** proofs are unchanged: the strongest credential the user has (TOTP or recovery code or, with passkeys, a passkey; else the password; else an email code).
 - **Disabling a method:** removing a strategy from the config takes effect on the next request (roles) and the next sign-in (steps); existing sessions keep their recorded strategy, and lose any role whose list no longer allows it.
 
@@ -256,17 +256,20 @@ Passkeys follow on this ([§12](#12-what-changes-in-the-passkeys-design)): their
 - **Strategies chosen by backd from the user's roles:** rejected; the person with two roles would be forced into one flow, and a CLI could not choose a password flow where a browser uses a passkey.
 - **Refusing a sign-in whose strategy no role of the user allows:** rejected; it leaks which roles an address has and strands people with mixed roles (§5).
 - **Stronger strategies inheriting weaker ones' roles by a ranking:** rejected; rankings are opinions (is a passkey stronger than password+TOTP?). Explicit lists are longer and unambiguous.
-- **Removing `auth: disabled` and treating "no strategies" as disabled:** rejected for safety (§3.3), pending the user's answer.
+- **Removing `auth: disabled` and treating "no strategies" as disabled:** rejected for safety (§3.3).
+- **An `totp?` optional step, or adding any enrolled second factor to every strategy:** rejected (§14, question 3); the strategy is the whole definition of a login, and a hidden extra step is the kind of surprise this design removes.
 - **A compatibility layer for the old keys:** rejected (§3.4).
 
-## 14. Open questions (please answer; each changes the design)
+## 14. Decisions taken (2026-11-12)
 
-1. **Disabled realms.** The draft removes `auth: enabled/disabled`. Recommended: remove `enabled`, keep the explicit `auth: disabled`, and make a missing `auth` or a map with no strategies a **startup error** (§3.3). The alternative, "no strategies means disabled", is shorter but one mistyped key opens a realm.
-2. **Roles that the strategy does not allow.** Recommended: the person signs in without them and is told which stayed inactive (§5). The alternative is refusing the sign-in.
-3. **A user's own TOTP.** Recommended: keep today's behavior, so someone who turned TOTP on is asked for it under every strategy that lacks a `totp` step, and passkeys apply only through strategies. The alternative is that strategies alone decide, and a user's voluntary TOTP protects nothing unless a strategy lists it.
-4. **Where the keys live.** Recommended: everything about signing in under `auth:` (including `sign_in` and `providers`), platform keys and `roles` where they are (§3.1).
-5. **Old keys.** Recommended: no compatibility layer, a startup error that names the new place, and the changelog's Breaking list (§3.4).
-6. **Client binding.** Recommended: none in v1; strategies are chosen by the client, roles are the boundary (§9). Is a per-strategy `origins` restriction wanted later?
-7. **Default strategy.** Recommended: omitted `strategy` works only when exactly one strategy starts with that method (§4.1). Should `auth.default_strategy` exist for the others?
-8. **Sign-up.** `signup:` creates an account with a password today. In a realm with no `password` strategy, who creates accounts: magic-link sign-up, an invitation that starts a passkey registration, or an administrator? Recommended: leave the existing sign-up (password) and magic-link sign-up as they are, and decide passkey sign-up with the passkeys design.
-9. **Order of work.** Recommended: this design, then A1–A5, then the passkeys milestone re-planned on it. Passkeys on their own first would be built twice.
+| # | Question | Decision |
+|---|---|---|
+| 1 | Disabled realms | `auth: disabled` stays as the explicit scalar; a missing `auth` or an `auth` map with no strategies is a **startup error** (§3.3) |
+| 2 | A role the strategy does not allow | the person **signs in without the role**; the answer lists `roles_inactive` after authentication (§5) |
+| 3 | A user's own TOTP | **strategies only.** A login is complete when its strategy's steps are met; a user's own TOTP adds nothing, and the opt-in behavior ends (§6). An optional step (`totp?`) was offered and declined |
+| 4 | Where the keys live | **all** sign-in keys under `auth:`; platform keys and `roles` stay (§3.1) |
+| 5 | Old keys | **fail to start** with a message that names the new place; no compatibility layer; Breaking in the changelog (§3.4) |
+| 6 | Client binding | **none** in v1; roles are the boundary (§9) |
+| 7 | Default strategy | omitted `strategy` works only when exactly one strategy starts with the method, else `400 strategy_required`; no `default_strategy` setting (§4.1) |
+| 8 | Sign-up without a password strategy | today's password and magic-link sign-up stay; passkey sign-up is decided with the passkeys design |
+| 9 | Order of work | **this design first (A1–A5), then the passkeys milestone re-planned on it** (§11, §12) |
