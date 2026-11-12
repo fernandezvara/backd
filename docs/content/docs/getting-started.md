@@ -79,15 +79,7 @@ Realms with `auth: disabled` are open to anyone who can reach `backd`: never exp
 
 ## What you get
 
-- **Configuration as files.** Invalid config stops startup and names the file; `backd config check` runs the same checks in CI.
-- **Schema-validated writes,** mirrored as a MongoDB validator, with field-level errors and optimistic concurrency (`ETag`, `If-Match`).
-- **Queries without injection:** `where`, `order_by`, pagination and counts over an allowlisted query language.
-- **Users, sessions and API keys** per realm, with brute-force protection, invitations, a second factor, consents and an audit trail.
-- **Access rules** (`rules:` in `collection.yaml`) decided per document, with read rules applied inside the database query.
-- **Server-side functions** in isolated Deno processes: sync calls, background jobs, cron schedules, webhooks, encrypted secrets, rate limits and a network allowlist.
-- **Files, push, organizations and realtime:** S3-compatible storage per realm, FCM/APNs/Web Push senders, B2B teams and roles, and server-sent events of the changes a caller may read.
-- **Clients:** [`backd-js`](../build/clients/js/) for browsers and Node, [`package:backd`](../build/clients/dart/) for Flutter and standalone Dart, generated [TypeScript or Dart types](../build/clients/types/) per realm, and a per-realm [OpenAPI document](../build/api/openapi/) for every other language.
-- **A production path:** a tested [reference deployment](../operate/production/), a config fingerprint so every instance runs the same configuration, and signed releases.
+The [documentation home](../#what-you-get) lists the features, and [Is backd for you?](../is-backd-for-you/) says what it does not do. This page is only the concepts above.
 
 ## Where to go next
 

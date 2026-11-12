@@ -21,25 +21,23 @@
 The shortest path to a realm you can build against — see the [Quickstart](https://fernandezvara.github.io/backd/docs/build/quickstart/) for the full walkthrough. Get the `backd` command line from [GitHub Releases](https://github.com/fernandezvara/backd/releases) (Linux, macOS and Windows); `backd-server`, which runs the server (Linux only), comes in the image `ghcr.io/fernandezvara/backd` and as a release archive, then generate a project and run its compose stack:
 
 ```sh
-backd template project --dir ./my-app --realm demo
-cd my-app
-
-export EXECUTOR_TOKEN=$(openssl rand -base64 32)
-export CALLBACK_KEY=$(openssl rand -base64 32)
-export EGRESS_KEY=$(openssl rand -base64 32)
-docker compose up --build -d          # MongoDB + backd + the functions executor
-
+backd template project --dir ./my-app --realm demo && cd my-app
+cat > .env <<EOF
+EXECUTOR_TOKEN=$(openssl rand -base64 32)
+CALLBACK_KEY=$(openssl rand -base64 32)
+EGRESS_KEY=$(openssl rand -base64 32)
+EOF
+docker compose up -d
+until curl -sf http://127.0.0.1:8080/readyz >/dev/null; do sleep 2; done   # MongoDB takes a moment
 docker compose exec backd backd-server bootstrap --realm demo --email me@example.com
 backd login --realm demo --url http://127.0.0.1:8080 --email me@example.com
-KEY=$(backd apikey create --realm demo --name local --expires 1d)   # asks for your password again
-
+KEY=$(backd apikey create --realm demo --name local --expires 1d)
 curl -X POST http://127.0.0.1:8080/v1/demo/main/posts \
   -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
   -d '{"title": "Hello", "published": true}'
-curl http://127.0.0.1:8080/v1/demo/main/posts -H "Authorization: Bearer $KEY"
 ```
 
-(`backd login` asks for the bootstrap password and enrolls an authenticator app — the template's `admin` role requires a second factor.)
+These are the Quickstart's commands, word for word. Three of them ask for something: `bootstrap` for a new password, `backd login` for that password and a code from an authenticator app (the template's `admin` role requires a second factor), and `apikey create` for the password again. The [Quickstart](https://fernandezvara.github.io/backd/docs/build/quickstart/) lists what you need and explains each step.
 
 To explore instead, this checkout ships example realms and applications on a local HTTPS stack:
 

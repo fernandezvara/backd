@@ -17,7 +17,7 @@ This section is for the **developer** building an application on backd. New here
 | Server-side logic: calls, jobs, cron, webhooks, email | [Functions](functions/) |
 | Attachments, uploads, downloads, sharing | [Files](files/) |
 | Reach users' devices | [Push](push/) |
-| Talk to it from JavaScript or Dart, or generate clients and types | [Clients](clients/) |
+| Talk to it from JavaScript, Dart, Go or Python, or generate clients and types | [Clients](clients/) |
 | See a complete application | [Examples](examples/) |
 
 Running the service itself — deployment, providers, administration — lives in [Operate](../operate/).

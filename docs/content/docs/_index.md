@@ -16,8 +16,9 @@ Realms with `auth: disabled` are open to anyone who can reach `backd`: never exp
 
 | I want to… | Go to |
 |---|---|
+| Try it in a few minutes: **start here** | [Quickstart](build/quickstart/) |
 | Find out whether backd fits my project | [Is backd for you?](is-backd-for-you/) |
-| Try it in a few minutes | [Getting started](getting-started/) |
+| Understand the concepts: realm, database, collection | [Getting started](getting-started/) |
 | Build a whole app, chapter by chapter | [Tutorial](tutorial/) |
 | Build my own backend: schemas, HTTP API, users, functions, files, push | [Build](build/) |
 | Run and administer a deployment: providers, monitoring, backup, hardening | [Operate](operate/) |
@@ -33,6 +34,8 @@ Realms with `auth: disabled` are open to anyone who can reach `backd`: never exp
 - **Users, sessions and API keys** per realm, with brute-force protection, invitations, network restrictions and an audit trail; administration through an [admin API](operate/administration/admin/) and the [command line](operate/administration/cli/), never database credentials.
 - **Access rules** (`rules:` in `collection.yaml`) decided per document, with read rules applied inside the database query.
 - **Server-side functions** in isolated Deno processes: sync calls, [background jobs](build/functions/jobs/), [cron schedules](build/functions/cron/), [webhooks](build/functions/webhooks/), encrypted secrets, rate limits, idempotency and a network allowlist.
+- **Files, push, organizations and realtime:** S3-compatible storage per realm, FCM/APNs/Web Push senders, B2B teams and roles, and server-sent events of the changes a caller may read.
+- **Clients:** [`backd-js`](build/clients/js/) for browsers and Node, [`package:backd`](build/clients/dart/) for Flutter and standalone Dart, [`pkg/client`](build/clients/go/) for Go, [`backd`](build/clients/python/) on PyPI for Python, generated [TypeScript, Dart, Go or Python types](build/clients/types/) per realm, and a per-realm [OpenAPI document](build/api/openapi/) for every other language.
 - **A production path:** a tested [reference deployment](operate/production/) (TLS, least-privilege MongoDB, encrypted backups), a [config fingerprint](operate/deploying/) so every instance runs the same configuration, and signed releases.
 
 ## Versions
