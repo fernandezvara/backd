@@ -150,9 +150,9 @@ sequenceDiagram
     K-->>B: assertion (credential id, user handle, signature)
     B-->>A: credential
     A->>S: POST /_auth/passkey/login/verify { challenge_id, credential }
-    S->>S: find public key by credential id; user handle matches?
+    S->>S: find public key by credential id - user handle matches?
     S->>S: signature valid? challenge mine and unused? origin and rp_id? user verified? counter?
-    S->>S: account checks as for every first step; consents to accept?
+    S->>S: account checks as for every first step - consents to accept?
     alt all good and the strategy is complete
         S-->>A: session (strategy, methods: [passkey], mfa: true, passkey_synced, roles_inactive) or a consent challenge
     else all good and the strategy has more steps
@@ -176,7 +176,7 @@ sequenceDiagram
     A->>S: POST /_auth/mfa/passkey/options { challenge }
     S-->>A: { options } (allowCredentials: this user's passkeys)
     A->>B: navigator.credentials.get(options)
-    Note over B: the user verifies; the authenticator signs
+    Note over B: the user verifies - the authenticator signs
     B-->>A: credential
     A->>S: POST /_auth/mfa/verify { challenge, method: passkey, credential }
     S->>S: same checks as 5.2, plus the challenge's attempts and the per-user limit

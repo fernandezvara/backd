@@ -159,7 +159,7 @@ sequenceDiagram
     participant S as backd
 
     C->>S: POST /_auth/login { strategy: admin_password, email, password }
-    S->>S: first method proved; the strategy has more steps
+    S->>S: first method proved - the strategy has more steps
     S-->>C: 200 { challenge, next: ["totp"], strategy: "admin_password" }
     C->>S: POST /_auth/mfa/verify { challenge, method: "totp", code }
     S->>S: last step done
