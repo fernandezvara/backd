@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.9
+
+No changes; released on the same version as the `backd` server.
+
 ## 0.9.8
 
 No changes; released on the same version as the `backd` server.
