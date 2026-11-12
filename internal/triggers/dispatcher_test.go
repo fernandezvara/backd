@@ -539,9 +539,8 @@ func TestHandoffContinuesFromTheStoredPosition(t *testing.T) {
 	if len(obsB.leases) != 1 || obsB.leases[0] <= obsA.leases[0] {
 		t.Errorf("epochs: a=%v b=%v, want b's to be later", obsA.leases, obsB.leases)
 	}
-	if st.position() != "12" {
-		t.Errorf("position = %q", st.position())
-	}
+	// The position is stored after the job is queued, so it can trail the queue by a moment.
+	waitFor(t, "b to store the position of the last change", func() bool { return st.position() == "12" })
 }
 
 func TestOnlyOneInstanceLeads(t *testing.T) {
