@@ -233,7 +233,7 @@ sequenceDiagram
 | # | Step | Contents |
 |---|---|---|
 | A1 | Decide | this design decided; `decisions.md` updated (the `auth:` shape, the moved keys, the removed `mfa.required_roles`) |
-| A2 | Configuration | the `auth:` map, the moved keys, startup checks, migration errors, the template and every example and docs page migrated; behavior unchanged: each old first factor becomes a one-method strategy |
+| A2 | Configuration | the `auth:` map, the moved keys, startup checks, migration errors, the template and every example and docs page migrated. The engine does not exist yet, so a small **adapter** translates the parsed strategies to today's runtime (which first factors are available; roles whose strategies all end in `totp` become the old required roles) and A3 removes it; behavior is unchanged for realms migrated one-to-one |
 | A3 | The engine | steps, the generalized challenge, the strategy on routes and sessions, role filtering at the principal, `GET /_auth/strategies`, `roles_inactive`; the old MFA becomes `[<first>, totp]` strategies |
 | A4 | Rules and functions | `user.strategy`, active `user.roles`, `ctx.user`, test helpers, generated types |
 | A5 | Clients, CLI and admin interface | `strategy` in the four clients, `backd login --strategy`, the admin interface, docs and tutorial |
