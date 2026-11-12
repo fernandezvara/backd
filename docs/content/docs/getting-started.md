@@ -86,6 +86,7 @@ The [documentation home](../#what-you-get) lists the features, and [Is backd for
 | I want to… | Go to |
 |---|---|
 | Check that backd fits, and see what it doesn't do | [Is backd for you?](../is-backd-for-you/) |
+| Look up a word: realm, role, executor, trigger | [Glossary](../build/glossary/) |
 | Run a realm in a few commands: binary, template, compose | [Quickstart](../build/quickstart/) |
 | Build a whole app, chapter by chapter | [Tutorial](../tutorial/) |
 | Describe my data and use the API: schemas, auth, functions, files, push | [Build](../build/) |

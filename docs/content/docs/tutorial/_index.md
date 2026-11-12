@@ -14,6 +14,8 @@ You do **not** need a `backd` checkout: the app, the client and the released con
 
 ## Words used here
 
+The short list for this tutorial; the [glossary](../build/glossary/) covers the whole documentation.
+
 - A **realm** is one application's world — its users, roles, sessions and settings (`shelf`). A **database** groups collections inside it (`main`), and a **collection** holds documents (`assets`). The URLs say it: `/v1/{realm}/{database}/{collection}`.
 - A **function** is a small TypeScript program backd runs in a sandbox when something calls it: a person, another function, a clock or the internet.
 - A **rule** is an expression in the `rules:` of a collection's `collection.yaml` that decides whether a read or write is allowed. A **`HOLE` comment** (chapter 3) marks the place where a rule can't say what you mean and a function has to take over.

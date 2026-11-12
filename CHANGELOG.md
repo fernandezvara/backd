@@ -9,6 +9,7 @@ Until a stable release is declared, a minor release may have breaking changes; t
 ### Changed
 
 - **Documentation: "Is backd for you?"** A new page next to Getting started says where `backd` fits and where it doesn't, how it compares with other backends, what it does not do yet (each with what to do meanwhile and its issue) and what was decided against, and states the 0.x stability. The docs home, Getting started and the README link to it.
+- **Documentation: a glossary and a map of the processes.** [Build → Glossary](https://fernandezvara.github.io/backd/docs/build/glossary/) defines the terms newcomers trip on (realm and organization, role and team role, API key and scope, function, job, trigger, executor, egress, worker) with a link each, and Operate gains a diagram of how the API, worker, executor, egress, MongoDB and storage fit together.
 
 ## 0.9.9
 

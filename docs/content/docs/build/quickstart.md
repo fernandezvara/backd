@@ -8,7 +8,7 @@ toc: true
 
 This page is the shortest honest path to a `backd` you can build against: install the command line, generate a project, run it with Docker, call it.
 
-**Quickstart or Tutorial?** This page gets one realm running and ends with a few `curl` calls. The [Tutorial](../../tutorial/) builds a whole application, chapter by chapter, on its own stack (it needs only Docker, not this setup), and is the better start if you want to learn by building.
+**Quickstart or Tutorial?** This page gets one realm running and ends with a few `curl` calls. The [Tutorial](../../tutorial/) builds a whole application, chapter by chapter, on its own stack (it needs only Docker, not this setup), and is the better start if you want to learn by building. An unfamiliar word? The [glossary](../glossary/) has it.
 
 ## What you need
 
