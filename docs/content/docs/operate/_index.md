@@ -159,6 +159,10 @@ blog__main.posts
 shop__orders.items
 ```
 
+### Upgrading to v0.9.9
+
+v0.9.9 changes nothing in the data, the provisioned indexes, the configuration or the command line: replace the binaries or the images and run `backd-server provision` as usual. It is built with Go 1.27.4, which fixes GO-2026-6859 in `net/http`, so it is the version to run if you were on v0.9.8. The clients move to `0.9.9` with the server (for Dart, `backd: ^0.9.9`).
+
 ### Upgrading to v0.9.8
 
 v0.9.8 changes nothing in the data, the provisioned indexes or the configuration: run `backd-server provision` as usual (it was `backd provision` until v0.9.7). What changes is the command line: backd becomes two binaries, released together with one version: **`backd-server`** runs the server and the tools that work on MongoDB or run Deno, and **`backd`** is the [command line](administration/cli/) for developers and administrators. Nothing changes in the data or the configuration, but the commands below moved, with no alias:

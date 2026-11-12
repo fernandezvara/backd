@@ -4,6 +4,20 @@ All notable changes to `backd` and to its JavaScript client `backd-js`, which ar
 
 Until a stable release is declared, a minor release may have breaking changes; they are listed first.
 
+## 0.9.9
+
+A release of updated dependencies; nothing changes in the data, the indexes, the configuration or the command line.
+
+### Security
+
+- **Go 1.27.4:** the binaries and the images are built with it, which fixes GO-2026-6859 in the standard library's `net/http` (reported by `govulncheck` for the code backd calls). Building from source needs Go 1.27.4 or later.
+
+### Changed
+
+- **Dependencies updated:** the Go modules (the AWS SDK used by the S3 storage, `golang.org/x/*` and others), the admin UI's (Vue, vue-i18n, Vite, Vitest, Tailwind, Playwright, jsdom) and the `setup-terraform` action used by the CI checks. The clients' dependencies were already current.
+- **`make release-tag` pushes the server tag alone, then the client tags:** GitHub starts no workflow for the tags of a push that carries more than three.
+- **The Shelf Flutter demo uses `package:material_ui`:** Flutter 3.50 deprecates `package:flutter/material.dart`. It is a demo; `package:backd` does not change.
+
 ## 0.9.8
 
 ### Breaking

@@ -54,7 +54,7 @@ services:
   # bundles. Files backd writes into config/ (bundles, types) belong to DEV_UID:DEV_GID;
   # on Docker (a rootful daemon) put your ids in a .env file next to this one.
   backd:
-    image: ghcr.io/fernandezvara/backd-executor:v0.9.8
+    image: ghcr.io/fernandezvara/backd-executor:v0.9.9
     command: ["serve", "--with-worker"]
     entrypoint: ["/usr/local/bin/backd-server"]
     user: "${DEV_UID:-0}:${DEV_GID:-0}"
@@ -87,7 +87,7 @@ services:
     stop_grace_period: 20s
 
   executor:
-    image: ghcr.io/fernandezvara/backd-executor:v0.9.8
+    image: ghcr.io/fernandezvara/backd-executor:v0.9.9
     environment:
       BACKD_EXECUTOR_TOKEN: local-dev-executor-token-not-a-secret-0123456789
       EXECUTOR_PROXY: http://egress:3128
@@ -96,7 +96,7 @@ services:
       - backd
 
   egress:
-    image: ghcr.io/fernandezvara/backd:v0.9.8
+    image: ghcr.io/fernandezvara/backd:v0.9.9
     command: ["egress"]
     environment:
       BACKD_EGRESS_KEY: local-dev-egress-key-not-a-secret-0123456789abcd
