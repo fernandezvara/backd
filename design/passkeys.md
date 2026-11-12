@@ -30,7 +30,7 @@ Standing rules carried over from the MFA design:
 | Topic | Decision |
 |---|---|
 | Library | [`github.com/go-webauthn/webauthn`](https://github.com/go-webauthn/webauthn) (BSD-3, the maintained Go implementation). Its parsing and verification are not worth rewriting; a CBOR/COSE bug is a security bug. |
-| Where it lives | `internal/auth/passkeys*.go` next to `mfa*.go`; storage in `internal/mongodb`; HTTP in `internal/httpapi/auth_passkeys.go`. |
+| Where it lives | a **new package `internal/auth/passkey`** (the WebAuthn protocol and credential storage, a leaf that does not import `auth`), with thin glue in `internal/auth/passkeys.go` for sessions, limits and notices; storage in `internal/mongodb`; HTTP in `internal/httpapi/auth_passkeys.go`. It is also the pilot for splitting `auth` (§14.4). |
 | Configuration | a top-level `passkeys:` section in `realm.yaml`, **off by default**; relying party id and origins explicit or derived from `sign_in.app_url` (§3). |
 | Credentials | stored per user in `<realm>___system.passkeys`; several per user, named, removable (§4). |
 | Attestation | `none`. backd does not ask for or keep a device's make and model proof. |
@@ -314,7 +314,7 @@ Every route is documented in `api/openapi.yaml` in the issue that adds it; reque
 
 ## 12. Testing
 
-- **Server tests:** a software authenticator in `internal/auth/authtest` that creates credentials and signs assertions with Go's `crypto/ecdsa` and the library's `protocol` types, so registration, sign-in, replay, counter regression, wrong origin, wrong `rp_id`, missing user verification and removed credentials are all tested without a browser. This runs in `go test ./...` and needs no services, except for the storage tests (`make test`).
+- **Server tests:** a software authenticator in `internal/auth/passkey/passkeytest` that creates credentials and signs assertions with Go's `crypto/ecdsa` and the library's `protocol` types, so registration, sign-in, replay, counter regression, wrong origin, wrong `rp_id`, missing user verification and removed credentials are all tested without a browser. This runs in `go test ./...` and needs no services, except for the storage tests (`make test`).
 - **Contract:** the new routes appear in `api/openapi.yaml` and `internal/httpapi/contract_test.go` covers them.
 - **Browser tests:** Playwright's virtual authenticator (`CDP WebAuthn.addVirtualAuthenticator`) drives the JS client, the admin UI and the example app end to end. This is the one test that proves the options pass to the real browser API unchanged. It runs with the existing e2e jobs (`admin-ui-e2e`).
 - **Clients:** JS tests use a mocked `navigator.credentials`; Dart tests use the callback; Go and Python tests use the software authenticator against a running server.
@@ -369,26 +369,72 @@ One commit before any passkey code, with the existing tests unchanged and passin
 4. **One list of methods:** the challenge's `methods` and the reauth `methods` are built from `SecondFactorsOf`, not written out.
 5. **One challenge writer:** `issueChallenge` and `issueConsentChallenge` share a helper that owns the TTL, hashing and single-use rules; the passkey ceremony uses it with an extra `Ceremony []byte` field for the library's session data.
 
-This is a refactor of code that already has tests; it does not need passkeys to be justified, and it removes the duplication the next factor would otherwise copy.
+This is a refactor of code that already has tests; it does not need passkeys to be justified, and it removes the duplication the next factor would otherwise copy. Item 5 is also the seam the passkey package uses for its ceremony state (§14.4).
 
-### 14.4 Where the passkey code sits
+### 14.4 The pilot: `internal/auth/passkey` as its own package
 
+`internal/auth` is one package with one type (`Users`, 484 methods) and one 209-method `Store`; Go does not allow the methods of one type in two packages, so a real split means separate services with narrow interfaces, not moved files. Doing that for the whole package is a large change to security-critical code ([§17](#17-alternatives-considered)). Passkeys are new, so they can be written that way from the start at no migration cost, and the result tells us whether to split more.
+
+**Split of responsibilities**
+
+| In `internal/auth/passkey` (the leaf) | In `internal/auth` (the glue) |
+|---|---|
+| `Config` (`rp_id`, `rp_name`, origins) and its validation | reading `realm.yaml` into `passkey.Config`, the startup checks that involve other settings (`sign_in`, `mfa`) |
+| the `go-webauthn` wrapper: `BeginRegistration`, `FinishRegistration`, `BeginLogin`, `FinishLogin` (with and without a known user), user verification, origin and `rp_id` checks, counter rule (§6.3) | the three exits: `finishSignIn` (first factor), the `passkey` case in `VerifyMFA`, the `passkey` case in `Reauthenticate` |
+| credential model and the `Store` for it (add, list, by credential id, update counter and flags, delete, count, user handle, user by handle) | the throttle and per-user lock, audit events, `security-notice` emails, revocation, `last_sign_in_method` and role guards, export and erase |
+| the in-memory store and the software authenticator (`passkey/passkeytest`) | organization membership checks (§6.2) |
+
+The leaf knows nothing about sessions, MFA, throttling, email or organizations. It returns a result (user, credential, flags, whether the counter regressed) and the glue decides what that means. That keeps the interface small and the security decisions in one place.
+
+**Dependencies of the leaf** (all passed in, none imported from `auth`):
+
+```go
+package passkey
+
+type Store interface {                  // eight methods, implemented by mongodb and the in-memory store
+    Add(ctx context.Context, c Credential) error
+    ByCredentialID(ctx context.Context, id []byte) (Credential, error)
+    ListByUser(ctx context.Context, userID string) ([]Credential, error)
+    Update(ctx context.Context, id []byte, u Update) error      // counter, last used, flags
+    Delete(ctx context.Context, userID, id string) error
+    CountByUser(ctx context.Context, userID string) (int, error)
+    UserHandle(ctx context.Context, userID string) ([]byte, error) // get or create
+    UserByHandle(ctx context.Context, handle []byte) (string, error)
+}
+
+type Ceremonies interface {             // where the library's session data waits between the two calls
+    Put(ctx context.Context, kind string, data []byte, userID string, ttl time.Duration) (id string, err error)
+    Claim(ctx context.Context, id, kind string) (data []byte, userID string, err error) // single use
+}
 ```
-internal/auth/
-  passkeys.go          the ceremonies: begin/finish for registration and for assertion
-  passkeys_manage.go   list, rename, remove, limits, notices (like mfa_manage.go)
-  mfa.go, reauth.go    each gains one case: method "passkey" calls verifyAssertion
-```
 
-- **One verification, three exits.** `verifyAssertion(ctx, challenge, credential, expectedUser)` is the only place that checks origin, `rp_id`, user verification, challenge, signature, counter and the throttle. What differs is what happens next: the **first factor** goes to `finishSignIn` (§6.1), the **second factor** continues `VerifyMFA`, **reauth** returns a grant.
+`Service` is built from `Config`, `Store`, `Ceremonies` and a clock. `auth.Store` embeds `passkey.Store`, so there is still one concrete implementation per backend, but the leaf sees eight methods instead of 209. `Ceremonies` is backed by the shared challenge writer from P0 (§14.3, item 5), which is why that step comes first.
+
+**Direction of imports:** `auth` imports `passkey`; `passkey` imports only the standard library and `go-webauthn`. The `registry` package parses `passkeys:` into `passkey.Config` (a leaf import, no cycle). `httpapi` imports `auth`, and `passkey` only for the credential shapes in responses.
+
+**Boundary test:** a test in `passkey` (the same idea as `authcore/deps_test.go`) fails if the package imports `internal/auth`, `internal/mongodb`, `internal/httpapi` or the MongoDB driver.
+
+**Tests get smaller.** The leaf is tested alone with its in-memory store and the software authenticator: registration, assertion, replay, wrong origin, wrong `rp_id`, missing user verification, counter regression and unknown credentials, with no `auth` fixture, no users and no sessions. The `auth` tests then cover only the glue (the three exits, limits, notices, organizations) against a stub of the leaf's results.
+
+**Other rules of this layout**
+- **One verification, three exits.** `Service.FinishLogin` is the only place that checks origin, `rp_id`, user verification, challenge, signature and counter; the glue's `verifyAssertion` wraps it with the throttle and then hands the result to the first factor (§6.1), `VerifyMFA` or reauth.
 - **No new sign-in flow.** There is no parallel session-creation path: every session still starts in `startSessionWith`, so revocation, `methods`, scoping by organization and consents stay in one place.
 - **HTTP:** `internal/httpapi/auth_passkeys.go` next to `auth_mfa.go`, parsing and error mapping only.
 - **No plug-in framework.** A `Factor` interface with registration would be speculative for three methods. If a fourth second factor appears, it is introduced then, with the call sites already funneled through the functions in §14.3.
+
+**How we judge the pilot** (after P4, before splitting anything else):
+- `passkey` imports nothing from `auth`, and the boundary test stays green;
+- the leaf's tests run without any `auth` fixture;
+- the glue in `auth` is small and is mostly the three exits, not copies of logic;
+- no change in the leaf was needed to fix a bug that came from the core.
+
+If it holds, the next candidate is organizations (`orgs.go`, 1,204 lines and 44 methods, not a sign-in method) as `internal/orgs`, planned in its own design. If it creates more friction than it removes, we keep the rest as one package and have lost little. Password, magic links and OAuth stay where they are for now: they are small and tied to `afterFirstFactor`.
 
 ### 14.5 Keeping it consistent
 
 - **Classification test:** a test lists every `Method*` constant and fails when one is not classified in `IsSecondFactor`, so a new method cannot be added without deciding what it counts as.
 - **Entry-point test:** a table test lists the sign-in entry points (password, magic link, OAuth, organization sign-in, passkey) and asserts each ends in `finishSignIn`, so none creates a session on its own.
+- **Boundary test:** `passkey` may not import `auth`, the MongoDB driver or `httpapi` (§14.4).
 - **Invariant tests for the matrix:** passkey as first factor, second factor and reauth, each with and without organizations, with consents pending, with a banned user and with `required_roles`, run on the software authenticator (§12).
 - **A recipe in the code:** a comment at `afterFirstFactor` says how to add a first factor (prove it, call `afterFirstFactor`, or `finishSignIn` when it already includes user verification) and a second factor (classify it, add it to `SecondFactorsOf`, add a case to `VerifyMFA` and `Reauthenticate`).
 - **The older design points here:** a note at the top of [mfa-passwordless.md](./mfa-passwordless.md) says it is extended by this design, as [scoped-sessions.md](./scoped-sessions.md) does.
@@ -405,7 +451,7 @@ Each is one step and one commit; docs and tests are in the same commit.
 | # | Step | Contents |
 |---|---|---|
 | P0 | Prepare the auth code | §14.3: `SecondFactorsOf`, `IsSecondFactor`, `Proof`, one list of methods, one challenge writer; no behavior change |
-| P1 | Foundation | `passkeys:` config and startup checks, `go-webauthn` dependency, storage and indexes, user handle, the software authenticator in `authtest` |
+| P1 | Foundation | the `internal/auth/passkey` package (§14.4): `Config` and startup checks, `go-webauthn` dependency, `Store` and `Ceremonies`, the in-memory store and the software authenticator in `passkeytest`, the boundary test; the Mongo store and indexes, the user handle |
 | P2 | Register and manage | the registration ceremony, `GET/PATCH/DELETE /_auth/passkeys`, limits, security notices, export and erase, audit events, OpenAPI |
 | P3 | First factor | `passkey/login/*` and the org-scoped routes, sessions with `methods`/`mfa`, counter rule, `user.passkey_synced` in rules and functions |
 | P4 | Second factor and reauth | `mfa/passkey/*`, `mfa/verify` with `credential`, forced enrollment, role requirement, reauth method, admin reset |
@@ -435,9 +481,12 @@ P1 to P4 are the server and can ship together as a release; P5 is the first thin
 - **Storing attestation statements or certificates:** rejected; privacy cost and no use.
 - **The PRF extension (keys derived from passkeys for field encryption):** out of scope; interesting for [field-encryption.md](./field-encryption.md) later, not for sign-in.
 - **Removing the password when a passkey is added:** rejected; users choose, and `last_sign_in_method` protects them.
+- **Splitting the whole `auth` package now** (password, magic link, OAuth, organizations, passkeys as packages): rejected for this milestone. One type (`Users`, 484 methods) and one 209-method `Store` are shared by every feature, so a real split needs per-feature services, split store interfaces and a lower shared layer for sessions, audit and throttle, across 255 importing files. That is a project of its own. The pilot (§14.4) tests the pattern on new code first.
+- **Passkey code inside `auth` as more methods on `Users`:** rejected; it would be the fifth feature to reach into the same internals, and the protocol part has no need to.
 
 ## 18. Follow-ups
 
+- Decide on further splits after the pilot (§14.4): organizations first, as `internal/orgs`, in its own design.
 - Passkey sign-up with a verified email (question 3).
 - `passkeys.attestation` and an AAGUID allow-list.
 - `passkeys.require_second_factor` (question 2).
