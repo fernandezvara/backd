@@ -4,6 +4,12 @@ All notable changes to `backd` and to its JavaScript client `backd-js`, which ar
 
 Until a stable release is declared, a minor release may have breaking changes; they are listed first.
 
+## Unreleased
+
+### Changed
+
+- **Documentation: "Is backd for you?"** A new page next to Getting started says where `backd` fits and where it doesn't, how it compares with other backends, what it does not do yet (each with what to do meanwhile and its issue) and what was decided against, and states the 0.x stability. The docs home, Getting started and the README link to it.
+
 ## 0.9.9
 
 A release of updated dependencies; nothing changes in the data, the indexes, the configuration or the command line.

@@ -93,6 +93,7 @@ Realms with `auth: disabled` are open to anyone who can reach `backd`: never exp
 
 | I want to… | Go to |
 |---|---|
+| Check that backd fits, and see what it doesn't do | [Is backd for you?](../is-backd-for-you/) |
 | Run a realm in a few commands: binary, template, compose | [Quickstart](../build/quickstart/) |
 | Build a whole app, chapter by chapter | [Tutorial](../tutorial/) |
 | Describe my data and use the API: schemas, auth, functions, files, push | [Build](../build/) |

@@ -53,6 +53,7 @@ BACKD_VERSION=local make dev-build && BACKD_VERSION=local make dev-examples   # 
 
 | I want to… | Go to |
 |---|---|
+| Find out whether backd fits, and what it doesn't do | [Is backd for you?](https://fernandezvara.github.io/backd/docs/is-backd-for-you/) |
 | Understand what backd is | [Getting started](https://fernandezvara.github.io/backd/docs/getting-started/) |
 | Fix an error I got | [Troubleshooting](https://fernandezvara.github.io/backd/docs/troubleshooting/) |
 | Run a realm end to end | [Quickstart](https://fernandezvara.github.io/backd/docs/build/quickstart/) |

@@ -16,6 +16,7 @@ Realms with `auth: disabled` are open to anyone who can reach `backd`: never exp
 
 | I want to… | Go to |
 |---|---|
+| Find out whether backd fits my project | [Is backd for you?](is-backd-for-you/) |
 | Try it in a few minutes | [Getting started](getting-started/) |
 | Build a whole app, chapter by chapter | [Tutorial](tutorial/) |
 | Build my own backend: schemas, HTTP API, users, functions, files, push | [Build](build/) |
