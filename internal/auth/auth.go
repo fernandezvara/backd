@@ -11,6 +11,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"github.com/fernandezvara/backd/internal/auth/passkey"
 	"time"
 
 	"github.com/fernandezvara/backd/internal/appconfig"
@@ -132,6 +133,9 @@ var (
 
 // Store persists users, identities and sessions of one realm.
 type Store interface {
+	// The passkeys of the users (the leaf package's eight methods).
+	passkey.Store
+
 	// CreateUser inserts a user; ErrEmailTaken if the email exists.
 	CreateUser(ctx context.Context, u User) error
 	UserByEmail(ctx context.Context, email string) (User, error)

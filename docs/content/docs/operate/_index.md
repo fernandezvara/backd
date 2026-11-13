@@ -148,6 +148,7 @@ Each realm with an `auth` section has a system database named `<realm>___system`
 | `auth_challenges` | the steps between a first factor and a session: a [second factor](../build/auth/mfa/) to give; hashed, used once, 5 minutes | `expires_at` (TTL), `user_id` |
 | `devices` | the [push devices](../build/push/devices/) users registered: the token sealed with the realm's key, looked up by its hash | `token_hash` (unique), `user_id`, `session_id`, `last_seen` |
 | `mfa` | one document per user with a second factor: the TOTP secret (encrypted) and the recovery codes (keyed hashes) | `_id` is the user |
+| `passkeys` | one document per registered passkey: the authenticator's credential id, its public key and flags, the relying party id it was registered under (public data, no secret) | `_id` is backd's id; `credential_id` is unique |
 | `idempotency` | [`Idempotency-Key` claims](../build/functions/calling/#idempotency): scoped to the function and caller, a sync call's stored response or an async call's job id | `expires_at` (TTL) |
 
 Each collection has a `$jsonSchema` validator that checks its required fields and their types. The TTL indexes make MongoDB delete expired sessions, invitations, counters, audit records, invocation records, jobs and idempotency claims automatically. If one of these indexes exists with different options (for example `expires_at` without TTL, so sessions would never expire), `apply` and `verify` fail and name it; drop the index and let `backd` recreate it.

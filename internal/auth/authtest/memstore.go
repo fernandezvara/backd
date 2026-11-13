@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"github.com/fernandezvara/backd/internal/auth/passkey/passkeytest"
 	"maps"
 	"slices"
 	"sort"
@@ -21,6 +22,9 @@ import (
 type MemStore struct {
 	// MemStore keeps the app configuration state and history.
 	appconfig.MemStore
+
+	// passkeys keeps the passkeys and the users' handles.
+	passkeys *passkeytest.Store
 
 	mu          sync.Mutex
 	portable    map[string]map[string]map[string]any // collection -> id -> raw document (SeedPortable)
@@ -60,7 +64,7 @@ type MemStore struct {
 
 // NewMemStore returns an empty store.
 func NewMemStore() *MemStore {
-	return &MemStore{users: map[string]auth.User{}, identities: map[string]auth.Identity{}, sessions: map[string]auth.Session{}, keys: map[string]auth.APIKey{}, attempts: map[string]memAttempts{}, invites: map[string]auth.Invitation{}, secrets: map[string]auth.Secret{}, schedules: map[string]auth.ScheduleState{}, checks: map[string]auth.CheckReport{}, journal: map[string]auth.FileJournalEntry{}, oauthStates: map[string]auth.OAuthState{}, loginCodes: map[string]auth.LoginCode{}, deletions: map[string]auth.FileDeletion{}, jobs: map[string]memJob{}, idempotency: map[string]auth.IdempotencyRecord{}}
+	return &MemStore{passkeys: passkeytest.NewStore(), users: map[string]auth.User{}, identities: map[string]auth.Identity{}, sessions: map[string]auth.Session{}, keys: map[string]auth.APIKey{}, attempts: map[string]memAttempts{}, invites: map[string]auth.Invitation{}, secrets: map[string]auth.Secret{}, schedules: map[string]auth.ScheduleState{}, checks: map[string]auth.CheckReport{}, journal: map[string]auth.FileJournalEntry{}, oauthStates: map[string]auth.OAuthState{}, loginCodes: map[string]auth.LoginCode{}, deletions: map[string]auth.FileDeletion{}, jobs: map[string]memJob{}, idempotency: map[string]auth.IdempotencyRecord{}}
 }
 
 func secretKey(scope, name string) string { return scope + "\x00" + name }

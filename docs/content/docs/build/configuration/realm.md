@@ -82,6 +82,7 @@ Every realm needs an `auth` key: either `auth: disabled` (no authentication, for
 | `push` | none (no push) | Push notifications: the platforms and their providers, the web subscription hosts and the device limits. Needs `BACKD_SECRETS_KEY`. See [Push notifications](../../push/) |
 | `auth.sign_in.allowed_redirects` | `email.allowed_redirects` | Origins and app schemes a provider sign-in may send the user back to |
 | `auth.sign_in.app_url` | none | Where a sign-in goes back to when it has no `redirect_to`; within the allowed redirects |
+| `auth.passkeys` | none (off) | Settings for passkeys (`enabled`, `rp_id`, `rp_name`, `origins`). **Reserved:** the settings are read and checked at startup, and the credentials can be stored, but no route signs in or registers with a passkey yet. `rp_id` is the domain passkeys are bound to and cannot change later without losing every registered passkey; origins are `https://` (http only for localhost with `BACKD_DEV`), within `rp_id` and within `auth.sign_in`. See the commented section of `backd template realm`. |
 | `auth.totp.enabled` | `true` | `false`: users can't turn a second factor on (users who have one are still asked for it). See [Multi-factor authentication](../../auth/mfa/) |
 | `auth.totp.issuer` | the realm's name | The name authenticator apps show for the account |
 | `auth.magic_link.enabled` | `false` | Let users sign in with a link or a code emailed to them (needs `email:` and `BACKD_SECRETS_KEY`). See [Magic links](../../auth/magic-links/) |

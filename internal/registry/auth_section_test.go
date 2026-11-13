@@ -108,7 +108,7 @@ func TestRolesListTheirStrategies(t *testing.T) {
 }
 
 func TestPasskeysSection(t *testing.T) {
-	ok := "auth:\n  strategies:\n    web: [password]\n  passkeys:\n    enabled: true\n    rp_id: example.com\n    rp_name: Example\n    origins: [https://app.example.com]\n"
+	ok := "auth:\n  strategies:\n    web: [password]\n  sign_in:\n    allowed_redirects: [https://app.example.com]\n  passkeys:\n    enabled: true\n    rp_id: example.com\n    rp_name: Example\n    origins: [https://app.example.com]\n"
 	s, errs := parseRealmSettings([]byte(ok))
 	if len(errs) > 0 {
 		t.Fatal(errs)
@@ -118,6 +118,10 @@ func TestPasskeysSection(t *testing.T) {
 	}
 	if got := authErrors(t, strings.Replace(ok, "origins: [https://app.example.com]", "origins: [https://other.test]", 1)); !strings.Contains(got, "rp_id") {
 		t.Errorf("an origin outside rp_id: %q", got)
+	}
+	// An origin outside auth.sign_in is refused too.
+	if got := authErrors(t, strings.Replace(ok, "origins: [https://app.example.com]", "origins: [https://app.example.com, https://admin.example.com]", 1)); !strings.Contains(got, "must be within auth.sign_in.allowed_redirects") {
+		t.Errorf("an origin outside sign_in: %q", got)
 	}
 	if got := authErrors(t, strings.Replace(ok, "    rp_id: example.com\n", "", 1)); !strings.Contains(got, "rp_id") {
 		t.Errorf("missing rp_id: %q", got)
