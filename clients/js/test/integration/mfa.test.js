@@ -51,7 +51,7 @@ test('a second factor: enrol, sign in with a code, then with a recovery code', {
 test('magic link: a new account by code, then a second factor is asked for', { skip }, async () => {
   const address = email('link')
   const c = mailClient()
-  const asked = await c.auth.magicLink.request(address, { redirectTo: 'http://localhost:5173/in' })
+  const asked = await c.auth.magicLink.request(address, { redirectTo: 'http://localhost:5173/in', strategy: 'magic_link' })
   assert.ok(asked.requestId)
   const { code } = await mailCode('magic-link', address)
   await assert.rejects(c.auth.magicLink.verifyCode('000000'), (/** @type {any} */ e) => e.code === 'invalid_code')
