@@ -420,12 +420,8 @@ func (b *builder) prune() map[string]any {
 			}
 		}
 	}
+	b.typeStrategies()
 	visit(b.paths)
-	// The realm's strategy names are part of the document whenever it has them: clients read the
-	// enum, even though the generic contract types `strategy` as a plain string.
-	if _, ok := b.extra["Strategy"]; ok {
-		visit(map[string]any{"$ref": "#/components/schemas/Strategy"})
-	}
 	out := map[string]any{}
 	for kind, names := range keep {
 		m := map[string]any{}
@@ -465,4 +461,34 @@ func (b *builder) addStrategy() {
 		"type": "string", "enum": names,
 		"description": "A sign-in strategy of this realm: the value of `strategy` in the sign-in calls (`GET /_auth/strategies` lists their methods) and of a session's `strategy`.",
 	}
+}
+
+// typeStrategies makes every `strategy` property of the contract (the sign-in calls, the sessions
+// and the challenges) the realm's Strategy enum, so clients generated from the document know the names.
+func (b *builder) typeStrategies() {
+	if _, ok := b.extra["Strategy"]; !ok {
+		return
+	}
+	var walk func(v any)
+	walk = func(v any) {
+		switch t := v.(type) {
+		case map[string]any:
+			if props, ok := t["properties"].(map[string]any); ok {
+				if p, ok := props["strategy"].(map[string]any); ok && p["$ref"] == nil && p["type"] == "string" {
+					props["strategy"] = map[string]any{"$ref": "#/components/schemas/Strategy"}
+				}
+			}
+			for _, e := range t {
+				walk(e)
+			}
+		case []any:
+			for _, e := range t {
+				walk(e)
+			}
+		}
+	}
+	walk(b.paths)
+	walk(b.components("schemas"))
+	walk(b.extra)
+	walk(b.responses)
 }
