@@ -22,6 +22,7 @@ func newLinkFixture(t *testing.T) *linkFixture {
 	t.Helper()
 	svc, store, clock, _ := enrollFixture(t)
 	svc.Settings.MagicLink = registry.MagicLinkSettings{Enabled: true}
+	addFirstStrategies(&svc.Settings)
 	svc.Settings.SignInAppURL = "https://app.example/in"
 	return &linkFixture{svc: svc, store: store, clock: clock}
 }
@@ -275,6 +276,7 @@ func TestMagicLinkEndsInTheSecondStepForAUserWithMFA(t *testing.T) {
 	f.svc.Cipher, _ = NewSecretCipher([]byte("01234567890123456789012345678901"))
 	mf := &mfaFixture{svc: f.svc, store: f.store, clock: f.clock, user: u}
 	mf.secret, mf.codes = mf.enroll(t, u)
+	f.svc.Settings.Strategies = []registry.Strategy{{Name: "magic_link", Methods: []string{"magic_link", "totp"}}}
 	verifier, challenge, _ := NewPKCE()
 	id, _, code := f.ask(t, "ada@example.com", challenge)
 	out, err := f.svc.VerifyMagicLinkCode(ctx, id, code, verifier, "")

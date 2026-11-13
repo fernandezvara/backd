@@ -28,12 +28,12 @@ func (a *adminAPI) mfaOverview(w http.ResponseWriter, r *http.Request) {
 		}
 		items[i] = map[string]any{"id": u.ID, "email": u.Email, "roles": roles}
 	}
-	roles := m.RequiredRoles
+	roles, everyone := svc.Settings.TOTPRoles()
 	if roles == nil {
 		roles = []string{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"enabled": !m.Off, "required_all": m.RequiredAll, "required_roles": roles,
+		"enabled": !m.Off, "required_all": everyone, "required_roles": roles,
 		"users_without_mfa": items, "total_without_mfa": total,
 	})
 }

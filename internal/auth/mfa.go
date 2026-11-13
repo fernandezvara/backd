@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -94,6 +95,8 @@ type AuthChallenge struct {
 	UserID string
 	// Factor is the first factor that was proved: ProviderPassword, a provider's name, ...
 	Factor string
+	// Strategy is the strategy the sign-in follows; Methods (below) are the steps done so far.
+	Strategy string
 	// NewUser and Profile are what a provider sign-in hands over with the session: kept
 	// until the second step ends it.
 	NewUser bool
@@ -145,6 +148,10 @@ type IssuedChallenge struct {
 	Token   string
 	Kind    string
 	Methods []string
+	// Next are the methods the person may use now (totp; a recovery code stands in for it)
+	// and Strategy the strategy the sign-in follows.
+	Next     []string
+	Strategy string
 	// Consents are the consents and versions a ChallengeConsent waits for.
 	Consents []registry.ConsentRef
 }
@@ -155,33 +162,90 @@ type handover struct {
 	profile map[string]string
 	// org is the organization whose connection signed the person in; the session records it.
 	org string
+	// strategy is the name of the strategy the sign-in follows, "" until it is chosen.
+	strategy string
 }
 
-// afterFirstFactor decides what a proved first factor leads to: a session, or a challenge
-// when the user has a second factor (or must set one up). methods are recorded on the
-// session; the first factor is always the first of them.
+// The strategy engine (design/auth-strategies.md §4). Every way of signing in ends in
+// afterFirstFactor once its first method is proved; the strategy then says what else is
+// needed, one step at a time (nextStep), until every method is done and the session starts.
+//
+// To add a method: classify it in registry.methodSteps (first step, later step or both; a test
+// fails until it is), give its first step a route that calls afterFirstFactor with the method's
+// name, and handle it as a later step in nextStep (a challenge kind, a route that verifies it
+// and calls nextStep again). A table test lists the entry points that must end here.
+
+// ErrStrategyRequired and ErrUnknownStrategy answer a first-step call that names no strategy
+// when several start with its method, and one that names a strategy that does not exist or
+// starts with another method.
+var (
+	ErrStrategyRequired = registry.ErrStrategyRequired
+	ErrUnknownStrategy  = registry.ErrUnknownStrategy
+)
+
+// ChooseStrategy resolves the strategy of a first-step call before anything about the person
+// is looked at: first is the method of the call (password, magic_link or a provider's name).
+func (s *Users) ChooseStrategy(name, first string) (registry.Strategy, error) {
+	return s.Settings.StrategyFor(name, first)
+}
+
+// strategyMethod is the name a strategy gives to the first factor a session records: the magic
+// link is recorded as "link" and listed as magic_link.
+func strategyMethod(factor string) string {
+	if factor == MagicLinkLoginMethod {
+		return registry.MethodMagicLink
+	}
+	return factor
+}
+
+// isConnectionFactor says a sign-in came through an organization's own connection, which is
+// not a strategy (design/auth-strategies.md §8).
+func isConnectionFactor(factor string) bool { return strings.HasPrefix(factor, "sso:") }
+
+// afterFirstFactor decides what a proved first method leads to: a session, or a challenge for
+// the next step of the strategy. methods are recorded on the session; the first factor is
+// always the first of them.
 func (s *Users) afterFirstFactor(ctx context.Context, u User, factor string, h handover) (Redeemed, error) {
-	_, err := s.Store.MFAOf(ctx, u.ID)
-	enrolled := err == nil
-	if err != nil && !errors.Is(err, ErrNotFound) {
+	if isConnectionFactor(factor) {
+		return s.finishSignIn(ctx, u, []string{factor}, h)
+	}
+	st, err := s.Settings.StrategyFor(h.strategy, strategyMethod(factor))
+	if err != nil {
 		return Redeemed{}, err
 	}
-	switch {
-	case enrolled:
-		return s.issueChallenge(ctx, u, ChallengeMFA, factor, h)
-	case s.Settings.MFA.Required(u.Roles):
-		return s.issueChallenge(ctx, u, ChallengeEnroll, factor, h)
-	}
-	return s.finishSignIn(ctx, u, []string{factor}, h)
+	h.strategy = st.Name
+	return s.nextStep(ctx, u, st, []string{factor}, h)
 }
 
-func (s *Users) issueChallenge(ctx context.Context, u User, kind, factor string, h handover) (Redeemed, error) {
+// nextStep is the engine: done are the methods completed, in order. With every method of the
+// strategy done the session starts; otherwise the person gets a challenge for the next one.
+func (s *Users) nextStep(ctx context.Context, u User, st registry.Strategy, done []string, h handover) (Redeemed, error) {
+	if len(done) >= len(st.Methods) {
+		return s.finishSignIn(ctx, u, done, h)
+	}
+	switch st.Methods[len(done)] {
+	case MethodTOTP:
+		_, err := s.Store.MFAOf(ctx, u.ID)
+		if err == nil {
+			return s.issueChallenge(ctx, u, ChallengeMFA, done, h)
+		}
+		if !errors.Is(err, ErrNotFound) {
+			return Redeemed{}, err
+		}
+		// No authenticator yet: setting one up is part of signing in.
+		return s.issueChallenge(ctx, u, ChallengeEnroll, done, h)
+	}
+	return Redeemed{}, fmt.Errorf("strategy %q: the step %q is not supported", st.Name, st.Methods[len(done)])
+}
+
+func (s *Users) issueChallenge(ctx context.Context, u User, kind string, done []string, h handover) (Redeemed, error) {
+	factor := done[0]
 	token, err := randomValue()
 	if err != nil {
 		return Redeemed{}, err
 	}
 	now := s.now()
-	c := AuthChallenge{ID: HashToken(token), Kind: kind, UserID: u.ID, Factor: factor, NewUser: h.newUser, ViaOrg: h.org, Attempts: 0, CreatedAt: now, ExpiresAt: now.Add(ChallengeTTL)}
+	c := AuthChallenge{ID: HashToken(token), Kind: kind, UserID: u.ID, Factor: factor, Strategy: h.strategy, Methods: done, NewUser: h.newUser, ViaOrg: h.org, Attempts: 0, CreatedAt: now, ExpiresAt: now.Add(ChallengeTTL)}
 	if h.newUser && len(h.profile) > 0 {
 		c.Profile = h.profile
 	}
@@ -191,7 +255,9 @@ func (s *Users) issueChallenge(ctx context.Context, u User, kind, factor string,
 	ic := &IssuedChallenge{Token: token, Kind: kind}
 	if kind == ChallengeMFA {
 		ic.Methods = []string{MethodTOTP, MethodRecovery}
+		ic.Next = []string{MethodTOTP}
 	}
+	ic.Strategy = h.strategy
 	return Redeemed{Challenge: ic}, nil
 }
 
@@ -261,7 +327,16 @@ func (s *Users) VerifyMFA(ctx context.Context, challenge, method, code, ip strin
 	if method == MethodRecovery {
 		second = "recovery"
 	}
-	out, err := s.finishSignIn(ctx, u, []string{c.Factor, second}, handover{newUser: c.NewUser, profile: c.Profile, org: c.ViaOrg})
+	st, ok := s.Settings.StrategyByName(c.Strategy)
+	if !ok {
+		// An unnamed strategy (settings built by hand) or one removed from the configuration
+		// while the challenge waited: the steps it had are the ones recorded.
+		if c.Strategy != "" {
+			return Verified{}, ErrInvalidChallenge
+		}
+		st = registry.Strategy{Methods: append(slices.Clone(doneOf(c)), MethodTOTP)}
+	}
+	out, err := s.nextStep(ctx, u, st, append(slices.Clone(doneOf(c)), second), handover{newUser: c.NewUser, profile: c.Profile, org: c.ViaOrg, strategy: c.Strategy})
 	if err != nil {
 		return Verified{}, err
 	}
@@ -280,6 +355,14 @@ type Verified struct {
 	Redeemed
 	Factor string // the first factor
 	Method string // the second
+}
+
+// doneOf are the methods a challenge has behind it: the first factor when none are recorded.
+func doneOf(c AuthChallenge) []string {
+	if len(c.Methods) > 0 {
+		return c.Methods
+	}
+	return []string{c.Factor}
 }
 
 func mfaUserKey(userID string) string { return "mfa:user:" + userID }

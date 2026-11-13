@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"image/png"
+	"slices"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/pquerna/otp/totp"
 
 	"github.com/fernandezvara/backd/internal/email"
+	"github.com/fernandezvara/backd/internal/registry"
 )
 
 // TOTPSetupTTL is how long a TOTP secret waits for its first code.
@@ -47,7 +49,7 @@ type MFAStatus struct {
 
 // MFAStatusOf reports a user's second-factor state.
 func (s *Users) MFAStatusOf(ctx context.Context, u User) (MFAStatus, error) {
-	st := MFAStatus{Available: !s.Settings.MFA.Off && s.Cipher != nil, Methods: []string{}, Required: s.Settings.MFA.Required(u.Roles)}
+	st := MFAStatus{Available: !s.Settings.MFA.Off && s.Cipher != nil, Methods: []string{}, Required: s.Settings.TOTPRequired(u.Roles)}
 	rec, err := s.Store.MFAOf(ctx, u.ID)
 	if errors.Is(err, ErrNotFound) {
 		return st, nil
@@ -63,7 +65,7 @@ func (s *Users) MFAStatusOf(ctx context.Context, u User) (MFAStatus, error) {
 // and who have none, oldest first by address, and says how many there are in all. Erased and
 // disabled users are not counted: they can't sign in.
 func (s *Users) UsersWithoutRequiredMFA(ctx context.Context, limit int) ([]User, int, error) {
-	if !s.Settings.MFA.RequiredAll && len(s.Settings.MFA.RequiredRoles) == 0 {
+	if roles, everyone := s.Settings.TOTPRoles(); !everyone && len(roles) == 0 {
 		return nil, 0, nil
 	}
 	have, err := s.Store.MFAUserIDs(ctx)
@@ -83,7 +85,7 @@ func (s *Users) UsersWithoutRequiredMFA(ctx context.Context, limit int) ([]User,
 			return nil, 0, err
 		}
 		for _, u := range page {
-			if u.Disabled || !u.ErasedAt.IsZero() || enrolled[u.ID] || !s.Settings.MFA.Required(u.Roles) {
+			if u.Disabled || !u.ErasedAt.IsZero() || enrolled[u.ID] || !s.Settings.TOTPRequired(u.Roles) {
 				continue
 			}
 			total++
@@ -302,7 +304,14 @@ func (s *Users) CompleteEnrollment(ctx context.Context, challenge, setupID, code
 	} else if err != nil {
 		return Verified{}, nil, err
 	}
-	out, err := s.finishSignIn(ctx, u, []string{c.Factor, MethodTOTP}, handover{newUser: c.NewUser, profile: c.Profile, org: c.ViaOrg})
+	st, ok := s.Settings.StrategyByName(c.Strategy)
+	if !ok {
+		if c.Strategy != "" {
+			return Verified{}, nil, ErrInvalidChallenge
+		}
+		st = registry.Strategy{Methods: append(slices.Clone(doneOf(c)), MethodTOTP)}
+	}
+	out, err := s.nextStep(ctx, u, st, append(slices.Clone(doneOf(c)), MethodTOTP), handover{newUser: c.NewUser, profile: c.Profile, org: c.ViaOrg, strategy: c.Strategy})
 	if err != nil {
 		return Verified{}, nil, err
 	}
@@ -312,7 +321,7 @@ func (s *Users) CompleteEnrollment(ctx context.Context, challenge, setupID, code
 // DisableMFA removes the user's second factor and recovery codes; refused while a role of
 // the user requires one.
 func (s *Users) DisableMFA(ctx context.Context, u User) error {
-	if s.Settings.MFA.Required(u.Roles) {
+	if s.Settings.TOTPRequired(u.Roles) {
 		return ErrMFARequiredByRole
 	}
 	if _, err := s.Store.MFAOf(ctx, u.ID); errors.Is(err, ErrNotFound) {

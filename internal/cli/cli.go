@@ -116,6 +116,7 @@ func registerRemote(cfg *kli.Config) {
 		Config(func(cc *kli.CommandConfig) {
 			clicore.Remote(cc)
 			cmdutil.Optional(cc, "email", "the email to sign in with (asked for on a terminal)")
+			cmdutil.Optional(cc, "strategy", "the strategy to sign in with (needed when the realm has more than one that starts with the password)")
 			cmdutil.Boolean(cc, "magic-link", "sign in with a code sent to the email instead of a password (the realm needs magic_link)")
 		})
 	cfg.Command("logout").ShortHelp("end the stored session and forget it").

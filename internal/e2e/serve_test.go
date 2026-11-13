@@ -113,7 +113,7 @@ func TestTemplatesServeSample(t *testing.T) {
 			return c + "\n"
 		},
 	}}
-	if code := runAny([]string{"login", "--realm", realm, "--url", srv.URL, "--email", "ops@example.com"}, getenv, enrol, &loginOut, &loginErr); code != 0 {
+	if code := runAny([]string{"login", "--realm", realm, "--url", srv.URL, "--email", "ops@example.com", "--strategy", "admin_password"}, getenv, enrol, &loginOut, &loginErr); code != 0 {
 		t.Fatalf("login: exit %d: %s%s", code, loginOut.String(), loginErr.String())
 	}
 	// A key is made by a person who proves it is them again: the code of the next time step.

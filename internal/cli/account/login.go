@@ -17,7 +17,7 @@ import (
 )
 
 func LoginAction(c *kli.CommandContext) error {
-	return login(cmdutil.Str(c, "realm"), cmdutil.Str(c, "url"), cmdutil.Str(c, "email"), cmdutil.Flag(c, "magic-link"), c.Getenv, cmdutil.IOOf(c))
+	return login(cmdutil.Str(c, "realm"), cmdutil.Str(c, "url"), cmdutil.Str(c, "email"), cmdutil.Flag(c, "magic-link"), cmdutil.Str(c, "strategy"), c.Getenv, cmdutil.IOOf(c))
 }
 
 func LogoutAction(c *kli.CommandContext) error {
@@ -43,7 +43,7 @@ func sessionOf(s *client.Session) sessionAnswer {
 	return a
 }
 
-func login(realm, flagURL, email string, magicLink bool, getenv func(string) string, uio cmdutil.IO) error {
+func login(realm, flagURL, email string, magicLink bool, strategy string, getenv func(string) string, uio cmdutil.IO) error {
 	creds, path, err := clicore.LoadCredentials(getenv)
 	if err != nil {
 		return err
@@ -89,7 +89,7 @@ func login(realm, flagURL, email string, magicLink bool, getenv func(string) str
 		if err != nil {
 			return err
 		}
-		step, err := t.Client.Auth().SignIn(t.Ctx, client.SignInInput{Email: email, Password: pw})
+		step, err := t.Client.Auth().SignIn(t.Ctx, client.SignInInput{Email: email, Password: pw, Strategy: strategy})
 		if err != nil {
 			return err
 		}

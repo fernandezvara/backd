@@ -133,6 +133,7 @@ func TestEnrollingTOTP(t *testing.T) {
 		t.Errorf("setup when enabled: %v", err)
 	}
 	// The code that enabled it can't be used to sign in right after (the step is spent).
+	secondStep(&svc.Settings) // the strategy asks for the code, not the user's own TOTP
 	out, _ := svc.SignIn(ctx, "ada@example.com", mfaPassword, "")
 	if out.Challenge == nil {
 		t.Fatal("no challenge after enabling")
@@ -200,17 +201,18 @@ func TestDisablingAndRegenerating(t *testing.T) {
 	if err != nil || len(fresh) != RecoveryCodeCount || fresh[0] == old[0] {
 		t.Fatalf("regenerate: %v %v", fresh, err)
 	}
+	secondStep(&svc.Settings)
 	out, _ := svc.SignIn(ctx, "ada@example.com", mfaPassword, "")
 	var bad *InvalidCodeError
 	if _, err := svc.VerifyMFA(ctx, out.Challenge.Token, MethodRecovery, old[0], ""); !errors.As(err, &bad) {
 		t.Errorf("an old recovery code: %v", err)
 	}
 	// A role that requires MFA keeps it on.
-	svc.Settings.MFA.RequiredAll = true
+	secondStep(&svc.Settings)
 	if err := svc.DisableMFA(ctx, u); !errors.Is(err, ErrMFARequiredByRole) {
 		t.Errorf("disable when required: %v", err)
 	}
-	svc.Settings.MFA.RequiredAll = false
+	noSecondStep(&svc.Settings)
 	if err := svc.DisableMFA(ctx, u); err != nil {
 		t.Fatal(err)
 	}
@@ -240,6 +242,7 @@ func TestTurnedOffRealmRefusesEnrollmentButKeepsAsking(t *testing.T) {
 		t.Errorf("setup: %v", err)
 	}
 	// Turning the feature off never weakens an account that already has it.
+	secondStep(&svc.Settings)
 	out, err := svc.SignIn(ctx, "ada@example.com", mfaPassword, "")
 	if err != nil || out.Challenge == nil {
 		t.Errorf("sign-in with the feature off: %+v %v", out, err)
@@ -253,6 +256,7 @@ func TestWrongCodesAfterTheRightPasswordWarnTheUserOncePerHour(t *testing.T) {
 	if _, err := svc.ConfirmTOTP(ctx, u, "", setup.SetupID, totpAt(t, setup.Secret, *clock)); err != nil {
 		t.Fatal(err)
 	}
+	secondStep(&svc.Settings)
 	out, _ := svc.SignIn(ctx, "ada@example.com", mfaPassword, "")
 	for range 2 {
 		_, _ = svc.VerifyMFA(ctx, out.Challenge.Token, MethodTOTP, "000000", "")
@@ -285,7 +289,7 @@ func TestWrongCodesAfterTheRightPasswordWarnTheUserOncePerHour(t *testing.T) {
 func TestEnrollingFromASignInThatMustSetItUp(t *testing.T) {
 	ctx := context.Background()
 	svc, store, clock, u := enrollFixture(t)
-	svc.Settings.MFA.RequiredAll = true
+	secondStep(&svc.Settings)
 	sessions := func() int { s, _ := svc.UserSessions(ctx, u.ID); return len(s) }
 	out, err := svc.SignIn(ctx, "ada@example.com", mfaPassword, "")
 	if err != nil || out.Challenge == nil || out.Challenge.Kind != ChallengeEnroll {
@@ -331,7 +335,7 @@ func TestEnrollingFromASignInThatMustSetItUp(t *testing.T) {
 func TestEnrollmentChallengeAllowsFiveWrongCodes(t *testing.T) {
 	ctx := context.Background()
 	svc, _, clock, _ := enrollFixture(t)
-	svc.Settings.MFA.RequiredAll = true
+	secondStep(&svc.Settings)
 	out, _ := svc.SignIn(ctx, "ada@example.com", mfaPassword, "")
 	setup, _ := svc.BeginEnrollment(ctx, out.Challenge.Token)
 	for range MaxChallengeAttempts - 1 {
@@ -351,7 +355,7 @@ func TestEnrollmentChallengeAllowsFiveWrongCodes(t *testing.T) {
 func TestHandOverSurvivesEnrollment(t *testing.T) {
 	ctx := context.Background()
 	svc, _, clock, u := enrollFixture(t)
-	svc.Settings.MFA.RequiredAll = true
+	svc.Settings.Strategies = []registry.Strategy{{Name: "google_totp", Methods: []string{"google", "totp"}}}
 	out, err := svc.StartProviderSession(ctx, u, "google", true, map[string]string{"name": "Ada"})
 	if err != nil || out.Challenge == nil || out.Challenge.Kind != ChallengeEnroll {
 		t.Fatalf("native: %+v %v", out, err)
@@ -379,6 +383,7 @@ func TestResettingASecondFactor(t *testing.T) {
 	}
 	_, tok, _ := svc.Login(ctx, "ada@example.com", mfaPassword, "")
 	_ = tok
+	secondStep(&svc.Settings)
 	out, _ := svc.SignIn(ctx, "ada@example.com", mfaPassword, "")
 	// An administrator can't reset their own.
 	if err := svc.ResetMFA(ctx, u.ID, u.ID); !errors.Is(err, ErrSelfMFAReset) {
@@ -400,6 +405,7 @@ func TestResettingASecondFactor(t *testing.T) {
 	if sessions, _ := svc.UserSessions(ctx, u.ID); len(sessions) != 0 {
 		t.Errorf("sessions after the reset: %d", len(sessions))
 	}
+	noSecondStep(&svc.Settings)
 	if p, _, err := svc.Login(ctx, "ada@example.com", mfaPassword, ""); err != nil || p.Session.MFA {
 		t.Errorf("signing in after the reset: %v", err)
 	}
@@ -407,7 +413,7 @@ func TestResettingASecondFactor(t *testing.T) {
 		t.Errorf("no mfa-reset email in %s", got)
 	}
 	// In a required role they enrol again at the next sign-in.
-	svc.Settings.MFA.RequiredAll = true
+	secondStep(&svc.Settings)
 	if o, _ := svc.SignIn(ctx, "ada@example.com", mfaPassword, ""); o.Challenge == nil || o.Challenge.Kind != ChallengeEnroll {
 		t.Errorf("after the reset in a required role: %+v", o)
 	}

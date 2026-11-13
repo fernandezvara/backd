@@ -73,6 +73,7 @@ func setUpProviders(t *testing.T, f *rulesFixture) {
 		"apple":     {Name: "apple", ClientID: "com.acme.web", NativeClientIDs: []string{"com.acme.ios"}, TeamID: "ABCDE12345", KeyID: "XYZ9876543", PrivateKey: "APPLE_KEY", RevokeOnDelete: true},
 	}
 	f.svc.Settings.SignInRedirects = []string{"https://app.acme.example", "acme://"}
+	addFirstStrategies(&f.svc.Settings)
 }
 
 func googleUser(sub, email string, verified bool) map[string]any {

@@ -68,7 +68,7 @@ func (s *Users) SignUp(ctx context.Context, r SignupRequest) (SignupResult, erro
 	if s.Settings.Account.RequireVerifiedEmail && !u.EmailVerified {
 		return SignupResult{Pending: true}, nil
 	}
-	out, err := s.afterFirstFactor(ctx, u, ProviderPassword, handover{})
+	out, err := s.afterFirstFactor(ctx, u, ProviderPassword, handover{strategy: s.signupStrategy()})
 	if err != nil {
 		return SignupResult{}, err
 	}

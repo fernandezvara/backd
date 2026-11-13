@@ -79,7 +79,7 @@ func TestUnprotectedAdminRoles(t *testing.T) {
 	if got := unprotectedAdminRoles(s); len(got) != 1 || got[0] != "owner" {
 		t.Errorf("none required: %v", got)
 	}
-	s.MFA.RequiredRoles = []string{"owner"}
+	secondStep(&s, "owner")
 	if got := unprotectedAdminRoles(s); len(got) != 0 {
 		t.Errorf("owner required: %v", got)
 	}
@@ -281,5 +281,32 @@ func TestWarnAnonymousFunctionsWithoutRateLimit(t *testing.T) {
 		if strings.Contains(out, `"function":"shop/app/`+fn+`"`) {
 			t.Errorf("unexpected warning for shop/app/%s:\n%s", fn, out)
 		}
+	}
+}
+
+// secondStep makes sign-in need a totp step: of everyone when no role is named, else of the
+// holders of those roles, who accept only the strategy that has it.
+func secondStep(s *registry.RealmSettings, roles ...string) {
+	if len(roles) == 0 {
+		s.Strategies = []registry.Strategy{{Name: "password", Methods: []string{"password", "totp"}}}
+		return
+	}
+	s.Strategies = []registry.Strategy{{Name: "password", Methods: []string{"password"}}, {Name: "password_totp", Methods: []string{"password", "totp"}}}
+	if s.Roles == nil {
+		s.Roles = map[string]registry.Role{}
+	}
+	for _, r := range roles {
+		role := s.Roles[r]
+		role.Strategies = []string{"password_totp"}
+		s.Roles[r] = role
+	}
+}
+
+// noSecondStep undoes secondStep.
+func noSecondStep(s *registry.RealmSettings) {
+	s.Strategies = nil
+	for r, role := range s.Roles {
+		role.Strategies = nil
+		s.Roles[r] = role
 	}
 }

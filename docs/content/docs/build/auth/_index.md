@@ -21,7 +21,10 @@ auth:
 ```
 
 - The methods are `password`, `magic_link`, `totp` (never first), and the names of the providers in `auth.providers`.
-- A role can list the `strategies` it accepts (`roles.<name>.strategies`); a role that lists only strategies with a `totp` step needs a second factor from its holders ([Multi-factor authentication](mfa/#required-by-role)).
+- **Choosing one.** The sign-in routes take a `strategy` (`POST /_auth/login`, `POST /_auth/magic-link`, the provider routes, and the same under `/_auth/orgs/{org}/…`). It may be left out while exactly one strategy starts with that method; otherwise the answer is `400 strategy_required`. A name that does not exist or starts with another method is `400 unknown_strategy`. `GET /_auth/strategies` (no credentials) lists the names and their methods, so an app can draw its sign-in screen.
+- **Steps.** Every method must succeed, in order. After the first, a `totp` step answers with a challenge (`next: ["totp"]`) that `POST /_auth/mfa/verify` trades for the next step or the session; a person with no authenticator enrols as part of signing in ([Multi-factor authentication](mfa/)). A person's own authenticator never adds a step to a strategy that lacks `totp`.
+- **Roles.** A role can list the `strategies` it accepts (`roles.<name>.strategies`; none listed means all). A role is **active** in a session only if the session's strategy is one of them: `user.roles` in rules and functions, the admin API and the admin interface see the active roles only. A person who signs in with a strategy their role does not list still gets a session, without that role, and the answer's `roles_inactive` says which roles stayed off, so the app can offer a stronger way in. Listing is explicit: a stronger strategy does not carry a weaker one's roles unless the role lists it.
+- **The session** records its `strategy`, its `methods` and `mfa`.
 - `auth: disabled` runs a realm without authentication; a realm with neither is refused at startup. The keys that used to sit at the top of `realm.yaml` (`signup`, `sessions`, `password`, `login_throttle`, `providers`, `sign_in`, `magic_link`, `reauth`) now sit under `auth:`, and `mfa` is `auth.totp`; the old keys fail to start with a message that names the new place.
 
 ## Sign-in methods: providers

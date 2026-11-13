@@ -258,7 +258,7 @@ func TestConsentWithdrawalAndHistory(t *testing.T) {
 func TestEnrolmentKeepsTheRecoveryCodesWhenConsentsFollow(t *testing.T) {
 	f := consentFixture(t)
 	f.svc.Cipher, _ = auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
-	f.svc.Settings.MFA.RequiredAll = true
+	secondStep(&f.svc.Settings)
 	if _, err := f.svc.Create(t.Context(), "root@example.com", new("dev-p4ssw0rd!")); err != nil {
 		t.Fatal(err)
 	}

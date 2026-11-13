@@ -81,7 +81,8 @@ All request bodies are JSON objects sent with `Content-Type: application/json`. 
 | Method and path | Needs a session | Body | Success |
 |---|---|---|---|
 | `POST /_auth/signup` | no | `{"email", "password", "invitation"?, "locale"?, "redirect_to"?}` | `201` with a session, or `202` without one when the realm [requires a verified email](#email-verification) |
-| `POST /_auth/login` | no | `{"email", "password"}` | `200` with a session, or with a [challenge](../mfa/) when the user has a second factor |
+| `POST /_auth/login` | no | `{"email", "password", "strategy"?}` | `200` with a session, or with a [challenge](../mfa/) when the strategy has a second step; `400 strategy_required` / `unknown_strategy` ([strategies](../#strategies)) |
+| `GET /_auth/strategies` | no | none | `200 {"strategies": [{"name", "methods"}]}` |
 | `POST /_auth/magic-link` | no | `{"email", "code_challenge", "redirect_to"?}` | `202 {"request_id"}`, the same for every address: a [link and a code](../magic-links/) by email |
 | `POST /_auth/magic-link/verify` | no | `{"request_id", "code", "code_verifier"}` | `200` with a session (or a [challenge](../mfa/)): the code typed in the app that asked |
 | `POST /_auth/mfa/verify` | no | `{"challenge", "method", "code"}` | `200` with the session; the [second step](../mfa/) of a sign-in |
@@ -133,7 +134,7 @@ curl -X POST https://localhost:8443/v1/blog/_auth/login \
   -d '{"email": "ada@example.com", "password": "dev-p4ssw0rd!"}'
 ```
 
-Any failure returns the same `401 invalid_credentials`: unknown email, wrong password, a user without a password, or a disabled user. Repeated failures are slowed down (see [brute-force protection](#brute-force-protection)). Unknown emails take the same time to answer as known ones, so neither the response nor its timing reveals whether an email is registered.
+The session answer also says its `strategy` and `roles_inactive`: the roles the user holds that the strategy does not allow, which `user.roles` leaves out. A `strategy` that does not exist is refused with `400 unknown_strategy` before the password is looked at. Any failure of the password returns the same `401 invalid_credentials`: unknown email, wrong password, a user without a password, or a disabled user. Repeated failures are slowed down (see [brute-force protection](#brute-force-protection)). Unknown emails take the same time to answer as known ones, so neither the response nor its timing reveals whether an email is registered.
 
 A password that was **expired** (an administrator ran [`backd user expire-password`](../users/#expiring-a-password), or [every password was expired](../users/#expiring-every-password) after the day it was set) is refused only when it is the right one: `401 password_expired`, and the `password-expired` [email](../../functions/email/), with a link to choose a new password, is queued when the realm sends email, with the limits of a reset request. The same applies to proving yourself again with the password (`POST /_auth/reauth`), and to finishing a second step, an enrollment or the acceptance of consents that a password sign-in started before the passwords were expired: they end in the same answer. Setting a new password makes the account usable again; for a password expired for one user alone, that can be [changing it signed out](#change-the-password-signed-out).
 

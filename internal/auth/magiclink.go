@@ -64,6 +64,8 @@ type MagicLinkInput struct {
 	// are sent one, the session is scoped to it, and a new address never gets an account this way
 	// (design/scoped-sessions.md §5).
 	Org string
+	// Strategy is the strategy to sign in with ("" when the app names none).
+	Strategy string
 }
 
 // RequestMagicLink makes a request and asks for its email, returning the request id the
@@ -75,6 +77,11 @@ func (s *Users) RequestMagicLink(ctx context.Context, in MagicLinkInput) (string
 	if !s.Settings.MagicLink.Enabled || s.Settings.Email == nil {
 		return "", ErrMagicLinkDisabled
 	}
+	st, err := s.Settings.StrategyFor(in.Strategy, registry.MethodMagicLink)
+	if err != nil {
+		return "", err
+	}
+	in.Strategy = st.Name
 	address, err := registry.NormalizeEmail(in.Email)
 	if err != nil {
 		return "", err
@@ -91,7 +98,7 @@ func (s *Users) RequestMagicLink(ctx context.Context, in MagicLinkInput) (string
 	}
 	now := s.now()
 	c := AuthChallenge{
-		ID: HashToken(requestID), Kind: ChallengeMagicLink, CodeChallenge: in.CodeChallenge, RedirectTo: in.RedirectTo, Org: OrgContextOf(ctx),
+		ID: HashToken(requestID), Kind: ChallengeMagicLink, Strategy: in.Strategy, CodeChallenge: in.CodeChallenge, RedirectTo: in.RedirectTo, Org: OrgContextOf(ctx),
 		Locale: s.Settings.BestLocale(in.Locales...), Consents: in.Consents, CreatedAt: now, ExpiresAt: now.Add(MagicLinkTTL),
 	}
 	send := true
@@ -302,7 +309,7 @@ func (s *Users) VerifyMagicLinkCode(ctx context.Context, requestID, code, verifi
 	if err != nil {
 		return Redeemed{}, err
 	}
-	return s.afterFirstFactor(ctx, u, MagicLinkLoginMethod, handover{newUser: newUser, org: c.ViaOrg})
+	return s.afterFirstFactor(ctx, u, MagicLinkLoginMethod, handover{newUser: newUser, org: c.ViaOrg, strategy: c.Strategy})
 }
 
 // magicLinkUser resolves the user a redeemed request is for: the one it was made for, who becomes

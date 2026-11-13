@@ -54,6 +54,8 @@ type OrgSignIn struct {
 	// Invitation is an organization invitation token to use as part of the sign-in; with it a
 	// person who is not a member yet can come in, and joins.
 	Invitation string
+	// Strategy is the strategy to sign in with ("" when the app names none).
+	Strategy string
 }
 
 // SignInToOrg checks an email and password for an organization: the person must be one of its
@@ -62,6 +64,10 @@ type OrgSignIn struct {
 // same work, and count the same toward the sign-in limits. The session, or the second step, is
 // scoped to the organization.
 func (s *Users) SignInToOrg(ctx context.Context, in OrgSignIn) (Redeemed, error) {
+	st, err := s.Settings.StrategyFor(in.Strategy, ProviderPassword)
+	if err != nil {
+		return Redeemed{}, err
+	}
 	org, orgErr := s.OrgByRef(ctx, in.Org)
 	gate := func(u User) error {
 		if orgErr != nil {
@@ -94,7 +100,7 @@ func (s *Users) SignInToOrg(ctx context.Context, in OrgSignIn) (Redeemed, error)
 		_, err := s.acceptOrgInvitation(ctx, u, in.Invitation)
 		return err
 	}
-	var h handover
+	h := handover{strategy: st.Name}
 	if orgErr == nil {
 		h.org = org.ID
 	}
@@ -169,7 +175,7 @@ func (s *Users) finishOrgSignup(ctx context.Context, u User, r SignupRequest, or
 	if s.Settings.Account.RequireVerifiedEmail && !u.EmailVerified {
 		return SignupResult{Pending: true}, nil
 	}
-	out, err := s.afterFirstFactor(ctx, u, ProviderPassword, handover{org: orgID})
+	out, err := s.afterFirstFactor(ctx, u, ProviderPassword, handover{org: orgID, strategy: s.signupStrategy()})
 	if err != nil {
 		return SignupResult{}, err
 	}
@@ -239,7 +245,7 @@ func (s *Users) OpenOrgSession(ctx context.Context, p Principal, orgID string) (
 	if _, err := s.MembershipOf(ctx, p.User.ID, orgID); err != nil {
 		return Principal{}, "", err
 	}
-	return s.startSessionWith(ctx, p.User, slices.Clone(p.Session.Methods), p.Session.MFA, orgID)
+	return s.startSessionWith(ctx, p.User, slices.Clone(p.Session.Methods), p.Session.MFA, orgID, p.Session.Strategy)
 }
 
 // The "which companies am I in?" email (design/scoped-sessions.md §5.4).

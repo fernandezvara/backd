@@ -30,7 +30,7 @@ EOF
 docker compose up -d
 until curl -sf http://127.0.0.1:8080/readyz >/dev/null; do sleep 2; done   # MongoDB takes a moment
 docker compose exec backd backd-server bootstrap --realm demo --email me@example.com
-backd login --realm demo --url http://127.0.0.1:8080 --email me@example.com
+backd login --realm demo --url http://127.0.0.1:8080 --email me@example.com --strategy admin_password
 KEY=$(backd apikey create --realm demo --name local --expires 1d)
 curl -X POST http://127.0.0.1:8080/v1/demo/main/posts \
   -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \

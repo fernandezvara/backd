@@ -17,6 +17,7 @@ func newMagicFixture(t *testing.T) (*rulesFixture, *Worker) {
 	f, w := newVerifyFixture(t)
 	f.svc.Cipher, _ = auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
 	f.svc.Settings.MagicLink = registry.MagicLinkSettings{Enabled: true}
+	addFirstStrategies(&f.svc.Settings)
 	f.svc.Settings.SignInRedirects = []string{"https://app.acme.example", "acme://"}
 	f.svc.Settings.SignInAppURL = "https://app.acme.example/signed-in"
 	return f, w

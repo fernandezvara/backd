@@ -26,6 +26,7 @@ func TestRemovingThePasswordNeedsAnotherWayIn(t *testing.T) {
 	}
 	// Magic links need a verified address, and being on.
 	svc.Settings.MagicLink = registry.MagicLinkSettings{Enabled: true}
+	addFirstStrategies(&svc.Settings)
 	if err := svc.RemovePassword(ctx, p); !errors.Is(err, ErrLastSignInMethod) {
 		t.Fatalf("an unverified address: %v", err)
 	}
@@ -111,6 +112,7 @@ func TestProvidersAndMagicLinksCountAsWaysToSignIn(t *testing.T) {
 	}
 	// The mailbox is a way in while links are on and the address is verified.
 	svc.Settings.MagicLink = registry.MagicLinkSettings{Enabled: true}
+	addFirstStrategies(&svc.Settings)
 	if err := svc.SetEmailVerified(ctx, "ada@example.com", true); err != nil {
 		t.Fatal(err)
 	}

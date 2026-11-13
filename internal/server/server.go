@@ -824,15 +824,15 @@ func (a *App) logAPIKeyExpiry(ctx context.Context, users func(string) *auth.User
 	return nil
 }
 
-// unprotectedAdminRoles lists the realm's admin roles that mfa.required_roles doesn't
-// cover. A realm that turned MFA off is not warned: it chose not to have it.
+// unprotectedAdminRoles lists the realm's admin roles that accept a strategy without a
+// totp step. A realm that turned MFA off is not warned: it chose not to have it.
 func unprotectedAdminRoles(s registry.RealmSettings) []string {
-	if s.MFA.Off || s.MFA.RequiredAll {
+	if s.MFA.Off || s.TOTPRequired(nil) {
 		return nil
 	}
 	var out []string
 	for _, r := range s.AdminRoles() {
-		if !s.MFA.Required([]string{r}) {
+		if !s.TOTPRequired([]string{r}) {
 			out = append(out, r)
 		}
 	}
@@ -888,9 +888,9 @@ func (a *App) syncRoles(ctx context.Context) error {
 		case rep.Admins == 0:
 			a.log.Warn("no user holds an admin role of the realm, in realm.yaml or the database: create the first administrator with `backd-server bootstrap`", "realm", rl.Name)
 		}
-		if (rl.Settings.MFA.RequiredAll || len(rl.Settings.MFA.RequiredRoles) > 0) && len(a.cfg.SecretsKey) == 0 {
+		if roles, everyone := rl.Settings.TOTPRoles(); (everyone || len(roles) > 0) && len(a.cfg.SecretsKey) == 0 {
 			a.log.Error("the realm requires a second factor but this instance has no BACKD_SECRETS_KEY: those users can't sign in (503 mfa_unavailable) until it is set",
-				"realm", rl.Name, "roles", rl.Settings.MFA.RequiredRoles, "all", rl.Settings.MFA.RequiredAll)
+				"realm", rl.Name, "roles", roles, "all", everyone)
 		}
 		if !a.cfg.Dev {
 			if open := unprotectedAdminRoles(rl.Settings); len(open) > 0 {

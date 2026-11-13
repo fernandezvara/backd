@@ -59,6 +59,9 @@ type Session struct {
 	// they were recorded.
 	Methods []string
 	MFA     bool
+	// Strategy is the strategy the session was made with ("" for a session from before
+	// strategies, or one an organization's connection opened): its roles are those that accept it.
+	Strategy string
 	// Org is the organization the session is scoped to: it reaches that one and no other
 	// (design/scoped-sessions.md). "" for an operator's session, and for one from before sessions
 	// were scoped.
@@ -67,8 +70,11 @@ type Session struct {
 
 // Principal is the authenticated caller of a request.
 type Principal struct {
+	// User holds the roles active in this session (see Settings.ActiveRoles).
 	User    User
 	Session Session
+	// RolesInactive are the roles the user holds that the session's strategy does not allow.
+	RolesInactive []string
 }
 
 // newOpaqueToken is prefix followed by 256 random bits, URL-safe. It is what a token the
@@ -142,7 +148,7 @@ func (s *Users) Signup(ctx context.Context, email, password, invitation string, 
 	if err != nil {
 		return Principal{}, "", err
 	}
-	out, err := s.afterFirstFactor(ctx, u, ProviderPassword, handover{})
+	out, err := s.afterFirstFactor(ctx, u, ProviderPassword, handover{strategy: s.signupStrategy()})
 	if err != nil {
 		return Principal{}, "", err
 	}
@@ -150,6 +156,17 @@ func (s *Users) Signup(ctx context.Context, email, password, invitation string, 
 		return Principal{}, "", ErrSecondStepRequired
 	}
 	return out.Principal, out.Token, nil
+}
+
+// signupStrategy is the strategy a new account signs in with: sign-up names none, so it is the
+// only one that starts with the password or, with several, the first of them.
+func (s *Users) signupStrategy() string {
+	for _, st := range s.Settings.Strategies {
+		if st.Methods[0] == ProviderPassword {
+			return st.Name
+		}
+	}
+	return ""
 }
 
 // signup creates the user and records it; Signup and SignUp differ in what
@@ -194,7 +211,20 @@ func (s *Users) Login(ctx context.Context, email, password, ip string) (Principa
 // or a challenge the user trades for one with VerifyMFA. In a realm with organizations it is the
 // operators' door alone.
 func (s *Users) SignIn(ctx context.Context, email, password, ip string) (Redeemed, error) {
+	return s.SignInWith(ctx, "", email, password, ip)
+}
+
+// SignInWith is SignIn with the strategy the caller names ("" when it names none, which is
+// allowed while only one strategy starts with the password). A strategy that does not exist
+// or starts with another method is ErrUnknownStrategy, before anything about the person is
+// looked at.
+func (s *Users) SignInWith(ctx context.Context, strategy, email, password, ip string) (Redeemed, error) {
+	st, err := s.Settings.StrategyFor(strategy, ProviderPassword)
+	if err != nil {
+		return Redeemed{}, err
+	}
 	var hooks signInHooks
+	hooks.Handover.strategy = st.Name
 	if s.Settings.Organizations != nil {
 		// A realm with organizations has one more door than organizations: the realm's own, for the
 		// people who run it. Anyone else signs in to an organization (SignInToOrg), and is refused
@@ -315,13 +345,13 @@ func (s *Users) dummyHash(ctx context.Context) (string, error) {
 }
 
 // startSessionWith starts a session that records how it was created.
-func (s *Users) startSessionWith(ctx context.Context, u User, methods []string, mfa bool, org string) (Principal, string, error) {
+func (s *Users) startSessionWith(ctx context.Context, u User, methods []string, mfa bool, org, strategy string) (Principal, string, error) {
 	token, err := NewSessionToken()
 	if err != nil {
 		return Principal{}, "", err
 	}
 	now := s.now()
-	sess := Session{ID: xid.New().String(), UserID: u.ID, TokenHash: HashToken(token), CreatedAt: now, LastUsedAt: now, Methods: methods, MFA: mfa, Org: org}
+	sess := Session{ID: xid.New().String(), UserID: u.ID, TokenHash: HashToken(token), CreatedAt: now, LastUsedAt: now, Methods: methods, MFA: mfa, Strategy: strategy, Org: org}
 	if org != "" {
 		if o, err := s.Store.OrgByID(ctx, org); err == nil {
 			// Every session of an organization that requires its connection comes through it: this is
@@ -342,7 +372,16 @@ func (s *Users) startSessionWith(ctx context.Context, u User, methods []string, 
 	if s.Settings.IsAdmin(u.Roles) && len(methods) > 0 {
 		s.AuditAs(ctx, userTarget(u.ID), AuditAdminLogin, userTarget(u.ID), map[string]any{"session_id": sess.ID})
 	}
-	return Principal{User: u, Session: sess}, token, nil
+	return s.principalOf(u, sess), token, nil
+}
+
+// principalOf is where a session becomes a Principal: only the roles the session's strategy
+// allows are active (design/auth-strategies.md §5). Nothing else reads a user's stored roles
+// to decide access.
+func (s *Users) principalOf(u User, sess Session) Principal {
+	active, inactive := s.Settings.ActiveRoles(u.Roles, sess.Strategy)
+	u.Roles = active
+	return Principal{User: u, Session: sess, RolesInactive: inactive}
 }
 
 // Authenticate resolves a session token to its user. It extends the
@@ -372,6 +411,9 @@ func (s *Users) AuthenticateIgnoringConsents(ctx context.Context, token string) 
 		return Principal{}, err
 	}
 	now := s.now()
+	// Roles are filtered first: the limits below are those of the roles that are active.
+	active, inactive := s.Settings.ActiveRoles(u.Roles, sess.Strategy)
+	u.Roles = active
 	// The stored expiry was set at the last write; the user's roles may have
 	// changed since, so the limits are applied again.
 	if !now.Before(sess.ExpiresAt) || !now.Before(s.expiry(u, sess.CreatedAt, sess.LastUsedAt, sess.MaxLifetime)) || u.Disabled {
@@ -387,7 +429,7 @@ func (s *Users) AuthenticateIgnoringConsents(ctx context.Context, token string) 
 			return Principal{}, err
 		}
 	}
-	return Principal{User: u, Session: sess}, nil
+	return Principal{User: u, Session: sess, RolesInactive: inactive}, nil
 }
 
 // endSessions ends every session of a user and counts them under reason.

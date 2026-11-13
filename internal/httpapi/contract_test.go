@@ -684,6 +684,10 @@ func TestContract(t *testing.T) {
 	login := req("POST", a+"/login", `{"email": "new@example.com", "password": "dev-p4ssw0rd!"}`, nil, 200)
 	me := bearer(login["token"].(string))
 	req("POST", a+"/login", `{"email": "new@example.com"}`, nil, 400)
+	// The strategies the app can draw its sign-in screen from, and a strategy that does not exist.
+	req("GET", a+"/strategies", "", nil, 200)
+	req("GET", "/v1/nope/_auth/strategies", "", nil, 404)
+	req("POST", a+"/login", `{"email": "new@example.com", "password": "dev-p4ssw0rd!", "strategy": "ghost"}`, nil, 400)
 	// A session in a cookie: the answer has no token; without an allowed origin it is refused.
 	cookieLogin := `{"email": "new@example.com", "password": "dev-p4ssw0rd!", "cookie": true}`
 	if out := req("POST", a+"/login", cookieLogin, map[string]string{"Origin": "https://app.acme.example"}, 200); out["token"] != nil {
@@ -875,6 +879,7 @@ func TestContract(t *testing.T) {
 			t.Fatal(err)
 		}
 		login := `{"email": "second@example.com", "password": "dev-p4ssw0rd!"}`
+		secondStep(&f.svc.Settings)
 		ch := req("POST", a+"/login", login, nil, 200)["challenge"].(string)
 		req("POST", a+"/mfa/verify", `{"challenge": "`+ch+`", "method": "totp", "code": "000000"}`, nil, 400)
 		code, _ := totp.GenerateCode(key.Secret(), f.svc.Clock())
@@ -885,6 +890,7 @@ func TestContract(t *testing.T) {
 		ch = req("POST", a+"/login", login, nil, 200)["challenge"].(string)
 		req("POST", a+"/mfa/verify", `{"challenge": "`+ch+`", "method": "recovery_code", "code": "abcde-abcde"}`, nil, 200)
 		req("POST", "/v1/nope/_auth/mfa/verify", `{"challenge": "x", "method": "totp", "code": "1"}`, nil, 404)
+		noSecondStep(&f.svc.Settings)
 		// Setting a second factor up and managing it, as the signed-in user.
 		pw2 := "dev-p4ssw0rd!"
 		if _, err := f.svc.Create(ctx, "enroll2@example.com", &pw2); err != nil {
@@ -908,9 +914,9 @@ func TestContract(t *testing.T) {
 		req("POST", a+"/mfa/totp/setup", "", mine, 409)
 		req("POST", a+"/mfa/recovery-codes", "", mine, 200)
 		req("POST", a+"/mfa/recovery-codes", "", nil, 401)
-		f.svc.Settings.MFA.RequiredAll = true
+		secondStep(&f.svc.Settings)
 		req("DELETE", a+"/mfa/totp", "", mine, 403)
-		f.svc.Settings.MFA.RequiredAll = false
+		noSecondStep(&f.svc.Settings)
 		req("DELETE", a+"/mfa/totp", "", nil, 401)
 		req("DELETE", a+"/mfa/totp", "", mine, 204)
 		req("DELETE", a+"/mfa/totp", "", mine, 409)
@@ -925,7 +931,7 @@ func TestContract(t *testing.T) {
 		f.svc.Cipher = cipher
 		// A required role without a second factor is asked to set one up, at sign-up too.
 		// (Without email, so that the verification message doesn't spend the address's budget.)
-		f.svc.Settings.MFA.RequiredAll = true
+		secondStep(&f.svc.Settings)
 		withEmail := f.svc.Settings.Email
 		f.svc.Settings.Email = nil
 		enrolling := req("POST", a+"/signup", `{"email": "enroll@example.com", "password": "dev-p4ssw0rd!"}`, nil, 200)["challenge"].(string)
@@ -946,7 +952,7 @@ func TestContract(t *testing.T) {
 			t.Errorf("enrolling from a challenge: %v", done)
 		}
 		req("POST", a+"/mfa/totp/confirm", cbody(first), jsonOnly, 400)
-		f.svc.Settings.MFA.RequiredAll = false
+		secondStep(&f.svc.Settings)
 		// Ten wrong codes in a row lock the user for a while.
 		for range 10 {
 			ch = req("POST", a+"/login", login, nil, 200)["challenge"].(string)
@@ -962,6 +968,7 @@ func TestContract(t *testing.T) {
 	// A user with a password and no other way in can't drop it; with a provider they can, once.
 	{
 		ctx := context.Background()
+		noSecondStep(&f.svc.Settings)
 		pw := "dev-p4ssw0rd!"
 		np, err := f.svc.Create(ctx, "nopass@example.com", &pw)
 		if err != nil {
@@ -1227,12 +1234,12 @@ func TestContract(t *testing.T) {
 	}
 	selfTok := req("POST", a+"/login", `{"email": "self-admin@example.com", "password": "dev-p4ssw0rd!"}`, nil, 200)["token"].(string)
 	req("POST", ad+"/users/"+selfAdmin.ID+"/mfa/reset", "", bearer(selfTok), 403)
-	f.svc.Settings.MFA.RequiredAll = true
+	secondStep(&f.svc.Settings)
 	over := req("GET", ad+"/mfa", "", key, 200)
 	if over["required_all"] != true || over["total_without_mfa"].(float64) < 1 || len(over["users_without_mfa"].([]any)) < 1 {
 		t.Errorf("mfa overview: %v", over)
 	}
-	f.svc.Settings.MFA.RequiredAll = false
+	noSecondStep(&f.svc.Settings)
 	req("GET", ad+"/mfa", "", nil, 401)
 	req("GET", ad+"/mfa", "", ada, 403)
 	req("DELETE", ad+"/users/"+temp.ID+"/identities/password", "", key, 409)
@@ -2349,6 +2356,7 @@ func TestContract(t *testing.T) {
 		ctx := context.Background()
 		f.svc.Settings.Organizations = nil
 		f.svc.Settings.MagicLink = registry.MagicLinkSettings{Enabled: true, Signup: true}
+		addFirstStrategies(&f.svc.Settings)
 		f.svc.Settings.SignInAppURL = "https://app.acme.example/signed-in"
 		if f.svc.Cipher == nil {
 			f.svc.Cipher, _ = auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
@@ -3195,6 +3203,7 @@ func TestContract(t *testing.T) {
 		ask := `{"email": "ada@example.com", "code_challenge": "` + challenge + `"}`
 		magic := f.svc.Settings.MagicLink.Enabled
 		f.svc.Settings.MagicLink.Enabled = true
+		addFirstStrategies(&f.svc.Settings)
 		req("POST", ml, ask, nil, 202)
 		req("POST", ml, `{"email": "nope", "code_challenge": "`+challenge+`"}`, nil, 400)
 		f.svc.Settings.MagicLink.Enabled = false

@@ -40,14 +40,18 @@ const (
 	codeEmailNotVerified  = "email_not_verified"
 	codeConsentRequired   = "consent_required"
 	codeInvalidRedirect   = "invalid_redirect"
-	codeWriteConflict     = "write_conflict"
-	codeVersionMismatch   = "version_mismatch"
-	codeInvalidHeader     = "invalid_header"
-	codePreconditionReq   = "precondition_required"
-	codePayloadTooLarge   = "payload_too_large"
-	codeUnsupportedMedia  = "unsupported_media_type"
-	codeInternal          = "internal_error"
-	codeUnavailable       = "unavailable"
+	// codeStrategyRequired and codeUnknownStrategy answer a sign-in that names no strategy when
+	// several start with its method, and one that names a strategy that does not apply.
+	codeStrategyRequired = "strategy_required"
+	codeUnknownStrategy  = "unknown_strategy"
+	codeWriteConflict    = "write_conflict"
+	codeVersionMismatch  = "version_mismatch"
+	codeInvalidHeader    = "invalid_header"
+	codePreconditionReq  = "precondition_required"
+	codePayloadTooLarge  = "payload_too_large"
+	codeUnsupportedMedia = "unsupported_media_type"
+	codeInternal         = "internal_error"
+	codeUnavailable      = "unavailable"
 	// codeDevClientRefused answers a development CLI (backd/dev) on a released server.
 	codeDevClientRefused = "dev_client_refused"
 	// codeConfigNotLoaded answers every API call of a dev-mode server whose config hasn't
