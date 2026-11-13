@@ -99,8 +99,9 @@ func TestTutorialChaptersLoad(t *testing.T) {
 	ch4 = strings.Replace(ch2, "signup: open", "signup: invite", 1)
 	ch10 := mergeYAML(t, ch4, blockAfter(t, "10-email", "Add to `config/shelf/realm.yaml`"))
 	ch13 := mergeYAML(t, ch10, blockAfter(t, "13-files", "Add to `config/shelf/realm.yaml`"))
-	ch16 := mergeYAML(t, mergeYAML(t, ch13, blockAfter(t, "16-second-factor", "Add to `config/shelf/realm.yaml`:")),
-		blockAfter(t, "16-second-factor", "Add this to `config/shelf/realm.yaml` too:"))
+	ch16 := mergeYAML(t, mergeYAML(t, mergeYAML(t, ch13, blockAfter(t, "16-second-factor", "Add to `config/shelf/realm.yaml`:")),
+		blockAfter(t, "16-second-factor", "Add this to `config/shelf/realm.yaml` too:")),
+		blockAfter(t, "16-second-factor", "Add this to `config/shelf/realm.yaml` as well:"))
 	ch17 := mergeYAML(t, ch16, blockAfter(t, "17-consents", "Add to `config/shelf/realm.yaml`:"))
 	ch20 := mergeYAML(t, ch17, blockAfter(t, "20-teams", "Add to `config/shelf/realm.yaml`:"))
 	collections := []string{

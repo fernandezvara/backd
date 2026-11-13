@@ -4,6 +4,7 @@ export { Database, Collection, ifMatchValue } from './data.js'
 export { Admin } from './admin.js'
 export { Push } from './push.js'
 export { Consents } from './consents.js'
+export { Passkeys, PasskeyError } from './passkeys.js'
 export { Account } from './account.js'
 export { Config } from './config.js'
 export { Orgs, OrgMembers, OrgTeams, OrgTemplates, OrgInvitations } from './orgs.js'
@@ -82,6 +83,8 @@ export { parseReturn as parseOAuthReturn } from './oauth.js'
  * @typedef {import('./push.js').DeviceInput} DeviceInput
  * @typedef {import('./push.js').PermissionState} PermissionState
  * @typedef {import('./errors.js').ErrorDetail} ErrorDetail
+ * @typedef {import('./passkeys.js').Passkey} Passkey
+ * @typedef {import('./passkeys.js').PasskeySupport} PasskeySupport
  * @typedef {import('./realtime.js').SubscriptionSpec} SubscriptionSpec
  * @typedef {import('./realtime.js').LiveState} LiveState
  * @typedef {import('./realtime.js').LiveStatus} LiveStatus

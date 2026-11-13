@@ -51,3 +51,6 @@ export BACKD_API_KEY BACKD_INVITE_API_KEY BACKD_MAIL_API_KEY BACKD_FILES_API_KEY
 
 cd clients/js
 npm run test:integration
+# Passkeys in a real browser (a virtual authenticator): the page is served from localhost:18081, the
+# origin the passkeys realm is bound to. CI installs the browser first; locally `npx playwright install chromium`.
+npm run test:browser

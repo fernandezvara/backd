@@ -1,0 +1,19 @@
+# The realm of the passkey browser test (test/browser): the page is served from
+# http://localhost:18081 (a virtual authenticator needs a secure context, and localhost is one),
+# so passkeys are bound to `localhost` and that origin. Over http only because the stack runs in BACKD_DEV.
+auth:
+  strategies:
+    password: [password]
+    passkey: [passkey]
+    password_passkey: [password, passkey]
+  signup: open
+  sign_in:
+    app_url: http://localhost:18081/
+    allowed_redirects: [http://localhost:18081]
+  passkeys:
+    enabled: true
+    rp_id: localhost
+    origins: [http://localhost:18081]
+roles:
+  ops:
+    admin: true

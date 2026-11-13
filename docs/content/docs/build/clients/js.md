@@ -126,6 +126,37 @@ await backd.auth.password.remove()                // 409 last_sign_in_method whe
 
 Errors: `invalid_code` (a `ValidationError`, `details` has the attempts left), `invalid_challenge`, `mfa_locked` (a `RetryableError`, 429), `reauth_required` and, for a link or code, `invalid_magic_link`. A link opened on another device reports `wrong_device`, as for a provider. See [Multi-factor authentication](../../auth/mfa/), [Magic links](../../auth/magic-links/) and [Re-authentication](../../auth/reauth/).
 
+### Passkeys
+
+`client.auth.passkeys` runs the WebAuthn ceremony for the strategies that use the `passkey` method ([Strategies](../../auth/strategies/)). The client converts the options and the credential between the server's JSON and what `navigator.credentials` takes (the platform's `PublicKeyCredential.parse…FromJSON` and `toJSON()` when the browser has them, its own conversion otherwise), so an app never touches an `ArrayBuffer`. There is no new dependency.
+
+```js
+const { available, conditional } = await backd.auth.passkeys.supported()
+
+// A button: the browser asks for a passkey. Like signIn(), the answer is the session or the next step.
+const result = await backd.auth.passkeys.signIn({ strategy: 'passkey' })   // org: 'acme-corp' for a team's sign-in
+
+// The sign-in field's autofill (conditional UI): <input autocomplete="username webauthn">
+const stop = new AbortController()
+backd.auth.passkeys.signIn({ strategy: 'passkey', conditional: true, signal: stop.signal })
+  .then(afterSignIn, (e) => { if (e.name !== 'AbortError') throw e })   // stop.abort() when the form goes away
+
+// A strategy with a passkey after the first method: the step asks the browser, no code
+const next = await backd.auth.verifyStep(result.challenge, 'passkey')
+// and a user who has none yet, when the strategy needs one (result.enrollmentRequired, result.next[0] === 'passkey'):
+const session = await backd.auth.passkeys.enroll({ challenge: result.challenge, name: 'Laptop' })
+
+// The signed-in user's own; adding and removing need a fresh proof (withProof, or reauth({ method: 'passkey' }))
+await backd.auth.passkeys.register({ name: 'Laptop' })
+const mine = await backd.auth.passkeys.list()                // id, name, last_used_at, transports, backup_eligible…
+await backd.auth.passkeys.rename(mine[0].id, 'Work laptop')
+await backd.auth.passkeys.remove(mine[0].id)
+```
+
+The input needs `autocomplete="username webauthn"` (`webauthn` last) for the browser to list passkeys in its autofill; `signIn` with `conditional: true` waits quietly until the person picks one, and ends with an `AbortError` when the `signal` aborts. A prompt the person dismisses, or that times out, rejects with a `PasskeyError` (`passkey_cancelled`; `passkey_unsupported` in a browser without passkeys, `passkey_failed` for an authenticator error): nothing was sent to the server. The server's refusals are `invalid_passkey` (an `AuthenticationError`, always the same whatever went wrong), `passkey_limit`, `credential_required` (a passkey that a strategy of the user needs and nothing replaces) and `reauth_required`. `reauth({ method: 'passkey' })` asks for one too.
+
+The page must be served from an origin the realm lists in `auth.passkeys.origins` (`https`, or `http://localhost` in development),, and a Node script has no authenticator: it uses the other methods. The example app has a passkey button, the autofill and an account page; its browser test uses Chromium's virtual authenticator (`clients/js/test/browser`).
+
 ### Account flows by email
 
 In a realm with [`email`](../../functions/email/), the links in the emails open pages of `backd` that need no code. An app that wants **its own pages** points the links at them (`email.links` in `realm.yaml`) and posts the token from the link with these calls, none of which needs a session or starts one:

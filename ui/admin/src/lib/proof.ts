@@ -29,7 +29,8 @@ export function useProof() {
     codeSent.value = false
     try {
       const me = await session.client!.auth.me()
-      methods.value = me.reauth_methods ?? []
+      // (A passkey as the proof comes with the passkey screens of the admin UI.)
+      methods.value = (me.reauth_methods ?? []).filter((m): m is ProofMethod => m !== 'passkey')
       method.value = methods.value[0] ?? ''
     } catch {
       methods.value = []

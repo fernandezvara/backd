@@ -606,7 +606,7 @@
           <!-- Chapter 20: an invitation to a team names it; otherwise people type the team's short name. -->
           <p x-show="joinOffer">You are invited to join <strong x-text="joinOffer?.org.name"></strong> as <span x-text="(joinOffer?.roles || []).join(', ') || 'a member'"></span>: sign in, or make an account.</p>
           <label x-show="!joinToken">Team <input id="company" x-model="company" @change="loadOptions()" autocomplete="organization" placeholder="short name of your team (empty: operator)" maxlength="63"></label>
-          <label>Email <input type="email" x-model="email" required autocomplete="email"></label>
+          <label>Email <input type="email" x-model="email" required autocomplete="username webauthn"></label>
           <label x-show="mode === 'signup' && !joinToken">Your team's name
             <input id="new-team-name" x-model="teamName" :required="mode === 'signup' && !joinToken" maxlength="100" placeholder="Acme Docs"></label>
           <label x-show="mode === 'signup' && !joinToken">Invitation token
@@ -632,6 +632,8 @@
           <p class="muted" x-show="companyMsg" x-text="companyMsg"></p>
           <p class="muted" x-show="accountMsg" x-text="accountMsg"></p>
         </form>
+        <!-- Chapter 16: a passkey instead of the password (the email field above also offers them as you focus it). -->
+        <p x-show="mode === 'login' && pkSupport.available"><button type="button" class="secondary outline" id="passkey-signin" @click="signInWithPasskey" :disabled="busy">Sign in with a passkey</button></p>
         <!-- Chapter 16: a link and a code by email, instead of the password. -->
         <hr x-show="mode === 'login' && methods.includes('magic_link')">
         <form x-show="mode === 'login' && !magicSent && methods.includes('magic_link')" @submit.prevent="requestMagicLink">
@@ -728,6 +730,32 @@
           <label>Code <input x-model="code" required autocomplete="one-time-code" inputmode="numeric"></label>
           <button type="submit" :disabled="busy">Confirm</button>
         </form>
+        <hr>
+        <!-- Chapter 16: passkeys. -->
+        <h3>Passkeys</h3>
+        <template x-if="!pkSupport.available">
+          <p class="muted">This browser cannot use passkeys.</p>
+        </template>
+        <template x-if="pkSupport.available">
+          <div>
+            <p class="muted" x-show="!passkeys.length">None yet. A passkey signs you in with your device's screen lock instead of the password.</p>
+            <ul>
+              <template x-for="p in passkeys" :key="p.id">
+                <li>
+                  <strong x-text="p.name"></strong>
+                  <small class="muted"><span x-text="p.backup_eligible ? 'syncs between your devices' : 'this device only'"></span>
+                    · <span x-text="p.last_used_at ? 'used ' + new Date(p.last_used_at).toLocaleDateString() : 'never used'"></span></small>
+                  <a href="#" @click.prevent="renamePasskey(p)">Rename</a> ·
+                  <a href="#" @click.prevent="removePasskey(p)">Remove</a>
+                </li>
+              </template>
+            </ul>
+            <form class="inline" @submit.prevent="addPasskey">
+              <input x-model="pkName" maxlength="64" placeholder="Name, such as Laptop" aria-label="Name of the new passkey">
+              <button type="submit" class="secondary" :disabled="busy">Add a passkey</button>
+            </form>
+          </div>
+        </template>
         <hr>
         <button type="button" class="contrast outline danger-zone" @click="deleteAccount" :disabled="busy">Delete my account</button>
         <p class="muted">Deactivates your account; your assets follow the collection's erasure policy.</p>

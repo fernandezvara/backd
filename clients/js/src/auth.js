@@ -1,6 +1,7 @@
 import { AuthenticationError, SecondStepRequiredError, ValidationError, VerificationRequiredError } from './errors.js'
 /** @typedef {import('./errors.js').ConsentRequiredError} ConsentRequiredError */
 import { COOKIE_SESSION } from './storage.js'
+import { Passkeys, ceremony } from './passkeys.js'
 import { defaultOAuthStorage, loadPending, newPKCE, oauthError, parseReturn, savePending, withoutReturn } from './oauth.js'
 
 /**
@@ -40,7 +41,7 @@ function authBase(org) {
 /**
  * The signed-in user with their sign-in methods, oldest first.
  * With `consents` declared in the realm it also has `consents` (name to the version held) and `to_accept` (the required ones still to accept).
- * @typedef {User & { identities: Identity[], reauth_methods: Array<'totp' | 'recovery_code' | 'password' | 'email_code'>, sign_in_methods: string[], consents?: Record<string, string>, to_accept?: Array<{ name: string, version: string }>, org?: { id: string, name?: string, slug?: string | null, roles?: string[], teams?: string[] } }} Me
+ * @typedef {User & { identities: Identity[], reauth_methods: Array<'totp' | 'recovery_code' | 'password' | 'email_code' | 'passkey'>, sign_in_methods: string[], consents?: Record<string, string>, to_accept?: Array<{ name: string, version: string }>, org?: { id: string, name?: string, slug?: string | null, roles?: string[], teams?: string[] } }} Me
  */
 
 /**
@@ -79,8 +80,8 @@ function authBase(org) {
  * @typedef {object} MfaChallenge
  * @property {true} mfaRequired
  * @property {string} challenge
- * @property {Array<'totp' | 'recovery_code'>} methods
- * @property {string[]} [next]     The method the strategy asks for now (`['totp']`); a recovery code stands in for it.
+ * @property {Array<'totp' | 'recovery_code' | 'passkey'>} methods
+ * @property {string[]} [next]     The method the strategy asks for now (`['totp']` or `['passkey']`); a recovery code stands in for a code.
  * @property {string} [strategy]   The strategy the sign-in follows.
  */
 
@@ -320,6 +321,8 @@ export class Auth {
     this.ready = Promise.resolve(null)
     /** The signed-in user's second factor: `client.auth.mfa`. */
     this.mfa = new Mfa(this)
+    /** The signed-in user's passkeys, and signing in with one: `client.auth.passkeys`. */
+    this.passkeys = new Passkeys(this)
     /** Sign-in by an emailed link and code: `client.auth.magicLink`. */
     this.magicLink = new MagicLink(this)
     /** Setting and removing the password of an account that may sign in another way. */
@@ -430,8 +433,8 @@ export class Auth {
    * after five wrong ones or five minutes, and `mfa_locked` (a `RetryableError`, 429) after ten wrong
    * codes in an hour.
    * @param {string} challenge
-   * @param {'totp' | 'recovery_code'} method
-   * @param {string} code
+   * @param {'totp' | 'recovery_code' | 'passkey'} method
+   * @param {string | undefined} [code]  None for a passkey.
    * @param {RequestOptions} [opts]
    * @returns {Promise<Session & { new_user?: boolean, profile?: Profile, recovery_codes_left?: number }>}
    */
@@ -442,15 +445,23 @@ export class Auth {
   /**
    * {@link Auth#verifyMfa} for strategies with more steps: resolves with what the code led to, the
    * session (stored) or, when the strategy asks for another step, the next {@link MfaChallenge}.
+   * With `'passkey'` there is no code: the browser asks the user for the passkey (a dismissed prompt
+   * rejects with a `PasskeyError`).
    * @param {string} challenge
-   * @param {'totp' | 'recovery_code'} method
-   * @param {string} code
+   * @param {'totp' | 'recovery_code' | 'passkey'} method
+   * @param {string | undefined} [code]  The code; none for a passkey.
    * @param {RequestOptions} [opts]
    * @returns {Promise<SignInResult>}
    */
   async verifyStep(challenge, method, code, opts) {
     /** @type {Record<string, unknown>} */
-    const body = { challenge, method, code }
+    const body = { challenge, method }
+    if (method === 'passkey') {
+      const started = (await this.client.request({ method: 'POST', path: ['_auth', 'mfa', 'passkey', 'options'], body: { challenge }, auth: false, ...opts })).data
+      body.credential = await ceremony('get', started)
+    } else {
+      body.code = code
+    }
     if (this.client.cookies) body.cookie = true
     const { data } = await this.client.request({ method: 'POST', path: ['_auth', 'mfa', 'verify'], body, auth: false, ...opts })
     return this.step(data)
@@ -487,10 +498,10 @@ export class Auth {
 
   /**
    * Runs a sensitive action, asking the user for a fresh proof when the server wants one: `ask`
-   * gets the proofs the user can give (`totp`, `recovery_code`, `password` or `email_code`) and
+   * gets the proofs the user can give (`totp`, `recovery_code`, `password`, `email_code` or `passkey`) and
    * resolves with the one to use, as {@link Auth#reauth} takes it; the action is then tried once more.
    * @template T
-   * @param {(methods: string[]) => Promise<{ method: 'totp' | 'recovery_code' | 'password' | 'email_code', code?: string, password?: string }>} ask
+   * @param {(methods: string[]) => Promise<{ method: 'totp' | 'recovery_code' | 'password' | 'email_code' | 'passkey', code?: string, password?: string }>} ask
    * @param {() => Promise<T>} action
    * @returns {Promise<T>}
    */
@@ -1013,13 +1024,20 @@ export class Auth {
    * by default), so one prompt covers a settings page. A wrong proof is a `AuthenticationError`
    * (`invalid_credentials`) or a `ValidationError` (`invalid_code`) and counts against the same
    * limits as signing in. A password an administrator expired is a `PasswordExpiredError`.
-   * @param {{ method: 'totp' | 'recovery_code' | 'password' | 'email_code', code?: string, password?: string }} input
+   * With `method: 'passkey'` the browser asks the user for a passkey.
+   * @param {{ method: 'totp' | 'recovery_code' | 'password' | 'email_code' | 'passkey', code?: string, password?: string }} input
    * @param {RequestOptions} [opts]
    * @returns {Promise<{ reauthToken: string, expiresAt: string }>}
    */
   async reauth(input, opts) {
+    /** @type {Record<string, unknown> | undefined} */
+    let credential
+    if (input.method === 'passkey') {
+      const started = (await this.client.request({ method: 'POST', path: ['_auth', 'reauth', 'passkey', 'options'], body: {}, ...opts })).data
+      credential = await ceremony('get', started)
+    }
     const { data } = await this.client.request({
-      method: 'POST', path: ['_auth', 'reauth'], body: compact({ method: input.method, code: input.code, password: input.password }), ...opts,
+      method: 'POST', path: ['_auth', 'reauth'], body: compact({ method: input.method, code: input.code, password: input.password, credential }), ...opts,
     })
     this.client.proof = { token: data.reauth_token, expires: Date.parse(data.expires_at) }
     return { reauthToken: data.reauth_token, expiresAt: data.expires_at }

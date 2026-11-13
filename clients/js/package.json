@@ -40,6 +40,7 @@
     "build:types": "tsc -p tsconfig.build.json",
     "prepare": "npm run build:types",
     "test:integration": "node --test --test-concurrency=1 \"test/integration/*.test.js\"",
+    "test:browser": "playwright test",
     "prepublishOnly": "npm run typecheck && npm test"
   },
   "repository": {
@@ -48,6 +49,7 @@
     "directory": "clients/js"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.0",
     "@types/node": "^26.6.3",
     "typescript": "^7.0.2"
   },
