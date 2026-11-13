@@ -185,7 +185,7 @@ shop__orders.items
 
 ### Upgrading to the strategy release
 
-The release after v0.9.9 changes how sign-in is configured. **Every `realm.yaml` needs editing before the new binaries start**; nothing changes in the data or the indexes, and the HTTP API only grows (new fields and one route). A realm that still has the old keys stops at startup, with a message that names where each key went; `backd config check` prints them all at once.
+v0.9.10 changes how sign-in is configured. **Every `realm.yaml` needs editing before the new binaries start**; nothing changes in the data or the indexes, and the HTTP API only grows (new fields and one route). A realm that still has the old keys stops at startup, with a message that names where each key went; `backd config check` prints them all at once.
 
 | Before | Now |
 |---|---|
@@ -214,7 +214,7 @@ What else changes, and needs your action:
 4. **A sign-in through an organization's own connection** is now the method `sso` of a strategy. A realm with `organizations.sso` needs a strategy that starts with it (`sso: [sso]`), or its connections sign nobody in (`400 unknown_strategy`). Before, such sign-ins asked for no second step and kept every role.
 5. **Clients.** `mfa_required` and `methods` stay in the challenge answer next to the new `next` and `strategy`. The Dart and Python clients, the JavaScript client and the Go client take a `strategy`; older clients keep working against a realm with one password strategy.
 
-How strategies work is in [Authentication strategies](../build/auth/strategies/).
+How strategies work is in [Authentication strategies](../build/auth/strategies/). v0.9.10 also adds [passkeys](../build/auth/passkeys/), off until a realm sets `auth.passkeys.enabled`: they add a `passkeys` collection to the provisioned indexes (run `backd-server provision` as usual) and a `passkey_handle` field to users, and change nothing for a realm that does not use them.
 
 ### Upgrading to v0.9.9
 
