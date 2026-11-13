@@ -572,3 +572,41 @@ async def test_file_storage_round_trip(mode: str, tmp_path: Any) -> None:
     server2.on("GET /_auth/me", {**USER, "identities": []})
     await go(again.auth.me())
     assert server2.last().headers["authorization"] == "Bearer bds_file"
+
+
+async def test_a_strategy_goes_with_the_sign_in_and_a_longer_one_asks_again(mode: str) -> None:
+    c, server, storage = setup(mode, strategy="web")
+    server.on(
+        "GET /_auth/strategies",
+        {
+            "strategies": [
+                {"name": "web", "methods": ["password"]},
+                {"name": "deep", "methods": ["password", "totp", "totp"]},
+            ]
+        },
+    )
+    assert [s["name"] for s in await go(c.auth.strategies())] == ["web", "deep"]
+
+    server.on(
+        "POST /_auth/login",
+        {"mfa_required": True, "challenge": "ch1", "methods": ["totp"], "next": ["totp"], "strategy": "deep"},
+    )
+    first = await go(c.auth.sign_in("a@x.test", "dev-p4ssw0rd!", strategy="deep"))
+    assert first == backd.MfaChallenge("ch1", ["totp"], ["totp"], "deep")
+    assert server.body()["strategy"] == "deep"
+    server.on("POST /_auth/login", session("bds_web"))
+    await go(c.auth.sign_in("a@x.test", "dev-p4ssw0rd!"))
+    assert server.body()["strategy"] == "web"  # the client's own
+
+    server.on(
+        "POST /_auth/mfa/verify",
+        {"mfa_required": True, "challenge": "ch2", "methods": ["totp"], "next": ["totp"], "strategy": "deep"},
+    )
+    second = await go(c.auth.verify_step("ch1", "totp", "123456"))
+    assert second == backd.MfaChallenge("ch2", ["totp"], ["totp"], "deep")
+    with pytest.raises(backd.SecondStepRequiredError):
+        await go(c.auth.verify_mfa("ch1", "totp", "123456"))
+    server.on("POST /_auth/mfa/verify", session("bds_deep", strategy="deep", roles_inactive=["editor"]))
+    done = await go(c.auth.verify_step("ch2", "totp", "654321"))
+    assert isinstance(done, dict) and done["strategy"] == "deep" and done["roles_inactive"] == ["editor"]
+    assert storage.get() == "bds_deep"

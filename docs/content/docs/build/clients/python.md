@@ -104,9 +104,11 @@ client.auth.logout()
 ```python
 from backd import ConsentChallenge, EnrollmentChallenge, MfaChallenge
 
-step = client.auth.sign_in(email, password)
-if isinstance(step, MfaChallenge):                       # step.methods: "totp", "recovery_code"
-    session = client.auth.verify_mfa(step.challenge, "totp", input("code: "))
+strategies = client.auth.strategies()                    # [{"name", "methods"}], no credentials
+step = client.auth.sign_in(email, password, strategy="admin_password")   # or Client(..., strategy=...) once
+if isinstance(step, MfaChallenge):                       # step.next: ["totp"]; step.methods adds "recovery_code"
+    session = client.auth.verify_mfa(step.challenge, "totp", input("code: "))   # session["strategy"], session["roles_inactive"]
+    # verify_step() returns the next MfaChallenge instead of raising, for a strategy of several steps
 elif isinstance(step, EnrollmentChallenge):              # set a second factor up first
     setup = client.auth.mfa.setup(challenge=step.challenge)
     done = client.auth.mfa.confirm(setup_id=setup["setup_id"], code=input("code: "), challenge=step.challenge)

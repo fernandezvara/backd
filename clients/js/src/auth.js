@@ -63,6 +63,9 @@ function authBase(org) {
  * @property {string} expires_at  RFC3339; pushed forward as the session is used.
  * @property {User} user
  * @property {string} [org]       The organization the session is scoped to: its token reaches that organization and no other.
+ * @property {string} [strategy]  The strategy the session was made with.
+ * @property {string[]} [roles_inactive] The roles the user holds that the strategy does not allow (they are not in `user.roles`):
+ *   offer a stronger way in.
  */
 
 /**
@@ -77,6 +80,8 @@ function authBase(org) {
  * @property {true} mfaRequired
  * @property {string} challenge
  * @property {Array<'totp' | 'recovery_code'>} methods
+ * @property {string[]} [next]     The method the strategy asks for now (`['totp']`); a recovery code stands in for it.
+ * @property {string} [strategy]   The strategy the sign-in follows.
  */
 
 /**
@@ -86,6 +91,7 @@ function authBase(org) {
  * @typedef {object} EnrollmentChallenge
  * @property {true} enrollmentRequired
  * @property {string} challenge
+ * @property {string} [strategy]
  */
 
 /**
@@ -410,8 +416,8 @@ export class Auth {
    * @returns {Promise<SignInResult>}
    */
   async step(data) {
-    if (data?.mfa_required) return { mfaRequired: true, challenge: data.challenge, methods: data.methods }
-    if (data?.mfa_enrollment_required) return { enrollmentRequired: true, challenge: data.challenge }
+    if (data?.mfa_required) return { mfaRequired: true, challenge: data.challenge, methods: data.methods, ...compact({ next: data.next, strategy: data.strategy }) }
+    if (data?.mfa_enrollment_required) return { enrollmentRequired: true, challenge: data.challenge, ...compact({ strategy: data.strategy }) }
     if (data?.consent_required) return { consentRequired: true, challenge: data.challenge, consents: data.consents }
     return this.signedIn(data)
   }
@@ -430,11 +436,35 @@ export class Auth {
    * @returns {Promise<Session & { new_user?: boolean, profile?: Profile, recovery_codes_left?: number }>}
    */
   async verifyMfa(challenge, method, code, opts) {
+    return /** @type {any} */ (this.session(await this.verifyStep(challenge, method, code, opts)))
+  }
+
+  /**
+   * {@link Auth#verifyMfa} for strategies with more steps: resolves with what the code led to, the
+   * session (stored) or, when the strategy asks for another step, the next {@link MfaChallenge}.
+   * @param {string} challenge
+   * @param {'totp' | 'recovery_code'} method
+   * @param {string} code
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<SignInResult>}
+   */
+  async verifyStep(challenge, method, code, opts) {
     /** @type {Record<string, unknown>} */
     const body = { challenge, method, code }
     if (this.client.cookies) body.cookie = true
     const { data } = await this.client.request({ method: 'POST', path: ['_auth', 'mfa', 'verify'], body, auth: false, ...opts })
-    return /** @type {any} */ (await this.signedIn(data))
+    return this.step(data)
+  }
+
+  /**
+   * The strategies of the realm and their methods in order, as `GET /_auth/strategies` lists them (no
+   * credentials needed), for an app that draws its sign-in screen.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<Array<{ name: string, methods: string[] }>>}
+   */
+  async strategies(opts) {
+    const { data } = await this.client.request({ method: 'GET', path: ['_auth', 'strategies'], auth: false, ...opts })
+    return data.strategies
   }
 
   /**

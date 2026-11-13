@@ -25,6 +25,27 @@ const realm = ref(props.realm ?? lastRealm())
 const realmInvalid = ref(false)
 watch(() => props.realm, (r) => { if (r) realm.value = r })
 const password = ref('')
+// The strategies that start with the password: a choice only when the realm has more than one.
+const strategies = ref<string[]>([])
+const strategy = ref('')
+let asked = 0
+watch(
+  realm,
+  async (r) => {
+    const mine = ++asked
+    strategies.value = []
+    strategy.value = ''
+    if (!validRealm(r.trim().toLowerCase())) return
+    // After a pause in typing: one question per realm, not per letter.
+    await new Promise((done) => setTimeout(done, 300))
+    if (mine !== asked) return
+    const found = await session.passwordStrategies(r.trim().toLowerCase())
+    if (mine !== asked) return
+    strategies.value = found
+    strategy.value = found[0] ?? ''
+  },
+  { immediate: true },
+)
 const keep = ref(false)
 const busy = ref(false)
 const error = ref('')
@@ -98,7 +119,7 @@ async function submit() {
   error.value = ''
   try {
     rememberRealm(realm.value)
-    const result = await session.signIn(realm.value, email.value.trim(), password.value, keep.value)
+    const result = await session.signIn(realm.value, email.value.trim(), password.value, keep.value, strategies.value.length > 1 ? strategy.value : undefined)
     password.value = ''
     ticked.value = {}
     if (result === 'done') await router.replace(next())
@@ -264,6 +285,18 @@ function cancel() {
       <TextField v-model="email" type="email" :label="t('signIn.email')" autocomplete="username" required />
       <TextField v-model="realm" :label="t('realm.label')" autocomplete="organization" required :error="realmInvalid ? t('realm.invalid') : undefined" data-testid="realm-field" />
       <TextField v-model="password" type="password" :label="t('signIn.password')" autocomplete="current-password" required />
+      <div v-if="strategies.length > 1" class="space-y-1">
+        <label for="signin-strategy" class="block text-sm font-medium">{{ t('signIn.strategy') }}</label>
+        <select
+          id="signin-strategy"
+          v-model="strategy"
+          data-testid="strategy-field"
+          class="block w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
+        >
+          <option v-for="s in strategies" :key="s" :value="s">{{ s }}</option>
+        </select>
+        <p class="text-xs text-slate-600 dark:text-slate-400">{{ t('signIn.strategyHelp') }}</p>
+      </div>
       <div>
         <label class="flex items-center gap-2 text-sm">
           <input v-model="keep" type="checkbox" />

@@ -4,6 +4,7 @@
     "skip": "Skip to content"
   },
   "common": {
+    "strategy": "Strategy: {name}",
     "cancel": "Cancel",
     "close": "Close",
     "confirm": "Confirm",
@@ -58,6 +59,8 @@
     "invalid": "A realm name has lowercase letters, digits, - and _ only."
   },
   "signIn": {
+    "strategy": "Sign-in strategy",
+    "strategyHelp": "The roles you hold depend on the strategy: an administrator role may need a stronger one.",
     "expired": {
       "intro": "This password has expired. Choose a new one: enter the current password and the new one twice.",
       "emailed": "We also emailed you a link to choose one.",

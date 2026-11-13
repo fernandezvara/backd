@@ -322,3 +322,42 @@ func TestPreviewInvitationNeedsAnOrganization(t *testing.T) {
 		t.Errorf("%v %+v", err, p)
 	}
 }
+
+func TestAStrategyWithTwoStepsAndItsList(t *testing.T) {
+	rt := newRoutes()
+	rt.json("GET /_auth/strategies", "", `{"strategies":[{"name":"web","methods":["password"]},{"name":"admin_password","methods":["password","totp"]}]}`)
+	rt.json("POST /_auth/login", "", `{"mfa_required":true,"challenge":"ch1","methods":["totp","recovery_code"],"next":["totp"],"strategy":"admin_password"}`)
+	rt.json("POST /_auth/mfa/verify", "", `{"token":"bds_1","token_type":"Bearer","session_id":"s1","expires_at":"2026-12-01T00:00:00Z","strategy":"admin_password","roles_inactive":["editor"],"user":{"id":"u1","email":"a@b.c","roles":["admin"]}}`)
+	c := authClient(t, rt)
+
+	list, err := c.Auth().Strategies(bg)
+	if err != nil || len(list) != 2 || list[1].Name != "admin_password" || list[1].Methods[1] != "totp" {
+		t.Fatalf("%v %+v", err, list)
+	}
+	step, err := c.Auth().SignIn(bg, SignInInput{Email: "a@b.c", Password: "p", Strategy: "admin_password"})
+	if err != nil || step.Kind != StepMFA || step.Strategy != "admin_password" || len(step.Next) != 1 || step.Next[0] != "totp" {
+		t.Fatalf("%v %+v", err, step)
+	}
+	if got := rt.sent["POST /_auth/login"]; got["strategy"] != "admin_password" {
+		t.Errorf("sent %v", got)
+	}
+	done, err := c.Auth().VerifyStep(bg, "ch1", "totp", "123456")
+	if err != nil || done.Kind != StepSession || done.Session.Strategy != "admin_password" || len(done.Session.RolesInactive) != 1 || done.Session.RolesInactive[0] != "editor" {
+		t.Fatalf("%v %+v", err, done)
+	}
+}
+
+func TestVerifyMFAWithMoreStepsAfterItIsASecondStepError(t *testing.T) {
+	rt := newRoutes()
+	rt.json("POST /_auth/mfa/verify", "", `{"mfa_required":true,"challenge":"ch2","methods":["totp","recovery_code"],"next":["totp"],"strategy":"deep"}`)
+	c := authClient(t, rt)
+	_, err := c.Auth().VerifyMFA(bg, "ch1", "totp", "123456")
+	var ss *SecondStepRequiredError
+	if !errors.As(err, &ss) || ss.Challenge != "ch2" {
+		t.Fatalf("%#v", err)
+	}
+	step, err := c.Auth().VerifyStep(bg, "ch1", "totp", "123456")
+	if err != nil || step.Kind != StepMFA || step.Challenge != "ch2" {
+		t.Fatalf("%v %+v", err, step)
+	}
+}

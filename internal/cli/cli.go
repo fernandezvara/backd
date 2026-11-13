@@ -126,6 +126,8 @@ func registerRemote(cfg *kli.Config) {
 
 	acc := cfg.Command("account").ShortHelp("manage your own sign-in security: the second factor and its recovery codes").
 		LongHelp("Acts on the signed-in user with the session `backd login` stored (not an API key). Each\nchange asks for a fresh proof that it is you: your authenticator code if you have one,\nelse your password. Codes and passwords are read from the terminal, or from the lines of\nstandard input when it isn't one.")
+	acc.SubCommand("strategies").ShortHelp("list the realm's sign-in strategies and their methods (no sign-in needed)").
+		Func(cmdutil.Act("backd account strategies", account.StrategiesAction)).Config(clicore.Remote)
 	acc.SubCommand("mfa-status").ShortHelp("show whether two-step verification is on").
 		Func(cmdutil.Act("backd account mfa-status", account.AccountMFAStatus)).Config(clicore.Remote)
 	acc.SubCommand("mfa-enable").ShortHelp("set an authenticator app up: shows a QR code and the recovery codes once").

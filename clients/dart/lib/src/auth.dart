@@ -186,6 +186,8 @@ final class Session extends SignInResult {
     this.profile,
     this.recoveryCodesLeft,
     this.org,
+    this.strategy,
+    this.rolesInactive = const [],
   });
 
   /// The session of a sign-in, from the server's answer.
@@ -203,6 +205,10 @@ final class Session extends SignInResult {
             : null,
         recoveryCodesLeft: json['recovery_codes_left'] as int?,
         org: json['org'] as String?,
+        strategy: json['strategy'] as String?,
+        rolesInactive: [
+          for (final r in json['roles_inactive'] as List? ?? const []) '$r',
+        ],
       );
 
   /// Session token (`bds_…`); already stored by the client.
@@ -231,17 +237,37 @@ final class Session extends SignInResult {
   /// The organization the session is scoped to: its token reaches that
   /// organization and no other.
   final String? org;
+
+  /// The strategy the session was made with.
+  final String? strategy;
+
+  /// The roles the user holds that the strategy does not allow (they are not
+  /// in `user.roles`): offer a stronger way in.
+  final List<String> rolesInactive;
 }
 
 /// A sign-in that needs a code of the user's second factor before it gives a
-/// session: send it with [Auth.verifyMfa].
+/// session: send it with [Auth.verifyMfa] (or [Auth.verifyStep] for a
+/// strategy with more steps).
 final class MfaChallenge extends SignInResult {
-  const MfaChallenge({required this.challenge, this.methods = const []});
+  const MfaChallenge({
+    required this.challenge,
+    this.methods = const [],
+    this.next = const [],
+    this.strategy,
+  });
 
   final String challenge;
 
   /// `totp`, `recovery_code`.
   final List<String> methods;
+
+  /// The method the strategy asks for now (`totp`); a recovery code stands in
+  /// for it.
+  final List<String> next;
+
+  /// The strategy the sign-in follows.
+  final String? strategy;
 }
 
 /// A sign-in of a user whose role requires a second factor and who has none:
@@ -249,9 +275,12 @@ final class MfaChallenge extends SignInResult {
 /// `auth.mfa.confirm(setupId: …, code: …, challenge: …)`, which gives the
 /// session.
 final class EnrollmentChallenge extends SignInResult {
-  const EnrollmentChallenge({required this.challenge});
+  const EnrollmentChallenge({required this.challenge, this.strategy});
 
   final String challenge;
+
+  /// The strategy the sign-in follows.
+  final String? strategy;
 }
 
 /// A sign-in that is done but has consents to accept first (a required one
@@ -626,10 +655,15 @@ final class Auth {
         return MfaChallenge(
           challenge: map['challenge'] as String,
           methods: [for (final m in map['methods'] as List? ?? const []) '$m'],
+          next: [for (final m in map['next'] as List? ?? const []) '$m'],
+          strategy: map['strategy'] as String?,
         );
       }
       if (map['mfa_enrollment_required'] == true) {
-        return EnrollmentChallenge(challenge: map['challenge'] as String);
+        return EnrollmentChallenge(
+          challenge: map['challenge'] as String,
+          strategy: map['strategy'] as String?,
+        );
       }
       if (map['consent_required'] == true) {
         return ConsentChallenge(
@@ -762,14 +796,19 @@ final class Auth {
     String password, {
     String? org,
     String? invitation,
+    String? strategy,
     RequestOptions? options,
   }) async {
     final res = await client.request(RequestInit(
       method: 'POST',
       path: [...base(org), 'login'],
       auth: false,
-      body: _compact(
-          {'email': email, 'password': password, 'invitation': invitation}),
+      body: _compact({
+        'email': email,
+        'password': password,
+        'invitation': invitation,
+        'strategy': strategy ?? client.strategy,
+      }),
       retry: options?.retry,
       headers: options?.headers,
       cache: options?.cache ?? true,
@@ -785,10 +824,14 @@ final class Auth {
     String password, {
     String? org,
     String? invitation,
+    String? strategy,
     RequestOptions? options,
   }) async =>
       session(await signIn(email, password,
-          org: org, invitation: invitation, options: options));
+          org: org,
+          invitation: invitation,
+          strategy: strategy,
+          options: options));
 
   /// Starts signing in with a provider the realm lists (`google`,
   /// `microsoft` or `apple`): makes a PKCE verifier, keeps it for the return,
@@ -807,12 +850,14 @@ final class Auth {
     String? invitation,
     String? locale,
     String? org,
+    String? strategy,
     Map<String, String>? consents,
     FutureOr<void> Function(Uri url)? navigate,
     RequestOptions? options,
   }) =>
       _startOAuth(provider, 'signin',
           org: org,
+          strategy: strategy ?? client.strategy,
           redirectTo: redirectTo,
           invitation: invitation,
           locale: locale,
@@ -844,6 +889,7 @@ final class Auth {
     String provider,
     String intent, {
     String? org,
+    String? strategy,
     String? redirectTo,
     String? invitation,
     String? locale,
@@ -868,6 +914,7 @@ final class Auth {
         'invitation': invitation,
         'locale': locale,
         'consents': consents,
+        if (intent != 'link') 'strategy': strategy,
       }),
       retry: options?.retry,
       headers: options?.headers,
@@ -963,6 +1010,7 @@ final class Auth {
     String? invitation,
     String? locale,
     Map<String, String>? consents,
+    String? strategy,
     RequestOptions? options,
   }) async {
     final res = await client.request(RequestInit(
@@ -970,6 +1018,7 @@ final class Auth {
       path: ['_auth', 'oauth', provider, 'id-token'],
       auth: false,
       body: _idTokenBody(
+        strategy: strategy ?? client.strategy,
         idToken: idToken,
         nonce: nonce,
         authorizationCode: authorizationCode,
@@ -1012,6 +1061,7 @@ final class Auth {
   }
 
   Map<String, Object?> _idTokenBody({
+    String? strategy,
     required String idToken,
     required String nonce,
     String? authorizationCode,
@@ -1026,6 +1076,7 @@ final class Auth {
         'invitation': invitation,
         'locale': locale,
         'consents': consents,
+        'strategy': strategy,
       });
 
   /// Removes one of the user's ways to sign in (`password` included). The
@@ -1053,6 +1104,17 @@ final class Auth {
     String method,
     String code, {
     RequestOptions? options,
+  }) async =>
+      session(await verifyStep(challenge, method, code, options: options));
+
+  /// [verifyMfa] for strategies with more steps: resolves with what the code
+  /// led to, the session (stored) or, when the strategy asks for another step,
+  /// the next [MfaChallenge].
+  Future<SignInResult> verifyStep(
+    String challenge,
+    String method,
+    String code, {
+    RequestOptions? options,
   }) async {
     final res = await client.request(RequestInit(
       method: 'POST',
@@ -1063,7 +1125,30 @@ final class Auth {
       headers: options?.headers,
       cache: options?.cache ?? true,
     ));
-    return session(await step(res.data));
+    return step(res.data);
+  }
+
+  /// The strategies of the realm and their methods in order, as
+  /// `GET /_auth/strategies` lists them (no credentials needed), for an app
+  /// that draws its sign-in screen.
+  Future<List<({String name, List<String> methods})>> strategies({
+    RequestOptions? options,
+  }) async {
+    final res = await client.request(RequestInit(
+      method: 'GET',
+      path: const ['_auth', 'strategies'],
+      auth: false,
+      retry: options?.retry,
+      headers: options?.headers,
+      cache: options?.cache ?? true,
+    ));
+    return [
+      for (final s in (res.data as Map)['strategies'] as List)
+        (
+          name: '${(s as Map)['name']}',
+          methods: [for (final m in s['methods'] as List) '$m'],
+        ),
+    ];
   }
 
   /// Finishes a sign-in that answered with a [ConsentChallenge]: the consents
@@ -1623,6 +1708,7 @@ final class MagicLink {
     String? redirectTo,
     String? locale,
     String? org,
+    String? strategy,
     Map<String, String>? consents,
     RequestOptions? options,
   }) async {
@@ -1637,6 +1723,7 @@ final class MagicLink {
         'code_challenge': challenge,
         'locale': locale,
         'consents': consents,
+        'strategy': strategy ?? _auth.client.strategy,
       }),
       retry: options?.retry,
       headers: options?.headers,

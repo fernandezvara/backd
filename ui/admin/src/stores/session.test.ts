@@ -123,3 +123,23 @@ test('a tab that opted in keeps its session across a reload', async () => {
   expect(calls).toEqual([])
   await s.signOut()
 })
+
+test('a realm with several strategies: the choice goes with the sign-in and the session says which was used', async () => {
+  routes['GET /v1/acme/_auth/strategies'] = () =>
+    json(200, { strategies: [{ name: 'users', methods: ['password'] }, { name: 'admin_password', methods: ['password', 'totp'] }, { name: 'google', methods: ['google'] }] })
+  let sent: Record<string, unknown> = {}
+  routes['POST /v1/acme/_auth/login'] = () => json(200, { token: 'bds_tok', strategy: 'users', expires_at: '2030-01-01T00:00:00Z', user: { id: 'u1', email: 'ada@example.com' } })
+  const original = globalThis.fetch
+  vi.stubGlobal('fetch', async (input: Request | string | URL, init?: RequestInit) => {
+    const req = new Request(input as string, init)
+    if (new URL(req.url).pathname.endsWith('/login')) sent = JSON.parse(await req.clone().text())
+    return original(input as string, init)
+  })
+  const s = useSession()
+  expect(await s.passwordStrategies('acme')).toEqual(['users', 'admin_password'])
+  await s.signIn('acme', 'ada@example.com', 'dev-p4ssw0rd!', false, 'users')
+  expect(sent.strategy).toBe('users')
+  expect(s.strategy).toBe('users')
+  await s.signOut()
+  expect(s.strategy).toBe('')
+})

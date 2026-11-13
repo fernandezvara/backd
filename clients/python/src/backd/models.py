@@ -128,6 +128,11 @@ class Session(_SessionRequired, total=False):
     token_type: Literal["Bearer"]
     #: The organization the session is scoped to: its token reaches that organization and no other.
     org: str
+    #: The strategy the session was made with.
+    strategy: str
+    #: The roles the user holds that the strategy does not allow (absent from ``user["roles"]``).
+    #: Offer a stronger way in.
+    roles_inactive: list[str]
 
 
 class ProviderSession(Session, total=False):
@@ -161,6 +166,10 @@ class MfaChallenge:
 
     challenge: str
     methods: list[str] = field(default_factory=list)
+    #: The method the strategy asks for now (``["totp"]``); a recovery code stands in for it.
+    next: list[str] = field(default_factory=list)
+    #: The strategy the sign-in follows.
+    strategy: str | None = None
 
 
 @dataclass(frozen=True)
@@ -169,6 +178,7 @@ class EnrollmentChallenge:
     ``auth.mfa.setup(challenge=…)`` and ``auth.mfa.confirm(…)``, which gives the session."""
 
     challenge: str
+    strategy: str | None = None
 
 
 @dataclass(frozen=True)

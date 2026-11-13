@@ -52,7 +52,7 @@ func run(ctx context.Context) error {
 	if ok, err := c.Auth().HasSession(ctx); err != nil {
 		return err
 	} else if !ok {
-		if _, err := c.Auth().Login(ctx, client.SignInInput{Email: os.Getenv("SHELF_EMAIL"), Password: os.Getenv("SHELF_PASSWORD")}); err != nil {
+		if _, err := c.Auth().Login(ctx, client.SignInInput{Email: os.Getenv("SHELF_EMAIL"), Password: os.Getenv("SHELF_PASSWORD"), Strategy: "password"}); err != nil {
 			var second *client.SecondStepRequiredError
 			if errors.As(err, &second) {
 				return fmt.Errorf("this account has a second step (%s): sign in once with `backd login`", second.Code)

@@ -54,10 +54,14 @@ func askSecondFactor(t *clicore.Target, uio cmdutil.IO, challenge string, res *s
 		if codeIsRecovery(code) {
 			method = "recovery_code"
 		}
-		session, err := t.Client.Auth().VerifyMFA(t.Ctx, challenge, method, code)
+		step, err := t.Client.Auth().VerifyStep(t.Ctx, challenge, method, code)
 		var ae *clicore.APIError
 		switch {
+		case err == nil && step.Kind != client.StepSession:
+			// A strategy of several steps: the next one.
+			return finishStep(t, uio, step, res)
 		case err == nil:
+			session := step.Session
 			*res = sessionOf(session)
 			if session.RecoveryCodesLeft != nil {
 				fmt.Fprintf(uio.Stderr, "note: a recovery code was used; %d left. Replace them with `backd account recovery-codes` when you can\n", *session.RecoveryCodesLeft)
@@ -161,8 +165,8 @@ func QRBlocks(text string) (string, error) {
 
 // magicLinkSignIn signs in with a link or a code sent to an address: it asks for a message, then
 // for the code in it, and ends with the session or, for a user with a second factor, the second step.
-func magicLinkSignIn(t *clicore.Target, uio cmdutil.IO, address string, res *sessionAnswer) error {
-	if _, err := t.Client.Auth().MagicLink.Request(t.Ctx, address, client.MagicLinkOptions{}); err != nil {
+func magicLinkSignIn(t *clicore.Target, uio cmdutil.IO, address, strategy string, res *sessionAnswer) error {
+	if _, err := t.Client.Auth().MagicLink.Request(t.Ctx, address, client.MagicLinkOptions{Strategy: strategy}); err != nil {
 		return err
 	}
 	fmt.Fprintf(uio.Stderr, "if %s can sign in, a message with a 6-digit code is on its way\n", address)

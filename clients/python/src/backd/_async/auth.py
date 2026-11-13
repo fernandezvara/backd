@@ -132,6 +132,7 @@ class AsyncMagicLink:
         locale: str | None = None,
         org: str | None = None,
         consents: Mapping[str, str] | None = None,
+        strategy: str | None = None,
     ) -> str:
         """Asks for a message with a link and a 6-digit code. Always succeeds, whatever the address is. The
         link ends at ``redirect_to`` (``complete_sign_in`` finishes it); the code is typed in this program with
@@ -143,7 +144,12 @@ class AsyncMagicLink:
         client = self._auth._client
         verifier, challenge = new_pkce()
         body = _compact(
-            email=email, redirect_to=redirect_to, code_challenge=challenge, locale=locale, consents=consents
+            email=email,
+            redirect_to=redirect_to,
+            code_challenge=challenge,
+            locale=locale,
+            consents=consents,
+            strategy=strategy or client.strategy,
         )
         res = await client.request("POST", [*self._auth.base(org), "magic-link"], body=body, auth=False)
         request_id = cast(dict[str, Any], res.data)["request_id"]
@@ -311,9 +317,9 @@ class AsyncAuth:
         """What a first factor answered: the session (stored), or the second step the user has to take."""
         d = data or {}
         if d.get("mfa_required"):
-            return MfaChallenge(d["challenge"], d.get("methods") or [])
+            return MfaChallenge(d["challenge"], d.get("methods") or [], d.get("next") or [], d.get("strategy"))
         if d.get("mfa_enrollment_required"):
-            return EnrollmentChallenge(d["challenge"])
+            return EnrollmentChallenge(d["challenge"], d.get("strategy"))
         if d.get("consent_required"):
             return ConsentChallenge(d["challenge"], d.get("consents") or [])
         return await self._signed_in(d)
@@ -346,19 +352,30 @@ class AsyncAuth:
             )
         return result
 
-    async def verify_mfa(self, challenge: str, method: Literal["totp", "recovery_code"], code: str) -> ProviderSession:
-        """Finishes a sign-in that answered with an :class:`MfaChallenge`: the code of the user's authenticator
-        app (``totp``) or a recovery code (``recovery_code``). Returns the session (a provider's also has
-        ``new_user``, a recovery code ``recovery_codes_left``). Raises ``invalid_code`` (a ``ValidationError``;
-        ``details`` has the attempts left), ``invalid_challenge`` after five wrong ones or five minutes, and
-        ``mfa_locked`` (a ``RetryableError``, 429) after ten wrong codes in an hour."""
+    async def verify_step(self, challenge: str, method: Literal["totp", "recovery_code"], code: str) -> SignInResult:
+        """:meth:`verify_mfa` for strategies with more steps: returns what the code led to, the session (stored)
+        or, when the strategy asks for another step, the next :class:`MfaChallenge`."""
         res = await self._client.request(
             "POST",
             ["_auth", "mfa", "verify"],
             body={"challenge": challenge, "method": method, "code": code},
             auth=False,
         )
-        return cast(ProviderSession, await self._signed_in(res.data))
+        return await self._step(res.data)
+
+    async def strategies(self) -> list[dict[str, Any]]:
+        """The strategies of the realm and their methods in order (``[{"name", "methods"}]``), as
+        ``GET /_auth/strategies`` lists them (no credentials needed), for a program that offers a choice."""
+        res = await self._client.request("GET", ["_auth", "strategies"], auth=False)
+        return cast("list[dict[str, Any]]", cast(dict[str, Any], res.data)["strategies"])
+
+    async def verify_mfa(self, challenge: str, method: Literal["totp", "recovery_code"], code: str) -> ProviderSession:
+        """Finishes a sign-in that answered with an :class:`MfaChallenge`: the code of the user's authenticator
+        app (``totp``) or a recovery code (``recovery_code``). Returns the session (a provider's also has
+        ``new_user``, a recovery code ``recovery_codes_left``). Raises ``invalid_code`` (a ``ValidationError``;
+        ``details`` has the attempts left), ``invalid_challenge`` after five wrong ones or five minutes, and
+        ``mfa_locked`` (a ``RetryableError``, 429) after ten wrong codes in an hour."""
+        return cast(ProviderSession, self._session(await self.verify_step(challenge, method, code)))
 
     async def accept_consents(self, challenge: str, consents: Mapping[str, str]) -> ProviderSession:
         """Finishes a sign-in that answered with a :class:`ConsentChallenge`: the consents the user accepted, as
@@ -388,7 +405,13 @@ class AsyncAuth:
         return await action()
 
     async def sign_in(
-        self, email: str, password: str, *, org: str | None = None, invitation: str | None = None
+        self,
+        email: str,
+        password: str,
+        *,
+        org: str | None = None,
+        invitation: str | None = None,
+        strategy: str | None = None,
     ) -> SignInResult:
         """Signs in with email and password. The answer is the session, or, for a user with a second factor, a
         :class:`MfaChallenge` to finish with :meth:`verify_mfa`, or an :class:`EnrollmentChallenge`: check its
@@ -396,17 +419,26 @@ class AsyncAuth:
         slug; the client's own when it was made with one): the session, or the second step, is scoped to it. A
         person who is not a member, an organization that is not there and a wrong password all fail alike, with
         ``invalid_credentials``. A right password that an administrator expired raises
-        :class:`PasswordExpiredError`."""
-        body = _compact(email=email, password=password, invitation=invitation)
+        :class:`PasswordExpiredError`. ``strategy`` names the strategy to sign in with (the client's ``strategy``
+        when omitted); a realm with more than one that starts with the password needs it."""
+        body = _compact(
+            email=email, password=password, invitation=invitation, strategy=strategy or self._client.strategy
+        )
         res = await self._client.request("POST", [*self.base(org), "login"], body=body, auth=False)
         return await self._step(res.data)
 
     async def login(
-        self, email: str, password: str, *, org: str | None = None, invitation: str | None = None
+        self,
+        email: str,
+        password: str,
+        *,
+        org: str | None = None,
+        invitation: str | None = None,
+        strategy: str | None = None,
     ) -> Session:
         """Signs in with email and password and promises a session: a user who needs a second step makes this
         raise :class:`SecondStepRequiredError` (use :meth:`sign_in` to get the step as a value)."""
-        return self._session(await self.sign_in(email, password, org=org, invitation=invitation))
+        return self._session(await self.sign_in(email, password, org=org, invitation=invitation, strategy=strategy))
 
     # -- providers -------------------------------------------------------------------------
 
@@ -420,6 +452,7 @@ class AsyncAuth:
         consents: Mapping[str, str] | None = None,
         org: str | None = None,
         navigate: Callable[[str], Awaitable[None]] | None = None,
+        strategy: str | None = None,
     ) -> str:
         """Starts signing in with a provider the realm lists (``google``, ``microsoft`` or ``apple``): makes a
         PKCE verifier, keeps it in ``oauth_storage`` for the return, and returns the provider's address, which
@@ -427,7 +460,17 @@ class AsyncAuth:
         ``redirect_to`` (it must be within the realm's ``sign_in.allowed_redirects``; the realm's
         ``sign_in.app_url`` when omitted), where :meth:`complete_sign_in` finishes the sign-in. ``org`` signs in
         through the connection of that organization instead of the realm's own providers."""
-        return await self._start_oauth(provider, "signin", redirect_to, invitation, locale, consents, org, navigate)
+        return await self._start_oauth(
+            provider,
+            "signin",
+            redirect_to,
+            invitation,
+            locale,
+            consents,
+            org,
+            navigate,
+            strategy or self._client.strategy,
+        )
 
     async def link_provider(
         self,
@@ -439,7 +482,7 @@ class AsyncAuth:
     ) -> str:
         """Adds a provider to the signed-in user as another way to sign in. The same flow as
         :meth:`sign_in_with`; :meth:`complete_sign_in` then returns ``{"linked": provider}``."""
-        return await self._start_oauth(provider, "link", redirect_to, None, None, None, org, navigate)
+        return await self._start_oauth(provider, "link", redirect_to, None, None, None, org, navigate, None)
 
     async def _start_oauth(
         self,
@@ -451,6 +494,7 @@ class AsyncAuth:
         consents: Mapping[str, str] | None,
         org: str | None,
         navigate: Callable[[str], Awaitable[None]] | None,
+        strategy: str | None,
     ) -> str:
         client = self._client
         verifier, challenge = new_pkce()
@@ -461,6 +505,7 @@ class AsyncAuth:
             invitation=invitation,
             locale=locale,
             consents=consents,
+            strategy=strategy,
         )
         base = _auth_base(org) if intent == "link" else self.base(org)
         res = await client.request("POST", [*base, "oauth", provider, "start"], body=body, auth=intent == "link")
@@ -544,6 +589,7 @@ class AsyncAuth:
         locale: str | None = None,
         consents: Mapping[str, str] | None = None,
         org: str | None = None,
+        strategy: str | None = None,
     ) -> SignInResult:
         """Signs in with the ID token a mobile app got from the platform sign-in (Sign in with Apple, Google
         Sign-In, MSAL), with the raw ``nonce`` it started that sign-in with. For Apple, also the
@@ -556,6 +602,7 @@ class AsyncAuth:
             invitation=invitation,
             locale=locale,
             consents=consents,
+            strategy=strategy or self._client.strategy,
         )
         res = await self._client.request(
             "POST", [*self.base(org), "oauth", provider, "id-token"], body=body, auth=False

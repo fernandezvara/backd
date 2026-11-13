@@ -50,6 +50,8 @@ export const useSession = defineStore('session', () => {
   const client = shallowRef<Client | null>(null)
   const access = shallowRef<AdminAccess | null>(null)
   const ended = ref<EndReason | null>(null)
+  /** The strategy the session was made with (empty when the server names none). */
+  const strategy = ref('')
   const idleSeconds = ref(DEFAULT_IDLE_SECONDS)
   let idle: IdleWatch | null = null
   let memory: MemoryStore | null = null
@@ -88,6 +90,8 @@ export const useSession = defineStore('session', () => {
       throw e
     }
     ended.value = null
+    // The session this client signed in with knows its strategy (a reload in the same tab does not).
+    strategy.value = c.auth.current?.strategy ?? ''
     idle?.stop()
     idle = watchIdle(idleSeconds.value, () => void signOut('idle'))
   }
@@ -101,11 +105,24 @@ export const useSession = defineStore('session', () => {
     step.value = { kind: 'consent', challenge, consents: withText }
   }
 
+  /**
+   * The strategies of a realm that start with the password, in the realm's order: what the sign-in offers when
+   * there is more than one. Public (no credentials); an unreachable realm has none.
+   */
+  async function passwordStrategies(forRealm: string): Promise<string[]> {
+    try {
+      const c = createClient({ url: window.location.origin, realm: forRealm, storage: memoryStore() })
+      return (await c.auth.strategies()).filter((s) => s.methods[0] === 'password').map((s) => s.name)
+    } catch {
+      return []
+    }
+  }
+
   /** Signs in; resolves with what is still needed: nothing (`done`), a code, an enrolment or consents. */
-  async function signIn(forRealm: string, emailAddress: string, password: string, keepInTab: boolean): Promise<'done' | 'code' | 'enroll' | 'consent'> {
+  async function signIn(forRealm: string, emailAddress: string, password: string, keepInTab: boolean, withStrategy?: string): Promise<'done' | 'code' | 'enroll' | 'consent'> {
     begin(forRealm, keepInTab)
     const c = client.value!
-    const result = await c.auth.signIn({ email: emailAddress, password })
+    const result = await c.auth.signIn({ email: emailAddress, password, strategy: withStrategy })
     if ('consentRequired' in result) {
       await toConsentStep(c, result.challenge, result.consents)
       return 'consent'
@@ -191,6 +208,7 @@ export const useSession = defineStore('session', () => {
     idle = null
     const c = client.value
     access.value = null
+    strategy.value = ''
     client.value = null
     ended.value = reason
     if (c) await c.auth.logout().catch(() => {})
@@ -222,5 +240,5 @@ export const useSession = defineStore('session', () => {
     idleSeconds.value = n
   }
 
-  return { realm, client, access, ended, signedIn, email, idleSeconds, readable, writable, canRead, canWrite, step, signIn, updatePassword, verifyCode, startEnrollment, confirmEnrollment, acceptConsents, cancelStep, restore, signOut, expired, setIdleSeconds }
+  return { realm, client, access, ended, strategy, signedIn, email, passwordStrategies, idleSeconds, readable, writable, canRead, canWrite, step, signIn, updatePassword, verifyCode, startEnrollment, confirmEnrollment, acceptConsents, cancelStep, restore, signOut, expired, setIdleSeconds }
 })

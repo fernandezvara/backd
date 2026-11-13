@@ -370,7 +370,7 @@ func (s *Users) startSessionWith(ctx context.Context, u User, methods []string, 
 	}
 	s.Metrics.SessionStarted(s.Realm)
 	if s.Settings.IsAdmin(u.Roles) && len(methods) > 0 {
-		s.AuditAs(ctx, userTarget(u.ID), AuditAdminLogin, userTarget(u.ID), map[string]any{"session_id": sess.ID})
+		s.AuditAs(ctx, userTarget(u.ID), AuditAdminLogin, userTarget(u.ID), map[string]any{"session_id": sess.ID, "strategy": strategy, "methods": methods})
 	}
 	return s.principalOf(u, sess), token, nil
 }
