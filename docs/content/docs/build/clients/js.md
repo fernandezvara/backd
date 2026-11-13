@@ -155,6 +155,8 @@ await backd.auth.passkeys.remove(mine[0].id)
 
 The input needs `autocomplete="username webauthn"` (`webauthn` last) for the browser to list passkeys in its autofill; `signIn` with `conditional: true` waits quietly until the person picks one, and ends with an `AbortError` when the `signal` aborts. A prompt the person dismisses, or that times out, rejects with a `PasskeyError` (`passkey_cancelled`; `passkey_unsupported` in a browser without passkeys, `passkey_failed` for an authenticator error): nothing was sent to the server. The server's refusals are `invalid_passkey` (an `AuthenticationError`, always the same whatever went wrong), `passkey_limit`, `credential_required` (a passkey that a strategy of the user needs and nothing replaces) and `reauth_required`. `reauth({ method: 'passkey' })` asks for one too.
 
+An administrator lists a user's passkeys and removes the one of a lost device with `backd.admin.users.passkeys(id)` and `removePasskey(id, passkeyId)` ([Admin API](../../../operate/administration/admin/)).
+
 The page must be served from an origin the realm lists in `auth.passkeys.origins` (`https`, or `http://localhost` in development),, and a Node script has no authenticator: it uses the other methods. The example app has a passkey button, the autofill and an account page; its browser test uses Chromium's virtual authenticator (`clients/js/test/browser`).
 
 ### Account flows by email

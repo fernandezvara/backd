@@ -83,6 +83,10 @@ At startup, `backd` warns about each realm that declares no admin role, or whose
 | `backd account mfa-enable` | Sets an authenticator app up (QR code, first code) and shows the recovery codes once |
 | `backd account mfa-disable --yes` | Turns it off (refused for a role that requires it) |
 | `backd account recovery-codes` | Replaces the recovery codes, shown once |
+| `backd account passkeys-list` | Lists your [passkeys](../../../build/auth/sessions/#passkeys) |
+| `backd account passkeys-remove --id <id>` | Removes one (it ends the sessions it opened) |
+
+**There is no passkey sign-in in the terminal.** A passkey is signed by an authenticator that only a browser or an app can talk to, and handing the terminal's sign-in to a browser would teach people to approve prompts they did not start (the pattern phishing uses). So `backd login --strategy <name>` answers `this method needs a browser or an app` for a strategy that starts with a passkey, or that asks for one after the password, and the realm's other strategies keep working. The terminal lists and removes passkeys (`passkeys-list`, `passkeys-remove`); adding one is done on the realm's account page or in its app. A user whose only second proof is a passkey cannot give a fresh proof from the terminal either (a password is not enough once a passkey exists), so removing one from the terminal needs the authenticator code too; otherwise use the account page.
 
 `backd apikey create` asks for the same proof when it runs with a session: an administrator's key outlives the session and bypasses MFA, so a person confirms it. With `BACKD_API_KEY` set there is nobody to ask.
 
@@ -152,7 +156,7 @@ Be careful when taking an admin role away from yourself: once no one holds an ad
 |---|---|
 | `backd login --realm <realm>` | Sign in to a running `backd` as an administrator and keep the session (see [Logging in](#logging-in)) |
 | `backd logout`, `backd whoami` | End the stored session, or show who it belongs to |
-| `backd account <command>` | Manage your own [second factor](../../../build/auth/mfa/) and recovery codes (see [Your own sign-in security](#your-own-sign-in-security)) |
+| `backd account <command>` | Manage your own [second factor](../../../build/auth/mfa/), recovery codes and passkeys (see [Your own sign-in security](#your-own-sign-in-security)) |
 
 **Administration** — a running `backd`'s admin API:
 

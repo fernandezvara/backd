@@ -1294,6 +1294,12 @@ func TestContract(t *testing.T) {
 	if err := f.svc.Store.Add(context.Background(), passkey.Credential{ID: "pk-admin", UserID: temp.ID, CredentialID: []byte{4, 2}, PublicKey: []byte{1}, RPID: "acme.example", Name: "Lost phone", CreatedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
+	req("GET", ad+"/users/"+temp.ID+"/passkeys", "", nil, 401)
+	req("GET", ad+"/users/"+temp.ID+"/passkeys", "", ada, 403)
+	req("GET", ad+"/users/nope/passkeys", "", key, 404)
+	if list := req("GET", ad+"/users/"+temp.ID+"/passkeys", "", key, 200)["items"].([]any); len(list) != 1 || list[0].(map[string]any)["id"] != "pk-admin" {
+		t.Errorf("a user's passkeys = %v", list)
+	}
 	req("DELETE", ad+"/users/"+temp.ID+"/passkeys/pk-admin", "", nil, 401)
 	req("DELETE", ad+"/users/"+temp.ID+"/passkeys/pk-admin", "", ada, 403)
 	req("DELETE", ad+"/users/"+temp.ID+"/passkeys/nope", "", key, 404)

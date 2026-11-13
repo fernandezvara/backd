@@ -75,6 +75,22 @@ func (a *adminAPI) resetUserMFA(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// userPasskeys answers GET /users/{id}/passkeys: the passkeys of a user (never the key material), so an
+// administrator can remove the one of a lost device.
+func (a *adminAPI) userPasskeys(w http.ResponseWriter, r *http.Request) {
+	list, err := usersOf(r).ListPasskeys(r.Context(), adminUserOf(r).ID)
+	if err != nil {
+		adminError(w, r, err)
+		return
+	}
+	items := make([]map[string]any, len(list))
+	for i, p := range list {
+		items[i] = passkeyJSON(p)
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
 // removeUserPasskey answers DELETE /users/{id}/passkeys/{passkey_id}: an administrator removes one
 // passkey of a user (a lost device); the user is told by email and it is audited.
 func (a *adminAPI) removeUserPasskey(w http.ResponseWriter, r *http.Request) {

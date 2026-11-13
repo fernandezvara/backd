@@ -13,6 +13,7 @@ import (
 	"github.com/pquerna/otp/totp"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/auth/passkey"
 )
 
 // mfaFixture is a user with a password and a TOTP secret, enrolled the way 13.2's
@@ -457,5 +458,41 @@ func addFirstStrategies(s *registry.RealmSettings) {
 	}
 	if s.MagicLink.Enabled && !has("magic_link") {
 		s.Strategies = append(s.Strategies, registry.Strategy{Name: "magic_link", Methods: []string{"magic_link"}})
+	}
+}
+
+func TestAdminListsAndRemovesAPasskey(t *testing.T) {
+	f := newRulesFixture(t)
+	f.svc.Realm = "acme"
+	f.svc.Cipher, _ = auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
+	f.svc.Settings.Email = nil
+	f.svc.Settings.Passkeys = registry.PasskeySettings{Enabled: true, RPID: "example.com", RPName: "Example", Origins: []string{"https://app.example.com"}}
+	if err := f.svc.Store.Add(context.Background(), passkey.Credential{ID: "pk1", UserID: f.adaID, CredentialID: []byte("cred-1"), PublicKey: []byte("key"), RPID: "example.com", Name: "Laptop", CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	const admin = "/v1/acme/_admin"
+	if rec, _ := f.doH(t, "GET", admin+"/users/"+f.adaID+"/passkeys", "", nil); rec.Code != http.StatusUnauthorized {
+		t.Errorf("no credential: %d", rec.Code)
+	}
+	if rec, _ := f.doH(t, "GET", admin+"/users/"+f.adaID+"/passkeys", "", jsonHdr(f.carl)); rec.Code != http.StatusForbidden {
+		t.Errorf("a plain user: %d", rec.Code)
+	}
+	rec, out := f.doH(t, "GET", admin+"/users/"+f.adaID+"/passkeys", "", jsonHdr(f.key))
+	items, _ := out["items"].([]any)
+	if rec.Code != http.StatusOK || len(items) != 1 || items[0].(map[string]any)["name"] != "Laptop" || items[0].(map[string]any)["id"] != "pk1" {
+		t.Fatalf("list: %d %v", rec.Code, out)
+	}
+	if _, leaked := items[0].(map[string]any)["public_key"]; leaked {
+		t.Error("the key material is listed")
+	}
+	// Someone else's passkey id is a 404; the right one goes.
+	if rec, _ := f.doH(t, "DELETE", admin+"/users/"+f.bobID+"/passkeys/pk1", "", jsonHdr(f.key)); rec.Code != http.StatusNotFound {
+		t.Errorf("another user's passkey: %d", rec.Code)
+	}
+	if rec, out := f.doH(t, "DELETE", admin+"/users/"+f.adaID+"/passkeys/pk1", "", jsonHdr(f.key)); rec.Code != http.StatusNoContent {
+		t.Fatalf("remove: %d %v", rec.Code, out)
+	}
+	if _, out := f.doH(t, "GET", admin+"/users/"+f.adaID+"/passkeys", "", jsonHdr(f.key)); len(out["items"].([]any)) != 0 {
+		t.Errorf("after: %v", out)
 	}
 }

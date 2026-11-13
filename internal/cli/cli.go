@@ -124,7 +124,7 @@ func registerRemote(cfg *kli.Config) {
 	cfg.Command("whoami").ShortHelp("show who the stored session belongs to").
 		Func(cmdutil.Act("backd whoami", account.WhoamiAction)).Config(clicore.Remote)
 
-	acc := cfg.Command("account").ShortHelp("manage your own sign-in security: the second factor and its recovery codes").
+	acc := cfg.Command("account").ShortHelp("manage your own sign-in security: the second factor, recovery codes and passkeys").
 		LongHelp("Acts on the signed-in user with the session `backd login` stored (not an API key). Each\nchange asks for a fresh proof that it is you: your authenticator code if you have one,\nelse your password. Codes and passwords are read from the terminal, or from the lines of\nstandard input when it isn't one.")
 	acc.SubCommand("strategies").ShortHelp("list the realm's sign-in strategies and their methods (no sign-in needed)").
 		Func(cmdutil.Act("backd account strategies", account.StrategiesAction)).Config(clicore.Remote)
@@ -136,6 +136,14 @@ func registerRemote(cfg *kli.Config) {
 		Func(cmdutil.Act("backd account mfa-disable", account.AccountMFADisable)).Config(func(cc *kli.CommandConfig) {
 		clicore.Remote(cc)
 		cmdutil.Boolean(cc, "yes", "confirm that you want it off")
+	})
+	acc.SubCommand("passkeys-list").ShortHelp("list your passkeys").
+		LongHelp("A passkey is made and used by an authenticator that only a browser or an app can talk to, so the\nterminal can list them and remove the ones you no longer want; add them on the realm's account page\nor in its app. `backd login --strategy` answers \"this method needs a browser or an app\" for a\nstrategy that needs one.").
+		Func(cmdutil.Act("backd account passkeys-list", account.AccountPasskeysList)).Config(clicore.Remote)
+	acc.SubCommand("passkeys-remove").ShortHelp("remove a passkey (it ends the sessions it opened)").
+		Func(cmdutil.Act("backd account passkeys-remove", account.AccountPasskeysRemove)).Config(func(cc *kli.CommandConfig) {
+		clicore.Remote(cc)
+		cmdutil.Required(cc, "id", "the passkey's id (from `backd account passkeys-list`)")
 	})
 	acc.SubCommand("recovery-codes").ShortHelp("replace the recovery codes with new ones, shown once").
 		Func(cmdutil.Act("backd account recovery-codes", account.AccountRecoveryCodes)).Config(clicore.Remote)

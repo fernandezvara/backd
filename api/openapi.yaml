@@ -5920,6 +5920,39 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/users/{id}/passkeys:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    get:
+      tags: [admin]
+      summary: A user's passkeys
+      description: |
+        The passkeys a user registered (name, when added and last used, whether they sync), never the key
+        material: what an administrator needs to pick the one of a lost device for
+        `DELETE /_admin/users/{id}/passkeys/{passkey_id}`. Needs the `users` area. A realm that has not
+        enabled passkeys answers an empty list.
+      operationId: adminListUserPasskeys
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The passkeys.
+          headers:
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Passkey" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/users/{id}/passkeys/{passkey_id}:
     parameters:
       - { $ref: "#/components/parameters/realm" }

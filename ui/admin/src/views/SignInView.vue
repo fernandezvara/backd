@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { AuthenticationError, NetworkError, PasswordExpiredError, ValidationError } from 'backd-js'
-import { ref, watch } from 'vue'
+import { AuthenticationError, NetworkError, PasskeyError, PasswordExpiredError, ValidationError } from 'backd-js'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import AppAlert from '@/components/AppAlert.vue'
@@ -25,6 +25,16 @@ const realm = ref(props.realm ?? lastRealm())
 const realmInvalid = ref(false)
 watch(() => props.realm, (r) => { if (r) realm.value = r })
 const password = ref('')
+// The strategies that start with a passkey: a button (and the autofill of the email field) when the browser can use them.
+const canPasskey = typeof window.PublicKeyCredential !== 'undefined'
+const passkeyNames = ref<string[]>([])
+const passkeyStrategy = ref('')
+let waiting: AbortController | null = null
+function stopConditional() {
+  waiting?.abort()
+  waiting = null
+}
+onBeforeUnmount(stopConditional)
 // The strategies that start with the password: a choice only when the realm has more than one.
 const strategies = ref<string[]>([])
 const strategy = ref('')
@@ -35,6 +45,8 @@ watch(
     const mine = ++asked
     strategies.value = []
     strategy.value = ''
+    passkeyNames.value = []
+    stopConditional()
     if (!validRealm(r.trim().toLowerCase())) return
     // After a pause in typing: one question per realm, not per letter.
     await new Promise((done) => setTimeout(done, 300))
@@ -43,6 +55,11 @@ watch(
     if (mine !== asked) return
     strategies.value = found
     strategy.value = found[0] ?? ''
+    const withPasskey = await session.passkeyStrategies(r.trim().toLowerCase())
+    if (mine !== asked) return
+    passkeyNames.value = withPasskey
+    passkeyStrategy.value = withPasskey[0] ?? ''
+    void startConditional()
   },
   { immediate: true },
 )
@@ -108,10 +125,75 @@ async function updatePassword() {
   }
 }
 
+const passkeyName = ref('')
+
+/** A sign-in step that the browser's passkey prompt takes: a dismissed prompt is not a failure of the account. */
+function passkeyFailure(e: unknown): string {
+  if (e instanceof NotAdminError) return t('signIn.notAdmin')
+  if (e instanceof PasskeyError && e.code === 'passkey_cancelled') return t('signIn.passkey.cancelled')
+  if (e instanceof NetworkError) return t('signIn.unreachable')
+  return t('signIn.passkey.failed')
+}
+
+/** The passkey button, or the autofill of the email field (`conditional`: it waits for a pick). */
+async function signInPasskey(conditional = false) {
+  if (!canPasskey || !passkeyStrategy.value) return
+  realm.value = realm.value.trim().toLowerCase()
+  if (!validRealm(realm.value)) return
+  stopConditional()
+  const ask = new AbortController()
+  if (conditional) waiting = ask
+  else busy.value = true
+  error.value = ''
+  try {
+    rememberRealm(realm.value)
+    const result = await session.signInWithPasskey(realm.value, keep.value, passkeyStrategy.value, conditional ? { conditional: true, signal: ask.signal } : {})
+    if (result === 'done') await router.replace(next())
+  } catch (e) {
+    // The autofill attempt is the page's own doing, not the person's: when it ends without a passkey (an abort,
+    // none to offer) there is nothing to say; the button's own failures are shown.
+    if (!conditional && !(e instanceof Error && e.name === 'AbortError')) error.value = passkeyFailure(e)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function startConditional() {
+  if (!canPasskey || !passkeyNames.value.length) return
+  const PKC = window.PublicKeyCredential as unknown as { isConditionalMediationAvailable?: () => Promise<boolean> }
+  if (!(await PKC.isConditionalMediationAvailable?.().catch(() => false))) return
+  void signInPasskey(true)
+}
+
+async function verifyPasskey() {
+  busy.value = true
+  error.value = ''
+  try {
+    if ((await session.verifyPasskey()) === 'done') await router.replace(next())
+  } catch (e) {
+    error.value = passkeyFailure(e)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function enrollPasskey() {
+  busy.value = true
+  error.value = ''
+  try {
+    if ((await session.enrollPasskey(passkeyName.value.trim() || undefined)) === 'done') await router.replace(next())
+  } catch (e) {
+    error.value = passkeyFailure(e)
+  } finally {
+    busy.value = false
+  }
+}
+
 // Only the realm's own pages are followed after signing in.
 const next = () => safeNext(route.query.next, realm.value)
 
 async function submit() {
+  stopConditional()
   realm.value = realm.value.trim().toLowerCase()
   realmInvalid.value = !validRealm(realm.value)
   if (realmInvalid.value) return
@@ -270,6 +352,21 @@ function cancel() {
         <AppButton type="button" variant="secondary" @click="cancel">{{ t('signIn.cancel') }}</AppButton>
       </div>
     </form>
+    <section v-else-if="session.step?.kind === 'passkey'" class="space-y-4" data-testid="passkey-step">
+      <p class="text-sm">{{ t('signIn.passkey.stepIntro') }}</p>
+      <div class="flex gap-2">
+        <AppButton :busy="busy" data-testid="passkey-step-use" @click="verifyPasskey">{{ t('signIn.passkey.use') }}</AppButton>
+        <AppButton type="button" variant="secondary" @click="cancel">{{ t('signIn.cancel') }}</AppButton>
+      </div>
+    </section>
+    <form v-else-if="session.step?.kind === 'enrollPasskey'" class="space-y-4" data-testid="passkey-enroll" @submit.prevent="enrollPasskey">
+      <p class="text-sm">{{ t('signIn.passkey.enrollIntro') }}</p>
+      <TextField v-model="passkeyName" :label="t('signIn.passkey.name')" autocomplete="off" />
+      <div class="flex gap-2">
+        <AppButton type="submit" :busy="busy" data-testid="passkey-enroll-add">{{ t('signIn.passkey.add') }}</AppButton>
+        <AppButton type="button" variant="secondary" @click="cancel">{{ t('signIn.cancel') }}</AppButton>
+      </div>
+    </form>
     <section v-else-if="session.step?.kind === 'enroll'" class="space-y-4">
       <p class="text-sm">{{ t('signIn.enroll.intro') }}</p>
       <AppButton v-if="!setup" :busy="busy" @click="beginSetup">{{ t('signIn.enroll.start') }}</AppButton>
@@ -282,7 +379,7 @@ function cancel() {
       <AppButton type="button" variant="secondary" @click="cancel">{{ t('signIn.cancel') }}</AppButton>
     </section>
     <form v-else class="space-y-4" @submit.prevent="submit">
-      <TextField v-model="email" type="email" :label="t('signIn.email')" autocomplete="username" required />
+      <TextField v-model="email" type="email" :label="t('signIn.email')" :autocomplete="passkeyNames.length ? 'username webauthn' : 'username'" required />
       <TextField v-model="realm" :label="t('realm.label')" autocomplete="organization" required :error="realmInvalid ? t('realm.invalid') : undefined" data-testid="realm-field" />
       <TextField v-model="password" type="password" :label="t('signIn.password')" autocomplete="current-password" required />
       <div v-if="strategies.length > 1" class="space-y-1">
@@ -306,6 +403,18 @@ function cancel() {
       </div>
       <div class="flex justify-end">
         <AppButton type="submit" :busy="busy">{{ busy ? t('signIn.submitting') : t('signIn.submit') }}</AppButton>
+      </div>
+      <div v-if="canPasskey && passkeyNames.length" class="space-y-2 border-t border-slate-200 pt-4 dark:border-slate-700" data-testid="passkey-signin">
+        <select
+          v-if="passkeyNames.length > 1"
+          v-model="passkeyStrategy"
+          :aria-label="t('signIn.passkey.strategy')"
+          data-testid="passkey-strategy-field"
+          class="block w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
+        >
+          <option v-for="s in passkeyNames" :key="s" :value="s">{{ s }}</option>
+        </select>
+        <AppButton type="button" variant="secondary" class="w-full" :busy="busy" data-testid="passkey-signin-button" @click="signInPasskey(false)">{{ t('signIn.passkey.button') }}</AppButton>
       </div>
     </form>
   </main>

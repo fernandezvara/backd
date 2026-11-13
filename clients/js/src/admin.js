@@ -58,6 +58,7 @@ import { connectionBody } from './orgs.js'
  * @property {string} updated_at
  * @property {string | null} erased_at   When the user was erased; a tombstone keeps only its id (and a placeholder email).
  * @property {string | null} password_expired_at   When an administrator expired this user's password; null when none did or once a new password was set.
+ * @property {number} [passkeys]   How many passkeys the user has; only in `users.get()`.
  * @property {boolean} [password_expired]   Whether the password is expired now (this user's expiry or the realm's epoch); only in `users.get()`.
  */
 
@@ -644,6 +645,29 @@ class AdminUsers {
    */
   async resetMfa(id, opts) {
     await this.admin._request({ method: 'POST', path: ['users', id, 'mfa', 'reset'], ...opts })
+  }
+
+  /**
+   * The passkeys a user registered, oldest first (never the key material): to pick the one of a lost
+   * device for {@link AdminUsers#removePasskey}. Empty in a realm that has not enabled passkeys.
+   * @param {string} id
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<import('./passkeys.js').Passkey[]>}
+   */
+  async passkeys(id, opts) {
+    return (await this.admin._request({ method: 'GET', path: ['users', id, 'passkeys'], ...opts })).data.items
+  }
+
+  /**
+   * Removes one passkey of a user, for a lost device they cannot remove themselves: the sessions that
+   * passkey opened end and the user is told by email. `NotFoundError` for an id that is not theirs.
+   * @param {string} id
+   * @param {string} passkeyId
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async removePasskey(id, passkeyId, opts) {
+    await this.admin._request({ method: 'DELETE', path: ['users', id, 'passkeys', passkeyId], ...opts })
   }
 
   /**

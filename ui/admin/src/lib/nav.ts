@@ -38,7 +38,7 @@ export const NAV: NavGroup[] = [
     id: 'identity',
     label: 'nav.groups.identity',
     items: [
-      { route: 'home', label: 'nav.overview', desc: 'nav.desc.overview', icon: PhSquaresFour, show: () => true },
+      { route: 'home', label: 'nav.overview', desc: 'nav.desc.overview', icon: PhSquaresFour, also: ['account'], show: () => true },
       { route: 'users', label: 'nav.users', desc: 'nav.desc.users', icon: PhUsers, also: ['user'], show: (c) => c.canRead('users') },
       { route: 'orgs', label: 'nav.orgs', desc: 'nav.desc.orgs', icon: PhBuildings, also: ['org'], show: (c) => c.canRead('users') && c.orgs },
       { route: 'invitations', label: 'nav.invitations', desc: 'nav.desc.invitations', icon: PhEnvelopeSimple, show: (c) => c.canRead('invitations') },

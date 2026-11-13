@@ -52,7 +52,32 @@
     "label": "Breadcrumb"
   },
   "account": {
-    "label": "Account"
+    "label": "Account",
+    "title": "Account",
+    "passkeys": {
+      "title": "Passkeys",
+      "help": "A passkey signs you in with your device's screen lock, a password manager or a security key instead of typing. Adding or removing one asks you to confirm that it is you.",
+      "unsupported": "This browser cannot make passkeys; you can still see and remove the ones you have.",
+      "loadFailed": "The passkeys could not be loaded.",
+      "name": "Name",
+      "kind": "Kind",
+      "created": "Added",
+      "lastUsed": "Last used",
+      "actions": "Actions",
+      "synced": "Syncs between your devices",
+      "device": "This device only",
+      "rename": "Rename",
+      "empty": "No passkeys yet.",
+      "add": "Add a passkey",
+      "addTitle": "Add a passkey",
+      "addBody": "Your browser will ask you to create it. Give it a name you will recognise, such as Laptop.",
+      "addSubmit": "Add",
+      "nameLabel": "Name",
+      "added": "Passkey added.",
+      "removed": "Passkey {name} removed.",
+      "removeTitle": "Remove {name}?",
+      "removeBody": "It stops working here at once, and the sessions it opened end. If a strategy of yours needs a passkey and this is your last, backd refuses."
+    }
   },
   "realm": {
     "label": "Realm",
@@ -61,6 +86,17 @@
   "signIn": {
     "strategy": "Sign-in strategy",
     "strategyHelp": "The roles you hold depend on the strategy: an administrator role may need a stronger one.",
+    "passkey": {
+      "button": "Use a passkey",
+      "strategy": "Passkey sign-in strategy",
+      "stepIntro": "Use your passkey to finish signing in.",
+      "use": "Use my passkey",
+      "enrollIntro": "This account must use a passkey. Add one on this device or security key to continue.",
+      "name": "Name (such as Laptop)",
+      "add": "Add a passkey and sign in",
+      "cancelled": "The passkey prompt was dismissed or timed out.",
+      "failed": "That passkey did not work."
+    },
     "expired": {
       "intro": "This password has expired. Choose a new one: enter the current password and the new one twice.",
       "emailed": "We also emailed you a link to choose one.",
@@ -137,6 +173,7 @@
     "menu": "Menu",
     "close": "Close the menu",
     "overview": "Overview",
+    "account": "Account",
     "users": "Users",
     "orgs": "Organizations",
     "invitations": "Invitations",
@@ -158,6 +195,7 @@
     },
     "desc": {
       "overview": "Realm health and where to start",
+      "account": "Your sign-in: passkeys",
       "users": "Accounts, sessions and sign-in",
       "orgs": "Organizations, members and sign-in",
       "invitations": "Pending and past invitations",
@@ -368,6 +406,18 @@
       "removed": "{role} removed.",
       "unlisted": "Name of a role declared in realm.yaml"
     },
+    "passkeys": {
+        "title": "Passkeys",
+        "none": "No passkeys.",
+        "name": "Name",
+        "added": "Added",
+        "lastUsed": "Last used",
+        "remove": "Remove",
+        "removeTitle": "Remove the passkey {name}?",
+        "removeBody": "It stops working at once, the sessions it opened end and the user is told by email. For everything at once, reset the second factor.",
+        "removed": "Passkey {name} removed.",
+        "loadFailed": "The passkeys could not be loaded."
+      },
     "mfa": {
       "title": "Two-step verification",
       "on": "On. Recovery codes left: {left}.",
@@ -1055,7 +1105,8 @@
     "recovery": "A recovery code",
     "emailCode": "The code we emailed you",
     "send": "Email me a code",
-    "resend": "Email me another code"
+    "resend": "Email me another code",
+    "passkey": "Your passkey will be asked for when you confirm."
   },
   "orgs": {
     "title": "Organizations",
