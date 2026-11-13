@@ -24,7 +24,7 @@ func testRegistry(t *testing.T, collectionYAML string) *registry.Registry {
 	t.Helper()
 	root := t.TempDir()
 	files := map[string]string{
-		"shop/realm.yaml":                            "auth: enabled\nsignup: open\n",
+		"shop/realm.yaml":                            "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		"shop/main/orders/schema.json":               orderSchema,
 		"shop/main/orders/collection.yaml":           collectionYAML,
 		"shop/main/_functions/deno.json":             "{}",
@@ -1059,7 +1059,7 @@ func testRegistryRealms(t *testing.T, realms ...string) *registry.Registry {
 	root := t.TempDir()
 	for _, realm := range realms {
 		files := map[string]string{
-			realm + "/realm.yaml":                            "auth: enabled\nsignup: open\n",
+			realm + "/realm.yaml":                            "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 			realm + "/main/orders/schema.json":               orderSchema,
 			realm + "/main/orders/collection.yaml":           paidTrigger,
 			realm + "/main/_functions/deno.json":             "{}",

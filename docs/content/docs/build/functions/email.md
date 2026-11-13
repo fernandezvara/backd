@@ -40,7 +40,7 @@ email:
 - **`function`** is the delivery function. Startup fails if it doesn't exist, isn't `internal: true` or isn't `mode: async`, naming the file.
 - **`public_url`** (or the `BACKD_URL` environment variable, which every `backd-server serve` and `backd-server worker` reads) is the address the links in emails point at. Startup fails when a realm sends email and neither is set.
 - **`locales`** lists the languages the realm's emails exist in; `default_locale` must be one of them.
-- Email needs `auth: enabled`: its users, tokens and counters live in the realm's system database.
+- Email needs an `auth` section: its users, tokens and counters live in the realm's system database.
 
 ## Templates
 

@@ -37,7 +37,7 @@ func TestAsyncEndToEnd(t *testing.T) {
 	}
 	realm := "t" + xid.New().String()
 	root := cmdtest.Write(t, map[string]string{
-		realm + "/realm.yaml":                           "signup: open\n",
+		realm + "/realm.yaml":                           "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		realm + "/app/notes/schema.json":                `{"type": "object", "properties": {"title": {"type": "string"}}, "required": ["title"]}`,
 		realm + "/app/notes/collection.yaml":            cmdtest.RulesSection("read: user != nil && document._meta.owner == user.id\nwrite: user != nil\n"),
 		realm + "/app/_functions/addnote/function.yaml": "mode: async\ninvoke: \"user != nil\"\n",

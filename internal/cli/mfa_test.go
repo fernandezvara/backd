@@ -105,7 +105,10 @@ func (f *cliFixture) code(secret string) string {
 	return c
 }
 
-const cliRealm = "roles:\n  ops:\n    admin: true\n"
+const cliRealm = "auth:\n  strategies:\n    password: [password]\nroles:\n  ops:\n    admin: true\n"
+
+// cliRealmSecondStep makes the ops role need an authenticator code after the password.
+const cliRealmSecondStep = "auth:\n  strategies:\n    password: [password]\n    password_totp: [password, totp]\nroles:\n  ops:\n    admin: true\n    strategies: [password_totp]\n"
 
 func TestLoginAsksForTheSecondFactor(t *testing.T) {
 	f := newCLIFixture(t, cliRealm)
@@ -141,7 +144,7 @@ func TestLoginAsksForTheSecondFactor(t *testing.T) {
 }
 
 func TestLoginEnrollsWhenARoleRequiresIt(t *testing.T) {
-	f := newCLIFixture(t, "mfa:\n  required_roles: [ops]\n"+cliRealm)
+	f := newCLIFixture(t, cliRealmSecondStep)
 	ctx := context.Background()
 	pw := cliPassword
 	if _, err := f.svc.Create(ctx, "boss@example.com", &pw); err != nil {

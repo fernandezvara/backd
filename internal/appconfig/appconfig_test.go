@@ -33,7 +33,7 @@ func testService(t *testing.T) (*Service, *MemStore, *time.Time) {
 	t.Helper()
 	dir := t.TempDir()
 	for name, content := range map[string]string{
-		"shop/realm.yaml":                "roles: {}\n",
+		"shop/realm.yaml":                "auth:\n  strategies:\n    password: [password]\nroles: {}\n",
 		"shop/_realm/config/schema.json": testSchema,
 	} {
 		p := filepath.Join(dir, name)

@@ -39,7 +39,7 @@ func newExpandFixture(t *testing.T, tune func(*Config)) *expandFixture {
 	t.Helper()
 	read := "read: user != nil\ncreate: user != nil\n"
 	files := map[string]string{
-		"acme/realm.yaml": "signup: open\n",
+		"acme/realm.yaml": "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		"acme/app/posts/schema.json": `{"type":"object","properties":{
 			"title":{"type":"string"},"category":{"type":["string","null"]},"tags":{"type":"array","items":{"type":"string"}},
 			"customer_id":{"type":"string"},"note":{"type":"string"},"secret_id":{"type":"string"}},"additionalProperties":false}`,

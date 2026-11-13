@@ -894,7 +894,7 @@ func (a *App) syncRoles(ctx context.Context) error {
 		}
 		if !a.cfg.Dev {
 			if open := unprotectedAdminRoles(rl.Settings); len(open) > 0 {
-				a.log.Warn("admin roles that don't require a second factor: add them to mfa.required_roles in realm.yaml so that a stolen password is not enough",
+				a.log.Warn("admin roles that don't require a second factor: give them strategies with a totp step in realm.yaml so that a stolen password is not enough",
 					"realm", rl.Name, "roles", open)
 			}
 		}

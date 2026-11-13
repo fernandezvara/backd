@@ -31,7 +31,7 @@ func clinic(t *testing.T) (f *fixture, realm string, base string, keys map[strin
 	realm = "t" + xid.New().String()
 	logs = &strings.Builder{}
 	f = mongoFixture(t, map[string]string{
-		realm + "/realm.yaml":                    "signup: open\nroles:\n  staff: {admin: true}\n",
+		realm + "/realm.yaml":                    "auth:\n  strategies:\n    password: [password]\n  signup: open\nroles:\n  staff: {admin: true}\n",
 		realm + "/main/patients/schema.json":     clinicSchema,
 		realm + "/main/lookups/schema.json":      `{"type":"object","properties":{"code":{"type":"string"},"label":{"type":"string"}}}`,
 		realm + "/main/lookups/collection.yaml":  "fields:\n  code:\n    encrypt: {key: TAX, search: equality}\nrules:\n  read: user != nil && document.code in ['X1', 'X2']\n  write: user != nil\n",
@@ -370,7 +370,7 @@ func revealClinic(t *testing.T) (f *fixture, realm, base string, logs *strings.B
 	realm = "t" + xid.New().String()
 	logs = &strings.Builder{}
 	f = mongoFixture(t, map[string]string{
-		realm + "/realm.yaml":                    "signup: open\nroles:\n  doctor: {}\n  staff: {admin: true}\n  auditor: {admin: read}\nadmin:\n  read_access: {data: true}\n",
+		realm + "/realm.yaml":                    "auth:\n  strategies:\n    password: [password]\n  signup: open\nroles:\n  doctor: {}\n  staff: {admin: true}\n  auditor: {admin: read}\nadmin:\n  read_access: {data: true}\n",
 		realm + "/main/patients/schema.json":     clinicSchema,
 		realm + "/main/patients/collection.yaml": "fields:\n  notes:\n    encrypt: {key: HEALTH}\n    reveal: user != nil && (hasRole(user, 'doctor') || document._meta.owner == user.id)\n  history:\n    encrypt: {key: HEALTH}\n  address.street:\n    encrypt: {key: HEALTH}\n    reveal: hasRole(user, 'doctor')\nrules:\n  read: user != nil\n  write: user != nil\n",
 		realm + "/main/visits/schema.json":       `{"type":"object","properties":{"patient":{"type":"string"},"reason":{"type":"string"}}}`,

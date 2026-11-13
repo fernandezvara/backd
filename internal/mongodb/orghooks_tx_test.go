@@ -22,7 +22,10 @@ func hookRealm(t *testing.T) (*auth.Users, *AuthStore, string) {
 	realm := testRealm(t, client)
 	root := t.TempDir()
 	files := map[string]string{
-		realm + "/realm.yaml": `signup: open
+		realm + "/realm.yaml": `auth:
+  strategies:
+    password: [password]
+  signup: open
 organizations:
   roles:
     owner: {manage: [org, members, roles, teams]}

@@ -1,7 +1,9 @@
 # The documentation store of docs/organizations/example-knowledge-base: each organization keeps
 # its pages, its teams keep their own, and every page says who may read it.
-auth: enabled
-signup: open
+auth:
+  strategies:
+    password: [password]
+  signup: open
 
 organizations:
   roles:

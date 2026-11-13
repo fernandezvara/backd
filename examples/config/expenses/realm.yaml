@@ -7,8 +7,10 @@
 #
 # Anyone can sign up. Access is by email: a group lists its members'
 # emails, and rules compare them with the signed-in user's email.
-auth: enabled
-signup: open
+auth:
+  strategies:
+    password: [password]
+  signup: open
 
 # Access is by email, so the address must be the user's own: the realm
 # requires it to be verified before any session (and the rules check

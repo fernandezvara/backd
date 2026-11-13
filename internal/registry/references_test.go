@@ -24,7 +24,7 @@ const postsSchema = `{
 func refTree(t *testing.T, posts string, mutate func(files map[string]string)) (*Registry, error) {
 	t.Helper()
 	files := map[string]string{
-		"shop/realm.yaml":                    "signup: open\n",
+		"shop/realm.yaml":                    "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		"shop/main/posts/schema.json":        postsSchema,
 		"shop/main/posts/collection.yaml":    posts,
 		"shop/main/categories/schema.json":   `{"type":"object","properties":{"name":{"type":"string"},"slug":{"type":"string"}},"additionalProperties":false}`,

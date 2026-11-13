@@ -209,7 +209,7 @@ paths:
                   type: boolean
                   description: >-
                     Keep the session in an HttpOnly cookie (`__Secure-backd_session`, path `/v1/{realm}`) instead of
-                    returning the token. Only in realms with `sessions.cookie.enabled`, and only from this API's own
+                    returning the token. Only in realms with `auth.sessions.cookie.enabled`, and only from this API's own
                     origin or one of the realm's `cors.origins` (`403` otherwise). The response then has no `token`.
       responses:
         "200": { $ref: "#/components/responses/SignInResult" }
@@ -2070,14 +2070,14 @@ paths:
         and answers `302` to the provider's sign-in page. After the user signs in, the
         provider sends them to the callback, which sends them on to `redirect_to` with a
         one-time `backd_code` or a `backd_error` (see the callback). `redirect_to` must be
-        within the realm's `sign_in.allowed_redirects` (or `email.allowed_redirects`);
-        when it is absent the realm's `sign_in.app_url` is used, and a realm that has none
+        within the realm's `auth.sign_in.allowed_redirects` (or `email.allowed_redirects`);
+        when it is absent the realm's `auth.sign_in.app_url` is used, and a realm that has none
         answers `400 invalid_redirect`. `code_challenge` is the S256 challenge of a verifier only the app holds.
         Linking a provider to a signed-in user needs `POST`, which carries the session.
         At most 30 starts a minute per address (`429`).
       operationId: oauthStart
       parameters:
-        - { name: redirect_to, in: query, schema: { type: string }, description: "Where the flow ends; the realm's `sign_in.app_url` when absent." }
+        - { name: redirect_to, in: query, schema: { type: string }, description: "Where the flow ends; the realm's `auth.sign_in.app_url` when absent." }
         - { name: code_challenge, in: query, required: true, schema: { type: string, minLength: 43, maxLength: 43 } }
         - { name: invitation, in: query, schema: { type: string }, description: "An invitation token, for realms with `signup: invite`." }
         - { name: locale, in: query, schema: { type: string } }
@@ -2117,7 +2117,7 @@ paths:
               additionalProperties: false
               required: [code_challenge]
               properties:
-                redirect_to: { type: string, description: "Where the flow ends; the realm's `sign_in.app_url` when absent." }
+                redirect_to: { type: string, description: "Where the flow ends; the realm's `auth.sign_in.app_url` when absent." }
                 code_challenge: { type: string, minLength: 43, maxLength: 43, description: The S256 PKCE challenge of the app's verifier. }
                 intent: { type: string, enum: [signin, link], default: signin }
                 invitation: { type: string }
@@ -2595,7 +2595,7 @@ paths:
         have, and for a connection without its secret. At most 30 starts a minute per address (`429`).
       operationId: orgOAuthStart
       parameters:
-        - { name: redirect_to, in: query, schema: { type: string }, description: "Where the flow ends; the realm's `sign_in.app_url` when absent." }
+        - { name: redirect_to, in: query, schema: { type: string }, description: "Where the flow ends; the realm's `auth.sign_in.app_url` when absent." }
         - { name: code_challenge, in: query, required: true, schema: { type: string, minLength: 43, maxLength: 43 } }
         - { name: invitation, in: query, schema: { type: string } }
         - { name: locale, in: query, schema: { type: string } }
@@ -3124,7 +3124,7 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403":
-          description: "`mfa_disabled`: the realm doesn't let users turn MFA on (`mfa.enabled: false`)."
+          description: "`mfa_disabled`: the realm doesn't let users turn MFA on (`auth.totp.enabled: false`)."
           headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
           content:
             application/json:
@@ -3344,8 +3344,8 @@ paths:
         `no-account` message (or, with `magic_link.signup` and the realm's sign-up open, the same
         message: the account is made, verified, when the link or code is used), one that can't sign in
         gets nothing. Email limits that are reached are not told either. `redirect_to` is within the
-        realm's `sign_in.allowed_redirects` (or `email.allowed_redirects`); without it the link goes to
-        `sign_in.app_url`, and a realm with neither has the code only.
+        realm's `auth.sign_in.allowed_redirects` (or `email.allowed_redirects`); without it the link goes to
+        `auth.sign_in.app_url`, and a realm with neither has the code only.
 
         With a form body (`application/x-www-form-urlencoded` with `token`): what the page's button
         posts: it signs in and answers `303` to the app with `backd_code` (or `backd_error`:
@@ -5447,7 +5447,7 @@ paths:
       tags: [admin]
       summary: Who must set a second factor up
       description: |
-        The roles the realm requires MFA for (`mfa.required_roles`) and the users of those roles
+        The roles the realm requires MFA for (roles whose strategies have a `totp` step) and the users of those roles
         who have none yet, up to 200 (`total_without_mfa` counts them all); disabled and erased
         users are not listed. Their next sign-in asks them to set one up. Needs the `users` area.
       operationId: adminMFAOverview

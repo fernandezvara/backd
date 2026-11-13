@@ -59,7 +59,7 @@ func TestExportImportDirect(t *testing.T) {
 	}
 	realm := "t" + xid.New().String()
 	root := cmdtest.Write(t, map[string]string{
-		realm + "/realm.yaml":            "signup: open\n",
+		realm + "/realm.yaml":            "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		realm + "/app/notes/schema.json": `{"type": "object", "properties": {"title": {"type": "string"}}, "required": ["title"]}`,
 	})
 	ctx := context.Background()
@@ -143,7 +143,7 @@ func TestExportAuthDirectNeedsTheMasterKey(t *testing.T) {
 		t.Skip("MONGO_TEST_URI not set; skipping integration test")
 	}
 	realm := "t" + xid.New().String()
-	root := cmdtest.Write(t, map[string]string{realm + "/realm.yaml": "signup: open\n", realm + "/app/notes/schema.json": `{}`})
+	root := cmdtest.Write(t, map[string]string{realm + "/realm.yaml": "auth:\n  strategies:\n    password: [password]\n  signup: open\n", realm + "/app/notes/schema.json": `{}`})
 	ctx := context.Background()
 	client, err := mongodb.Connect(ctx, uri)
 	if err != nil {

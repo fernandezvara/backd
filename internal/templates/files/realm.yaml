@@ -3,37 +3,113 @@
 # its default value.
 # Uncomment and change what you need.
 
-# Authentication: enabled or disabled.
+# Authentication. Either `auth: disabled`, or a section with the strategies below.
 # With `disabled` the realm has no users and no access rules: anyone who can
 # reach backd can read and modify all of its data. Never expose such a realm
-# to the internet. The keys below only apply when auth is enabled.
-auth: enabled
+# to the internet. A missing `auth` key is an error, never "disabled".
+#
+# A strategy is a named list of methods a person completes to sign in, in order:
+# `password`, `totp`, `magic_link` or the name of a provider below. The first
+# method says who is signing in; the later one is `totp`.
+# A role can list the strategies it accepts (`strategies:` under roles). For now a role
+# whose strategies all end in `totp` makes its users set up and use a second step; picking a
+# strategy on sign-in, and roles staying inactive for the others, come in a later version.
+# The keys below the strategies configure the methods; the commented ones show their defaults.
+auth:
+  strategies:
+    password: [password]
+    admin_password: [password, totp]
 
-# Who can create accounts:
-#   open    anyone can sign up
-#   invite  sign-up needs an invitation from an administrator
-#   closed  administrators create the users
-# signup: closed
+  # Who can create accounts:
+  #   open    anyone can sign up
+  #   invite  sign-up needs an invitation from an administrator
+  #   closed  administrators create the users
+  # signup: closed
 
-# Sessions expire after `idle_timeout` without use, and never live longer
-# than `max_lifetime`. Use days ("30d") or Go durations ("12h").
-# sessions:
-#   idle_timeout: 30d
-#   max_lifetime: 90d
+  # Sessions expire after `idle_timeout` without use, and never live longer
+  # than `max_lifetime`. Use days ("30d") or Go durations ("12h").
+  # sessions:
+  #   idle_timeout: 30d
+  #   max_lifetime: 90d
 
-# Minimum password length, between 8 and 128.
-# password:
-#   min_length: 12
+  # Minimum password length, between 8 and 128.
+  # password:
+  #   min_length: 12
 
-# How failed logins are slowed down, per account and per client address:
-# past a threshold each new attempt waits twice as long as the last, up to
-# max_delay (never more than window). Values shown are the defaults. There
-# is no lockout, and it can be tuned but not turned off.
-# login_throttle:
-#   account_threshold: 5
-#   ip_threshold: 50
-#   window: 15m
-#   max_delay: 15m
+  # How failed logins are slowed down, per account and per client address:
+  # past a threshold each new attempt waits twice as long as the last, up to
+  # max_delay (never more than window). Values shown are the defaults. There
+  # is no lockout, and it can be tuned but not turned off.
+  # login_throttle:
+  #   account_threshold: 5
+  #   ip_threshold: 50
+  #   window: 15m
+  #   max_delay: 15m
+
+  # Sign-in with Google, Microsoft or Apple. Every provider needs an application
+  # registered in its console, and the callback address to register there is
+  #     {BACKD_URL}/v1/<realm>/_auth/oauth/<provider>/callback
+  # (the realm's email.public_url replaces BACKD_URL when it is set). The secrets
+  # are realm secrets (`backd secret set --realm <name> --name NAME`); their values never
+  # go in this file. `sign_in.allowed_redirects` lists the web origins and app
+  # schemes (acme://) a sign-in may send the user back to; without it the ones of
+  # `email.allowed_redirects` are used. Realm accounts that have no password still
+  # work: a user can hold a password and several providers at once.
+  # sign_in:
+  #   allowed_redirects: [https://app.acme.example, "acme://"]
+  #   app_url: https://app.acme.example   # where a sign-in without redirect_to goes back to (within the list)
+  # providers:
+  #   google:                          # console.cloud.google.com → APIs & Services → Credentials → OAuth client (web)
+  #     client_id: 1234.apps.googleusercontent.com
+  #     client_secret: secret:GOOGLE_CLIENT_SECRET
+  #     native_client_ids: [5678.apps.googleusercontent.com]   # optional: the ids of your mobile apps
+  #   microsoft:                       # entra.microsoft.com → App registrations (platform: Web)
+  #     client_id: 00000000-0000-0000-0000-000000000000
+  #     client_secret: secret:MICROSOFT_CLIENT_SECRET
+  #     tenant: common                 # common | organizations | consumers | <tenant id>
+  #   apple:                           # developer.apple.com → Identifiers (Services ID) and Keys (Sign in with Apple)
+  #     services_id: com.acme.web      # the web client id
+  #     bundle_ids: [com.acme.ios]     # optional: your iOS apps
+  #     team_id: ABCDE12345
+  #     key_id: XYZ9876543
+  #     private_key: secret:APPLE_SIGN_IN_KEY    # the whole .p8 file
+  #     revoke_on_delete: true         # revoke the user's Apple tokens when the account is deleted (default)
+
+  # Two-step sign-in. A strategy that lists `totp` after another method asks for the code
+  # of an authenticator app (TOTP) before it gives a session; the person keeps ten
+  # recovery codes, which stand in for the code. Users set it up on first use when a
+  # strategy needs it. Security notices (and the warning after wrong codes) are emails of
+  # the kinds `security-notice` and `mfa-failed`; the built-in English text is used
+  # when the realm's email folder has none.
+  # totp:
+  #   enabled: true                # false: no strategy can use `totp`
+  #   issuer: Acme                 # the name authenticator apps show; the realm's name by default
+
+  # Passkeys (WebAuthn): sign in with a fingerprint, face or PIN on a device, a password
+  # manager or a security key. A strategy lists `passkey` to use them (design/passkeys.md);
+  # the settings are checked now. The `rp_id` is the domain the passkeys are bound to and
+  # cannot change later without losing them.
+  # passkeys:
+  #   enabled: false                       # a strategy that lists `passkey` needs true
+  #   rp_id: acme.example                  # default: the host of sign_in.app_url
+  #   rp_name: "Acme"                      # shown by the browser when registering (default: the realm's name)
+  #   origins:                             # where the ceremony may run (default: the origin of sign_in.app_url)
+  #     - https://app.acme.example
+  #     - android:apk-key-hash:...         # native apps
+
+  # Magic links: sign in from an email. The message carries a link (same device) and a
+  # 6-digit code (typed in the app, on any device), good for 10 minutes and once. Needs the
+  # `email:` section above and BACKD_SECRETS_KEY. The link ends at the `redirect_to` of the
+  # request, else `sign_in.app_url`.
+  # magic_link:
+  #   enabled: false
+  #   signup: false                  # true: an address with no account may make one (verified), when `signup: open`
+
+  # Re-authentication. Before a sensitive action (changing the password or the address,
+  # deleting the account, turning the second factor on or off, creating an API key as a
+  # signed-in administrator) a user proves who they are again, and the proof works for this long.
+  # reauth:
+  #   ttl: 5m                        # 1m to 1h
 
 # How long the audit trail keeps its records (at least 1d). They hold user
 # ids and client addresses: personal data in many jurisdictions.
@@ -184,64 +260,6 @@ auth: enabled
 #   url: https://cdn.acme.example    # where browsers read: <url>/<prefix>/<realm>/<db>/<collection>/<file id>/<name>
 #   pending_ttl: 1h                  # lifetime of uploads nobody attached to a document
 
-# Sign-in with Google, Microsoft or Apple. Every provider needs an application
-# registered in its console, and the callback address to register there is
-#     {BACKD_URL}/v1/<realm>/_auth/oauth/<provider>/callback
-# (the realm's email.public_url replaces BACKD_URL when it is set). The secrets
-# are realm secrets (`backd secret set --realm <name> --name NAME`); their values never
-# go in this file. `sign_in.allowed_redirects` lists the web origins and app
-# schemes (acme://) a sign-in may send the user back to; without it the ones of
-# `email.allowed_redirects` are used. Realm accounts that have no password still
-# work: a user can hold a password and several providers at once.
-# sign_in:
-#   allowed_redirects: [https://app.acme.example, "acme://"]
-#   app_url: https://app.acme.example   # where a sign-in without redirect_to goes back to (within the list)
-# providers:
-#   google:                          # console.cloud.google.com → APIs & Services → Credentials → OAuth client (web)
-#     client_id: 1234.apps.googleusercontent.com
-#     client_secret: secret:GOOGLE_CLIENT_SECRET
-#     native_client_ids: [5678.apps.googleusercontent.com]   # optional: the ids of your mobile apps
-#   microsoft:                       # entra.microsoft.com → App registrations (platform: Web)
-#     client_id: 00000000-0000-0000-0000-000000000000
-#     client_secret: secret:MICROSOFT_CLIENT_SECRET
-#     tenant: common                 # common | organizations | consumers | <tenant id>
-#   apple:                           # developer.apple.com → Identifiers (Services ID) and Keys (Sign in with Apple)
-#     services_id: com.acme.web      # the web client id
-#     bundle_ids: [com.acme.ios]     # optional: your iOS apps
-#     team_id: ABCDE12345
-#     key_id: XYZ9876543
-#     private_key: secret:APPLE_SIGN_IN_KEY    # the whole .p8 file
-#     revoke_on_delete: true         # revoke the user's Apple tokens when the account is deleted (default)
-
-# Two-step sign-in. Users may turn on an authenticator app (TOTP) and keep ten
-# recovery codes; a sign-in with any first factor (password, provider, magic link) then
-# asks for a code before it gives a session. Enabling it ends the user's other
-# sessions. Security notices (and the warning after wrong codes) are emails of the
-# kinds `security-notice` and `mfa-failed`; the built-in English text is used
-# when the realm's email folder has none.
-#
-# The roles below must use it: the first sign-in of such a user (`backd login`, the
-# admin interface) sets an authenticator app up, so a stolen password is not enough
-# to administer the realm. Name every admin role of the realm here.
-mfa:
-  required_roles: [admin]
-  # enabled: true                # false: users can't turn TOTP on (those who have it are still asked)
-  # issuer: Acme                 # the name authenticator apps show; the realm's name by default
-
-# Magic links: sign in from an email. The message carries a link (same device) and a
-# 6-digit code (typed in the app, on any device), good for 10 minutes and once. Needs the
-# `email:` section above and BACKD_SECRETS_KEY. The link ends at the `redirect_to` of the
-# request, else `sign_in.app_url`.
-# magic_link:
-#   enabled: false
-#   signup: false                  # true: an address with no account may make one (verified), when `signup: open`
-
-# Re-authentication. Before a sensitive action (changing the password or the address,
-# deleting the account, turning the second factor on or off, creating an API key as a
-# signed-in administrator) a user proves who they are again, and the proof works for this long.
-# reauth:
-#   ttl: 5m                        # 1m to 1h
-
 # Consents (docs: Authentication -> Consents). Versioned texts people accept and backd
 # keeps as proof. The texts are files: _realm/consents/<name>/<version>/<locale>.md for every
 # language of the realm; keep old versions, they are what was accepted.
@@ -304,6 +322,7 @@ roles:
   admin:
     description: Manages users, invitations and API keys
     admin: true
+    strategies: [admin_password]   # the operators hold the keys to everything: a second step
     # users:
     #   - ops@example.com
   # editor:

@@ -58,7 +58,7 @@ network: [api.stripe.com]
 | `"hasRole(user, 'staff')"` | users with the `staff` role |
 | `"true"` | anyone, including anonymous callers |
 
-`invoke` only applies in realms with `auth: enabled`. In a realm with `auth: disabled`, anyone who can reach `backd` may call its functions, as with its data.
+`invoke` only applies in realms with an `auth` section. In a realm with `auth: disabled`, anyone who can reach `backd` may call its functions, as with its data.
 
 **`mode: webhook` requires `invoke` to allow anonymous callers** (e.g. `"true"`, or a rule that only checks the request itself, never `user`) — refused at startup otherwise. A webhook sender (Stripe, GitHub, and the like) has no `backd` session or API key to send; the function must be reachable without one, and prove the request is genuine itself (see [Webhooks](../webhooks/)).
 

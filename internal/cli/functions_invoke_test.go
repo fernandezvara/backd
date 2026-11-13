@@ -47,7 +47,7 @@ func (f *fakeFuncRunner) lastRequest() executor.InvokeRequest {
 func TestFunctionsInvoke(t *testing.T) {
 	fnDir := "acme/app/" + registry.FunctionsDir
 	root := writeConfig(t, map[string]string{
-		"acme/realm.yaml":              "roles:\n  ops:\n    admin: true\n",
+		"acme/realm.yaml":              "auth:\n  strategies:\n    password: [password]\nroles:\n  ops:\n    admin: true\n",
 		fnDir + "/hello/function.yaml": "invoke: \"false\"\n", // API keys bypass this
 		fnDir + "/hello/index.js":      "",
 		fnDir + "/tidy/function.yaml":  "internal: true\n",

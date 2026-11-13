@@ -13,10 +13,11 @@ The second step is built **once** and shared by every first factor, so a user wi
 ## Turning it on
 
 ```yaml
-# realm.yaml
-mfa:
-  enabled: true      # default; false: users can't turn a second factor on
-  issuer: Acme       # the name authenticator apps show (default: the realm's name)
+auth:
+  # realm.yaml
+  totp:
+    enabled: true      # default; false: users can't turn a second factor on
+    issuer: Acme       # the name authenticator apps show (default: the realm's name)
 ```
 
 Users manage their own second factor with their session, after a fresh [proof of identity](../reauth/) (`X-Backd-Reauth`): without one these answer `401 reauth_required`, so a stolen session can't turn a second factor on with the thief's phone and lock the user out.
@@ -55,20 +56,26 @@ These are audited too: `user.mfa_enabled`, `user.mfa_disabled`, `user.recovery_c
 ## Required by role
 
 ```yaml
-mfa:
-  required_roles: [admin, finance]     # roles that must use it, or `all`
+auth:
+  strategies:
+    password: [password]
+    password_totp: [password, totp]   # totp after another method: a second step
+roles:
+  admin:
+    admin: true
+    strategies: [password_totp]       # holders of admin must use a strategy with a second step
 ```
 
-- A user holding one of the roles (or any user, with `all`) who has no second factor gets `mfa_enrollment_required` and a challenge after the first factor. The challenge allows only two things, **without a session**:
+- A user holding a role whose every listed strategy has a `totp` step (or any user, when every strategy of the realm has one) who has no second factor gets `mfa_enrollment_required` and a challenge after the first factor. The challenge allows only two things, **without a session**:
   1. `POST /_auth/mfa/totp/setup` with `{"challenge"}` answers like the signed-in setup;
   2. `POST /_auth/mfa/totp/confirm` with `{"challenge", "setup_id", "code"}` turns it on and answers with the **session** and the `recovery_codes`. The session's `methods` include `totp`.
 - The enrollment challenge lives 5 minutes and allows 5 wrong codes, like a challenge for a code.
 - **Existing sessions** of such users keep working until they expire; nothing is revoked when a role starts to require MFA or a user is given such a role. Their next sign-in enrolls them. `backd user mfa-status --realm <realm>` lists who has not yet.
 - A user in a required role can't turn the second factor off (`403 mfa_required_by_role`).
-- At startup, outside dev mode, `backd` warns about admin roles that `required_roles` doesn't cover.
+- At startup, outside dev mode, `backd` warns about admin roles that don't list only strategies with a `totp` step.
 
 {{< hint style="note" >}}
-`required_roles` must name roles the realm declares, and conflicts with `mfa.enabled: false`: both are startup errors.
+A role's `strategies` must name strategies the realm declares, and a strategy with `totp` conflicts with `auth.totp.enabled: false`: both are startup errors.
 {{< /hint >}}
 
 ## When a user loses it

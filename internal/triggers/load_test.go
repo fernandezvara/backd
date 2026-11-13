@@ -96,7 +96,7 @@ func newLoadEnv(t *testing.T, collectionYAML string, functions ...string) *loadE
 	})
 	root := t.TempDir()
 	files := map[string]string{
-		realm + "/realm.yaml":                 "auth: enabled\nsignup: open\n",
+		realm + "/realm.yaml":                 "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		realm + "/main/items/schema.json":     loadSchema,
 		realm + "/main/items/collection.yaml": collectionYAML,
 		realm + "/main/_functions/deno.json":  "{}",

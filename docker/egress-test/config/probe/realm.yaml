@@ -1,1 +1,4 @@
-signup: open
+auth:
+  strategies:
+    password: [password]
+  signup: open

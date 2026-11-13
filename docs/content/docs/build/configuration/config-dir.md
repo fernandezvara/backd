@@ -201,7 +201,7 @@ on_owner_delete:
 
 - `action` applies to the documents the user owns (`_meta.owner` is their id). `delete` removes them; `anonymize` removes the `remove` fields, sets the `replace` fields to their fixed value and clears the owner.
 - `pull` and `unset` reach **every** document of the collection, whoever owns it. Each field says what it holds, `email` (the user's address, in the lower-case form `backd` stores) or `id`.
-- Only realms with `auth: enabled` have users, so the file is an error in a realm with `auth: disabled`.
+- Only realms with an `auth` section have users, so the file is an error in a realm with `auth: disabled`.
 - `backd` checks the policy against `schema.json` at startup, so an erase leaves every document valid: named fields must exist; a required field can't be removed or unset (make it optional, or `replace` it); `replace` values must satisfy the schema and can't be in a unique index; `pull` fields must be arrays of strings without `minItems`; `unset` fields must be strings.
 - `backd-server provision` creates the indexes an erase searches by, so large collections aren't scanned: `_meta.owner` when the policy has an `action`, and one on each `pull` and `unset` field (they are checked in `verify` mode like the ones in `indexes.json`). Adding a policy to an existing collection builds them at the next provision.
 - The file is part of the [config fingerprint](../../../operate/deploying/). Applying a policy is an erase, which is an administrator's action.
@@ -259,7 +259,7 @@ on_owner_delete:
 
 With `organization: required`, every document is created inside an organization of the realm; with `optional`, some are. The collection has to say what happens to its documents when an organization is deleted: `delete` removes them, `keep` leaves them (readable only by realm administrators). `on_owner_delete.in_org` says what an erased user's documents do inside an organization: `keep` (the default) leaves them with the organization, owner cleared, `apply` treats them like documents outside organizations.
 
-- The realm needs an [`organizations:`](../realm/#organizations) section, and `auth: enabled`.
+- The realm needs an [`organizations:`](../realm/#organizations) section, and an `auth` section.
 - A collection with an organization can't also use `custom_id: user`: it would allow one document per user across every organization.
 - `on_org_delete` is required, and only valid next to `organization`.
 - When a user is [erased](../../../operate/administration/erasure/), their documents in an organization **stay**, with the owner cleared; with `in_org: apply` the erase's `action` applies to them as it does outside organizations (`in_org` needs an `action`).

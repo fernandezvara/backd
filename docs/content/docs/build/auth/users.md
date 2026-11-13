@@ -6,7 +6,7 @@ weight: 510
 toc: true
 ---
 
-The `backd user` commands manage the users of a realm with `auth: enabled`. They call the realm's [admin API](../../../operate/administration/admin/) on a running `backd`, so you first [log in](../../../operate/administration/cli/#logging-in) as an administrator (or set `BACKD_API_KEY` to an admin API key). The realm's first administrator is created with [`backd-server bootstrap`](../../../operate/administration/cli/#the-first-administrator). Server-side services can call the admin API directly.
+The `backd user` commands manage the users of a realm with an `auth` section. They call the realm's [admin API](../../../operate/administration/admin/) on a running `backd`, so you first [log in](../../../operate/administration/cli/#logging-in) as an administrator (or set `BACKD_API_KEY` to an admin API key). The realm's first administrator is created with [`backd-server bootstrap`](../../../operate/administration/cli/#the-first-administrator). Server-side services can call the admin API directly.
 
 ```sh
 backd login --realm blog --url https://api.example.com
@@ -149,7 +149,7 @@ Settings made here live only in the database. If `realm.yaml` sets networks for 
 
 ## Password policy
 
-- At least `password.min_length` characters (default 12, set in [`realm.yaml`](../../configuration/realm/)), at most 128.
+- At least `auth.password.min_length` characters (default 12, set in [`realm.yaml`](../../configuration/realm/)), at most 128.
 - Lengths count characters, not bytes, and there are no rules about character classes. Long passphrases are encouraged.
 - Passwords are normalized to Unicode NFKC before hashing, so the same text typed on different keyboards or systems matches.
 

@@ -8,7 +8,7 @@ toc: true
 
 What a signed-in user may do with data is decided by each collection's [access rules](../rules/). Server-side services use [API keys](../api-keys/) instead.
 
-Every realm with `auth: enabled` has its authentication endpoints under `/v1/{realm}/_auth`. A realm that doesn't exist or has `auth: disabled` answers `404 not_found` on all of them.
+Every realm with an `auth` section has its authentication endpoints under `/v1/{realm}/_auth`. A realm that doesn't exist or has `auth: disabled` answers `404 not_found` on all of them.
 
 ## Sessions and tokens
 
@@ -47,8 +47,8 @@ A token stored where any script on the page can read it (`localStorage`, a globa
 
 {{< /hint >}}
 
-- A session **expires after `sessions.idle_timeout` without use** (default 30 days), and **never lives longer than `sessions.max_lifetime`** (default 90 days), both set in [`realm.yaml`](../../configuration/realm/). Each use pushes the idle expiry forward, recorded at most once a minute. `expires_at` in responses reflects the latest value.
-- **Admins can have shorter sessions.** A session of a user who holds an [admin role](../../configuration/realm/#roles) uses `sessions.admin_idle_timeout` and `sessions.admin_max_lifetime` when they are set (for example `1h` and `12h`), and they can only shorten the regular limits. The limits follow the roles the user holds now: granting an admin role shortens their existing sessions from the next request, and taking it away restores the regular limits for sessions started afterwards. They apply to the command line too (`backd login` sessions end sooner, and you log in again); API keys have their own [expiry](../api-keys/).
+- A session **expires after `auth.sessions.idle_timeout` without use** (default 30 days), and **never lives longer than `auth.sessions.max_lifetime`** (default 90 days), both set in [`realm.yaml`](../../configuration/realm/). Each use pushes the idle expiry forward, recorded at most once a minute. `expires_at` in responses reflects the latest value.
+- **Admins can have shorter sessions.** A session of a user who holds an [admin role](../../configuration/realm/#roles) uses `auth.sessions.admin_idle_timeout` and `auth.sessions.admin_max_lifetime` when they are set (for example `1h` and `12h`), and they can only shorten the regular limits. The limits follow the roles the user holds now: granting an admin role shortens their existing sessions from the next request, and taking it away restores the regular limits for sessions started afterwards. They apply to the command line too (`backd login` sessions end sooner, and you log in again); API keys have their own [expiry](../api-keys/).
 - Sessions end immediately on logout, when revoked, when the password changes (other sessions only), when the user is disabled or deleted, or when an operator sets a new password with `backd user set-password`.
 
 ### Session cookies
@@ -56,11 +56,12 @@ A token stored where any script on the page can read it (`localStorage`, a globa
 A browser app can have its session in an **HttpOnly cookie**: scripts on the page, including injected ones, can't read it. A realm turns this on, and each login chooses:
 
 ```yaml
-# realm.yaml
-sessions:
-  cookie:
-    enabled: true
-    same_site: lax        # lax (default), strict or none
+auth:
+  # realm.yaml
+  sessions:
+    cookie:
+      enabled: true
+      same_site: lax        # lax (default), strict or none
 cors:
   origins: [https://app.example.com]   # the app's origin; a wildcard is refused when cookies are on
 ```
@@ -161,10 +162,11 @@ Failed attempts are counted per account and per client address. Past a threshold
 Those are the defaults. A realm tunes them with [`login_throttle`](../../configuration/realm/#keys) in `realm.yaml`: `account_threshold`, `ip_threshold`, `window` (how long a failure counts) and `max_delay` (the longest wait, never more than the window). For example, a realm of a few known users can be stricter:
 
 ```yaml
-login_throttle:
-  account_threshold: 3
-  window: 1h
-  max_delay: 1h
+auth:
+  login_throttle:
+    account_threshold: 3
+    window: 1h
+    max_delay: 1h
 ```
 
 The throttle can be tuned but not turned off, and there is still no lockout: whatever the settings, waiting is always enough.

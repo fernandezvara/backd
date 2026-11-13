@@ -8,9 +8,12 @@ import (
 	"time"
 )
 
-const orgsRealm = `signup: open
-sign_in:
-  allowed_redirects: ["https://app.acme.example"]
+const orgsRealm = `auth:
+  strategies:
+    password: [password]
+  signup: open
+  sign_in:
+    allowed_redirects: ["https://app.acme.example"]
 organizations:
   roles:
     owner:  { manage: [org, members, roles, teams] }
@@ -48,26 +51,26 @@ func TestOrganizationSettings(t *testing.T) {
 
 func TestOrganizationSettingsRefusals(t *testing.T) {
 	for name, tc := range map[string]struct{ yaml, want string }{
-		"no roles":              {"organizations: {}\n", "declare at least one role"},
-		"nobody manages":        {"organizations:\n  roles:\n    owner: { manage: [members] }\n", "at least one role needs manage: org"},
-		"unknown capability":    {"organizations:\n  roles:\n    owner: { manage: [everything] }\n", "unknown capability"},
-		"creator not declared":  {"organizations:\n  roles:\n    boss: { manage: org }\n", `creator_roles: "owner" is not a declared role`},
-		"creator can't manage":  {"organizations:\n  roles:\n    boss: { manage: org }\n    owner: {}\n", "creator_roles: must include a role with manage: org"},
-		"default with manage":   {"organizations:\n  roles:\n    owner: { manage: org }\n  default_roles: [owner]\n", "has manage capabilities"},
-		"bad rule":              {"organizations:\n  create: user.nothing.\n  roles:\n    owner: { manage: org }\n", "organizations.create"},
-		"too many memberships":  {"organizations:\n  max_memberships_per_user: 500\n  roles:\n    owner: { manage: org }\n", "at most 100"},
-		"link without token":    {"sign_in:\n  allowed_redirects: [\"https://app.acme.example\"]\norganizations:\n  invitation_link: https://app.acme.example/join?org={org}\n  roles:\n    owner: { manage: org }\n", "{token} exactly once"},
-		"link without org":      {"sign_in:\n  allowed_redirects: [\"https://app.acme.example\"]\norganizations:\n  invitation_link: https://app.acme.example/join?token={token}\n  roles:\n    owner: { manage: org }\n", "must contain {org}"},
-		"link outside":          {"sign_in:\n  allowed_redirects: [\"https://app.acme.example\"]\norganizations:\n  invitation_link: https://evil.example/join?t={token}&org={org}\n  roles:\n    owner: { manage: org }\n", "within sign_in.allowed_redirects"},
-		"signin link, no email": {"sign_in:\n  allowed_redirects: [\"https://app.acme.example\"]\norganizations:\n  signin_link: https://app.acme.example/{slug}/signin\n  roles:\n    owner: { manage: org }\n", "needs email:"},
+		"no roles":              {"auth:\n  strategies:\n    password: [password]\norganizations: {}\n", "declare at least one role"},
+		"nobody manages":        {"auth:\n  strategies:\n    password: [password]\norganizations:\n  roles:\n    owner: { manage: [members] }\n", "at least one role needs manage: org"},
+		"unknown capability":    {"auth:\n  strategies:\n    password: [password]\norganizations:\n  roles:\n    owner: { manage: [everything] }\n", "unknown capability"},
+		"creator not declared":  {"auth:\n  strategies:\n    password: [password]\norganizations:\n  roles:\n    boss: { manage: org }\n", `creator_roles: "owner" is not a declared role`},
+		"creator can't manage":  {"auth:\n  strategies:\n    password: [password]\norganizations:\n  roles:\n    boss: { manage: org }\n    owner: {}\n", "creator_roles: must include a role with manage: org"},
+		"default with manage":   {"auth:\n  strategies:\n    password: [password]\norganizations:\n  roles:\n    owner: { manage: org }\n  default_roles: [owner]\n", "has manage capabilities"},
+		"bad rule":              {"auth:\n  strategies:\n    password: [password]\norganizations:\n  create: user.nothing.\n  roles:\n    owner: { manage: org }\n", "organizations.create"},
+		"too many memberships":  {"auth:\n  strategies:\n    password: [password]\norganizations:\n  max_memberships_per_user: 500\n  roles:\n    owner: { manage: org }\n", "at most 100"},
+		"link without token":    {"auth:\n  strategies:\n    password: [password]\n  sign_in:\n    allowed_redirects: [\"https://app.acme.example\"]\norganizations:\n  invitation_link: https://app.acme.example/join?org={org}\n  roles:\n    owner: { manage: org }\n", "{token} exactly once"},
+		"link without org":      {"auth:\n  strategies:\n    password: [password]\n  sign_in:\n    allowed_redirects: [\"https://app.acme.example\"]\norganizations:\n  invitation_link: https://app.acme.example/join?token={token}\n  roles:\n    owner: { manage: org }\n", "must contain {org}"},
+		"link outside":          {"auth:\n  strategies:\n    password: [password]\n  sign_in:\n    allowed_redirects: [\"https://app.acme.example\"]\norganizations:\n  invitation_link: https://evil.example/join?t={token}&org={org}\n  roles:\n    owner: { manage: org }\n", "within auth.sign_in.allowed_redirects"},
+		"signin link, no email": {"auth:\n  strategies:\n    password: [password]\n  sign_in:\n    allowed_redirects: [\"https://app.acme.example\"]\norganizations:\n  signin_link: https://app.acme.example/{slug}/signin\n  roles:\n    owner: { manage: org }\n", "needs email:"},
 		"signin link no slug":   {exportEmail + "organizations:\n  signin_link: https://app.acme.example/signin\n  roles:\n    owner: { manage: org }\n", "must contain {slug}"},
-		"signin link outside":   {exportEmail + "organizations:\n  signin_link: https://evil.example/{slug}\n  roles:\n    owner: { manage: org }\n", "within sign_in.allowed_redirects"},
+		"signin link outside":   {exportEmail + "organizations:\n  signin_link: https://evil.example/{slug}\n  roles:\n    owner: { manage: org }\n", "within auth.sign_in.allowed_redirects"},
 		"auth disabled":         {"auth: disabled\norganizations:\n  roles:\n    owner: { manage: org }\n", "only apply when auth is enabled"},
-		"grants unknown":        {"organizations:\n  roles:\n    owner: { manage: org }\n  team_roles:\n    manager: { grants: [boss] }\n", `grants: "boss" is not a declared team role`},
-		"grants twice":          {"organizations:\n  roles:\n    owner: { manage: org }\n  team_roles:\n    manager: { grants: [delegate, delegate] }\n    delegate: {}\n", "listed twice"},
-		"bad team role name":    {"organizations:\n  roles:\n    owner: { manage: org }\n  team_roles:\n    Manager: {}\n", "invalid role name"},
-		"unknown team key":      {"organizations:\n  roles:\n    owner: { manage: org }\n  team_roles:\n    manager: { manage: org }\n", "manage"},
-		"bad visible":           {"organizations:\n  members_visible_to: everyone\n  roles:\n    owner: { manage: org }\n", "members or managers"},
+		"grants unknown":        {"auth:\n  strategies:\n    password: [password]\norganizations:\n  roles:\n    owner: { manage: org }\n  team_roles:\n    manager: { grants: [boss] }\n", `grants: "boss" is not a declared team role`},
+		"grants twice":          {"auth:\n  strategies:\n    password: [password]\norganizations:\n  roles:\n    owner: { manage: org }\n  team_roles:\n    manager: { grants: [delegate, delegate] }\n    delegate: {}\n", "listed twice"},
+		"bad team role name":    {"auth:\n  strategies:\n    password: [password]\norganizations:\n  roles:\n    owner: { manage: org }\n  team_roles:\n    Manager: {}\n", "invalid role name"},
+		"unknown team key":      {"auth:\n  strategies:\n    password: [password]\norganizations:\n  roles:\n    owner: { manage: org }\n  team_roles:\n    manager: { manage: org }\n", "manage"},
+		"bad visible":           {"auth:\n  strategies:\n    password: [password]\norganizations:\n  members_visible_to: everyone\n  roles:\n    owner: { manage: org }\n", "members or managers"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, errs := parseRealmSettings([]byte(tc.yaml))
@@ -98,7 +101,7 @@ func TestOrganizationSigninLink(t *testing.T) {
 }
 
 func TestOrganizationDisabled(t *testing.T) {
-	s, errs := parseRealmSettings([]byte("organizations:\n  enabled: false\n"))
+	s, errs := parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\norganizations:\n  enabled: false\n"))
 	if len(errs) > 0 || s.Organizations != nil {
 		t.Errorf("errs=%v org=%v", errs, s.Organizations)
 	}
@@ -140,7 +143,7 @@ func TestCollectionOrganizationPolicy(t *testing.T) {
 	for name, tc := range map[string]struct{ realm, yaml, want string }{
 		"no on_org_delete":      {orgsRealm, "organization: required\n", "on_org_delete"},
 		"bad value":             {orgsRealm, "organization: sometimes\n", "must be required, optional or none"},
-		"realm without orgs":    {"signup: open\n", ok, "enable organizations"},
+		"realm without orgs":    {"auth:\n  strategies:\n    password: [password]\n  signup: open\n", ok, "enable organizations"},
 		"on_org_delete alone":   {orgsRealm, "on_org_delete:\n  action: keep\n", "only applies to a collection"},
 		"bad action":            {orgsRealm, "organization: required\non_org_delete:\n  action: purge\n", "delete or keep"},
 		"in_org without action": {orgsRealm, ok + "on_owner_delete:\n  in_org: apply\n", "needs an action"},
@@ -156,7 +159,7 @@ func TestCollectionOrganizationPolicy(t *testing.T) {
 }
 
 func TestRolesThatRequireMFA(t *testing.T) {
-	s, errs := parseRealmSettings([]byte("organizations:\n  roles:\n    owner: { manage: org }\n    hr: { manage: members, require_mfa: true }\n"))
+	s, errs := parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\norganizations:\n  roles:\n    owner: { manage: org }\n    hr: { manage: members, require_mfa: true }\n"))
 	if len(errs) > 0 {
 		t.Fatal(errs)
 	}
@@ -167,7 +170,7 @@ func TestRolesThatRequireMFA(t *testing.T) {
 }
 
 func TestTeamRoleSettings(t *testing.T) {
-	s, errs := parseRealmSettings([]byte("organizations:\n  roles:\n    owner: { manage: org }\n  team_roles:\n    manager:\n      description: Runs the team\n      grants: [delegate]\n      require_mfa: true\n    delegate: {}\n"))
+	s, errs := parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\norganizations:\n  roles:\n    owner: { manage: org }\n  team_roles:\n    manager:\n      description: Runs the team\n      grants: [delegate]\n      require_mfa: true\n    delegate: {}\n"))
 	if len(errs) > 0 {
 		t.Fatal(errs)
 	}
@@ -238,7 +241,7 @@ func TestCollectionTeamPolicy(t *testing.T) {
 }
 
 func TestOrganizationHooksSettings(t *testing.T) {
-	s, errs := parseRealmSettings([]byte("organizations:\n  roles:\n    owner: { manage: org }\n  hooks:\n    on_member_joined: core/joined\n    on_roles_changed: core/changed\n"))
+	s, errs := parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\norganizations:\n  roles:\n    owner: { manage: org }\n  hooks:\n    on_member_joined: core/joined\n    on_roles_changed: core/changed\n"))
 	if len(errs) > 0 {
 		t.Fatal(errs)
 	}
@@ -246,7 +249,7 @@ func TestOrganizationHooksSettings(t *testing.T) {
 	if h.OnMemberJoined.Function != "core/joined" || h.OnRolesChanged.Function != "core/changed" || h.OnMemberLeft.Function != "" {
 		t.Errorf("hooks: %+v", h)
 	}
-	_, errs = parseRealmSettings([]byte("organizations:\n  roles:\n    owner: { manage: org }\n  hooks:\n    on_member_left: nonsense\n"))
+	_, errs = parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\norganizations:\n  roles:\n    owner: { manage: org }\n  hooks:\n    on_member_left: nonsense\n"))
 	if len(errs) == 0 || !strings.Contains(errs[0].Error(), "hooks.on_member_left: must be <database>/<function>") {
 		t.Errorf("a bad reference: %v", errs)
 	}
@@ -255,7 +258,7 @@ func TestOrganizationHooksSettings(t *testing.T) {
 func TestOrganizationHooksNameBackgroundFunctions(t *testing.T) {
 	tree := func(fn string) string {
 		return writeTree(t, map[string]string{
-			"shop/realm.yaml":                         "signup: open\norganizations:\n  roles:\n    owner: { manage: org }\n  hooks:\n    on_member_joined: app/hello\n",
+			"shop/realm.yaml":                         "auth:\n  strategies:\n    password: [password]\n  signup: open\norganizations:\n  roles:\n    owner: { manage: org }\n  hooks:\n    on_member_joined: app/hello\n",
 			"shop/app/_functions/deno.json":           `{}`,
 			"shop/app/_functions/hello/function.yaml": fn,
 			"shop/app/_functions/hello/index.ts":      "export default () => 1;\n",
@@ -289,7 +292,7 @@ func TestTemplateDataHooksAreInternalSyncFunctions(t *testing.T) {
 			"shop/app/_functions/send/index.ts":       "export default () => 1;\n",
 		})
 	}
-	email := "signup: open\nemail:\n  function: app/send\n  from: Shop <no-reply@shop.example>\n  public_url: https://api.shop.example\n  data_hook: app/hello\n"
+	email := "auth:\n  strategies:\n    password: [password]\n  signup: open\nemail:\n  function: app/send\n  from: Shop <no-reply@shop.example>\n  public_url: https://api.shop.example\n  data_hook: app/hello\n"
 	reg, err := Load(tree(email, "internal: true\n"))
 	if err != nil {
 		// The templates are generated for a realm that sends email: this tree has none.
@@ -304,8 +307,8 @@ func TestTemplateDataHooksAreInternalSyncFunctions(t *testing.T) {
 		"email: not internal":   {email, "mode: sync\n", "email.data_hook: app/hello must have `internal: true`"},
 		"email: async":          {email, "internal: true\nmode: async\n", "email.data_hook: app/hello must have `mode: sync`"},
 		"email: not a path":     {strings.Replace(email, "app/hello", "hello", 1), "internal: true\n", "email.data_hook: must be <database>/<function>"},
-		"pages: not internal":   {"signup: open\npages:\n  data_hook: app/hello\n", "mode: sync\n", "pages.data_hook: app/hello must have `internal: true`"},
-		"pages: async":          {"signup: open\npages:\n  data_hook: app/hello\n", "internal: true\nmode: async\n", "pages.data_hook: app/hello must have `mode: sync`"},
+		"pages: not internal":   {"auth:\n  strategies:\n    password: [password]\n  signup: open\npages:\n  data_hook: app/hello\n", "mode: sync\n", "pages.data_hook: app/hello must have `internal: true`"},
+		"pages: async":          {"auth:\n  strategies:\n    password: [password]\n  signup: open\npages:\n  data_hook: app/hello\n", "internal: true\nmode: async\n", "pages.data_hook: app/hello must have `mode: sync`"},
 	} {
 		if _, err := Load(tree(tc.realm, tc.fn)); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: %v, want %q", name, err, tc.want)
@@ -314,7 +317,7 @@ func TestTemplateDataHooksAreInternalSyncFunctions(t *testing.T) {
 }
 
 func TestCustomizableEmailKinds(t *testing.T) {
-	s, errs := parseRealmSettings([]byte("signup: open\nemail:\n  function: app/send\n  from: Shop <no-reply@shop.example>\n  public_url: https://api.shop.example\n  customizable: [reset-password, org-invitation]\n  overrides:\n    permission: manage_members\n"))
+	s, errs := parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\n  signup: open\nemail:\n  function: app/send\n  from: Shop <no-reply@shop.example>\n  public_url: https://api.shop.example\n  customizable: [reset-password, org-invitation]\n  overrides:\n    permission: manage_members\n"))
 	if len(errs) > 0 {
 		t.Fatal(errs)
 	}
@@ -322,7 +325,7 @@ func TestCustomizableEmailKinds(t *testing.T) {
 	if len(e.Customizable) != 2 || e.Customizable[1] != "org-invitation" || e.OverridePermission != CapMembers {
 		t.Errorf("email: %+v", e)
 	}
-	s, _ = parseRealmSettings([]byte("signup: open\nemail:\n  function: app/send\n  from: Shop <no-reply@shop.example>\n  public_url: https://api.shop.example\n"))
+	s, _ = parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\n  signup: open\nemail:\n  function: app/send\n  from: Shop <no-reply@shop.example>\n  public_url: https://api.shop.example\n"))
 	if s.Email.OverridePermission != CapOrg || len(s.Email.Customizable) != 0 {
 		t.Errorf("defaults: %+v", s.Email)
 	}
@@ -338,7 +341,7 @@ func TestCustomizableEmailKinds(t *testing.T) {
 	}
 	// The kinds need organizations, which own the overrides.
 	tree := writeTree(t, map[string]string{
-		"shop/realm.yaml":                        "signup: open\nemail:\n  function: app/send\n  from: Shop <no-reply@shop.example>\n  public_url: https://api.shop.example\n  customizable: [reset-password]\n",
+		"shop/realm.yaml":                        "auth:\n  strategies:\n    password: [password]\n  signup: open\nemail:\n  function: app/send\n  from: Shop <no-reply@shop.example>\n  public_url: https://api.shop.example\n  customizable: [reset-password]\n",
 		"shop/app/_functions/deno.json":          `{}`,
 		"shop/app/_functions/send/function.yaml": "internal: true\nmode: async\n",
 		"shop/app/_functions/send/index.ts":      "export default () => 1;\n",
@@ -348,7 +351,10 @@ func TestCustomizableEmailKinds(t *testing.T) {
 	}
 }
 
-const ssoRealm = `signup: open
+const ssoRealm = `auth:
+  strategies:
+    password: [password]
+  signup: open
 organizations:
   roles:
     owner: { manage: [org, members, roles, teams, sso] }

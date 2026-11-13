@@ -41,7 +41,7 @@ func emailTree(t *testing.T, realmYAML, deliverYAML string, extra map[string]str
 	return writeTree(t, files)
 }
 
-const goodEmail = "email:\n  function: notify/deliver\n  from: \"Shop <no-reply@shop.example>\"\n  public_url: https://api.shop.example/\n"
+const goodEmail = "auth:\n  strategies:\n    password: [password]\nemail:\n  function: notify/deliver\n  from: \"Shop <no-reply@shop.example>\"\n  public_url: https://api.shop.example/\n"
 const goodDeliver = "internal: true\nmode: async\nsecrets: [POSTMARK_TOKEN]\n"
 
 func TestEmailSettings(t *testing.T) {
@@ -69,7 +69,7 @@ func TestEmailSettings(t *testing.T) {
 		t.Errorf("email folder: databases %v, templates %+v", rl.Databases, rl.Email)
 	}
 	// Without an email section nothing changes: no templates, no settings.
-	reg, err = Load(emailTree(t, "roles:\n  admin: {admin: true}\n", goodDeliver, nil))
+	reg, err = Load(emailTree(t, "auth:\n  strategies:\n    password: [password]\nroles:\n  admin: {admin: true}\n", goodDeliver, nil))
 	if err != nil || reg.Realms["shop"].Settings.Email != nil || reg.Realms["shop"].Email != nil {
 		t.Errorf("a realm without email: %v", err)
 	}
@@ -146,10 +146,10 @@ func TestAccountSettings(t *testing.T) {
 
 func TestAccountErrors(t *testing.T) {
 	for name, tt := range map[string]struct{ realm, want string }{
-		"gate without email":         {"signup: open\naccount:\n  require_verified_email: true\n", "account.require_verified_email: needs an email section"},
-		"welcome without email":      {"signup: open\naccount:\n  welcome_email: true\n", "account.welcome_email: needs an email section"},
-		"email change without email": {"signup: open\naccount:\n  allow_email_change: true\n", "account.allow_email_change: needs an email section"},
-		"purge without email":        {"signup: open\naccount:\n  purge_unverified_after: 30d\n", "account.purge_unverified_after: needs an email section"},
+		"gate without email":         {"auth:\n  strategies:\n    password: [password]\n  signup: open\naccount:\n  require_verified_email: true\n", "account.require_verified_email: needs an email section"},
+		"welcome without email":      {"auth:\n  strategies:\n    password: [password]\n  signup: open\naccount:\n  welcome_email: true\n", "account.welcome_email: needs an email section"},
+		"email change without email": {"auth:\n  strategies:\n    password: [password]\n  signup: open\naccount:\n  allow_email_change: true\n", "account.allow_email_change: needs an email section"},
+		"purge without email":        {"auth:\n  strategies:\n    password: [password]\n  signup: open\naccount:\n  purge_unverified_after: 30d\n", "account.purge_unverified_after: needs an email section"},
 		"bad duration":               {goodEmail + "account:\n  tokens:\n    verify_email: soon\n", "account.tokens.verify_email"},
 		"too short":                  {goodEmail + "account:\n  purge_unverified_after: 1s\n", "at least 1m"},
 		"unknown key":                {goodEmail + "account:\n  allow_everything: true\n", "allow_everything"},
@@ -170,12 +170,12 @@ func TestEmailErrors(t *testing.T) {
 		extra                map[string]string
 		want                 string
 	}{
-		{"auth disabled", "auth: disabled\n" + goodEmail, goodDeliver, nil, "email: only applies when auth is enabled"},
+		{"auth disabled", noAuth(goodEmail), goodDeliver, nil, "email: only applies when auth is enabled"},
 		{"no function", strings.Replace(goodEmail, "function: notify/deliver", "function: deliver", 1), goodDeliver, nil, "email.function: must be <database>/<function>"},
 		{"unknown function", strings.Replace(goodEmail, "notify/deliver", "notify/nothing", 1), goodDeliver, nil, `"notify/nothing" is not a function of this realm`},
 		{"not internal", goodEmail, "mode: async\n", nil, "must have `internal: true`"},
 		{"not async", goodEmail, "internal: true\n", nil, "must have `mode: async`"},
-		{"no from", "email:\n  function: notify/deliver\n", goodDeliver, nil, "email.from: is required"},
+		{"no from", "auth:\n  strategies:\n    password: [password]\nemail:\n  function: notify/deliver\n", goodDeliver, nil, "email.from: is required"},
 		{"bad from", strings.Replace(goodEmail, "Shop <no-reply@shop.example>", "not an address", 1), goodDeliver, nil, "email.from"},
 		{"bad public url", strings.Replace(goodEmail, "https://api.shop.example/", "api.shop.example", 1), goodDeliver, nil, "email.public_url"},
 		{"bad locale", "default_locale: English\n" + goodEmail, goodDeliver, nil, "default_locale: \"English\" isn't a language tag"},
@@ -237,7 +237,7 @@ func TestEmailTemplatesAreInTheFingerprint(t *testing.T) {
 // A function can only send email through a realm that has it.
 func TestFunctionEmailNeedsAnEmailSection(t *testing.T) {
 	files := map[string]string{
-		"shop/realm.yaml":                         "signup: open\n",
+		"shop/realm.yaml":                         "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		"shop/main/_functions/deno.json":          `{}`,
 		"shop/main/_functions/ship/function.yaml": "email: true\n",
 		"shop/main/_functions/ship/index.ts":      "",

@@ -94,7 +94,7 @@ func TestWaitForConfigLoadsOnTheFirstFixingChange(t *testing.T) {
 
 // Production is unchanged: an invalid config, or a stale bundle, exits at startup.
 func TestRunOutsideDevModeExitsOnAConfigError(t *testing.T) {
-	broken := cmdtest.Write(t, map[string]string{"app/realm.yaml": "bogus: 1\n"})
+	broken := cmdtest.Write(t, map[string]string{"app/realm.yaml": "auth:\n  strategies:\n    password: [password]\nbogus: 1\n"})
 	stale := cmdtest.Write(t, map[string]string{
 		"app/realm.yaml":                          "auth: disabled\n",
 		"app/main/notes/schema.json":              "{}",

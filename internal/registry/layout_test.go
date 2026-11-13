@@ -106,7 +106,7 @@ func TestFilesAtTheRealmLevelAreIgnored(t *testing.T) {
 // them not being found (missing templates, texts or configuration).
 func TestOldLayoutReportsOnlyTheFoldersToMove(t *testing.T) {
 	_, err := Load(writeTree(t, map[string]string{
-		"shop/realm.yaml":                  "email:\n  function: main/send\n  from: a@example.com\n",
+		"shop/realm.yaml":                  "auth:\n  strategies:\n    password: [password]\nemail:\n  function: main/send\n  from: a@example.com\n",
 		"shop/main/orders/schema.json":     layoutSchema,
 		"shop/email/welcome/en.html":       "x",
 		"shop/app-config/schema.json":      layoutSchema,

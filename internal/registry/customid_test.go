@@ -13,10 +13,10 @@ func TestCustomIDSettings(t *testing.T) {
 		pattern string
 		limit   int
 	}{
-		"off by default":    {"", "signup: open\n", false, "", 0},
-		"a pattern":         {"custom_id:\n  pattern: 'INV-[0-9]{4}'\n", "signup: open\n", false, "INV-[0-9]{4}", DefaultDuplicateLimit},
-		"a limit":           {"custom_id:\n  pattern: 'a+'\n  duplicate_limit: 5\n", "signup: open\n", false, "a+", 5},
-		"the user shortcut": {"custom_id: user\n", "signup: open\n", true, "", DefaultDuplicateLimit},
+		"off by default":    {"", "auth:\n  strategies:\n    password: [password]\n  signup: open\n", false, "", 0},
+		"a pattern":         {"custom_id:\n  pattern: 'INV-[0-9]{4}'\n", "auth:\n  strategies:\n    password: [password]\n  signup: open\n", false, "INV-[0-9]{4}", DefaultDuplicateLimit},
+		"a limit":           {"custom_id:\n  pattern: 'a+'\n  duplicate_limit: 5\n", "auth:\n  strategies:\n    password: [password]\n  signup: open\n", false, "a+", 5},
+		"the user shortcut": {"custom_id: user\n", "auth:\n  strategies:\n    password: [password]\n  signup: open\n", true, "", DefaultDuplicateLimit},
 	} {
 		t.Run(name, func(t *testing.T) {
 			reg, err := softTree(t, tc.realm, tc.yaml, "")
@@ -41,15 +41,15 @@ func TestCustomIDRefusals(t *testing.T) {
 	for name, tc := range map[string]struct {
 		realm, yaml, want string
 	}{
-		"no pattern":         {"signup: open\n", "custom_id: {}\n", "needs a pattern"},
-		"an empty pattern":   {"signup: open\n", "custom_id:\n  pattern: ''\n", "needs a pattern"},
-		"a broken pattern":   {"signup: open\n", "custom_id:\n  pattern: '(['\n", "RE2"},
-		"a lookahead":        {"signup: open\n", "custom_id:\n  pattern: '(?=a)a'\n", "RE2"},
-		"a long pattern":     {"signup: open\n", "custom_id:\n  pattern: '" + strings.Repeat("a", 513) + "'\n", "at most 512"},
-		"a low limit":        {"signup: open\n", "custom_id:\n  pattern: a\n  duplicate_limit: 0\n", "between 1 and 1000"},
-		"a high limit":       {"signup: open\n", "custom_id:\n  pattern: a\n  duplicate_limit: 1001\n", "between 1 and 1000"},
-		"another word":       {"signup: open\n", "custom_id: owner\n", "`user` or a mapping"},
-		"an unknown key":     {"signup: open\n", "custom_id:\n  pattern: a\n  regex: b\n", `unknown key "regex"`},
+		"no pattern":         {"auth:\n  strategies:\n    password: [password]\n  signup: open\n", "custom_id: {}\n", "needs a pattern"},
+		"an empty pattern":   {"auth:\n  strategies:\n    password: [password]\n  signup: open\n", "custom_id:\n  pattern: ''\n", "needs a pattern"},
+		"a broken pattern":   {"auth:\n  strategies:\n    password: [password]\n  signup: open\n", "custom_id:\n  pattern: '(['\n", "RE2"},
+		"a lookahead":        {"auth:\n  strategies:\n    password: [password]\n  signup: open\n", "custom_id:\n  pattern: '(?=a)a'\n", "RE2"},
+		"a long pattern":     {"auth:\n  strategies:\n    password: [password]\n  signup: open\n", "custom_id:\n  pattern: '" + strings.Repeat("a", 513) + "'\n", "at most 512"},
+		"a low limit":        {"auth:\n  strategies:\n    password: [password]\n  signup: open\n", "custom_id:\n  pattern: a\n  duplicate_limit: 0\n", "between 1 and 1000"},
+		"a high limit":       {"auth:\n  strategies:\n    password: [password]\n  signup: open\n", "custom_id:\n  pattern: a\n  duplicate_limit: 1001\n", "between 1 and 1000"},
+		"another word":       {"auth:\n  strategies:\n    password: [password]\n  signup: open\n", "custom_id: owner\n", "`user` or a mapping"},
+		"an unknown key":     {"auth:\n  strategies:\n    password: [password]\n  signup: open\n", "custom_id:\n  pattern: a\n  regex: b\n", `unknown key "regex"`},
 		"user without users": {"auth: disabled\n", "custom_id: user\n", "auth enabled"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -62,7 +62,7 @@ func TestCustomIDRefusals(t *testing.T) {
 }
 
 func TestCustomIDCheck(t *testing.T) {
-	reg, err := softTree(t, "signup: open\n", "custom_id:\n  pattern: '[a-z]+|.*'\n", "")
+	reg, err := softTree(t, "auth:\n  strategies:\n    password: [password]\n  signup: open\n", "custom_id:\n  pattern: '[a-z]+|.*'\n", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestCustomIDCheck(t *testing.T) {
 		}
 	}
 
-	reg, err = softTree(t, "signup: open\n", "custom_id:\n  pattern: 'INV-[0-9]{4}'\n", "")
+	reg, err = softTree(t, "auth:\n  strategies:\n    password: [password]\n  signup: open\n", "custom_id:\n  pattern: 'INV-[0-9]{4}'\n", "")
 	if err != nil {
 		t.Fatal(err)
 	}

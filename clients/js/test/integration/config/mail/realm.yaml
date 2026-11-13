@@ -1,8 +1,18 @@
 # The realm of the account-flow integration tests: email goes through the
 # development function `notifications/email-capture`, which stores each
 # message in the readable `outbox` collection, where the tests find the links.
-auth: enabled
-signup: open
+auth:
+  strategies:
+    password: [password]
+    magic_link: [magic_link]
+  signup: open
+
+  # Sign in by a link or a code from the outbox, and make accounts that way.
+  magic_link:
+    enabled: true
+    signup: true
+  sign_in:
+    app_url: http://localhost:5173/signed-in
 
 email:
   function: notifications/email-capture
@@ -18,13 +28,6 @@ email:
 
 account:
   allow_email_change: true
-
-# Sign in by a link or a code from the outbox, and make accounts that way.
-magic_link:
-  enabled: true
-  signup: true
-sign_in:
-  app_url: http://localhost:5173/signed-in
 
 roles:
   ops:

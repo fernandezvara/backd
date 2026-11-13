@@ -21,7 +21,10 @@ import (
 func TestAuditTrail(t *testing.T) {
 	root := t.TempDir()
 	for p, content := range map[string]string{
-		"acme/realm.yaml": `signup: invite
+		"acme/realm.yaml": `auth:
+  strategies:
+    password: [password]
+  signup: invite
 admin:
   allowed_networks: [192.0.2.0/24]
 roles:

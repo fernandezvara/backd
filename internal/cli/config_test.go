@@ -62,8 +62,8 @@ func TestRunConfig(t *testing.T) {
 	}
 
 	// An invalid config fails with startup's message.
-	os.WriteFile(filepath.Join(dir, "shop", "realm.yaml"), []byte("signup: public\n"), 0o644)
-	if code, _, errOut := cli("config", "check"); code != 1 || !strings.Contains(errOut, `signup: must be open, invite or closed, got "public"`) {
+	os.WriteFile(filepath.Join(dir, "shop", "realm.yaml"), []byte("auth:\n  strategies:\n    password: [password]\n  signup: public\n"), 0o644)
+	if code, _, errOut := cli("config", "check"); code != 1 || !strings.Contains(errOut, `auth.signup: must be open, invite or closed, got "public"`) {
 		t.Errorf("invalid: %d %q", code, errOut)
 	}
 

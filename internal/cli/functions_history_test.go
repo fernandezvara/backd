@@ -22,7 +22,7 @@ import (
 func TestFunctionsHistoryAndLogs(t *testing.T) {
 	fnDir := "acme/app/" + registry.FunctionsDir
 	root := writeConfig(t, map[string]string{
-		"acme/realm.yaml":              "roles:\n  ops:\n    admin: true\n",
+		"acme/realm.yaml":              "auth:\n  strategies:\n    password: [password]\nroles:\n  ops:\n    admin: true\n",
 		fnDir + "/hello/function.yaml": "invoke: \"false\"\n", // API keys bypass this
 		fnDir + "/hello/index.js":      "",
 	})
@@ -117,7 +117,7 @@ func TestFunctionsHistoryAndLogs(t *testing.T) {
 }
 
 func TestFunctionsJobs(t *testing.T) {
-	root := writeConfig(t, map[string]string{"acme/realm.yaml": "roles:\n  ops:\n    admin: true\n", "acme/app/notes/schema.json": `{}`})
+	root := writeConfig(t, map[string]string{"acme/realm.yaml": "auth:\n  strategies:\n    password: [password]\nroles:\n  ops:\n    admin: true\n", "acme/app/notes/schema.json": `{}`})
 	reg, err := registry.Load(root)
 	if err != nil {
 		t.Fatal(err)
@@ -186,7 +186,7 @@ func TestFunctionsJobs(t *testing.T) {
 
 func TestFunctionsCancelAndRerun(t *testing.T) {
 	root := writeConfig(t, map[string]string{
-		"acme/realm.yaml":                          "roles:\n  ops:\n    admin: true\n",
+		"acme/realm.yaml":                          "auth:\n  strategies:\n    password: [password]\nroles:\n  ops:\n    admin: true\n",
 		"acme/app/notes/schema.json":               `{}`,
 		"acme/app/_functions/export/function.yaml": "mode: async\n",
 		"acme/app/_functions/export/index.ts":      "export default () => ({});\n",
@@ -251,7 +251,7 @@ func TestFunctionsCancelAndRerun(t *testing.T) {
 
 func TestFunctionsPauseAndResume(t *testing.T) {
 	root := writeConfig(t, map[string]string{
-		"acme/realm.yaml":                           "roles:\n  ops:\n    admin: true\n",
+		"acme/realm.yaml":                           "auth:\n  strategies:\n    password: [password]\nroles:\n  ops:\n    admin: true\n",
 		"acme/app/notes/schema.json":                `{}`,
 		"acme/app/_functions/nightly/function.yaml": "mode: async\nschedule: \"0 3 * * *\"\ntimezone: Europe/Madrid\n",
 		"acme/app/_functions/nightly/index.ts":      "export default () => ({});\n",
@@ -304,7 +304,7 @@ func TestFunctionsPauseAndResume(t *testing.T) {
 
 func TestFunctionsShowSteps(t *testing.T) {
 	root := writeConfig(t, map[string]string{
-		"acme/realm.yaml":                          "roles:\n  ops:\n    admin: true\n",
+		"acme/realm.yaml":                          "auth:\n  strategies:\n    password: [password]\nroles:\n  ops:\n    admin: true\n",
 		"acme/app/notes/schema.json":               `{}`,
 		"acme/app/_functions/export/function.yaml": "mode: async\n",
 		"acme/app/_functions/export/index.ts":      "export default () => ({});\n",
@@ -405,7 +405,7 @@ func fakeCheckWorker(t *testing.T, svc *auth.Users, reports map[string]auth.Chec
 
 func TestDataCheck(t *testing.T) {
 	root := writeConfig(t, map[string]string{
-		"acme/realm.yaml":             "roles:\n  ops:\n    admin: true\n",
+		"acme/realm.yaml":             "auth:\n  strategies:\n    password: [password]\nroles:\n  ops:\n    admin: true\n",
 		"acme/app/notes/schema.json":  `{"type": "object"}`,
 		"acme/app/labels/schema.json": `{"type": "object"}`,
 	})
@@ -495,9 +495,9 @@ func TestStorageCheck(t *testing.T) {
 	fake := storagetest.New(t, "files")
 	pub := storagetest.New(t, "public")
 	root := writeConfig(t, map[string]string{
-		"acme/realm.yaml":            "roles:\n  ops:\n    admin: true\nstorage:\n  provider: minio\n  endpoint: " + fake.URL + "\n  bucket: files\n  prefix: cli\n  access_key: secret:STORAGE_ACCESS_KEY\n  secret_key: secret:STORAGE_SECRET_KEY\npublic_storage:\n  provider: minio\n  endpoint: " + pub.URL + "\n  bucket: public\n  prefix: cli\n  access_key: secret:PUBLIC_ACCESS_KEY\n  secret_key: secret:PUBLIC_SECRET_KEY\n  url: https://cdn.example.com\n",
+		"acme/realm.yaml":            "auth:\n  strategies:\n    password: [password]\nroles:\n  ops:\n    admin: true\nstorage:\n  provider: minio\n  endpoint: " + fake.URL + "\n  bucket: files\n  prefix: cli\n  access_key: secret:STORAGE_ACCESS_KEY\n  secret_key: secret:STORAGE_SECRET_KEY\npublic_storage:\n  provider: minio\n  endpoint: " + pub.URL + "\n  bucket: public\n  prefix: cli\n  access_key: secret:PUBLIC_ACCESS_KEY\n  secret_key: secret:PUBLIC_SECRET_KEY\n  url: https://cdn.example.com\n",
 		"acme/app/notes/schema.json": `{"type": "object"}`,
-		"bare/realm.yaml":            "roles:\n  ops:\n    admin: true\n",
+		"bare/realm.yaml":            "auth:\n  strategies:\n    password: [password]\nroles:\n  ops:\n    admin: true\n",
 		"bare/app/notes/schema.json": `{"type": "object"}`,
 	})
 	reg, err := registry.Load(root)

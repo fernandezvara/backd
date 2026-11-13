@@ -28,7 +28,7 @@ func newParentFixture(t *testing.T) *parentFixture {
 	t.Helper()
 	root := t.TempDir()
 	for p, content := range map[string]string{
-		"team/realm.yaml":                "signup: open\n",
+		"team/realm.yaml":                "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		"team/app/lists/schema.json":     `{"type":"object","properties":{"name":{"type":"string"},"members":{"type":"array","items":{"type":"string"}}},"required":["name"]}`,
 		"team/app/lists/collection.yaml": "rules:\n  read: user != nil && user.id in document.members\n  create: user != nil && data.members == [user.id]\n  update: user != nil && user.id in document.members\n  delete: user != nil && user.id in document.members\n",
 		"team/app/items/schema.json":     `{"type":"object","properties":{"title":{"type":"string"},"list_id":{"type":"string"}},"required":["title","list_id"]}`,

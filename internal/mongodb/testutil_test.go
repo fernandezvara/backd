@@ -55,6 +55,9 @@ func loadRegistry(t *testing.T, realm string, files map[string]string) *registry
 // loadRegistryWith is loadRegistry with the given realm.yaml content.
 func loadRegistryWith(t *testing.T, realm, realmYAML string, files map[string]string) *registry.Registry {
 	t.Helper()
+	if realmYAML == "" {
+		realmYAML = "auth:\n  strategies:\n    password: [password]\n"
+	}
 	root := t.TempDir()
 	for p, s := range files {
 		file := filepath.Join(root, realm, p)

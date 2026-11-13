@@ -97,7 +97,7 @@ func newRealtimeFixture(t *testing.T, lim realtime.Limits) *realtimeFixture {
 	t.Helper()
 	root := t.TempDir()
 	files := map[string]string{
-		"acme/realm.yaml":                "signup: open\nroles:\n  staff: {}\n",
+		"acme/realm.yaml":                "auth:\n  strategies:\n    password: [password]\n  signup: open\nroles:\n  staff: {}\n",
 		"acme/app/items/schema.json":     itemSchema,
 		"acme/app/items/collection.yaml": "realtime: true\nrules:\n  read: user != nil && document._meta.owner == user.id\n",
 		"acme/app/plain/schema.json":     itemSchema,

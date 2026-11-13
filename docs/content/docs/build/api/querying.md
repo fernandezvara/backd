@@ -107,7 +107,7 @@ Every field in `where` and `order_by` must be one of:
 - declared in the collection's `schema.json`;
 - `id`;
 - `_meta.created_at`, `_meta.updated_at` or `_meta.version`;
-- `_meta.owner`, `_meta.created_by` or `_meta.updated_by` (strings; `_meta.owner` can be `null`). Only documents in realms with `auth: enabled` have them; elsewhere these fields are always missing.
+- `_meta.owner`, `_meta.created_by` or `_meta.updated_by` (strings; `_meta.owner` can be `null`). Only documents in realms with an `auth` section have them; elsewhere these fields are always missing.
 
 Values are checked against the field's schema type:
 

@@ -21,13 +21,15 @@ CONFIG_DIR=./config backd template realm --realm <realm>
 ## Example
 
 ```yaml
-auth: enabled
-signup: invite
-sessions:
-  idle_timeout: 14d
-  max_lifetime: 60d
-password:
-  min_length: 14
+auth:
+  strategies:
+    password: [password]
+  signup: invite
+  sessions:
+    idle_timeout: 14d
+    max_lifetime: 60d
+  password:
+    min_length: 14
 cors:
   origins:
     - https://app.example.com
@@ -43,25 +45,26 @@ roles:
     description: Can publish articles
 ```
 
-An empty file, or one with only comments, is valid: every key has a default.
+Every realm needs an `auth` key: either `auth: disabled` (no authentication, for local work only) or a section with `strategies`, the ways people can sign in. Everything else has a default.
 
 ## Keys
 
 | Key | Default | Meaning |
 |---|---|---|
-| `auth` | `enabled` | `enabled` or `disabled`. With `enabled`, data routes need credentials (see [who can access data](../../auth/api-keys/#who-can-access-data)) and provisioning creates the realm's [system database](../../../operate/#realm-system-databases). A realm with `disabled` has no users, keys or access rules, so anyone who can reach `backd` can read and modify its data; `backd` logs a warning for it at startup. |
-| `signup` | `closed` | Who can create accounts: `open` (anyone), `invite` (needs an [invitation](../../../operate/administration/admin/#invitations)), `closed` (only operators, with the CLI or the admin API). |
-| `sessions.idle_timeout` | `30d` | A session expires after this long without use. |
-| `sessions.max_lifetime` | `90d` | A session never lives longer than this. Must be at least `idle_timeout`. |
-| `sessions.cookie.enabled` | `false` | `true`: browser apps can keep a session in an HttpOnly cookie, when their login asks for one. Needs explicit `cors.origins` (no `*`). See [Session cookies](../../auth/sessions/#session-cookies) |
-| `sessions.cookie.same_site` | `lax` | `lax`, `strict` or `none` (an app on another site than the API) |
-| `sessions.admin_idle_timeout` | `idle_timeout` | The idle timeout for users who hold an [admin role](#roles). Can only shorten `idle_timeout`. |
-| `sessions.admin_max_lifetime` | `max_lifetime` | The longest an admin's session lives. Can only shorten `max_lifetime`; must be at least `admin_idle_timeout`. |
-| `password.min_length` | `12` | Minimum password length, from 8 to 128. |
-| `login_throttle.account_threshold` | `5` | Failed logins an email address gets before each new attempt must wait (1 or more). See [Brute-force protection](../../auth/sessions/#brute-force-protection). |
-| `login_throttle.ip_threshold` | `50` | The same per client address (an IPv6 `/64`), higher because a network can hide many people. |
-| `login_throttle.window` | `15m` | How long a failure counts: a counter expires this long after its last failure. At least `1m`. |
-| `login_throttle.max_delay` | `15m` | The longest anyone waits; the wait starts at 1 second and doubles with each failure. At least `1s`, and not more than `window`. |
+| `auth` | required | `disabled` (no authentication: never expose such a realm to the internet) or a section with the keys below. With a section, data routes need credentials (see [who can access data](../../auth/api-keys/#who-can-access-data)) and provisioning creates the realm's [system database](../../../operate/#realm-system-databases). |
+| `auth.strategies` | required | The ways to sign in: each strategy is a name and an ordered list of methods, for example `web: [password]` or `admin: [password, totp]`. Methods are `password`, `magic_link`, `totp` (only after another method) and the providers of `auth.providers`. See [Authentication strategies](../../auth/#strategies) |
+| `auth.signup` | `closed` | Who can create accounts: `open` (anyone), `invite` (needs an [invitation](../../../operate/administration/admin/#invitations)), `closed` (only operators, with the CLI or the admin API). |
+| `auth.sessions.idle_timeout` | `30d` | A session expires after this long without use. |
+| `auth.sessions.max_lifetime` | `90d` | A session never lives longer than this. Must be at least `idle_timeout`. |
+| `auth.sessions.cookie.enabled` | `false` | `true`: browser apps can keep a session in an HttpOnly cookie, when their login asks for one. Needs explicit `cors.origins` (no `*`). See [Session cookies](../../auth/sessions/#session-cookies) |
+| `auth.sessions.cookie.same_site` | `lax` | `lax`, `strict` or `none` (an app on another site than the API) |
+| `auth.sessions.admin_idle_timeout` | `idle_timeout` | The idle timeout for users who hold an [admin role](#roles). Can only shorten `idle_timeout`. |
+| `auth.sessions.admin_max_lifetime` | `max_lifetime` | The longest an admin's session lives. Can only shorten `max_lifetime`; must be at least `admin_idle_timeout`. |
+| `auth.password.min_length` | `12` | Minimum password length, from 8 to 128. |
+| `auth.login_throttle.account_threshold` | `5` | Failed logins an email address gets before each new attempt must wait (1 or more). See [Brute-force protection](../../auth/sessions/#brute-force-protection). |
+| `auth.login_throttle.ip_threshold` | `50` | The same per client address (an IPv6 `/64`), higher because a network can hide many people. |
+| `auth.login_throttle.window` | `15m` | How long a failure counts: a counter expires this long after its last failure. At least `1m`. |
+| `auth.login_throttle.max_delay` | `15m` | The longest anyone waits; the wait starts at 1 second and doubles with each failure. At least `1s`, and not more than `window`. |
 | `cors.origins` | none (CORS off) | Browser origins allowed to call this realm, as `scheme://host[:port]`. `*` allows any origin and must be the only entry. See [CORS](#cors). |
 | `roles` | none | Roles that access rules can check. See below. |
 | `openapi.public` | `false` | `true` serves the realm's [OpenAPI document](../../api/openapi/) at `/v1/<realm>/_openapi.json` to everyone, not only to its administrators. |
@@ -75,22 +78,22 @@ An empty file, or one with only comments, is valid: every key has a default.
 | `email` | none (no email) | How the realm sends email: the delivery function, the sender, backd's public address for links, the pages the links open, where users go afterwards, and limits. backd never sends mail itself. See [Email](../../functions/email/) |
 | `email.customizable`, `email.overrides.permission` | none, `manage_org` | The kinds of email an organization may write its own template of, and the capability that edits them. See [organization email templates](../../organizations/email-templates/) |
 | `pages.data_hook` | none | An internal, `mode: sync` function (`<database>/<function>`) that fills in `{{.App}}` in the hosted pages with an organization's branding; `email.data_hook` does it for emails. See [organization context](../../organizations/organization-context/) |
-| `providers` | none | The external identity providers users may sign in with (`google`, `microsoft`, `apple`), each with its client id and `secret:NAME` references. See [Sign in with providers](../../auth/providers/) |
+| `auth.providers` | none | The external identity providers users may sign in with (`google`, `microsoft`, `apple`), each with its client id and `secret:NAME` references. See [Sign in with providers](../../auth/providers/) |
 | `push` | none (no push) | Push notifications: the platforms and their providers, the web subscription hosts and the device limits. Needs `BACKD_SECRETS_KEY`. See [Push notifications](../../push/) |
-| `sign_in.allowed_redirects` | `email.allowed_redirects` | Origins and app schemes a provider sign-in may send the user back to |
-| `sign_in.app_url` | none | Where a sign-in goes back to when it has no `redirect_to`; within the allowed redirects |
-| `mfa.enabled` | `true` | `false`: users can't turn a second factor on (users who have one are still asked for it). See [Multi-factor authentication](../../auth/mfa/) |
-| `mfa.issuer` | the realm's name | The name authenticator apps show for the account |
-| `magic_link.enabled` | `false` | Let users sign in with a link or a code emailed to them (needs `email:` and `BACKD_SECRETS_KEY`). See [Magic links](../../auth/magic-links/) |
-| `magic_link.signup` | `false` | An address with no account may make one (verified) by using a link or code, when the realm's `signup` is `open` |
+| `auth.sign_in.allowed_redirects` | `email.allowed_redirects` | Origins and app schemes a provider sign-in may send the user back to |
+| `auth.sign_in.app_url` | none | Where a sign-in goes back to when it has no `redirect_to`; within the allowed redirects |
+| `auth.totp.enabled` | `true` | `false`: users can't turn a second factor on (users who have one are still asked for it). See [Multi-factor authentication](../../auth/mfa/) |
+| `auth.totp.issuer` | the realm's name | The name authenticator apps show for the account |
+| `auth.magic_link.enabled` | `false` | Let users sign in with a link or a code emailed to them (needs `email:` and `BACKD_SECRETS_KEY`). See [Magic links](../../auth/magic-links/) |
+| `auth.magic_link.signup` | `false` | An address with no account may make one (verified) by using a link or code, when the realm's `signup` is `open` |
 | `consents` | none | The consents the realm asks for, each with `required`, `current` and per-version `reaccept`; texts live in `_realm/consents/<name>/<version>/<locale>.md`. See [Consents](../../auth/consents/) |
 | `compliance.consent_proof` | `[ip, user_agent]` | What each consent record keeps besides time, method and text hash |
 | `compliance.consent_retention` | `3y` | How long consent records are kept after their user was erased; `0` deletes them at erasure |
 | `compliance.export` | `false` | `true`: users can download a copy of their personal data and administrators can produce one. Needs `storage:` and `email:`. See [Personal data export](../../auth/personal-data/) |
 | `compliance.export_page` | none | Your app's download page, the one the "your data is ready" email links to (`?export=<id>` is added); required with `export`, within `allowed_redirects` |
 | `compliance.export_retention` | `7d` | How long a package is kept before it is deleted |
-| `reauth.ttl` | `5m` | How long a [re-authentication](../../auth/reauth/) token works (`1m` to `1h`) |
-| `mfa.required_roles` | none | Roles that must use a second factor, or `all`. A sign-in without one sets it up first. See [Required by role](../../auth/mfa/#required-by-role) |
+| `auth.reauth.ttl` | `5m` | How long a [re-authentication](../../auth/reauth/) token works (`1m` to `1h`) |
+| `roles.<name>.strategies` | all strategies | The strategies that keep the role active. A role that lists only strategies with a `totp` step needs a second factor from its holders: a sign-in without one sets it up first. See [Required by role](../../auth/mfa/#required-by-role) |
 | `account.require_verified_email` | `false` | `true`: no session until the address is verified. See [Account](#account) |
 | `account.allow_email_change` | `false` | `true`: users may [change their own address](../../auth/sessions/#changing-the-email-address) |
 | `account.welcome_email` | `false` | `true`: send the `welcome` email once the address is verified |
@@ -106,7 +109,7 @@ An empty file, or one with only comments, is valid: every key has a default.
 
 Durations are a whole number of days (`30d`) or Go durations (`12h`, `90m`), with a minimum of one minute.
 
-`signup`, `sessions`, `password`, `login_throttle`, `roles`, `admin`, `audit`, `email`, `providers`, `sign_in`, `account`, `functions.log_retention` and `functions.job_retention` only apply when `auth` is `enabled`. Setting them in a realm with `auth: disabled` is an error, so a realm can't carry settings that do nothing. `cors` and `functions.max_concurrency` apply either way.
+`auth.strategies` and the other keys of `auth`, `roles`, `admin`, `audit`, `email`, `account`, `functions.log_retention` and `functions.job_retention` only apply when the realm has an `auth` section. Setting them in a realm with `auth: disabled` is an error, so a realm can't carry settings that do nothing. `cors` and `functions.max_concurrency` apply either way.
 
 ## CORS
 
@@ -123,7 +126,7 @@ cors:
 - Preflight requests (`OPTIONS`) from a listed origin get `204` with the allowed methods (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`) and request headers (`Authorization`, `Content-Type`, `If-Match`, `If-None-Match`, `Idempotency-Key`, `Prefer`, `X-Backd-Reauth`, `X-Backd-Types`, `X-Request-ID`). The answer may be cached for 10 minutes.
 - Every response under `/v1/` carries `Vary: Origin`, so caches keep answers for different origins apart (see [Caching](../../api/#caching)).
 - Responses to listed origins, errors included, carry `Access-Control-Allow-Origin` and expose `ETag`, `Idempotent-Replayed`, `Location`, `Preference-Applied`, `Retry-After`, `WWW-Authenticate`, `X-Backd-Types-Stale` and `X-Request-ID`.
-- Credentials travel in the `Authorization` header, so responses don't allow credentials, except in a realm with [session cookies](../../auth/sessions/#session-cookies) (`sessions.cookie`): there, responses to the listed origins carry `Access-Control-Allow-Credentials: true`, and a wildcard origin is refused.
+- Credentials travel in the `Authorization` header, so responses don't allow credentials, except in a realm with [session cookies](../../auth/sessions/#session-cookies) (`auth.sessions.cookie`): there, responses to the listed origins carry `Access-Control-Allow-Credentials: true`, and a wildcard origin is refused.
 - `X-Backd-On-Behalf-Of` isn't allowed from browsers: only server-side services with API keys may use it.
 - `*` allows any origin. That's reasonable for public, read-only data; for apps with users, list the origins explicitly.
 
@@ -203,8 +206,8 @@ organizations:
 | `allow_require_mfa` | Whether an organization may require a second factor of its members | `true` |
 | `members_visible_to` | Who sees other members' emails: `members`, or `managers` (holders of any role with a `manage` capability) | `members` |
 | `sso` | [Organization sign-in](../../organizations/api/#sign-in-connections): `enabled` (default `true` once the section is there), `providers` (`google`, `microsoft`; default both) and `max_per_org` (default and most: the number of providers). Without the section, or with `enabled: false`, the whole surface answers `404`. Needs a role with `manage: sso` | off |
-| `invitation_link` | Where invitation links point: an absolute URL with `{token}` once (and `{org}` if you want it) within `sign_in.allowed_redirects` | none |
-| `signin_link` | Where an organization's sign-in page is, for the ["which companies am I in?" email](../../organizations/api/#which-companies-am-i-in): an absolute URL with `{slug}` (the organization's id when it has none; `{org}` is always the id) within `sign_in.allowed_redirects`. Needs `email:`. Without it `POST /_auth/orgs/find` answers `404` | none |
+| `invitation_link` | Where invitation links point: an absolute URL with `{token}` once (and `{org}` if you want it) within `auth.sign_in.allowed_redirects` | none |
+| `signin_link` | Where an organization's sign-in page is, for the ["which companies am I in?" email](../../organizations/api/#which-companies-am-i-in): an absolute URL with `{slug}` (the organization's id when it has none; `{org}` is always the id) within `auth.sign_in.allowed_redirects`. Needs `email:`. Without it `POST /_auth/orgs/find` answers `404` | none |
 
 The capabilities of `manage`:
 
@@ -216,7 +219,7 @@ The capabilities of `manage`:
 | `teams` | create and change teams |
 | `sso` | set up, replace and remove the organization's [sign-in connections](../../organizations/api/#sign-in-connections), when the realm turns `sso` on |
 
-Startup checks the section and names what is wrong: unknown capabilities, no role with `manage: org` (or `manage: sso` when `sso` is on), a `create` rule that doesn't compile, an `invitation_link` without `{token}` or `{org}`, or outside the allowed redirects. Organizations need `auth: enabled`. A role removed from this section stays in the stored memberships and grants nothing; `backd` logs it at startup. Which collections belong to organizations is declared in [`collection.yaml`](../config-dir/#organizations). Realm administrators with the `users` area manage organizations with [`backd orgs`](../../../operate/administration/cli/) and the [admin API](../../../operate/administration/admin/); people use the [organizations API](../../organizations/api/).
+Startup checks the section and names what is wrong: unknown capabilities, no role with `manage: org` (or `manage: sso` when `sso` is on), a `create` rule that doesn't compile, an `invitation_link` without `{token}` or `{org}`, or outside the allowed redirects. Organizations need an `auth` section. A role removed from this section stays in the stored memberships and grants nothing; `backd` logs it at startup. Which collections belong to organizations is declared in [`collection.yaml`](../config-dir/#organizations). Realm administrators with the `users` area manage organizations with [`backd orgs`](../../../operate/administration/cli/) and the [admin API](../../../operate/administration/admin/); people use the [organizations API](../../organizations/api/).
 
 ## Network restrictions
 

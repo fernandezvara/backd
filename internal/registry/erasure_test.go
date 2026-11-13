@@ -35,7 +35,7 @@ func erasureTree(t *testing.T, realm, policy string) (*Registry, error) {
 }
 
 func TestErasurePolicy(t *testing.T) {
-	reg, err := erasureTree(t, "signup: open\n", `
+	reg, err := erasureTree(t, "auth:\n  strategies:\n    password: [password]\n  signup: open\n", `
 on_owner_delete:
   action: anonymize
   remove: [phone, address.street]
@@ -59,7 +59,7 @@ on_owner_delete:
 		t.Errorf("indexed fields: %s", got)
 	}
 	// Only references, no action: the owned documents are left alone.
-	reg, err = erasureTree(t, "signup: open\n", "on_owner_delete:\n  pull: {members: id}\n")
+	reg, err = erasureTree(t, "auth:\n  strategies:\n    password: [password]\n  signup: open\n", "on_owner_delete:\n  pull: {members: id}\n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ on_owner_delete:
 // Without the file, or with an empty one, nothing happens to the collection.
 func TestNoErasurePolicy(t *testing.T) {
 	for name, policy := range map[string]string{"empty": "", "comments only": "# nothing here\n"} {
-		reg, err := erasureTree(t, "signup: open\n", policy)
+		reg, err := erasureTree(t, "auth:\n  strategies:\n    password: [password]\n  signup: open\n", policy)
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
@@ -79,7 +79,7 @@ func TestNoErasurePolicy(t *testing.T) {
 			t.Errorf("%s: %+v", name, c.Erasure)
 		}
 	}
-	reg, err := Load(writeTree(t, map[string]string{"shop/realm.yaml": "signup: open\n", "shop/main/orders/schema.json": ordersSchema}))
+	reg, err := Load(writeTree(t, map[string]string{"shop/realm.yaml": "auth:\n  strategies:\n    password: [password]\n  signup: open\n", "shop/main/orders/schema.json": ordersSchema}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestErasurePolicyErrors(t *testing.T) {
 		"unset and pull":           {"on_owner_delete:\n  pull: {members: id}\n  unset: {members: id}\n", "must be a string"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := erasureTree(t, "signup: open\n", tt.policy)
+			_, err := erasureTree(t, "auth:\n  strategies:\n    password: [password]\n  signup: open\n", tt.policy)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Errorf("error %v, want %q", err, tt.want)
 			}
@@ -125,11 +125,11 @@ func TestErasurePolicyErrors(t *testing.T) {
 }
 
 func TestErasurePolicyIsInTheFingerprint(t *testing.T) {
-	a, err := erasureTree(t, "signup: open\n", "on_owner_delete:\n  action: delete\n")
+	a, err := erasureTree(t, "auth:\n  strategies:\n    password: [password]\n  signup: open\n", "on_owner_delete:\n  action: delete\n")
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := erasureTree(t, "signup: open\n", "on_owner_delete:\n  action: anonymize\n")
+	b, err := erasureTree(t, "auth:\n  strategies:\n    password: [password]\n  signup: open\n", "on_owner_delete:\n  action: anonymize\n")
 	if err != nil {
 		t.Fatal(err)
 	}

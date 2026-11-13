@@ -1,4 +1,6 @@
-auth: enabled
+auth:
+  strategies:
+    password: [password]
 roles:
   admin:
     admin: true

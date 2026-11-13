@@ -6,7 +6,7 @@ weight: 550
 toc: true
 ---
 
-Each collection of a realm with `auth: enabled` can have a `rules:` section in its `collection.yaml`, next to its `schema.json`. Rules decide, per operation, whether a caller may act on a **whole document**. There are no per-field permissions: data that needs different visibility belongs in a separate collection with its own rules.
+Each collection of a realm with an `auth` section can have a `rules:` section in its `collection.yaml`, next to its `schema.json`. Rules decide, per operation, whether a caller may act on a **whole document**. There are no per-field permissions: data that needs different visibility belongs in a separate collection with its own rules.
 
 ```
 $CONFIG_DIR/<realm>/<database>/<collection>/
@@ -239,7 +239,7 @@ Startup fails, naming the file, when a field isn't the source of a reference, or
 
 ## How rules are applied
 
-In a realm with `auth: enabled`, every data request is decided like this:
+In a realm with an `auth` section, every data request is decided like this:
 
 | Caller | Rules |
 |---|---|

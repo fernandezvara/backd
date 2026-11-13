@@ -7,10 +7,13 @@ import (
 	"time"
 )
 
+// authBase is the smallest enabled auth section; the fixtures below add the keys under test.
+const authBase = "auth:\n  strategies:\n    password: [password]\n"
+
 const storageBase = "storage:\n  provider: minio\n  endpoint: http://minio:9000\n  bucket: acme-files\n  prefix: prod\n  access_key: secret:STORAGE_ACCESS_KEY\n  secret_key: secret:STORAGE_SECRET_KEY\n"
 
 func TestStorageSettings(t *testing.T) {
-	s, errs := parseRealmSettings([]byte(storageBase + "  public_endpoint: http://localhost:9000/\n  download: proxy\n  presigned_ttl: 7d\n  pending_ttl: 30m\n"))
+	s, errs := parseRealmSettings([]byte(authBase + storageBase + "  public_endpoint: http://localhost:9000/\n  download: proxy\n  presigned_ttl: 7d\n  pending_ttl: 30m\n"))
 	if len(errs) != 0 {
 		t.Fatal(errs)
 	}
@@ -25,16 +28,16 @@ func TestStorageSettings(t *testing.T) {
 	}
 
 	// Defaults, and a provider whose endpoint is derived.
-	s, errs = parseRealmSettings([]byte("storage:\n  provider: aws\n  region: eu-west-1\n  bucket: acme-files\n  prefix: prod\n  access_key: secret:K\n  secret_key: secret:S\n"))
+	s, errs = parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\nstorage:\n  provider: aws\n  region: eu-west-1\n  bucket: acme-files\n  prefix: prod\n  access_key: secret:K\n  secret_key: secret:S\n"))
 	if len(errs) != 0 || s.Storage.Endpoint != "https://s3.eu-west-1.amazonaws.com" || s.Storage.Download != DownloadPresigned || s.Storage.PresignedTTL != DefaultPresignedTTL || s.Storage.PendingTTL != DefaultPendingTTL || s.Storage.HTTP {
 		t.Errorf("aws: %+v %v", s.Storage, errs)
 	}
-	s, errs = parseRealmSettings([]byte("storage:\n  provider: r2\n  endpoint: https://be24f8b836589be5638e95d6579afa46.r2.cloudflarestorage.com\n  bucket: tests-backd\n  prefix: ci\n  access_key: secret:K\n  secret_key: secret:S\n"))
+	s, errs = parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\nstorage:\n  provider: r2\n  endpoint: https://be24f8b836589be5638e95d6579afa46.r2.cloudflarestorage.com\n  bucket: tests-backd\n  prefix: ci\n  access_key: secret:K\n  secret_key: secret:S\n"))
 	if len(errs) != 0 || s.Storage.Region != "auto" || !s.Storage.ProviderEntry().SupportsDirectUploads() {
 		t.Errorf("r2: %+v %v", s.Storage, errs)
 	}
 	// No storage: none.
-	if s, _ := parseRealmSettings([]byte("signup: open\n")); s.Storage != nil {
+	if s, _ := parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\n  signup: open\n")); s.Storage != nil {
 		t.Error("storage appeared from nowhere")
 	}
 }
@@ -51,11 +54,11 @@ func TestStorageSettingsErrors(t *testing.T) {
 		{"upper-case bucket", strings.Replace(good, "acme-files", "Acme_Files", 1), "storage.bucket:"},
 		{"no endpoint for minio", strings.Replace(good, "  endpoint: http://minio:9000\n", "", 1), "storage.endpoint: is required for minio"},
 		{"endpoint with the bucket", strings.Replace(good, "9000", "9000/acme-files", 1), "the bucket goes in `bucket:`"},
-		{"region mismatch", "storage:\n  provider: aws\n  endpoint: https://s3.us-east-2.amazonaws.com\n  region: eu-west-1\n  bucket: acme-files\n  prefix: p\n  access_key: secret:K\n  secret_key: secret:S\n", "doesn't match the endpoint's region"},
+		{"region mismatch", "auth:\n  strategies:\n    password: [password]\nstorage:\n  provider: aws\n  endpoint: https://s3.us-east-2.amazonaws.com\n  region: eu-west-1\n  bucket: acme-files\n  prefix: p\n  access_key: secret:K\n  secret_key: secret:S\n", "doesn't match the endpoint's region"},
 		{"plain key", strings.Replace(good, "secret:STORAGE_ACCESS_KEY", "AKIAXXXX", 1), "access_key"},
 		{"no secret key", strings.Replace(good, "  secret_key: secret:STORAGE_SECRET_KEY\n", "", 1), "storage.secret_key: is required"},
 		{"same secret", strings.Replace(good, "STORAGE_SECRET_KEY", "STORAGE_ACCESS_KEY", 1), "must be a different secret"},
-		{"public endpoint on aws", "storage:\n  provider: aws\n  region: eu-west-1\n  public_endpoint: https://x.example.com\n  bucket: acme-files\n  prefix: p\n  access_key: secret:K\n  secret_key: secret:S\n", "has one address for everyone"},
+		{"public endpoint on aws", "auth:\n  strategies:\n    password: [password]\nstorage:\n  provider: aws\n  region: eu-west-1\n  public_endpoint: https://x.example.com\n  bucket: acme-files\n  prefix: p\n  access_key: secret:K\n  secret_key: secret:S\n", "has one address for everyone"},
 		{"public endpoint with a path", good + "  public_endpoint: http://localhost:9000/x\n", "public_endpoint:"},
 		{"bad download", good + "  download: cdn\n", "storage.download: must be presigned or proxy"},
 		{"ttl too long", good + "  presigned_ttl: 8d\n", "storage.presigned_ttl: must be between"},
@@ -66,7 +69,7 @@ func TestStorageSettingsErrors(t *testing.T) {
 		{"auth disabled", "auth: disabled\n" + good, "storage: only applies when auth is enabled"},
 	}
 	for _, c := range cases {
-		_, errs := parseRealmSettings([]byte(c.yaml))
+		_, errs := parseRealmSettings([]byte(withAuth(c.yaml)))
 		var all []string
 		for _, e := range errs {
 			all = append(all, e.Error())
@@ -101,7 +104,7 @@ func TestRealmTemplateStorageExampleLoads(t *testing.T) {
 	if len(block) < 8 {
 		t.Fatalf("the template has no storage example: %q", block)
 	}
-	s, errs := parseRealmSettings([]byte(strings.Join(block, "\n")))
+	s, errs := parseRealmSettings([]byte(withAuth(strings.Join(block, "\n"))))
 	if len(errs) != 0 || s.Storage == nil {
 		t.Fatalf("the template's example doesn't load: %v\n%s", errs, strings.Join(block, "\n"))
 	}
@@ -110,7 +113,7 @@ func TestRealmTemplateStorageExampleLoads(t *testing.T) {
 const publicBase = "public_storage:\n  provider: r2\n  endpoint: https://be24f8b836589be5638e95d6579afa46.r2.cloudflarestorage.com\n  bucket: acme-public\n  prefix: prod\n  access_key: secret:PUBLIC_ACCESS_KEY\n  secret_key: secret:PUBLIC_SECRET_KEY\n  url: https://cdn.acme.example/\n"
 
 func TestPublicStorageSettings(t *testing.T) {
-	s, errs := parseRealmSettings([]byte(storageBase + publicBase + "  pending_ttl: 30m\n"))
+	s, errs := parseRealmSettings([]byte(authBase + storageBase + publicBase + "  pending_ttl: 30m\n"))
 	if len(errs) != 0 {
 		t.Fatal(errs)
 	}
@@ -122,7 +125,7 @@ func TestPublicStorageSettings(t *testing.T) {
 		t.Errorf("StorageFor: %+v", s)
 	}
 	// Alone, with a path and over http (development).
-	s, errs = parseRealmSettings([]byte("public_storage:\n  provider: minio\n  endpoint: http://minio:9000\n  bucket: acme-public\n  prefix: prod\n  access_key: secret:K\n  secret_key: secret:S\n  url: http://localhost:9000/acme-public\n"))
+	s, errs = parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\npublic_storage:\n  provider: minio\n  endpoint: http://minio:9000\n  bucket: acme-public\n  prefix: prod\n  access_key: secret:K\n  secret_key: secret:S\n  url: http://localhost:9000/acme-public\n"))
 	if len(errs) != 0 || s.Storage != nil || s.PublicStorage.URL != "http://localhost:9000/acme-public" || !s.PublicStorage.HTTP {
 		t.Errorf("alone: %+v %v", s.PublicStorage, errs)
 	}
@@ -143,7 +146,7 @@ func TestPublicStorageErrors(t *testing.T) {
 		{"auth disabled", "auth: disabled\n" + publicBase, "public_storage: only applies when auth is enabled"},
 	}
 	for _, c := range cases {
-		_, errs := parseRealmSettings([]byte(c.yaml))
+		_, errs := parseRealmSettings([]byte(withAuth(c.yaml)))
 		var all []string
 		for _, e := range errs {
 			all = append(all, e.Error())
@@ -176,8 +179,21 @@ func TestRealmTemplatePublicStorageExampleLoads(t *testing.T) {
 	if len(block) < 8 {
 		t.Fatalf("the template has no public storage example: %q", block)
 	}
-	s, errs := parseRealmSettings([]byte(strings.Join(block, "\n")))
+	s, errs := parseRealmSettings([]byte(withAuth(strings.Join(block, "\n"))))
 	if len(errs) != 0 || s.PublicStorage == nil {
 		t.Fatalf("the template's example doesn't load: %v\n%s", errs, strings.Join(block, "\n"))
 	}
+}
+
+// withAuth puts the smallest auth section in front of a fixture that has none.
+func withAuth(y string) string {
+	if strings.HasPrefix(y, "auth:") || strings.Contains(y, "\nauth:") {
+		return y
+	}
+	return authBase + y
+}
+
+// noAuth turns a fixture that starts with authBase into one for a realm without authentication.
+func noAuth(y string) string {
+	return "auth: disabled\n" + strings.Replace(y, authBase, "", 1)
 }

@@ -23,10 +23,10 @@ printf '%s\n' "$MICROSOFT_SECRET" | backd secret set --realm idtest --name MICRO
 backd secret set --realm idtest --name APPLE_SIGN_IN_KEY < AuthKey_<KEYID>.p8
 ```
 
-The callback to register in each console is `{BACKD_URL}/v1/idtest/_auth/oauth/<provider>/callback`, printed by `backd` at startup. `sign_in.allowed_redirects` must list the origin the app is reached at — `https://localhost:8443` is already there.
+The callback to register in each console is `{BACKD_URL}/v1/idtest/_auth/oauth/<provider>/callback`, printed by `backd` at startup. `auth.sign_in.allowed_redirects` must list the origin the app is reached at — `https://localhost:8443` is already there.
 
 {{< hint warning >}}
-Apple rejects `localhost` redirect URLs: the web flow needs a public https host. Put the local stack behind a tunnel (`cloudflared tunnel`, `ngrok http 8443`), set `BACKD_URL` to it and add its origin to `sign_in.allowed_redirects`. See [providers](../../auth/providers/#set-it-up) for the details.
+Apple rejects `localhost` redirect URLs: the web flow needs a public https host. Put the local stack behind a tunnel (`cloudflared tunnel`, `ngrok http 8443`), set `BACKD_URL` to it and add its origin to `auth.sign_in.allowed_redirects`. See [providers](../../auth/providers/#set-it-up) for the details.
 {{< /hint >}}
 
 With placeholders left in place the realm still loads — `backd` warns that a provider's secrets are not set — and each button fails at the provider with `provider_unavailable`, so you can wire providers in one at a time.

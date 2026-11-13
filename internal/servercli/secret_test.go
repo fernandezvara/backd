@@ -25,7 +25,7 @@ func TestSecretRotateKey(t *testing.T) {
 	}
 	realm := "t" + xid.New().String()
 	root := cmdtest.Write(t, map[string]string{
-		realm + "/realm.yaml":            "signup: open\n",
+		realm + "/realm.yaml":            "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		realm + "/app/notes/schema.json": `{}`,
 	})
 	const oldKey = "01234567890123456789012345678901"

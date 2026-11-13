@@ -92,7 +92,7 @@ func TestUnprotectedAdminRoles(t *testing.T) {
 func TestStartupRefusesAFieldWithoutItsKey(t *testing.T) {
 	ctx := context.Background()
 	root := cmdtest.Write(t, map[string]string{
-		"clinic/realm.yaml":                    "signup: open\n",
+		"clinic/realm.yaml":                    "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		"clinic/main/patients/schema.json":     `{"type":"object","properties":{"tax_id":{"type":"string"},"notes":{"type":"string"}}}`,
 		"clinic/main/patients/collection.yaml": "fields:\n  tax_id:\n    encrypt: {key: TAX}\n  notes:\n    encrypt: {key: HEALTH}\n",
 	})
@@ -209,7 +209,7 @@ func TestCheckFunctions(t *testing.T) {
 	dir := t.TempDir()
 	fns := filepath.Join(dir, "shop", "app", registry.FunctionsDir)
 	for p, c := range map[string]string{
-		"shop/realm.yaml": "",
+		"shop/realm.yaml": "auth:\n  strategies:\n    password: [password]\n",
 		"open/realm.yaml": "auth: disabled\n",
 	} {
 		os.MkdirAll(filepath.Dir(filepath.Join(dir, p)), 0o755)
@@ -255,7 +255,7 @@ func TestWarnAnonymousFunctionsWithoutRateLimit(t *testing.T) {
 	dir := t.TempDir()
 	fns := filepath.Join(dir, "shop", "app", registry.FunctionsDir)
 	os.MkdirAll(filepath.Join(dir, "shop"), 0o755)
-	os.WriteFile(filepath.Join(dir, "shop", "realm.yaml"), nil, 0o644)
+	os.WriteFile(filepath.Join(dir, "shop", "realm.yaml"), []byte("auth:\n  strategies:\n    password: [password]\n"), 0o644)
 	for name, fnYAML := range map[string]string{
 		"open":      "invoke: \"true\"\n", // anonymous allowed, no rate_limit: warn
 		"limited":   "invoke: \"true\"\nrate_limit:\n  per: ip\n  limit: 10\n  window: 1m\n",

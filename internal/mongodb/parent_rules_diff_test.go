@@ -60,7 +60,7 @@ func TestParentRulesMatchMongo(t *testing.T) {
 		"app/lists/indexes.json":    `[{"fields": ["members"]}]`,
 		"app/lists/collection.yaml": "rules:\n  read: 'true'\n",
 	}
-	reg := loadRegistryWith(t, realm, "roles:\n  admin: {}\n  a: {}\n  editor: {}\n", files)
+	reg := loadRegistryWith(t, realm, "auth:\n  strategies:\n    password: [password]\nroles:\n  admin: {}\n  a: {}\n  editor: {}\n", files)
 	log, _ := testLogger()
 	if err := (&Provisioner{Client: client, Registry: reg, Log: log}).Apply(context.Background()); err != nil {
 		t.Fatal(err)

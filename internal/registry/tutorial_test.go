@@ -1,7 +1,6 @@
 package registry
 
 import (
-	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -98,12 +97,12 @@ func TestTutorialChaptersLoad(t *testing.T) {
 		t.Fatal("chapter 4 no longer sets signup: invite")
 	}
 	ch4 = strings.Replace(ch2, "signup: open", "signup: invite", 1)
-	ch10 := ch4 + "\n" + blockAfter(t, "10-email", "Add to `config/shelf/realm.yaml`")
-	ch13 := ch10 + "\n" + blockAfter(t, "13-files", "Add to `config/shelf/realm.yaml`")
-	ch16 := ch13 + "\n" + blockAfter(t, "16-second-factor", "Add to `config/shelf/realm.yaml`:") +
-		"\n" + blockAfter(t, "16-second-factor", "Add this to `config/shelf/realm.yaml` too:")
-	ch17 := ch16 + "\n" + blockAfter(t, "17-consents", "Add to `config/shelf/realm.yaml`:")
-	ch20 := ch17 + "\n" + blockAfter(t, "20-teams", "Add to `config/shelf/realm.yaml`:")
+	ch10 := mergeYAML(t, ch4, blockAfter(t, "10-email", "Add to `config/shelf/realm.yaml`"))
+	ch13 := mergeYAML(t, ch10, blockAfter(t, "13-files", "Add to `config/shelf/realm.yaml`"))
+	ch16 := mergeYAML(t, mergeYAML(t, ch13, blockAfter(t, "16-second-factor", "Add to `config/shelf/realm.yaml`:")),
+		blockAfter(t, "16-second-factor", "Add this to `config/shelf/realm.yaml` too:"))
+	ch17 := mergeYAML(t, ch16, blockAfter(t, "17-consents", "Add to `config/shelf/realm.yaml`:"))
+	ch20 := mergeYAML(t, ch17, blockAfter(t, "20-teams", "Add to `config/shelf/realm.yaml`:"))
 	collections := []string{
 		"main/assets/schema.json", "main/assets/indexes.json", "main/shares/schema.json", "main/shares/indexes.json",
 	}
@@ -156,7 +155,7 @@ func TestTutorialChaptersLoad(t *testing.T) {
 			if err := yaml.Unmarshal([]byte(snippet), &add); err != nil {
 				t.Fatal(err)
 			}
-			maps.Copy(m, add)
+			mergeMaps(m, add)
 		}
 		out, err := yaml.Marshal(m)
 		if err != nil {
@@ -262,4 +261,36 @@ func TestTutorialSearchAndDashboard(t *testing.T) {
 	if w := without.AggregateIndexWarnings(); len(w) != 1 || !strings.Contains(w[0], `"author" has no index that starts with it`) {
 		t.Errorf("warnings without the index = %v", w)
 	}
+}
+
+// mergeMaps adds the keys of add to m; two maps under the same key are merged, anything else is replaced.
+func mergeMaps(m, add map[string]any) {
+	for k, v := range add {
+		if from, ok := v.(map[string]any); ok {
+			if to, ok := m[k].(map[string]any); ok {
+				mergeMaps(to, from)
+				continue
+			}
+		}
+		m[k] = v
+	}
+}
+
+// mergeYAML is what a reader has after adding a chapter's block to realm.yaml: the chapters
+// show whole top-level keys (a second `auth:` adds its keys to the first).
+func mergeYAML(t *testing.T, base, add string) string {
+	t.Helper()
+	var a, b map[string]any
+	if err := yaml.Unmarshal([]byte(base), &a); err != nil {
+		t.Fatal(err)
+	}
+	if err := yaml.Unmarshal([]byte(add), &b); err != nil {
+		t.Fatal(err)
+	}
+	mergeMaps(a, b)
+	out, err := yaml.Marshal(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
 }

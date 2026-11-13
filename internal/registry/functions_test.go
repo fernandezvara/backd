@@ -22,7 +22,7 @@ const fnPrefix = "shop/app/" + FunctionsDir + "/"
 func functionTree(t *testing.T, files map[string]string) string {
 	t.Helper()
 	all := map[string]string{
-		"shop/realm.yaml":            "roles:\n  staff: {}\n",
+		"shop/realm.yaml":            "auth:\n  strategies:\n    password: [password]\nroles:\n  staff: {}\n",
 		"shop/app/notes/schema.json": `{}`,
 		fnPrefix + "deno.json":       `{}`,
 		fnPrefix + "lib/money.ts":    "export const x = 1;\n",
@@ -514,7 +514,7 @@ func TestRetryPolicy(t *testing.T) {
 func TestDefineFunctionNameMustMatchItsLocation(t *testing.T) {
 	fn := "shop/main/" + FunctionsDir + "/"
 	root := writeTree(t, map[string]string{
-		"shop/realm.yaml":          "",
+		"shop/realm.yaml":          "auth:\n  strategies:\n    password: [password]\n",
 		fn + "ok/function.yaml":    "",
 		fn + "ok/index.ts":         "import { defineFunction } from \"@backd/functions\";\nexport default defineFunction(\"main/ok\", () => 1);\n",
 		fn + "bad/function.yaml":   "",

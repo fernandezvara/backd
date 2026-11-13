@@ -6,7 +6,7 @@ weight: 560
 toc: true
 ---
 
-Each realm with `auth: enabled` keeps an **audit trail**: one record per security-sensitive action or event, with who did it, to what, when and from where. It answers questions such as "who gave Bob the admin role?" or "which key created this user?". Records can be read, but not changed or deleted: they expire after the realm's retention period.
+Each realm with an `auth` section keeps an **audit trail**: one record per security-sensitive action or event, with who did it, to what, when and from where. It answers questions such as "who gave Bob the admin role?" or "which key created this user?". Records can be read, but not changed or deleted: they expire after the realm's retention period.
 
 ## What is recorded
 

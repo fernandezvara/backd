@@ -197,7 +197,7 @@ func TestOpenAPICommand(t *testing.T) {
 
 func TestOpenAPIAdminCommand(t *testing.T) {
 	dir := writeConfig(t, map[string]string{
-		"app/realm.yaml":                 "auth: enabled\nroles:\n  admin:\n    admin: true\n",
+		"app/realm.yaml":                 "auth:\n  strategies:\n    password: [password]\nroles:\n  admin:\n    admin: true\n",
 		"app/main/notes/schema.json":     `{"type":"object","additionalProperties":false,"properties":{"title":{"type":"string"}}}`,
 		"app/main/notes/collection.yaml": "{}\n",
 	})

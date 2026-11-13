@@ -43,7 +43,7 @@ func TestEmailNeedsAPublicURL(t *testing.T) {
 		}
 		return reg
 	}
-	base := "email:\n  function: notify/deliver\n  from: no-reply@acme.example\n"
+	base := "auth:\n  strategies:\n    password: [password]\nemail:\n  function: notify/deliver\n  from: no-reply@acme.example\n"
 
 	if err := checkFunctions(build(base), settings.Settings{}, log); err == nil || !strings.Contains(err.Error(), "BACKD_URL") || !strings.Contains(err.Error(), "acme") {
 		t.Errorf("without a public address: %v", err)
@@ -75,7 +75,7 @@ func TestDevOnlyFunctionsNeedDevMode(t *testing.T) {
 	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	fnDir := "acme/app/" + registry.FunctionsDir
 	root := cmdtest.Write(t, map[string]string{
-		"acme/realm.yaml":                "",
+		"acme/realm.yaml":                "auth:\n  strategies:\n    password: [password]\n",
 		fnDir + "/capture/function.yaml": "internal: true\nmode: async\ndev_only: true\n",
 		fnDir + "/capture/index.js":      "",
 	})

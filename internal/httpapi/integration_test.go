@@ -101,7 +101,7 @@ func mongoFixture(t *testing.T, files map[string]string, opts ...func(*Config)) 
 func TestAuthAgainstMongoDB(t *testing.T) {
 	realm := "t" + xid.New().String()
 	f := mongoFixture(t, map[string]string{
-		realm + "/realm.yaml":            "signup: open\n",
+		realm + "/realm.yaml":            "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		realm + "/app/notes/schema.json": `{}`,
 	})
 	base := "/v1/" + realm + "/_auth"
@@ -306,7 +306,7 @@ func TestRulesAgainstMongoDB(t *testing.T) {
 	schema := `{"type": "object", "properties": {"title": {"type": "string"}, "published": {"type": "boolean"},
 		"status": {"type": "string"}, "members": {"type": "array", "items": {"type": "string"}}}, "required": ["title"]}`
 	f := mongoFixture(t, map[string]string{
-		realm + "/realm.yaml":             "signup: open\n",
+		realm + "/realm.yaml":             "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		realm + "/app/posts/schema.json":  schema,
 		realm + "/app/posts/indexes.json": `[{"fields": ["_meta.owner"]}]`,
 		realm + "/app/posts/collection.yaml": rulesSection(`

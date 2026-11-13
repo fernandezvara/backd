@@ -50,7 +50,7 @@ functions:
   log_retention: 7d
 ```
 
-- **Short retention** (the default) keeps `<realm>___system.invocations` small and treats it as what it is: a window for debugging what just happened, not a system of record. This needs `auth: enabled` — there's no system database to hold it otherwise, the same restriction [secrets](../secrets/) and [rate limits](../calling/#rate-limits) already have.
+- **Short retention** (the default) keeps `<realm>___system.invocations` small and treats it as what it is: a window for debugging what just happened, not a system of record. This needs an `auth` section — there's no system database to hold it otherwise, the same restriction [secrets](../secrets/) and [rate limits](../calling/#rate-limits) already have.
 - **Long-term retention is not `backd`'s job.** The function's console output already goes to `backd`'s own JSON log output (`"msg":"function log"`, tagged with the request id, function and realm) at the moment it happens, independently of the database record — ship *that* to whatever log system you already run (a log aggregator, cloud logging, etc.) for anything you need to keep longer than a debugging window.
 - **Choosing a value** is a sizing and privacy trade-off: longer retention means a bigger `invocations` collection (bounded by call volume × `functions.log_retention`, since each function log is capped at 64 KiB), and means function output sits in your database for longer — for functions whose logs could include anything sensitive, shorter is safer.
 

@@ -16,7 +16,7 @@ import (
 func ssoUsers(t *testing.T, ssoYAML string) (*Users, *authtest.MemStore) {
 	t.Helper()
 	root := t.TempDir()
-	realm := "signup: open\norganizations:\n  sso: " + ssoYAML + "\n  roles:\n    owner: { manage: [org, members, roles, teams, sso] }\n    member: {}\n  default_roles: [member]\n"
+	realm := "auth:\n  strategies:\n    password: [password]\n  signup: open\norganizations:\n  sso: " + ssoYAML + "\n  roles:\n    owner: { manage: [org, members, roles, teams, sso] }\n    member: {}\n  default_roles: [member]\n"
 	for p, content := range map[string]string{"acme/realm.yaml": realm, "acme/app/notes/schema.json": `{"type":"object"}`} {
 		full := filepath.Join(root, p)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {

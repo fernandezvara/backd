@@ -17,7 +17,7 @@ func rulesConfig(t *testing.T, fixture string) string {
 		t.Fatal(err)
 	}
 	files := map[string]string{
-		filepath.Join(root, "acme", "realm.yaml"): "roles:\n  admin: {}\n",
+		filepath.Join(root, "acme", "realm.yaml"): "auth:\n  strategies:\n    password: [password]\nroles:\n  admin: {}\n",
 		filepath.Join(dir, "schema.json"):         `{"type":"object","properties":{"title":{"type":"string"},"published":{"type":"boolean"}}}`,
 		filepath.Join(dir, "collection.yaml"):     rulesSection("read: document.published == true\n"),
 	}

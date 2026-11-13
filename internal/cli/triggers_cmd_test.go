@@ -57,7 +57,7 @@ func (s *stateFake) ResolveGap(_ context.Context, _, id string, _ time.Time) (bo
 func TestTriggersStatusGapsAndResolveCommands(t *testing.T) {
 	fnDir := "acme/main/" + registry.FunctionsDir
 	root := writeConfig(t, map[string]string{
-		"acme/realm.yaml":                  "roles:\n  ops:\n    admin: true\n",
+		"acme/realm.yaml":                  "auth:\n  strategies:\n    password: [password]\nroles:\n  ops:\n    admin: true\n",
 		"acme/main/orders/schema.json":     `{"type":"object","properties":{"status":{"type":"string"}}}`,
 		"acme/main/orders/collection.yaml": "triggers:\n  on_paid:\n    events: [created, updated]\n    when: \"document.status == 'paid'\"\n    function: main/notify\n    ordered: true\n",
 		fnDir + "/notify/function.yaml":    "internal: true\nmode: async\n",

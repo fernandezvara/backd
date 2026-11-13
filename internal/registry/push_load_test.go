@@ -24,7 +24,7 @@ func pushTree(t *testing.T, realmYAML string, files map[string]string) string {
 	return root
 }
 
-const pushRealm = "locales: [en, es]\npush:\n  android: {provider: capture}\n"
+const pushRealm = "auth:\n  strategies:\n    password: [password]\nlocales: [en, es]\npush:\n  android: {provider: capture}\n"
 
 func TestPushTemplatesAndFunctionsLoad(t *testing.T) {
 	root := pushTree(t, pushRealm, map[string]string{
@@ -77,7 +77,7 @@ func TestPushLoadErrors(t *testing.T) {
 	}{
 		"a language lacks it":  {pushRealm, map[string]string{"shop/_realm/push/order-shipped/en.yaml": "title: a\nbody: b\n"}, "es.yaml: missing"},
 		"declared, no folder":  {pushRealm, with(map[string]string{"shop/notify/_functions/ship/function.yaml": "invoke: \"true\"\npush: {kinds: [nope]}\n"}), `declares the push kind "nope"`},
-		"declared, no push":    {"locales: [en]\n", map[string]string{"shop/notify/_functions/ship/function.yaml": "invoke: \"true\"\npush: true\n"}, "declares `push`, but this realm has no push section"},
+		"declared, no push":    {"auth:\n  strategies:\n    password: [password]\nlocales: [en]\n", map[string]string{"shop/notify/_functions/ship/function.yaml": "invoke: \"true\"\npush: true\n"}, "declares `push`, but this realm has no push section"},
 		"bad declaration":      {pushRealm, with(map[string]string{"shop/notify/_functions/ship/function.yaml": "invoke: \"true\"\npush: {kind: [a]}\n"}), "push.kind: unknown key"},
 		"push is not a string": {pushRealm, with(map[string]string{"shop/notify/_functions/ship/function.yaml": "invoke: \"true\"\npush: yes please\n"}), "push: must be true"},
 	} {
@@ -87,7 +87,7 @@ func TestPushLoadErrors(t *testing.T) {
 		}
 	}
 	// A realm without push: ignores a push folder, and `push` is not a database.
-	root := pushTree(t, "locales: [en]\n", map[string]string{"shop/_realm/push/x/en.yaml": "title: a\nbody: b\n"})
+	root := pushTree(t, "auth:\n  strategies:\n    password: [password]\nlocales: [en]\n", map[string]string{"shop/_realm/push/x/en.yaml": "title: a\nbody: b\n"})
 	reg, err := Load(root)
 	if err != nil {
 		t.Fatal(err)

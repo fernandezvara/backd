@@ -14,7 +14,7 @@ func itemsCollection(t *testing.T) *registry.Collection {
 	t.Helper()
 	root := t.TempDir()
 	for p, content := range map[string]string{
-		"acme/realm.yaml":                "{}\n",
+		"acme/realm.yaml":                "auth:\n  strategies:\n    password: [password]\n",
 		"acme/app/lists/schema.json":     `{"type":"object","properties":{"name":{"type":"string"},"members":{"type":"array","items":{"type":"string"}}},"required":["name"]}`,
 		"acme/app/lists/collection.yaml": "realtime: true\nrules:\n  read: user != nil && user.id in document.members\n",
 		"acme/app/items/schema.json":     `{"type":"object","properties":{"title":{"type":"string"},"list_id":{"type":"string"}},"required":["title","list_id"]}`,

@@ -13,8 +13,10 @@ Chapter 1's realm was open to anyone on localhost. Now members sign up and sign 
 Replace `config/shelf/realm.yaml`:
 
 ```yaml
-auth: enabled
-signup: open
+auth:
+  strategies:
+    password: [password]
+  signup: open
 
 roles:
   admin:
@@ -28,7 +30,7 @@ roles:
       - curator@shelf.example
 ```
 
-- **`auth: enabled`** — users, sessions and roles exist; anonymous callers get `401`.
+- **`auth`** — turns authentication on: users, sessions and roles exist; anonymous callers get `401`. Its `strategies` list the ways to sign in; `password: [password]` is email and password, the only one this tutorial needs for now.
 - **`signup: open`** — anyone may create an account ([alternatives](../../build/auth/users/): `invite`, `closed`). It is open **only for this chapter and the next**: chapter 4 closes it, and from then on every new member needs an invitation — which only an existing administrator can create.
 - **`roles:`** — `admin` is the operator role (`admin: true` grants the admin API); `curator` matters from chapter 5. The `users:` lists are **seed assignments**: when someone signs up with a listed address, the role attaches. A shortcut for local stacks — never keep seeded users in a real realm.
 

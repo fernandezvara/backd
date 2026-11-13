@@ -1,4 +1,7 @@
-signup: invite
+auth:
+  strategies:
+    password: [password]
+  signup: invite
 roles:
   ops:
     admin: true

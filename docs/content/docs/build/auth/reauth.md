@@ -20,14 +20,15 @@ A session proves who a request comes from **when it started**, not that the pers
 
 `GET /_auth/me` lists the proofs a user can give in `reauth_methods`, so an app asks for the right one. The answer is `{"reauth_token": "…", "expires_at": "…"}`.
 
-- The token is **bound to the session** that asked, stored only as a hash, and works for `reauth.ttl` (5 minutes by default; `1m` to `1h`) and for as many actions as that covers, so a settings page asks once.
+- The token is **bound to the session** that asked, stored only as a hash, and works for `auth.reauth.ttl` (5 minutes by default; `1m` to `1h`) and for as many actions as that covers, so a settings page asks once.
 - Wrong proofs count against the same limits as signing in: the password is [throttled](../../../operate/administration/security/) per account and address, and second-factor codes lock the user after 10 in an hour.
 - A realm that sends no email and a user with neither a password nor a second factor have no way to prove anything beyond their session: sensitive actions don't ask them.
 
 ```yaml
-# realm.yaml
-reauth:
-  ttl: 5m          # 1m to 1h
+auth:
+  # realm.yaml
+  reauth:
+    ttl: 5m          # 1m to 1h
 ```
 
 ## Which actions ask

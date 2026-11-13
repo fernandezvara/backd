@@ -332,12 +332,12 @@ func (a *authAPI) startOAuth(w http.ResponseWriter, r *http.Request, in startInp
 	if in.redirectTo == "" {
 		in.redirectTo = svc.Settings.SignInAppURL
 		if in.redirectTo == "" {
-			writeError(w, r, http.StatusBadRequest, codeInvalidRedirect, "redirect_to is required: the realm has no sign_in.app_url to go back to")
+			writeError(w, r, http.StatusBadRequest, codeInvalidRedirect, "redirect_to is required: the realm has no auth.sign_in.app_url to go back to")
 			return "", false
 		}
 	}
 	if !svc.Settings.SignInRedirectAllowed(in.redirectTo) {
-		writeError(w, r, http.StatusBadRequest, codeInvalidRedirect, "redirect_to isn't within the realm's sign_in.allowed_redirects (or email.allowed_redirects)")
+		writeError(w, r, http.StatusBadRequest, codeInvalidRedirect, "redirect_to isn't within the realm's auth.sign_in.allowed_redirects (or email.allowed_redirects)")
 		return "", false
 	}
 	if err := svc.RateLimit(r.Context(), "oauth-start:"+clientIP(r), oauthRateLimit, time.Minute); err != nil {

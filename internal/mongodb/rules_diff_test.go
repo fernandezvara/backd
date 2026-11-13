@@ -134,7 +134,7 @@ func provisionOneWith(t *testing.T, schema, config string) (*registry.Collection
 	t.Helper()
 	client := testClient(t)
 	realm := testRealm(t, client)
-	realmYAML := "roles:\n  admin: {}\n  a: {}\n  editor: {}\n  staff: {}\n  curator: {}\n  ops: {}\n"
+	realmYAML := "auth:\n  strategies:\n    password: [password]\nroles:\n  admin: {}\n  a: {}\n  editor: {}\n  staff: {}\n  curator: {}\n  ops: {}\n"
 	if strings.Contains(config, "organization:") {
 		realmYAML += "organizations:\n  roles:\n    owner: {manage: [org, members, roles, teams]}\n    admin: {}\n    editor: {}\n    viewer: {}\n    member: {}\n    hr: {}\n  team_roles:\n    manager: {}\n    delegate: {}\n    editor: {}\n    contributor: {}\n"
 	}

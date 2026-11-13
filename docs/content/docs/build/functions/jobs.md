@@ -299,7 +299,7 @@ A job's **input and result are stored** in MongoDB until the job expires. Never 
 
 - **Jobs are stored** in the realm's system database: one of two deliberate exceptions to "`backd` never stores a function's input or output" (the other is idempotency), because there is nowhere else to keep them until you read them.
 - **Only the caller who enqueued a job, any API key, or a user holding an admin role can read it back.** Anonymous callers get `401`; anyone else gets `404`, the same as an unknown id, so a job's existence isn't revealed. A [scheduled](../cron/) run has no caller, so only API keys read it.
-- **Retention:** a finished job is kept for `functions.job_retention` in `realm.yaml` (default 24 hours, minimum 1 hour). A job that never finishes is removed after 48 hours regardless. Async functions need `auth: enabled`, like `secrets` and `rate_limit`.
+- **Retention:** a finished job is kept for `functions.job_retention` in `realm.yaml` (default 24 hours, minimum 1 hour). A job that never finishes is removed after 48 hours regardless. Async functions need an `auth` section, like `secrets` and `rate_limit`.
 - **Limits:** `max_output` is capped at 15 MiB for async functions (a result is one MongoDB document); `timeout` up to 24 hours (15 minutes by default).
 - **Concurrency:** a function's `concurrency` and `functions.max_concurrency` don't apply to jobs (they protect `serve`'s own executor calls). `WORKER_CONCURRENCY` (default 10 per worker process) and the executor's `EXECUTOR_MAX_PROCESSES` bound async load: a busy executor just leaves the job queued to be retried.
 - **Secrets and the bundle** are resolved when the job actually runs, not when it was queued, so a job that waited always sees the current values.

@@ -26,7 +26,7 @@ const salesSchema = `{
 func salesTree(t *testing.T, yaml string, indexes string) (*Registry, error) {
 	t.Helper()
 	files := map[string]string{
-		"shop/realm.yaml":                 "signup: open\norganizations:\n  roles:\n    owner: {manage: [org, members, roles, teams]}\n    member: {}\n",
+		"shop/realm.yaml":                 "auth:\n  strategies:\n    password: [password]\n  signup: open\norganizations:\n  roles:\n    owner: {manage: [org, members, roles, teams]}\n    member: {}\n",
 		"shop/main/sales/schema.json":     salesSchema,
 		"shop/main/sales/collection.yaml": yaml,
 	}

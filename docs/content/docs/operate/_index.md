@@ -91,7 +91,7 @@ At startup, `backd` makes sure MongoDB matches the config. What it does depends 
 - Creates each missing collection with its `$jsonSchema` validator. MongoDB creates the database implicitly.
 - Updates (`collMod`) validators that differ from `schema.json`.
 - Creates indexes declared in `indexes.json` that don't exist yet.
-- Creates or updates the [system database](#realm-system-databases) of every realm with `auth: enabled`.
+- Creates or updates the [system database](#realm-system-databases) of every realm with an `auth` section.
 - Enables [pre-change images](change-feed/#requirements) (`changeStreamPreAndPostImages`) on collections that declare [`realtime: true`](../build/configuration/config-dir/#realtime). They are never switched off by a start: see [Disabling them](change-feed/#disabling-pre-change-images).
 - Records the config's fingerprint for each realm (see [Deploying config](deploying/#what-backd-enforces)).
 - Is idempotent and safe to run on every start.
@@ -130,7 +130,7 @@ Both `backd-server provision` and `backd-server serve` then apply the [role assi
 
 ### Realm system databases
 
-Each realm with `auth: enabled` has a system database named `<realm>___system` (three underscores). It holds the realm's users and credentials, managed through the [admin API](administration/admin/) (for example with [`backd user`](../build/auth/users/)); only [`backd-server bootstrap`](administration/cli/#the-first-administrator) writes to it directly. Realm names must be short enough for this name to stay under MongoDB's 64-character limit, so a realm name can be at most 54 characters.
+Each realm with an `auth` section has a system database named `<realm>___system` (three underscores). It holds the realm's users and credentials, managed through the [admin API](administration/admin/) (for example with [`backd user`](../build/auth/users/)); only [`backd-server bootstrap`](administration/cli/#the-first-administrator) writes to it directly. Realm names must be short enough for this name to stay under MongoDB's 64-character limit, so a realm name can be at most 54 characters.
 
 | Collection | Holds | Indexes |
 |---|---|---|
@@ -168,7 +168,7 @@ In production, run `backd-server provision` once per release with an admin URI a
 
 Grant collections rather than MongoDB's built-in `readWrite` role on whole databases: `readWrite` also allows creating, dropping and re-indexing collections, and MongoDB lets `insert` on a database create any collection in it. The [production reference](production/docker-compose/#least-privilege-provisioning) automates all three steps.
 
-`backd databases` needs only `CONFIG_DIR`. It prints every data database (`<realm>__<database>`) and the system database (`<realm>___system`) of every realm with `auth: enabled`. With `--collections`, it prints every collection as `<database>.<collection>`, including the system collections:
+`backd databases` needs only `CONFIG_DIR`. It prints every data database (`<realm>__<database>`) and the system database (`<realm>___system`) of every realm with an `auth` section. With `--collections`, it prints every collection as `<database>.<collection>`, including the system collections:
 
 ```sh
 $ CONFIG_DIR=./config backd databases
@@ -386,10 +386,10 @@ v0.5.0 adds [cursor pagination](../build/api/querying/), [API key scopes](../bui
 1. **Provision before rolling out**, as always: the `api_keys` collection of each realm's system database gains the `scopes` field in its validator, and each collection with a field marked `"x-backd-store": "date"` gets `bsonType: date` for it. `PROVISION_MODE=verify` refuses to start until `backd provision` has run.
 2. **API key scopes are opt-in.** Existing keys have no scopes and keep full access. A key created with `scopes` can only do what they grant (`read`, `write` or `call`, on everything, a database or a collection or function), and answers `403` otherwise.
 3. **`x-backd-store: date` does not convert existing data.** Documents written before keep text in that field until they are written again, and date queries skip them until then; the [dates section](../build/configuration/config-dir/#dates) has a `mongosh` one-liner to convert in one go.
-4. **Session cookies are opt-in per realm and per login** (`sessions.cookie.enabled`, then `"cookie": true` on the login). A cookie login turns on an origin check for writes that carry only the cookie, so list your app's origin in `cors.origins`.
+4. **Session cookies are opt-in per realm and per login** (`auth.sessions.cookie.enabled`, then `"cookie": true` on the login). A cookie login turns on an origin check for writes that carry only the cookie, so list your app's origin in `cors.origins`.
 5. **`Idempotency-Key` on creates needs authentication.** A create or batch with the header answers `400` for anonymous callers and in realms with `auth: disabled`; without the header nothing changes. Answers are kept for 24 hours in the realm's existing `idempotency` collection.
 6. **The admin user list is cut by MongoDB now** (`GET /_admin/users` returns `next_cursor`, with `after` to continue; `skip` still works). The command line and the JavaScript client already follow it; a script that read the whole list in one call must follow `next_cursor` for realms with more users than one page.
-7. **Two limits are stricter, one is new.** The login throttle now serializes the password checks of an account across instances, and answers `429` with `Retry-After: 1` if it waits more than 5 seconds for the lock. `sessions.admin_idle_timeout` and `sessions.admin_max_lifetime` (unset: nothing changes) shorten the sessions of users who hold an admin role. See the [hardening checklist](checklist/).
+7. **Two limits are stricter, one is new.** The login throttle now serializes the password checks of an account across instances, and answers `429` with `Retry-After: 1` if it waits more than 5 seconds for the lock. `auth.sessions.admin_idle_timeout` and `auth.sessions.admin_max_lifetime` (unset: nothing changes) shorten the sessions of users who hold an admin role. See the [hardening checklist](checklist/).
 8. **The JavaScript client is 0.4.0** (`npm install backd-js@latest`): `after` and `iterate` follow cursors, `cookies: true`, `scopes` when creating keys, and `idempotencyKey` on `create` and `batch` (keyed requests are retried by the client). It is versioned apart from the server, and works with a v0.4.0 server for everything that existed before.
 9. **If you copied the template workflow** (`backd template project` → `.github/workflows/backd.yml`), add a step `backd rules test` (with `CONFIG_DIR: ./config`) after `backd config check`, as the template now does: it checks your access rules against the cases in each `rules.test.yaml`, with no database.
 
@@ -409,7 +409,7 @@ v0.4.0 adds [email flows](../build/functions/email/), [erasure](administration/e
 v0.2.0 adds users and access rules and is a breaking release: every realm needs a [`realm.yaml`](../build/configuration/realm/), and authentication is on by default. To keep an existing realm working as before on a private network, give it a `realm.yaml` with `auth: disabled`; to protect it, provision it and give server-side clients [API keys](../build/auth/api-keys/).
 
 1. **Add a `realm.yaml` to every realm.** To keep a realm working exactly as before, without authentication, put `auth: disabled` in it. Only do this for realms that stay on a private network: anyone who can reach them can read and modify their data.
-2. **Or turn authentication on** (the default, `auth: enabled`), declare an admin role in `realm.yaml` (`roles: {admin: {admin: true}}`), then:
+2. **Or turn authentication on** (an `auth` section with `strategies`), declare an admin role in `realm.yaml` (`roles: {admin: {admin: true}}`), then:
    - run `backd provision` (or start `backd serve` with `PROVISION_MODE=apply`) to create the realm's system database;
    - create the realm's first administrator with `backd bootstrap --realm <realm> --email <email>`, and log in as them with `backd login --realm <realm> --url <server>`;
    - give server-side clients an API key: `backd apikey create --realm <realm> --name <name> --expires 90d`, sent as `Authorization: Bearer <key>`;
@@ -426,8 +426,8 @@ Use `GET /healthz` as the liveness probe and `GET /readyz` as the readiness prob
 
 Logs are JSON lines on standard error, filtered by `LOG_LEVEL`.
 
-- At startup, `backd` logs a `WARN` line for each realm with `auth: disabled` (its data is open to anyone who can reach the service), and for each realm with `auth: enabled` but no rules in any collection (only API keys can reach its data). It warns about realms with `auth: enabled` that nobody can administer with a session (no admin role, or no user holding one). It also lists API keys that never expire or expire within 14 days (see the [expiry policy](../build/auth/api-keys/#expiry-and-rotation-policy)).
-- Each request produces one access-log line (`"msg":"request"`). It includes the method, route pattern, realm, database, collection, status, duration, bytes, `request_id` and the client's address (`client`, following [`TRUSTED_PROXIES`](#client-addresses-behind-a-proxy)), plus `actor` in realms with `auth: enabled`: `user:<id>` for a session, `key:<name>` for an API key, `key:<name> as user:<id>` for an API key acting on behalf of a user, or `anonymous`.
+- At startup, `backd` logs a `WARN` line for each realm with `auth: disabled` (its data is open to anyone who can reach the service), and for each realm with an `auth` section but no rules in any collection (only API keys can reach its data). It warns about realms with an `auth` section that nobody can administer with a session (no admin role, or no user holding one). It also lists API keys that never expire or expire within 14 days (see the [expiry policy](../build/auth/api-keys/#expiry-and-rotation-policy)).
+- Each request produces one access-log line (`"msg":"request"`). It includes the method, route pattern, realm, database, collection, status, duration, bytes, `request_id` and the client's address (`client`, following [`TRUSTED_PROXIES`](#client-addresses-behind-a-proxy)), plus `actor` in realms with an `auth` section: `user:<id>` for a session, `key:<name>` for an API key, `key:<name> as user:<id>` for an API key acting on behalf of a user, or `anonymous`.
 - At `debug` level, requests refused by [access rules](../build/auth/rules/#answers-when-a-rule-says-no) are logged (`"msg":"access denied"`) with the collection, operation and reason.
 - Request bodies, document contents, passwords and tokens are never logged.
 

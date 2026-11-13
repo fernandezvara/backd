@@ -142,7 +142,7 @@ Use it when a backend handles a request for a user and should be bound by the sa
 
 ## Who can access data
 
-In a realm with `auth: enabled`, data routes (`/v1/{realm}/{database}/{collection}…`) decide by caller:
+In a realm with an `auth` section, data routes (`/v1/{realm}/{database}/{collection}…`) decide by caller:
 
 | Caller | Result |
 |---|---|

@@ -56,7 +56,7 @@ const noteSchema = `{"type":"object","additionalProperties":false,"required":["t
 
 func TestPublicDocument(t *testing.T) {
 	reg := load(t, map[string]string{
-		"app/realm.yaml":                 "auth: enabled\nsignup: open\nroles:\n  admin:\n    admin: true\n",
+		"app/realm.yaml":                 "auth:\n  strategies:\n    password: [password]\n  signup: open\nroles:\n  admin:\n    admin: true\n",
 		"app/main/notes/schema.json":     noteSchema,
 		"app/main/notes/collection.yaml": "rules:\n  read: user != nil\n  create: user != nil\n  update: false\n  delete: false\n",
 		// Reachable by nobody: left out.
@@ -152,7 +152,7 @@ func TestPublicDocument(t *testing.T) {
 
 func TestFunctionsAndFilesAndConfigAreTyped(t *testing.T) {
 	reg := load(t, map[string]string{
-		"app/realm.yaml":                               "auth: enabled\nroles:\n  admin:\n    admin: true\nstorage:\n  provider: minio\n  endpoint: https://minio.example.com\n  bucket: files-bucket\n  prefix: p\n  access_key: secret:A\n  secret_key: secret:B\n",
+		"app/realm.yaml":                               "auth:\n  strategies:\n    password: [password]\nroles:\n  admin:\n    admin: true\nstorage:\n  provider: minio\n  endpoint: https://minio.example.com\n  bucket: files-bucket\n  prefix: p\n  access_key: secret:A\n  secret_key: secret:B\n",
 		"app/main/docs/schema.json":                    `{"type":"object","properties":{"title":{"type":"string"},"address":{"$ref":"#/$defs/addr"}},"$defs":{"addr":{"type":"object","properties":{"city":{"type":"string"}}}}}`,
 		"app/main/docs/collection.yaml":                "rules:\n  read: true\nfiles:\n  scan:\n    max_size: 1MiB\n",
 		"app/main/_functions/total/function.yaml":      "invoke: user != nil\n",
@@ -257,7 +257,7 @@ func TestGenerationIsDeterministic(t *testing.T) {
 
 func TestAdminDocument(t *testing.T) {
 	reg := load(t, map[string]string{
-		"app/realm.yaml":                             "auth: enabled\nroles:\n  admin:\n    admin: true\n",
+		"app/realm.yaml":                             "auth:\n  strategies:\n    password: [password]\nroles:\n  admin:\n    admin: true\n",
 		"app/main/notes/schema.json":                 noteSchema,
 		"app/main/notes/collection.yaml":             "rules:\n  read: false\n  write: false\nsoft_delete: true\n",
 		"app/main/_functions/priv/function.yaml":     "internal: true\n",
@@ -313,7 +313,7 @@ func generate2(t *testing.T, reg *registry.Registry, realm string, gen func(*reg
 // path parameter carries it too; a collection that generates ids is left as it was.
 func TestCustomIDsAreTypedInTheDocument(t *testing.T) {
 	reg := load(t, map[string]string{
-		"app/realm.yaml":                    "auth: enabled\nsignup: open\n",
+		"app/realm.yaml":                    "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		"app/main/invoices/schema.json":     noteSchema,
 		"app/main/invoices/collection.yaml": "custom_id:\n  pattern: 'INV-[0-9]{4}'\nrules:\n  read: user != nil\n  create: user != nil\n  update: user != nil\n",
 		"app/main/cards/schema.json":        noteSchema,
@@ -364,7 +364,7 @@ func TestCustomIDsAreTypedInTheDocument(t *testing.T) {
 // (required on the create when the collection requires one); other collections don't.
 func TestOrganizationParameterIsPerCollection(t *testing.T) {
 	reg := load(t, map[string]string{
-		"app/realm.yaml":                  "auth: enabled\nsignup: open\norganizations:\n  roles:\n    owner: {manage: org}\n",
+		"app/realm.yaml":                  "auth:\n  strategies:\n    password: [password]\n  signup: open\norganizations:\n  roles:\n    owner: {manage: org}\n",
 		"app/main/tasks/schema.json":      noteSchema,
 		"app/main/tasks/collection.yaml":  "organization: required\non_org_delete:\n  action: delete\nrules:\n  read: inOrg(document._meta.org)\n  create: hasOrgRole(data._meta.org, 'owner')\n",
 		"app/main/shared/schema.json":     noteSchema,
@@ -399,7 +399,7 @@ func TestOrganizationParameterIsPerCollection(t *testing.T) {
 // Only a collection that declares references takes `expand`, and its description names them.
 func TestExpandParameterIsPerCollection(t *testing.T) {
 	reg := load(t, map[string]string{
-		"app/realm.yaml":                  "auth: enabled\nsignup: open\n",
+		"app/realm.yaml":                  "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		"app/main/posts/schema.json":      `{"type":"object","additionalProperties":false,"properties":{"title":{"type":"string"},"author_id":{"type":"string"}}}`,
 		"app/main/posts/collection.yaml":  "references:\n  author: {field: author_id, collection: people}\nrules:\n  read: user != nil\n  create: user != nil\n",
 		"app/main/people/schema.json":     noteSchema,
@@ -429,7 +429,7 @@ func TestExpandParameterIsPerCollection(t *testing.T) {
 // Only a collection that declares `aggregate:` has the endpoint, and it names the fields.
 func TestAggregatePathIsPerCollection(t *testing.T) {
 	reg := load(t, map[string]string{
-		"app/realm.yaml":                  "auth: enabled\nsignup: open\n",
+		"app/realm.yaml":                  "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		"app/main/sales/schema.json":      `{"type":"object","additionalProperties":false,"properties":{"category":{"type":"string"},"total":{"type":"number"}}}`,
 		"app/main/sales/collection.yaml":  "aggregate:\n  group_by: [category]\n  metrics: [total]\nrules:\n  read: user != nil\n  create: user != nil\n",
 		"app/main/people/schema.json":     noteSchema,

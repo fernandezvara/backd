@@ -15,15 +15,19 @@ It builds on chapter 10's email pipeline: the link arrives in the Mailbox of the
 Add to `config/shelf/realm.yaml`:
 
 ```yaml
-magic_link:
-  enabled: true
-sign_in:
-  app_url: http://localhost:8080/   # within email.allowed_redirects
+auth:
+  strategies:
+    magic_link: [magic_link]     # a way to sign in: a link (and a code) by email
+  magic_link:
+    enabled: true
+  sign_in:
+    app_url: http://localhost:8080/   # within email.allowed_redirects
 ```
 
-- **`magic_link.enabled`** turns on `POST /_auth/magic-link`. It needs the `email:` section of chapter 10 and a `BACKD_SECRETS_KEY` on the instance (the tutorial's `compose.yaml` already sets one): `backd` refuses to start without it, because it keeps the address of a request sealed until the email is sent.
-- **`sign_in.app_url`** is where the link ends when the app didn't say: the app itself. It must be within the `email.allowed_redirects` of chapter 10.
-- **Sign-up stays invite-only.** `magic_link.signup` would let an unknown address make an account by link, and only a realm with `signup: open` allows it. Shelf keeps `signup: invite`: a link signs in members who exist, and a stranger asking for one is told nothing (the answer is the same for every address) and gets a harmless "no account" email.
+- **`strategies.magic_link`** is a second way to sign in, next to the `password` strategy of chapter 2. A strategy is a named list of methods; the app says which one it uses.
+- **`auth.magic_link.enabled`** turns on `POST /_auth/magic-link`. It needs the `email:` section of chapter 10 and a `BACKD_SECRETS_KEY` on the instance (the tutorial's `compose.yaml` already sets one): `backd` refuses to start without it, because it keeps the address of a request sealed until the email is sent.
+- **`auth.sign_in.app_url`** is where the link ends when the app didn't say: the app itself. It must be within the `email.allowed_redirects` of chapter 10.
+- **Sign-up stays invite-only.** `auth.magic_link.signup` would let an unknown address make an account by link, and only a realm with `signup: open` allows it. Shelf keeps `signup: invite`: a link signs in members who exist, and a stranger asking for one is told nothing (the answer is the same for every address) and gets a harmless "no account" email.
 
 Restart the stack, **Sign in**, type an address and press **Email me a link**. Open the *Mailbox* in the Admin view as the operator, or read it with the API as in chapter 10: the message has a link and a 6-digit code. Either works, once, for ten minutes:
 
@@ -46,9 +50,16 @@ The app you downloaded in the starter is the finished one, so the *Email me a li
 Passwords leak. The operator role can read the audit feed, invite members and make API keys, so give it more than a password. Add this to `config/shelf/realm.yaml` too:
 
 ```yaml
-mfa:
-  required_roles: [admin]
+auth:
+  strategies:
+    password_totp: [password, totp]
+    magic_link_totp: [magic_link, totp]
+roles:
+  admin:
+    strategies: [password_totp, magic_link_totp]
 ```
+
+Two strategies add the authenticator app as a second step (`totp` after the first method). The `admin` role lists the strategies it accepts, and both of them end with the authenticator app: a password alone is not enough for the operator.
 
 Restart `backd`. The next time the operator signs in the password is not enough: since they have no second factor yet, the app shows a QR code and the secret. Scan it with an authenticator app (any TOTP app), type the first code it shows and **Turn it on and sign in**. The *Account* page then shows the **recovery codes**, once: each works one time if the phone is lost. Save them.
 
@@ -91,7 +102,7 @@ await backd.auth.withProof(
 )
 ```
 
-`withProof` makes the call, and on `reauth_required` asks the person, sends the proof to `POST /_auth/reauth` and repeats the call. The proof lives for five minutes (`reauth.ttl` in the realm), so one prompt covers a settings page. See [Re-authentication](../../build/auth/reauth/).
+`withProof` makes the call, and on `reauth_required` asks the person, sends the proof to `POST /_auth/reauth` and repeats the call. The proof lives for five minutes (`auth.reauth.ttl` in the realm), so one prompt covers a settings page. See [Re-authentication](../../build/auth/reauth/).
 
 ## You should see
 

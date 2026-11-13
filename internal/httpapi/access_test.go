@@ -31,10 +31,10 @@ func newAccessFixture(t *testing.T) *accessFixture {
 	t.Helper()
 	root := t.TempDir()
 	for p, content := range map[string]string{
-		"acme/realm.yaml":               "signup: open\n",
+		"acme/realm.yaml":               "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		"acme/app/items/schema.json":    itemSchema,
 		"acme/crm/items/schema.json":    itemSchema,
-		"other/realm.yaml":              "signup: open\n",
+		"other/realm.yaml":              "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		"other/app/items/schema.json":   itemSchema,
 		"shop/realm.yaml":               "auth: disabled\n",
 		"shop/orders/items/schema.json": itemSchema,

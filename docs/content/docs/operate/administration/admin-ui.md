@@ -181,7 +181,7 @@ What the interface *shows from your system* is not translated: messages the serv
 ## Sessions
 
 - **The token lives in memory.** Reloading or closing the page signs out, and the page **revokes the session on the server as it goes**, so nothing is left behind. *Keep me signed in in this tab* stores the session in the tab's `sessionStorage` instead, so a reload keeps it; the UI never uses `localStorage` for it. Leave it off on shared computers.
-- **Idle timeout.** After `BACKD_ADMIN_UI_IDLE` without a click, key press or scroll the UI signs out and revokes the session on the server, so a token someone copied stops working too. This timer lives in the page: the realm's `sessions.admin_idle_timeout` and `sessions.admin_max_lifetime` are the limits the server enforces, so set both.
+- **Idle timeout.** After `BACKD_ADMIN_UI_IDLE` without a click, key press or scroll the UI signs out and revokes the session on the server, so a token someone copied stops working too. This timer lives in the page: the realm's `auth.sessions.admin_idle_timeout` and `auth.sessions.admin_max_lifetime` are the limits the server enforces, so set both.
 - **Sign out revokes.** *Sign out* ends the session on the server, not only in the page.
 - **Administrator sessions only.** API keys are never entered in a browser.
 
@@ -195,7 +195,7 @@ The interface and the endpoints added for it were reviewed before being recommen
 
 A few behaviours are worth knowing when you decide how to run it.
 
-**The token and the idle timeout.** The administrator's token lives in the page's memory. If the page closes or reloads, the token is gone, so the page ends the session on the server as it leaves instead of leaving it to expire. While the page stays open, the session ends after `BACKD_ADMIN_UI_IDLE` of inactivity, and the page revokes it on the server too. That timer runs in the page. The limits the server enforces are the realm's `sessions.admin_idle_timeout` and `admin_max_lifetime`, so set those as well. A tab that opted in to *keep me signed in* stores its token in `sessionStorage` instead, so a reload keeps the session. Such a tab can't tell a reload from a close, so after a close the session lives until the server's idle timeout or maximum lifetime.
+**The token and the idle timeout.** The administrator's token lives in the page's memory. If the page closes or reloads, the token is gone, so the page ends the session on the server as it leaves instead of leaving it to expire. While the page stays open, the session ends after `BACKD_ADMIN_UI_IDLE` of inactivity, and the page revokes it on the server too. That timer runs in the page. The limits the server enforces are the realm's `auth.sessions.admin_idle_timeout` and `admin_max_lifetime`, so set those as well. A tab that opted in to *keep me signed in* stores its token in `sessionStorage` instead, so a reload keeps the session. Such a tab can't tell a reload from a close, so after a close the session lives until the server's idle timeout or maximum lifetime.
 
 **Reads are not in the audit trail.** Writes through the data route are audited (`data.create`, `data.update`, `data.delete`, `data.restore`, `data.purge`) with the actor and the target, never the content. Reading documents, users or logs in the interface leaves no audit record; the actor appears in the access log. If you need to know who looked at personal data, keep that log, and grant `admin.read_access.users` and `.data` only to those who need them.
 
