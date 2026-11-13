@@ -83,10 +83,9 @@ test('add a passkey, sign in with it, use it as a later step, and remove it', as
   await signOut(page)
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
   await page.goto(`/_ui/r/${REALM}/signin`)
-  // The virtual authenticator answers the browser's autofill request (conditional UI) at once, so the page signs the
-  // person in by itself; where it does not, the button below it does the same.
-  await expect(shell(page).or(page.getByTestId('passkey-signin-button'))).toBeVisible()
-  if (await page.getByTestId('passkey-signin-button').isVisible()) await page.getByTestId('passkey-signin-button').click()
+  // The virtual authenticator answers the browser's autofill request (conditional UI) at once, so the page usually signs the
+  // person in by itself, taking the button away; when it has not yet, the button does the same.
+  await page.getByTestId('passkey-signin-button').click({ timeout: 3000 }).catch(() => {})
   await shell(page).waitFor()
 
   // A strategy with the password and then the passkey.
