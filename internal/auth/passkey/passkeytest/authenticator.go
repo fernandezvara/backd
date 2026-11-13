@@ -109,8 +109,12 @@ func (a *Authenticator) rpHash(rp string) [32]byte {
 }
 
 func (a *Authenticator) cose() []byte {
-	pub := a.key.PublicKey
-	x, y := pub.X.FillBytes(make([]byte, 32)), pub.Y.FillBytes(make([]byte, 32))
+	// The uncompressed point: 0x04, X, Y (32 bytes each).
+	point, err := a.key.PublicKey.Bytes()
+	if err != nil {
+		panic(err)
+	}
+	x, y := point[1:33], point[33:65]
 	enc, err := cbor.CoreDetEncOptions().EncMode()
 	if err != nil {
 		panic(err)

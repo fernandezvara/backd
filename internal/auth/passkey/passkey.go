@@ -60,7 +60,7 @@ func (c Config) Validate() error {
 		if err != nil || u.Host == "" || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
 			return fmt.Errorf("passkey: origin %q is not an origin", o)
 		}
-		if u.Scheme != "https" && !(u.Scheme == "http" && c.AllowLoopbackHTTP && loopback(u.Hostname())) {
+		if u.Scheme != "https" && (u.Scheme != "http" || !c.AllowLoopbackHTTP || !loopback(u.Hostname())) {
 			return fmt.Errorf("passkey: origin %q is not https", o)
 		}
 		if h := u.Hostname(); h != c.RPID && !strings.HasSuffix(h, "."+c.RPID) {
