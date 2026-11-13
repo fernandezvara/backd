@@ -47,6 +47,7 @@ const (
 	// holds one document per user with a second factor.
 	AuthChallengesCollection = "auth_challenges"
 	MFACollection            = "mfa"
+	// (PasskeysCollection, in passkeys.go, holds the registered passkeys.)
 	// DevicesCollection holds the devices registered for push notifications: one document per
 	// device, with its token sealed and looked up by the hash of the token (or, for a web
 	// subscription, of its endpoint).
@@ -154,12 +155,17 @@ var systemCollections = []systemCollection{
 			"password_notified_at": typ("date"),
 			"admin_networks":       map[string]any{"bsonType": "array", "items": str()},
 			"login_networks":       map[string]any{"bsonType": "array", "items": str()},
-			"created_at":           typ("date"),
-			"updated_at":           typ("date"),
+			// The opaque WebAuthn user handle: 32 random bytes, made at the first passkey.
+			"passkey_handle": typ("binData"),
+			"created_at":     typ("date"),
+			"updated_at":     typ("date"),
 		}),
 		// Sparse, so users from future providers that give no email don't
 		// collide on a missing value.
-		indexes: []systemIndex{{keys: bson.D{{Key: "email", Value: 1}}, unique: true, sparse: true}},
+		indexes: []systemIndex{
+			{keys: bson.D{{Key: "email", Value: 1}}, unique: true, sparse: true},
+			{keys: bson.D{{Key: "passkey_handle", Value: 1}}, unique: true, sparse: true},
+		},
 	},
 	{
 		name: IdentitiesCollection,
@@ -521,7 +527,7 @@ var systemCollections = []systemCollection{
 		// _id is the SHA-256 of the value given to the caller.
 		validator: jsonSchema([]string{"_id", "kind", "user_id", "created_at", "expires_at"}, map[string]any{
 			"_id":            str(),
-			"kind":           map[string]any{"enum": bson.A{"mfa", "enroll", "totp_setup", "reauth", "reauth_code", "magic_link", "consent"}},
+			"kind":           map[string]any{"enum": bson.A{"mfa", "enroll", "totp_setup", "reauth", "reauth_code", "magic_link", "consent", "passkey-register", "passkey-login"}},
 			"token_hash":     str(),
 			"code_challenge": str(),
 			"redirect_to":    str(),
@@ -547,6 +553,30 @@ var systemCollections = []systemCollection{
 			{keys: bson.D{{Key: "user_id", Value: 1}}},
 			// The token of a magic link, to find its request when the link is opened.
 			{keys: bson.D{{Key: "token_hash", Value: 1}}, unique: true, sparse: true},
+		},
+	},
+	{
+		name: PasskeysCollection,
+		// _id is backd's id; credential_id is the authenticator's. All public: no secret is kept here.
+		validator: jsonSchema([]string{"_id", "user_id", "credential_id", "public_key", "rp_id", "created_at"}, map[string]any{
+			"_id":             str(),
+			"user_id":         str(),
+			"credential_id":   typ("binData"),
+			"public_key":      typ("binData"),
+			"rp_id":           str(),
+			"sign_count":      map[string]any{"bsonType": bson.A{"int", "long"}},
+			"transports":      map[string]any{"bsonType": "array", "items": str()},
+			"aaguid":          typ("binData"),
+			"backup_eligible": typ("bool"),
+			"backup_state":    typ("bool"),
+			"clone_suspected": typ("bool"),
+			"name":            str(),
+			"created_at":      typ("date"),
+			"last_used_at":    typ("date"),
+		}),
+		indexes: []systemIndex{
+			{keys: bson.D{{Key: "credential_id", Value: 1}}, unique: true},
+			{keys: bson.D{{Key: "user_id", Value: 1}, {Key: "created_at", Value: 1}}},
 		},
 	},
 	{

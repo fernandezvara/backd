@@ -19,7 +19,7 @@ func SystemCollections() []string {
 	return []string{
 		"users", "identities", "sessions", "api_keys", "invitations", "login_attempts", "audit", "secrets",
 		"invocations", "jobs", "file_journal", "storage_usage", "file_deletions", "schema_checks", "schedules",
-		"email_tokens", "idempotency", "oauth_states", "auth_challenges", "mfa", "devices", "orgs", "org_members",
+		"email_tokens", "idempotency", "oauth_states", "auth_challenges", "passkeys", "mfa", "devices", "orgs", "org_members",
 		"org_templates", "org_member_seq", "org_teams", "org_invitations", "org_connections", "user_exports",
 		"security_state", "data_keys", "app_config", "app_config_history", "consent_records", "push_outbox",
 		"push_sends", "login_codes",

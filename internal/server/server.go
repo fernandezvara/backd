@@ -824,6 +824,40 @@ func (a *App) logAPIKeyExpiry(ctx context.Context, users func(string) *auth.User
 	return nil
 }
 
+// checkPasskeys is the startup check of auth.passkeys that needs the instance: an http origin (the
+// loopback ones) is for BACKD_DEV only, and the relying party id that credentials were registered
+// under is permanent, so a configured id that differs from the stored ones is warned about, loudly.
+func checkPasskeys(ctx context.Context, log *slog.Logger, rl *registry.Realm, store any, dev bool) error {
+	p := rl.Settings.Passkeys
+	if !p.Enabled {
+		return nil
+	}
+	if !dev {
+		for _, o := range p.Origins {
+			if strings.HasPrefix(o, "http://") {
+				return fmt.Errorf("realm %s: auth.passkeys.origins: %q is not https (http is for localhost with BACKD_DEV only)", rl.Name, o)
+			}
+		}
+	}
+	r, ok := store.(interface {
+		PasskeyRPIDs(context.Context) ([]string, error)
+	})
+	if !ok {
+		return nil
+	}
+	stored, err := r.PasskeyRPIDs(ctx)
+	if err != nil {
+		return fmt.Errorf("realm %s: read the passkeys' relying party ids: %w", rl.Name, err)
+	}
+	for _, id := range stored {
+		if id != p.RPID {
+			log.Warn("auth.passkeys.rp_id differs from the id some passkeys were registered under: those passkeys will not work (the id is permanent in practice)",
+				"realm", rl.Name, "configured", p.RPID, "stored", id)
+		}
+	}
+	return nil
+}
+
 // unprotectedAdminRoles lists the realm's admin roles that accept a strategy without a
 // totp step. A realm that turned MFA off is not warned: it chose not to have it.
 func unprotectedAdminRoles(s registry.RealmSettings) []string {
@@ -887,6 +921,9 @@ func (a *App) syncRoles(ctx context.Context) error {
 			a.log.Warn("no role of the realm has admin: true: nobody can manage roles and API keys beyond the areas their own role opens, and `backd-server bootstrap` can't create an administrator", "realm", rl.Name)
 		case rep.Admins == 0:
 			a.log.Warn("no user holds an admin role of the realm, in realm.yaml or the database: create the first administrator with `backd-server bootstrap`", "realm", rl.Name)
+		}
+		if err := checkPasskeys(ctx, a.log, rl, svc.Store, a.cfg.Dev); err != nil {
+			return err
 		}
 		if roles, everyone := rl.Settings.TOTPRoles(); (everyone || len(roles) > 0) && len(a.cfg.SecretsKey) == 0 {
 			a.log.Error("the realm requires a second factor but this instance has no BACKD_SECRETS_KEY: those users can't sign in (503 mfa_unavailable) until it is set",

@@ -373,6 +373,8 @@ func (s *RealmSettings) parsePasskeys(p *passkeysDoc) []error {
 			errs = append(errs, fmt.Errorf("auth.passkeys.origins[%d]: %q must be https (http only for localhost)", i, o))
 		case s.Passkeys.RPID != "" && u.Hostname() != s.Passkeys.RPID && !strings.HasSuffix(u.Hostname(), "."+s.Passkeys.RPID):
 			errs = append(errs, fmt.Errorf("auth.passkeys.origins[%d]: the host of %q must be the rp_id (%s) or a subdomain of it: browsers refuse passkeys otherwise", i, o, s.Passkeys.RPID))
+		case o != appOrigin && !s.SignInRedirectAllowed(o):
+			errs = append(errs, fmt.Errorf("auth.passkeys.origins[%d]: %q must be within auth.sign_in.allowed_redirects (or be auth.sign_in.app_url)", i, o))
 		}
 	}
 	return errs

@@ -301,3 +301,32 @@ func secondStep(s *registry.RealmSettings, roles ...string) {
 		s.Roles[r] = role
 	}
 }
+
+func TestCheckPasskeys(t *testing.T) {
+	ctx := context.Background()
+	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	rl := &registry.Realm{Name: "acme", Settings: registry.RealmSettings{Passkeys: registry.PasskeySettings{Enabled: true, RPID: "localhost", Origins: []string{"http://localhost:8080"}}}}
+	if err := checkPasskeys(ctx, log, rl, nil, true); err != nil {
+		t.Errorf("a loopback http origin in dev mode: %v", err)
+	}
+	if err := checkPasskeys(ctx, log, rl, nil, false); err == nil || !strings.Contains(err.Error(), "BACKD_DEV") {
+		t.Errorf("a loopback http origin outside dev mode: %v", err)
+	}
+	rl.Settings.Passkeys.Enabled = false
+	if err := checkPasskeys(ctx, log, rl, nil, false); err != nil {
+		t.Errorf("passkeys off: %v", err)
+	}
+	// A configured id that differs from the stored ones is a warning, not an error.
+	var buf strings.Builder
+	rl.Settings.Passkeys = registry.PasskeySettings{Enabled: true, RPID: "new.example", Origins: []string{"https://new.example"}}
+	if err := checkPasskeys(ctx, slog.New(slog.NewJSONHandler(&buf, nil)), rl, rpIDs{"old.example", "new.example"}, false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "old.example") || strings.Contains(buf.String(), `"stored":"new.example"`) {
+		t.Errorf("log = %s", buf.String())
+	}
+}
+
+type rpIDs []string
+
+func (r rpIDs) PasskeyRPIDs(context.Context) ([]string, error) { return r, nil }
