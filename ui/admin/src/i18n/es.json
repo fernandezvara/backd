@@ -4,6 +4,7 @@
     "skip": "Saltar al contenido"
   },
   "common": {
+    "strategy": "Estrategia: {name}",
     "cancel": "Cancelar",
     "close": "Cerrar",
     "confirm": "Confirmar",
@@ -58,6 +59,8 @@
     "invalid": "El nombre de un realm solo tiene letras minúsculas, dígitos, - y _."
   },
   "signIn": {
+    "strategy": "Estrategia de acceso",
+    "strategyHelp": "Los roles que tienes dependen de la estrategia: un rol de administrador puede exigir una más fuerte.",
     "expired": {
       "intro": "Esta contraseña ha caducado. Elige una nueva: escribe la contraseña actual y la nueva dos veces.",
       "emailed": "También te hemos enviado un enlace para elegir una.",

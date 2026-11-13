@@ -28,7 +28,7 @@ def main() -> None:
     with Client(url=url, realm="shelf", storage=storage) as client:
         if not client.auth.has_session():
             try:
-                client.auth.login(os.environ["SHELF_EMAIL"], os.environ["SHELF_PASSWORD"])
+                client.auth.login(os.environ["SHELF_EMAIL"], os.environ["SHELF_PASSWORD"], strategy="password")
             except SecondStepRequiredError as e:
                 raise SystemExit(f"this account has a second step ({e.code}): sign in once with `backd login`") from e
 

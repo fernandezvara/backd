@@ -75,6 +75,10 @@ type Session struct {
 	NewUser           *bool    `json:"new_user,omitempty"`
 	Profile           *Profile `json:"profile,omitempty"`
 	RecoveryCodesLeft *int     `json:"recovery_codes_left,omitempty"`
+	// Strategy is the strategy the session was made with; RolesInactive are the roles the user holds
+	// that the strategy does not allow (they are absent from User.Roles): offer a stronger way in.
+	Strategy      string   `json:"strategy,omitempty"`
+	RolesInactive []string `json:"roles_inactive,omitempty"`
 }
 
 // StepKind says what a first factor led to.
@@ -102,6 +106,9 @@ type Step struct {
 	Challenge string
 	// Methods are the second factors the user can use with StepMFA ("totp", "recovery_code").
 	Methods []string
+	// Next is the method the strategy asks for now (StepMFA: "totp"); Strategy the strategy followed.
+	Next     []string
+	Strategy string
 	// Consents are the ones to accept with StepConsent.
 	Consents []ConsentRef
 	Linked   string
@@ -319,6 +326,8 @@ func (a *Auth) step(ctx context.Context, raw json.RawMessage) (*Step, error) {
 		ConsentRequired       bool         `json:"consent_required"`
 		Challenge             string       `json:"challenge"`
 		Methods               []string     `json:"methods"`
+		Next                  []string     `json:"next"`
+		Strategy              string       `json:"strategy"`
 		Consents              []ConsentRef `json:"consents"`
 	}
 	if err := json.Unmarshal(raw, &d); err != nil {
@@ -326,9 +335,9 @@ func (a *Auth) step(ctx context.Context, raw json.RawMessage) (*Step, error) {
 	}
 	switch {
 	case d.MFARequired:
-		return &Step{Kind: StepMFA, Challenge: d.Challenge, Methods: d.Methods}, nil
+		return &Step{Kind: StepMFA, Challenge: d.Challenge, Methods: d.Methods, Next: d.Next, Strategy: d.Strategy}, nil
 	case d.MFAEnrollmentRequired:
-		return &Step{Kind: StepEnrollment, Challenge: d.Challenge}, nil
+		return &Step{Kind: StepEnrollment, Challenge: d.Challenge, Strategy: d.Strategy}, nil
 	case d.ConsentRequired:
 		return &Step{Kind: StepConsent, Challenge: d.Challenge, Consents: d.Consents}, nil
 	}
@@ -342,14 +351,26 @@ func (a *Auth) step(ctx context.Context, raw json.RawMessage) (*Step, error) {
 	return &Step{Kind: StepSession, Session: &s}, nil
 }
 
-// VerifyMFA finishes a sign-in with a code of the second factor (method "totp" or "recovery_code").
-func (a *Auth) VerifyMFA(ctx context.Context, challenge, method, code string, opts ...RequestOption) (*Session, error) {
+// VerifyStep sends the code of the step a challenge asks for (method "totp" or "recovery_code")
+// and returns the step it leads to: the session, or, in a strategy of several steps, the next challenge.
+func (a *Auth) VerifyStep(ctx context.Context, challenge, method, code string, opts ...RequestOption) (*Step, error) {
 	var raw json.RawMessage
 	b := body{"challenge": challenge, "method": method, "code": code}
 	if _, err := a.c.Do(ctx, "POST", path("_auth", "mfa", "verify"), b, &raw, append([]RequestOption{WithoutAuth()}, opts...)...); err != nil {
 		return nil, err
 	}
-	return a.sessionOf(ctx, raw)
+	return a.step(ctx, raw)
+}
+
+// VerifyMFA finishes a sign-in with a code of the second factor (method "totp" or "recovery_code").
+// A strategy with more steps after it is a *SecondStepRequiredError carrying the next challenge: use
+// VerifyStep to get the step as a value.
+func (a *Auth) VerifyMFA(ctx context.Context, challenge, method, code string, opts ...RequestOption) (*Session, error) {
+	step, err := a.VerifyStep(ctx, challenge, method, code, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return a.session(step)
 }
 
 // AcceptConsents finishes a sign-in that had consents to accept first (name to version).
@@ -539,6 +560,8 @@ type OAuthOptions struct {
 	Locale     string
 	// Consents accepted for the account the sign-in may make (name to version).
 	Consents map[string]string
+	// Strategy names the strategy to sign in with; it may be empty while one strategy starts with the provider.
+	Strategy string
 	// Org signs in through the connection of this organization instead of the realm's own providers.
 	Org string
 }
@@ -559,6 +582,9 @@ func (a *Auth) startOAuth(ctx context.Context, provider, intent string, o OAuthO
 	verifier, challenge := newPKCE()
 	b := body{"code_challenge": challenge, "intent": intent}
 	b.set("redirect_to", o.RedirectTo).set("invitation", o.Invitation).set("locale", o.Locale).set("consents", o.Consents)
+	if intent != "link" {
+		b.set("strategy", o.Strategy)
+	}
 	base := a.base(o.Org)
 	if intent == "link" {
 		base = authBase(strings.TrimSpace(o.Org))
@@ -649,6 +675,24 @@ func (a *Auth) Options(ctx context.Context, org string, opts ...RequestOption) (
 	return &SignInOptions{Providers: out.Items, Methods: out.Methods, SSORequired: out.SSORequired}, nil
 }
 
+// Strategy is a way to sign in that the realm defines: a name and the methods it asks for, in order.
+type Strategy struct {
+	Name    string   `json:"name"`
+	Methods []string `json:"methods"`
+}
+
+// Strategies lists the realm's strategies (GET /_auth/strategies, no credentials), so a program can
+// choose the one to sign in with.
+func (a *Auth) Strategies(ctx context.Context, opts ...RequestOption) ([]Strategy, error) {
+	var out struct {
+		Strategies []Strategy `json:"strategies"`
+	}
+	if _, err := a.c.Do(ctx, "GET", path("_auth", "strategies"), nil, &out, append([]RequestOption{WithoutAuth()}, opts...)...); err != nil {
+		return nil, err
+	}
+	return out.Strategies, nil
+}
+
 // Providers lists the external providers that are enabled.
 func (a *Auth) Providers(ctx context.Context, org string, opts ...RequestOption) ([]string, error) {
 	o, err := a.Options(ctx, org, opts...)
@@ -668,6 +712,8 @@ type IDTokenInput struct {
 	Locale            string
 	Org               string
 	Consents          map[string]string
+	// Strategy names the strategy to sign in with (see OAuthOptions.Strategy); ignored when linking.
+	Strategy string
 }
 
 func (in IDTokenInput) body() body {
@@ -678,7 +724,7 @@ func (in IDTokenInput) body() body {
 // SignInWithIDToken signs in with an identity token from a provider's native flow.
 func (a *Auth) SignInWithIDToken(ctx context.Context, provider string, in IDTokenInput, opts ...RequestOption) (*Step, error) {
 	var raw json.RawMessage
-	if _, err := a.c.Do(ctx, "POST", join(a.base(in.Org), "oauth", provider, "id-token"), in.body(), &raw, append([]RequestOption{WithoutAuth()}, opts...)...); err != nil {
+	if _, err := a.c.Do(ctx, "POST", join(a.base(in.Org), "oauth", provider, "id-token"), in.body().set("strategy", in.Strategy), &raw, append([]RequestOption{WithoutAuth()}, opts...)...); err != nil {
 		return nil, err
 	}
 	return a.step(ctx, raw)
@@ -1062,6 +1108,8 @@ type MagicLinkOptions struct {
 	Locale     string
 	Org        string
 	Consents   map[string]string
+	// Strategy names the strategy to sign in with; it may be empty while one strategy starts with the magic link.
+	Strategy string
 }
 
 // Request emails the person a sign-in link and a code. The PKCE verifier is kept in the OAuth
@@ -1070,7 +1118,7 @@ type MagicLinkOptions struct {
 func (m *MagicLink) Request(ctx context.Context, email string, o MagicLinkOptions, opts ...RequestOption) (string, error) {
 	verifier, challenge := newPKCE()
 	b := body{"email": email, "code_challenge": challenge}
-	b.set("redirect_to", o.RedirectTo).set("locale", o.Locale).set("consents", o.Consents)
+	b.set("redirect_to", o.RedirectTo).set("locale", o.Locale).set("consents", o.Consents).set("strategy", o.Strategy)
 	var out struct {
 		RequestID string `json:"request_id"`
 	}

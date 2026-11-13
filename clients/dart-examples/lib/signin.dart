@@ -151,7 +151,10 @@ class _SignInScreenState extends State<SignInScreen> {
   }
 
   Future<void> submitPassword() => run(() async {
-    await handle(await auth.signIn(email.text.trim(), password.text));
+    // The Shelf realm has more than one strategy that starts with the password: members use this one.
+    await handle(
+      await auth.signIn(email.text.trim(), password.text, strategy: 'password'),
+    );
   });
 
   Future<void> submitCode() => run(() async {

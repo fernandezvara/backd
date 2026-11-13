@@ -213,6 +213,85 @@ void main() {
     });
   });
 
+  group('strategies', () {
+    test('the list, the strategy sent with the sign-in and a longer strategy',
+        () async {
+      final t = FakeTransport()
+        ..answer(respond(200, {
+          'strategies': [
+            {'name': 'web', 'methods': ['password']},
+            {'name': 'deep', 'methods': ['password', 'totp', 'totp']},
+          ],
+        }))
+        ..answer(respond(200, {
+          'mfa_required': true,
+          'challenge': 'ch-1',
+          'methods': ['totp', 'recovery_code'],
+          'next': ['totp'],
+          'strategy': 'deep',
+        }))
+        ..answer(respond(200, {
+          'mfa_required': true,
+          'challenge': 'ch-2',
+          'methods': ['totp'],
+          'next': ['totp'],
+          'strategy': 'deep',
+        }))
+        ..answer(respond(200, {
+          ...sessionJson(),
+          'strategy': 'deep',
+          'roles_inactive': ['editor'],
+        }));
+      final client = testClient(t);
+      final list = await client.auth.strategies();
+      expect(list.map((s) => s.name), ['web', 'deep']);
+      expect(list.last.methods, ['password', 'totp', 'totp']);
+
+      final first = await client.auth
+          .signIn('a@b.c', 'pw', strategy: 'deep') as MfaChallenge;
+      expect(first.next, ['totp']);
+      expect(first.strategy, 'deep');
+      final sent = jsonDecode(utf8.decode(t.requests[1].body!)) as Map;
+      expect(sent['strategy'], 'deep');
+
+      final second =
+          await client.auth.verifyStep('ch-1', 'totp', '123456') as MfaChallenge;
+      expect(second.challenge, 'ch-2');
+      final done =
+          await client.auth.verifyStep('ch-2', 'totp', '654321') as Session;
+      expect(done.strategy, 'deep');
+      expect(done.rolesInactive, ['editor']);
+    });
+
+    test('verifyMfa throws when the strategy asks for another step', () async {
+      final t = FakeTransport()
+        ..answer(respond(200, {
+          'mfa_required': true,
+          'challenge': 'ch-2',
+          'methods': ['totp'],
+        }));
+      await expectLater(
+        testClient(t).auth.verifyMfa('ch-1', 'totp', '123456'),
+        throwsA(isA<SecondStepRequiredError>()
+            .having((e) => e.challenge, 'challenge', 'ch-2')),
+      );
+    });
+
+    test('the client option names the strategy when a call does not',
+        () async {
+      final t = FakeTransport()..answer(respond(200, sessionJson()));
+      final client = BackdClient<Object?>(
+        url: 'https://api.test',
+        realm: 'acme',
+        transport: t.call,
+        strategy: 'web',
+      );
+      await client.auth.login('a@b.c', 'pw');
+      final sent = jsonDecode(utf8.decode(t.requests.single.body!)) as Map;
+      expect(sent['strategy'], 'web');
+    });
+  });
+
   group('reauth', () {
     test('stores the proof and sensitive requests send it', () async {
       final storage = MemoryTokenStorage();

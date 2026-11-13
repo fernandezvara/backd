@@ -22,6 +22,7 @@ async function signOut() {
 <template>
   <div class="flex flex-col items-end gap-3">
     <p v-if="session.email" class="text-sm break-all">{{ session.email }}</p>
+    <p v-if="session.strategy" class="text-xs text-slate-600 dark:text-slate-400" data-testid="session-strategy">{{ t('common.strategy', { name: session.strategy }) }}</p>
     <LocaleSwitch />
     <ThemeSwitch />
     <AppButton variant="secondary" @click="signOut">{{ t('common.signOut') }}</AppButton>

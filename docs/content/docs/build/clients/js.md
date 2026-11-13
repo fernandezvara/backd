@@ -89,8 +89,9 @@ A strategy with a `totp` step doesn't give a session from the password alone. `s
 ```js
 const result = await backd.auth.signIn({ email, password })
 if (result.mfaRequired) {
-  // result.methods: ['totp', 'recovery_code']
-  const session = await backd.auth.verifyMfa(result.challenge, 'totp', code)   // stores the session
+  // result.next: ['totp'] (result.methods adds 'recovery_code'), result.strategy
+  const session = await backd.auth.verifyMfa(result.challenge, 'totp', code)   // stores the session; session.strategy, session.roles_inactive
+  // verifyStep() returns the next challenge instead of rejecting, for a strategy of several steps
 } else if (result.enrollmentRequired) {
   // the user's role requires a second factor and they have none: set one up, no session yet
   const setup = await backd.auth.mfa.setup({ challenge: result.challenge })    // { secret, otpauth_uri, qr (a PNG data URI) }

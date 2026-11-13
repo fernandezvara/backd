@@ -201,6 +201,7 @@ class BackdClient<R> {
     this.onStaleTypes,
     this.oauthStorage,
     String? org,
+    this.strategy,
     @internal this.parent,
     @visibleForTesting
     Duration Function(int attempt, Duration? retryAfter, Duration maxDelay)
@@ -255,6 +256,11 @@ class BackdClient<R> {
   /// The organization this client is bound to, as it was given (an id or a
   /// slug), or "".
   final String orgRef;
+
+  /// The strategy sign-in calls use when they name none: needed when the
+  /// realm has more than one that starts with the method (`strategy_required`
+  /// otherwise). `auth.strategies()` lists them.
+  final String? strategy;
 
   /// The client this one was made from by [org], or null.
   @internal
@@ -385,6 +391,7 @@ class BackdClient<R> {
         onStaleTypes: r.onStaleTypes,
         oauthStorage: r.oauthStorage,
         org: key,
+        strategy: r.strategy,
         parent: r,
         backoff: r._backoff,
       );

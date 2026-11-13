@@ -71,11 +71,14 @@ err = auth.Logout(ctx)
 `Signup` and `Login` return the session. When the realm needs an extra step they return a `*client.SecondStepRequiredError`; `SignIn` gives the step as a value instead:
 
 ```go
-step, err := auth.SignIn(ctx, client.SignInInput{Email: email, Password: password})
+strategies, err := auth.Strategies(ctx)   // the realm's strategies and their methods (no credentials)
+step, err := auth.SignIn(ctx, client.SignInInput{Email: email, Password: password, Strategy: "admin_password"})
 switch step.Kind {
 case client.StepSession:      // step.Session holds the session; it is stored
 case client.StepMFA:          // a code of the second factor
-    session, err = auth.VerifyMFA(ctx, step.Challenge, "totp", code)
+    // step.Next is ["totp"]; a strategy of several steps answers a code with the next challenge:
+    next, err := auth.VerifyStep(ctx, step.Challenge, "totp", code)   // next.Session when it is done (Session.Strategy, Session.RolesInactive)
+    session, err = auth.VerifyMFA(ctx, step.Challenge, "totp", code)   // the session, or a *SecondStepRequiredError with the next challenge
 case client.StepEnrollment:   // a role requires a second factor and the user has none
     setup, err := auth.MFA.Setup(ctx, step.Challenge)      // show setup.OtpauthURI as a QR code
     res, err := auth.MFA.Confirm(ctx, client.MFAConfirmInput{Challenge: step.Challenge, SetupID: setup.SetupID, Code: code})

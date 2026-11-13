@@ -126,10 +126,12 @@ The endpoints behind these calls, and their rules, are described in [Sign-up, lo
 A user with a [second factor](../../auth/mfa/) doesn't get a session from their password alone. `signIn()` returns the step as a value; `login()` and `signup()`, which promise a session, throw a `SecondStepRequiredError` carrying the `challenge`.
 
 ```dart
-final result = await backd.auth.signIn(email, password);
+final strategies = await backd.auth.strategies();   // (name:, methods:) records, no credentials
+final result = await backd.auth.signIn(email, password, strategy: 'admin_password');   // or BackdClient(strategy: …) once
 switch (result) {
-  case MfaChallenge c:                       // c.methods: ['totp', 'recovery_code']
-    await backd.auth.verifyMfa(c.challenge, 'totp', code);   // stores the session
+  case MfaChallenge c:                       // c.next: ['totp']; c.methods adds 'recovery_code'
+    await backd.auth.verifyMfa(c.challenge, 'totp', code);   // stores the session; Session.strategy, Session.rolesInactive
+    // verifyStep returns the next MfaChallenge for a strategy of several steps
   case EnrollmentChallenge c:
     // the user's role requires a second factor and they have none: set one up, no session yet
     final setup = await backd.auth.mfa.setup(challenge: c.challenge);   // secret, otpauthUri, qr (a PNG data URI)

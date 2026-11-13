@@ -159,3 +159,39 @@ test('the return of a link for a user with a second factor is a step too', async
   assert.equal(out.challenge, 'chX')
   assert.equal(await c.auth.token(), null)
 })
+
+test('a strategy: its name goes with the sign-in, the step says what is next, and a longer strategy asks again', async () => {
+  const m = mockFetch([
+    { body: { strategies: [{ name: 'web', methods: ['password'] }, { name: 'deep', methods: ['password', 'totp', 'totp'] }] } },
+    { body: { mfa_required: true, challenge: 'ch1', methods: ['totp', 'recovery_code'], next: ['totp'], strategy: 'deep' } },
+    { body: { mfa_required: true, challenge: 'ch2', methods: ['totp', 'recovery_code'], next: ['totp'], strategy: 'deep' } },
+    { body: { ...session(future()), strategy: 'deep', roles_inactive: ['editor'] } },
+  ])
+  const c = clientOf(m)
+  const list = await c.auth.strategies()
+  assert.deepEqual(list.map((s) => s.name), ['web', 'deep'])
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_auth/strategies')
+
+  const first = /** @type {any} */ (await c.auth.signIn({ email: 'a@x.io', password: 'p', strategy: 'deep' }))
+  assert.deepEqual(first.next, ['totp'])
+  assert.equal(first.strategy, 'deep')
+  assert.equal(m.calls[1].body.strategy, 'deep')
+
+  const second = /** @type {any} */ (await c.auth.verifyStep(first.challenge, 'totp', '123456'))
+  assert.equal(second.challenge, 'ch2')
+  const done = /** @type {any} */ (await c.auth.verifyStep(second.challenge, 'totp', '654321'))
+  assert.equal(done.strategy, 'deep')
+  assert.deepEqual(done.roles_inactive, ['editor'])
+  assert.ok(await c.auth.token())
+})
+
+test('verifyMfa rejects when the strategy asks for another step; the client option names the strategy', async () => {
+  const m = mockFetch([
+    { body: { mfa_required: true, challenge: 'ch2', methods: ['totp'], next: ['totp'], strategy: 'deep' } },
+    { body: session(future()) },
+  ])
+  const c = clientOf(m, { strategy: 'web' })
+  await assert.rejects(c.auth.verifyMfa('ch1', 'totp', '123456'), (/** @type {any} */ e) => e instanceof SecondStepRequiredError && e.challenge === 'ch2')
+  await c.auth.signIn({ email: 'a@x.io', password: 'p' })
+  assert.equal(m.calls[1].body.strategy, 'web')
+})

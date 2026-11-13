@@ -306,3 +306,27 @@ func TestQRBlocks(t *testing.T) {
 		t.Error("the code has no blocks or no blanks")
 	}
 }
+
+// A realm with several strategies that start with the password: the command asks for one when it is not
+// named, and says so when it cannot ask.
+func TestLoginChoosesAStrategy(t *testing.T) {
+	f := newCLIFixture(t, cliRealm)
+	f.svc.Settings.Strategies = []registry.Strategy{{Name: "web", Methods: []string{"password"}}, {Name: "admin", Methods: []string{"password", "totp"}}}
+	pw := cliPassword
+	if _, err := f.svc.Create(context.Background(), "ada@example.com", &pw); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"login", "--realm", "acme", "--url", f.url, "--email", "ada@example.com"}
+	code, _, errOut := f.run(strings.NewReader(cliPassword+"\n"), args...)
+	if code == 0 || !strings.Contains(errOut, "--strategy") || !strings.Contains(errOut, "web, admin") {
+		t.Errorf("without a strategy and without a terminal: %d %q", code, errOut)
+	}
+	code, out, errOut := f.run(strings.NewReader(cliPassword+"\n"), append(args, "--strategy", "web")...)
+	if code != 0 || !strings.Contains(out, "logged in to realm acme") {
+		t.Errorf("named: %d %q %q", code, out, errOut)
+	}
+	code, out, _ = f.run(nil, "account", "strategies", "--realm", "acme", "--url", f.url)
+	if code != 0 || !strings.Contains(out, "web: password") || !strings.Contains(out, "admin: password -> totp") {
+		t.Errorf("account strategies: %d %q", code, out)
+	}
+}

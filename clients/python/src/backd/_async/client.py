@@ -69,6 +69,7 @@ class AsyncClient:
         realm: str,
         api_key: str | None = None,
         org: str | None = None,
+        strategy: str | None = None,
         storage: TokenStorage | None = None,
         oauth_storage: OAuthStorage | None = None,
         cache: CacheOptions | bool = True,
@@ -90,6 +91,7 @@ class AsyncClient:
             "realm": realm,
             "api_key": api_key,
             "org": org,
+            "strategy": strategy,
             "storage": storage,
             "oauth_storage": oauth_storage,
             "cache": cache,
@@ -105,6 +107,8 @@ class AsyncClient:
         self.realm = realm
         #: The organization the client is bound to, as it was given, or "".
         self.org_ref = normalize_org(org)
+        #: The strategy sign-in calls use when they name none.
+        self.strategy = strategy
         self._api_key = api_key
         self.storage: TokenStorage = storage if storage is not None else MemoryStorage()
         self._retry = retry or Retry()

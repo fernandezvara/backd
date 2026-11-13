@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/fernandezvara/backd/internal/cli/clicore"
@@ -81,10 +83,13 @@ func login(realm, flagURL, email string, magicLink bool, strategy string, getenv
 	}
 	var res sessionAnswer
 	if magicLink {
-		if err := magicLinkSignIn(t, uio, email, &res); err != nil {
+		if err := magicLinkSignIn(t, uio, email, strategy, &res); err != nil {
 			return err
 		}
 	} else {
+		if strategy, err = chooseStrategy(t, uio, strategy, terminal); err != nil {
+			return err
+		}
 		pw, err := cmdutil.ReadSecret(uio, false, "Password")
 		if err != nil {
 			return err
@@ -177,4 +182,77 @@ func PlainRemote(u string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip == nil || !ip.IsLoopback()
+}
+
+// chooseStrategy is the strategy to sign in with the password: the one named; else the only strategy
+// that starts with the password; with several it asks on a terminal and names them otherwise. A realm
+// whose strategies cannot be listed is left to the server (which answers strategy_required if needed).
+func chooseStrategy(t *clicore.Target, uio cmdutil.IO, named string, terminal bool) (string, error) {
+	if named != "" {
+		return named, nil
+	}
+	list, err := t.Client.Auth().Strategies(t.Ctx)
+	if err != nil {
+		return "", nil
+	}
+	var names []string
+	for _, st := range list {
+		if len(st.Methods) > 0 && st.Methods[0] == "password" {
+			names = append(names, st.Name)
+		}
+	}
+	switch {
+	case len(names) <= 1:
+		return "", nil
+	case !terminal:
+		return "", fmt.Errorf("this realm has several strategies that start with the password (%s): name one with --strategy", strings.Join(names, ", "))
+	}
+	fmt.Fprintln(uio.Stderr, "Strategies:")
+	for i, n := range names {
+		fmt.Fprintf(uio.Stderr, "  %d. %s\n", i+1, n)
+	}
+	for range 3 {
+		answer, err := cmdutil.ReadLine(uio, "Strategy (number or name)")
+		if err != nil {
+			return "", err
+		}
+		answer = strings.TrimSpace(answer)
+		if i, err := strconv.Atoi(answer); err == nil && i >= 1 && i <= len(names) {
+			return names[i-1], nil
+		}
+		if slices.Contains(names, answer) {
+			return answer, nil
+		}
+		fmt.Fprintln(uio.Stderr, "that is not one of them")
+	}
+	return "", errors.New("no strategy chosen")
+}
+
+// StrategiesAction lists the realm's strategies and their methods; it needs no session.
+func StrategiesAction(c *kli.CommandContext) error {
+	creds, _, err := clicore.LoadCredentials(c.Getenv)
+	if err != nil {
+		return err
+	}
+	u, err := clicore.ResolveURL(cmdutil.Str(c, "url"), c.Getenv, creds)
+	if err != nil {
+		return err
+	}
+	hc, err := clicore.HTTPClient(c.Getenv)
+	if err != nil {
+		return err
+	}
+	t, err := clicore.MakeTarget(u, cmdutil.Str(c, "realm"), "", false, hc)
+	if err != nil {
+		return err
+	}
+	list, err := t.Client.Auth().Strategies(t.Ctx)
+	if err != nil {
+		return err
+	}
+	out := cmdutil.IOOf(c).Stdout
+	for _, st := range list {
+		fmt.Fprintf(out, "%s: %s\n", st.Name, strings.Join(st.Methods, " -> "))
+	}
+	return nil
 }
