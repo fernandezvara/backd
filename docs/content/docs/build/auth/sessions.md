@@ -292,6 +292,14 @@ A signed-in user can add **passkeys** to their account: a fingerprint, face or P
 4. **Cloned keys.** Synced passkeys keep a counter of 0, hardware keys count up. A counter that goes backwards fails the sign-in, flags the passkey, audits `passkey.clone_suspected` and sends the user `passkey-clone-suspected`; backd does not remove it.
 5. In a realm with organizations, the realm's own door (`/_auth/passkey/login/…`) is the operators' alone and people sign in at `/_auth/orgs/{org}/passkey/login/…`, with the membership check of the password sign-in. One passkey signs in to every organization the person belongs to.
 
+**As a later step.** For a strategy such as `admin_passkey: [password, passkey]` the challenge after the password says `next: ["passkey"]`. The app asks `POST /_auth/mfa/passkey/options` with the `challenge` (only this user's passkeys are allowed), runs `navigator.credentials.get`, and sends `POST /_auth/mfa/verify` with `method: "passkey"` and the `credential` in place of a `code`. A wrong ceremony is `400 invalid_code` and counts against the challenge's 5 attempts and the user's second-factor limit; a code does not answer a passkey step, nor a passkey a code step.
+
+**A person with no passkey** gets the enrolment challenge (`mfa_enrollment_required`, `next: ["passkey"]`): `POST /_auth/mfa/passkey/register/options` with the `challenge`, then `POST /_auth/mfa/passkey/register/verify` with `{challenge, credential, name?}`, which stores the passkey and answers with the session. A passkey makes **no recovery codes**, and five wrong credentials end the challenge. They are the same two calls as [adding a passkey](#passkeys) when signed in, without the session or the fresh proof.
+
+**As the proof of a [re-authentication](../reauth/):** `POST /_auth/reauth/passkey/options`, then `POST /_auth/reauth` with `{method: "passkey", credential}`. A user with a passkey may use it without TOTP.
+
+**An administrator's only credential stays.** Removing a passkey answers `409 credential_required` when it is what lets a holder of an `admin` role complete any strategy that role allows (a role that accepts only `owner_passkey: [passkey]`, say); add another way first. The admin reset of a user's second factor removes their passkeys too.
+
 Rules and functions see `user.passkey_synced`, true when the passkey syncs between devices (backup eligible): demand a hardware key with `user.methods` holding `"passkey"` and `!user.passkey_synced`:
 
 ```yaml
@@ -322,6 +330,7 @@ rules:
 | 409 | `last_sign_in_method` | Removing the user's only way to sign in (a password, a provider, or a passkey that is one) |
 | 403 | `passkey_disabled` | The realm has not enabled [passkeys](#passkeys) |
 | 409 | `passkey_limit` | The user has 10 passkeys already |
+| 409 | `credential_required` | Removing the only credential that lets an administrator role sign in |
 | 400 | `invalid_passkey` | A passkey registration that did not verify (challenge, origin, relying party or user verification) |
 | 401 | `invalid_passkey` | Any failure of a sign-in with a passkey, whatever the cause |
 | 409 | `email_taken` | Sign-up with a registered email, in a realm that issues a session at sign-up |

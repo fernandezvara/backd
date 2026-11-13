@@ -3,6 +3,7 @@ package httpapi
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"github.com/fernandezvara/backd/internal/auth/passkey"
 	"maps"
@@ -52,6 +53,9 @@ func (a *authAPI) routes(r chi.Router) {
 		r.Get("/strategies", a.strategies)
 		r.With(json).Post("/login", a.login)
 		r.Post("/passkey/login/options", a.passkeyLoginOptions)
+		r.With(json).Post("/mfa/passkey/options", a.mfaPasskeyOptions)
+		r.With(json).Post("/mfa/passkey/register/options", a.mfaPasskeyRegisterOptions)
+		r.With(json).Post("/mfa/passkey/register/verify", a.mfaPasskeyRegisterVerify)
 		r.With(json).Post("/passkey/login/verify", a.passkeyLoginVerify)
 		r.With(json).Post("/consents/accept", a.consentsAccept)
 		r.With(json).Post("/mfa/verify", a.mfaVerify)
@@ -89,6 +93,7 @@ func (a *authAPI) routes(r chi.Router) {
 			r.With(json).Post("/email", a.changeEmail)
 			r.Delete("/identities/{provider}", a.unlinkIdentity)
 			r.With(json).Post("/reauth", a.reauth)
+			r.Post("/reauth/passkey/options", a.reauthPasskeyOptions)
 			r.Post("/reauth/email-code", a.reauthEmailCode)
 			r.Get("/mfa", a.mfaStatus)
 			r.Get("/passkeys", a.passkeys)
@@ -327,7 +332,7 @@ func (a *authAPI) answerSignInWith(w http.ResponseWriter, r *http.Request, out a
 // challengeJSON is the answer of a first factor whose user needs a second step.
 func challengeJSON(c *auth.IssuedChallenge) map[string]any {
 	if c.Kind == auth.ChallengeEnroll {
-		out := map[string]any{"mfa_enrollment_required": true, "challenge": c.Token}
+		out := map[string]any{"mfa_enrollment_required": true, "challenge": c.Token, "next": c.Next}
 		if c.Strategy != "" {
 			out["strategy"] = c.Strategy
 		}
@@ -599,6 +604,8 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 		writeError(w, r, http.StatusForbidden, codePasskeyDisabled, err.Error())
 	case errors.Is(err, auth.ErrLastSignInMethod):
 		writeError(w, r, http.StatusConflict, codeLastMethod, "this is the last way to sign in to the account: add another first")
+	case errors.Is(err, auth.ErrCredentialRequired):
+		writeError(w, r, http.StatusConflict, codeCredentialRequired, err.Error())
 	case errors.Is(err, auth.ErrPasskeyLimit):
 		writeError(w, r, http.StatusConflict, codePasskeyLimit, err.Error())
 	case errors.As(err, &badName):
@@ -803,4 +810,13 @@ func (a *authAPI) strategies(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, map[string]any{"strategies": list})
+}
+
+// jsonBytes is the JSON of a value that came from a decoded request body.
+func jsonBytes(v any) []byte {
+	out, err := json.Marshal(v)
+	if err != nil {
+		return nil
+	}
+	return out
 }

@@ -25,6 +25,8 @@ const (
 	// ReauthTOTP and ReauthRecovery are the second factors' own names.
 	ReauthTOTP     = MethodTOTP
 	ReauthRecovery = MethodRecovery
+	// ReauthPasskey is a passkey as the proof: for a user who has one, with or without TOTP.
+	ReauthPasskey = MethodPasskey
 )
 
 // ReauthCodeTTL and the attempts a code allows.
@@ -45,10 +47,21 @@ var (
 // user with none of them (no password, no second factor, and a realm that sends no email)
 // has no way to prove anything more than their session, and sensitive actions don't ask.
 func (s *Users) ReauthMethodsOf(ctx context.Context, u User) ([]string, error) {
+	var out []string
 	if _, err := s.Store.MFAOf(ctx, u.ID); err == nil {
-		return []string{ReauthTOTP, ReauthRecovery}, nil
+		out = append(out, ReauthTOTP, ReauthRecovery)
 	} else if !errors.Is(err, ErrNotFound) {
 		return nil, err
+	}
+	if s.Settings.Passkeys.Enabled {
+		if n, err := s.Store.CountByUser(ctx, u.ID); err != nil {
+			return nil, err
+		} else if n > 0 {
+			out = append(out, ReauthPasskey)
+		}
+	}
+	if len(out) > 0 {
+		return out, nil
 	}
 	if _, err := s.Store.IdentityOf(ctx, u.ID, ProviderPassword); err == nil {
 		return []string{ReauthPassword}, nil
@@ -82,6 +95,8 @@ func (s *Users) Reauthenticate(ctx context.Context, p Principal, method, proof, 
 	switch method {
 	case ReauthTOTP, ReauthRecovery:
 		err = s.reauthSecondFactor(ctx, p.User, method, proof, ip)
+	case ReauthPasskey:
+		err = s.reauthPasskey(ctx, p, []byte(proof), ip)
 	case ReauthPassword:
 		err = s.checkPassword(ctx, p.User, proof)
 	case ReauthEmailCode:

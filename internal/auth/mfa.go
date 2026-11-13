@@ -12,6 +12,7 @@ import (
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/hotp"
 
+	"github.com/fernandezvara/backd/internal/auth/passkey"
 	"github.com/fernandezvara/backd/internal/email"
 	"github.com/fernandezvara/backd/internal/registry"
 )
@@ -230,6 +231,16 @@ func (s *Users) nextStep(ctx context.Context, u User, st registry.Strategy, done
 		return s.finishSignIn(ctx, u, done, h)
 	}
 	switch st.Methods[len(done)] {
+	case MethodPasskey:
+		n, err := s.Store.CountByUser(ctx, u.ID)
+		if err != nil {
+			return Redeemed{}, err
+		}
+		if n > 0 {
+			return s.issueChallenge(ctx, u, ChallengeMFA, done, h)
+		}
+		// No passkey yet: adding one is part of signing in.
+		return s.issueChallenge(ctx, u, ChallengeEnroll, done, h)
 	case MethodTOTP:
 		_, err := s.Store.MFAOf(ctx, u.ID)
 		if err == nil {
@@ -251,7 +262,7 @@ func (s *Users) issueChallenge(ctx context.Context, u User, kind string, done []
 		return Redeemed{}, err
 	}
 	now := s.now()
-	c := AuthChallenge{ID: HashToken(token), Kind: kind, UserID: u.ID, Factor: factor, Strategy: h.strategy, Methods: done, NewUser: h.newUser, ViaOrg: h.org, Attempts: 0, CreatedAt: now, ExpiresAt: now.Add(ChallengeTTL)}
+	c := AuthChallenge{ID: HashToken(token), Kind: kind, UserID: u.ID, Factor: factor, Strategy: h.strategy, Passkey: h.passkey, PasskeySynced: h.passkeySynced, Methods: done, NewUser: h.newUser, ViaOrg: h.org, Attempts: 0, CreatedAt: now, ExpiresAt: now.Add(ChallengeTTL)}
 	if h.newUser && len(h.profile) > 0 {
 		c.Profile = h.profile
 	}
@@ -259,9 +270,13 @@ func (s *Users) issueChallenge(ctx context.Context, u User, kind string, done []
 		return Redeemed{}, err
 	}
 	ic := &IssuedChallenge{Token: token, Kind: kind}
+	next := s.pendingMethod(c)
+	ic.Next = []string{next}
 	if kind == ChallengeMFA {
 		ic.Methods = []string{MethodTOTP, MethodRecovery}
-		ic.Next = []string{MethodTOTP}
+		if next == MethodPasskey {
+			ic.Methods = []string{MethodPasskey}
+		}
 	}
 	ic.Strategy = h.strategy
 	return Redeemed{Challenge: ic}, nil
@@ -272,6 +287,17 @@ func (s *Users) issueChallenge(ctx context.Context, u User, kind string, done []
 // the login throttle. The answer to an unknown, used, expired or exhausted challenge is
 // always ErrInvalidChallenge.
 func (s *Users) VerifyMFA(ctx context.Context, challenge, method, code, ip string) (Verified, error) {
+	return s.verifyMFA(ctx, challenge, method, code, nil, ip)
+}
+
+// VerifyMFAPasskey is VerifyMFA for a step that asks for a passkey: credential is the JSON of the
+// assertion, made with the options of BeginPasskeyStep. A wrong ceremony is an *InvalidCodeError and
+// counts like a wrong code.
+func (s *Users) VerifyMFAPasskey(ctx context.Context, challenge string, credential []byte, ip string) (Verified, error) {
+	return s.verifyMFA(ctx, challenge, MethodPasskey, "", credential, ip)
+}
+
+func (s *Users) verifyMFA(ctx context.Context, challenge, method, code string, credential []byte, ip string) (Verified, error) {
 	if challenge == "" {
 		return Verified{}, ErrInvalidChallenge
 	}
@@ -299,11 +325,17 @@ func (s *Users) VerifyMFA(ctx context.Context, challenge, method, code, ip strin
 	}
 	var left int
 	var ok bool
-	switch method {
-	case MethodTOTP:
+	var used passkey.LoginResult
+	// The step the strategy asks for now decides which proofs count: a code does not answer a passkey
+	// step, nor a passkey a code.
+	asked := s.pendingMethod(c)
+	switch {
+	case method == MethodTOTP && asked == MethodTOTP:
 		ok, err = s.checkTOTP(ctx, c.UserID, code)
-	case MethodRecovery:
+	case method == MethodRecovery && asked == MethodTOTP:
 		left, ok, err = s.checkRecoveryCode(ctx, c.UserID, code)
+	case method == MethodPasskey && asked == MethodPasskey:
+		used, ok, err = s.checkPasskeyStep(ctx, c, credential)
 	default:
 		return Verified{}, &InvalidCodeError{AttemptsLeft: MaxChallengeAttempts - c.Attempts}
 	}
@@ -330,8 +362,11 @@ func (s *Users) VerifyMFA(ctx context.Context, challenge, method, code, ip strin
 		return Verified{}, err
 	}
 	second := MethodTOTP
-	if method == MethodRecovery {
+	switch method {
+	case MethodRecovery:
 		second = "recovery"
+	case MethodPasskey:
+		second = MethodPasskey
 	}
 	st, ok := s.Settings.StrategyByName(c.Strategy)
 	if !ok {
@@ -342,7 +377,7 @@ func (s *Users) VerifyMFA(ctx context.Context, challenge, method, code, ip strin
 		}
 		st = registry.Strategy{Methods: append(slices.Clone(doneOf(c)), MethodTOTP)}
 	}
-	out, err := s.nextStep(ctx, u, st, append(slices.Clone(doneOf(c)), second), handover{newUser: c.NewUser, profile: c.Profile, org: c.ViaOrg, strategy: c.Strategy})
+	out, err := s.nextStep(ctx, u, st, append(slices.Clone(doneOf(c)), second), handover{newUser: c.NewUser, profile: c.Profile, org: c.ViaOrg, strategy: c.Strategy, passkey: c.Passkey, passkeySynced: c.PasskeySynced}.withPasskey(used))
 	if err != nil {
 		return Verified{}, err
 	}
@@ -507,4 +542,23 @@ func (s *Users) checkRecoveryCode(ctx context.Context, userID, code string) (lef
 		return 0, false, err
 	}
 	return s.Store.UseRecoveryCode(ctx, userID, h)
+}
+
+// withPasskey records the passkey a step was proved with, when it was one.
+func (h handover) withPasskey(r passkey.LoginResult) handover {
+	if r.Credential.ID != "" {
+		h.passkey, h.passkeySynced = r.Credential.ID, r.BackupEligible
+	}
+	return h
+}
+
+// pendingMethod is the method a challenge waits for: the strategy's step after those done. An
+// unnamed strategy (settings built by hand) asks for totp.
+func (s *Users) pendingMethod(c AuthChallenge) string {
+	if st, ok := s.Settings.StrategyByName(c.Strategy); ok {
+		if n := len(doneOf(c)); n < len(st.Methods) {
+			return st.Methods[n]
+		}
+	}
+	return MethodTOTP
 }

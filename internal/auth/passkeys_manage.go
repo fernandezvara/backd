@@ -186,6 +186,11 @@ func (s *Users) RemovePasskey(ctx context.Context, u User, id string) error {
 	if err != nil {
 		return err
 	}
+	if required, err := s.credentialRequiredAfter(ctx, u, id); err != nil {
+		return err
+	} else if required {
+		return ErrCredentialRequired
+	}
 	if s.passkeysAreSignIn() {
 		ids, err := s.Identities(ctx, u.ID)
 		if err != nil {

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -17,7 +18,7 @@ func (a *authAPI) mfaVerify(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"challenge": "string", "method": "string", "code": "string", "cookie": "bool?"})
+	f, ok := fields(w, r, obj, map[string]string{"challenge": "string", "method": "string", "code": "string?", "credential": "object?", "cookie": "bool?"})
 	if !ok {
 		return
 	}
@@ -28,7 +29,24 @@ func (a *authAPI) mfaVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	method := strings.TrimSpace(f["method"].(string))
-	v, err := svc.VerifyMFA(r.Context(), f["challenge"].(string), method, f["code"].(string), clientIP(r))
+	var v auth.Verified
+	var err error
+	if method == auth.MethodPasskey {
+		// A passkey step answers with the credential the browser made, in place of a code.
+		cred, has := f["credential"]
+		if !has {
+			writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "credential", Reason: "is required for the passkey method"})
+			return
+		}
+		v, err = svc.VerifyMFAPasskey(r.Context(), f["challenge"].(string), jsonBytes(cred), clientIP(r))
+	} else {
+		code, has := f["code"].(string)
+		if !has {
+			writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "code", Reason: "is required for this method"})
+			return
+		}
+		v, err = svc.VerifyMFA(r.Context(), f["challenge"].(string), method, code, clientIP(r))
+	}
 	if err != nil {
 		authError(w, r, err)
 		return
@@ -173,4 +191,68 @@ func (a *authAPI) mfaRecoveryCodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"recovery_codes": codes})
+}
+
+// mfaPasskeyOptions handles POST /_auth/mfa/passkey/options { challenge }: the options for the
+// passkey a sign-in challenge waits for (a later step of the strategy).
+func (a *authAPI) mfaPasskeyOptions(w http.ResponseWriter, r *http.Request) {
+	obj, ok := readObject(w, r)
+	if !ok {
+		return
+	}
+	f, ok := fields(w, r, obj, map[string]string{"challenge": "string"})
+	if !ok {
+		return
+	}
+	options, err := usersOf(r).BeginPasskeyStep(r.Context(), f["challenge"].(string))
+	if err != nil {
+		authError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"options": json.RawMessage(options)})
+}
+
+// mfaPasskeyRegisterOptions handles POST /_auth/mfa/passkey/register/options { challenge }: the options
+// for adding the passkey a sign-in is waiting for, to a person who has none.
+func (a *authAPI) mfaPasskeyRegisterOptions(w http.ResponseWriter, r *http.Request) {
+	obj, ok := readObject(w, r)
+	if !ok {
+		return
+	}
+	f, ok := fields(w, r, obj, map[string]string{"challenge": "string"})
+	if !ok {
+		return
+	}
+	options, err := usersOf(r).BeginPasskeyEnrollment(r.Context(), f["challenge"].(string))
+	if err != nil {
+		authError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"options": json.RawMessage(options)})
+}
+
+// mfaPasskeyRegisterVerify handles POST /_auth/mfa/passkey/register/verify { challenge, credential, name?,
+// cookie? }: it ends the sign-in with the session (a passkey step makes no recovery codes).
+func (a *authAPI) mfaPasskeyRegisterVerify(w http.ResponseWriter, r *http.Request) {
+	obj, ok := readObject(w, r)
+	if !ok {
+		return
+	}
+	f, ok := fields(w, r, obj, map[string]string{"challenge": "string", "credential": "object", "name": "string?", "cookie": "bool?"})
+	if !ok {
+		return
+	}
+	svc := usersOf(r)
+	asked, _ := f["cookie"].(bool)
+	useCookie, ok := askedForCookie(w, r, svc.Settings, asked)
+	if !ok {
+		return
+	}
+	name, _ := f["name"].(string)
+	v, err := svc.CompletePasskeyEnrollment(r.Context(), f["challenge"].(string), jsonBytes(f["credential"]), name)
+	if err != nil {
+		authError(w, r, err)
+		return
+	}
+	a.answerSignIn(w, r, v.Redeemed, http.StatusOK, useCookie, v.Factor != auth.ProviderPassword)
 }

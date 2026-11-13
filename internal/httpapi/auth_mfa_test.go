@@ -459,12 +459,3 @@ func addFirstStrategies(s *registry.RealmSettings) {
 		s.Strategies = append(s.Strategies, registry.Strategy{Name: "magic_link", Methods: []string{"magic_link"}})
 	}
 }
-
-// jsonBytes is the JSON of a value, for tests whose scope shadows encoding/json.
-func jsonBytes(v any) []byte {
-	out, err := json.Marshal(v)
-	if err != nil {
-		panic(err)
-	}
-	return out
-}

@@ -1949,6 +1949,78 @@ func TestContract(t *testing.T) {
 		req("POST", org+"options", "", nil, 403)
 		f.svc.Settings.Passkeys.Enabled = true
 		f.svc.Settings.Strategies = strategies
+
+		// A passkey as a later step of a strategy, as the step a person without one adds, and as the proof of a reauthentication.
+		f.svc.Settings.Strategies = []registry.Strategy{{Name: "password", Methods: []string{"password"}}, {Name: "admin_passkey", Methods: []string{"password", "passkey"}}}
+		jsonHdr := map[string]string{"Content-Type": "application/json"}
+		pw2 := "dev-p4ssw0rd!"
+		withKey, err := f.svc.Create(ctx, "step-pk@example.com", &pw2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		without, err := f.svc.Create(ctx, "step-nopk@example.com", &pw2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// (Operators: the realm's own door has no other kind of user.)
+		for _, id := range []string{withKey.ID, without.ID} {
+			if err := f.svc.Store.AddRoles(ctx, id, []string{"staff"}, time.Now()); err != nil {
+				t.Fatal(err)
+			}
+		}
+		stepKey := hasPasskey(withKey.ID)
+		login := func(email string) map[string]any {
+			return req("POST", a+"/login", `{"email": "`+email+`", "password": "dev-p4ssw0rd!", "strategy": "admin_passkey"}`, nil, 200)
+		}
+		ch := login("step-pk@example.com")
+		if ch["mfa_required"] != true || ch["next"].([]any)[0] != "passkey" {
+			t.Fatalf("challenge = %v", ch)
+		}
+		token := ch["challenge"].(string)
+		req("POST", a+"/mfa/passkey/options", `{"challenge": "nope"}`, jsonHdr, 400)
+		req("POST", a+"/mfa/passkey/options", `{}`, jsonHdr, 400)
+		stepOpts := req("POST", a+"/mfa/passkey/options", `{"challenge": "`+token+`"}`, jsonHdr, 200)
+		// A code does not answer a passkey step.
+		req("POST", a+"/mfa/verify", `{"challenge": "`+token+`", "method": "totp", "code": "123456"}`, jsonHdr, 400)
+		req("POST", a+"/mfa/verify", `{"challenge": "`+token+`", "method": "passkey"}`, jsonHdr, 400)
+		done := req("POST", a+"/mfa/verify", `{"challenge": "`+token+`", "method": "passkey", "credential": `+string(stepKey.Assert(t, jsonBytes(stepOpts["options"])))+`}`, jsonHdr, 200)
+		if done["strategy"] != "admin_passkey" || done["token"] == nil {
+			t.Errorf("session = %v", done)
+		}
+		// Re-authentication with that passkey: options, then the credential.
+		session := map[string]string{"Authorization": "Bearer " + done["token"].(string)}
+		req("POST", a+"/reauth/passkey/options", "", nil, 401)
+		reOpts := req("POST", a+"/reauth/passkey/options", "", session, 200)
+		// A user with no passkey has none to prove with.
+		bare, err := f.svc.Create(ctx, "step-bare@example.com", &pw2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.svc.Store.AddRoles(ctx, bare.ID, []string{"staff"}, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		bareTok := req("POST", a+"/login", `{"email": "step-bare@example.com", "password": "dev-p4ssw0rd!", "strategy": "password"}`, nil, 200)["token"].(string)
+		req("POST", a+"/reauth/passkey/options", "", map[string]string{"Authorization": "Bearer " + bareTok}, 400)
+		req("POST", a+"/reauth", `{"method": "passkey"}`, with(session, "Content-Type", "application/json"), 400)
+		req("POST", a+"/reauth", `{"method": "password", "password": "dev-p4ssw0rd!"}`, with(session, "Content-Type", "application/json"), 400)
+		req("POST", a+"/reauth", `{"method": "passkey", "credential": `+string(stepKey.Assert(t, jsonBytes(reOpts["options"])))+`}`, with(session, "Content-Type", "application/json"), 200)
+		// A person with none is led to add one, and finishes signing in with it.
+		enrol := login("step-nopk@example.com")
+		if enrol["mfa_enrollment_required"] != true || enrol["next"].([]any)[0] != "passkey" {
+			t.Fatalf("enrolment challenge = %v", enrol)
+		}
+		et := enrol["challenge"].(string)
+		req("POST", a+"/mfa/passkey/register/options", `{"challenge": "nope"}`, jsonHdr, 400)
+		req("POST", a+"/mfa/passkey/register/verify", `{"challenge": "`+et+`", "credential": {}, "cookie": true}`, map[string]string{"Content-Type": "application/json", "Origin": "https://evil.example"}, 403)
+		newKey := passkeytest.New(origin)
+		req("POST", a+"/mfa/passkey/register/options", `{"challenge": "`+et+`"}`, jsonHdr, 200)
+		req("POST", a+"/mfa/passkey/register/verify", `{"challenge": "`+et+`", "credential": {}}`, jsonHdr, 400)
+		regOpts := req("POST", a+"/mfa/passkey/register/options", `{"challenge": "`+et+`"}`, jsonHdr, 200)
+		enrolled := req("POST", a+"/mfa/passkey/register/verify", `{"challenge": "`+et+`", "credential": `+string(newKey.Register(t, jsonBytes(regOpts["options"])))+`, "name": "Laptop"}`, jsonHdr, 200)
+		if enrolled["token"] == nil || enrolled["recovery_codes"] != nil {
+			t.Errorf("enrolled session = %v", enrolled)
+		}
+		f.svc.Settings.Strategies = strategies
 	}
 
 	// A user's own consents: read, withdraw, and what can't be withdrawn.

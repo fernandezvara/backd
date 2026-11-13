@@ -29,11 +29,15 @@ type ceremonyMeta struct {
 }
 
 func (s *Users) passkeyService(meta *ceremonyMeta) (*passkey.Service, error) {
+	return s.passkeyServiceWith(passkeyCeremonies{s, meta})
+}
+
+func (s *Users) passkeyServiceWith(c passkey.Ceremonies) (*passkey.Service, error) {
 	p := s.Settings.Passkeys
 	if !p.Enabled {
 		return nil, ErrPasskeysDisabled
 	}
-	return passkey.New(passkey.Config{RPID: p.RPID, RPName: p.RPName, Origins: p.Origins, AllowLoopbackHTTP: true}, s.Store, passkeyCeremonies{s, meta}, s.now)
+	return passkey.New(passkey.Config{RPID: p.RPID, RPName: p.RPName, Origins: p.Origins, AllowLoopbackHTTP: true}, s.Store, c, s.now)
 }
 
 // passkeyCeremonies keeps the state of a ceremony in the challenge table: hash-only, five minutes,
