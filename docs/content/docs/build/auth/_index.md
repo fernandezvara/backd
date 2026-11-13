@@ -43,6 +43,7 @@ Whatever the first factor, a user with a second factor is still asked for it —
 
 | Page | What it covers |
 |---|---|
+| [Authentication strategies](strategies/) | How a realm lets people sign in: strategies, their steps, and roles that depend on them |
 | [Users and passwords](users/) | Creating and managing a realm's users with `backd user` or the admin API |
 | [Sign-up, login and sessions](sessions/) | The `/_auth` endpoints: sign up, log in, sessions, password reset, brute-force protection, sign-in methods, deleting the account |
 | [Magic links](magic-links/) | Signing in from an email alone: the link, the code, account claiming |

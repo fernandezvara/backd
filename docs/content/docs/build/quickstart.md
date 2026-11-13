@@ -15,7 +15,7 @@ This page is the shortest honest path to a `backd` you can build against: instal
 - **Docker with Compose** (Docker Desktop, or Docker Engine and the Compose plugin; rootless Podman with `podman-compose` also works). The first `up` pulls the images for MongoDB, MinIO and `backd`, so allow for a download; later runs start from the local copies.
 - **The `backd` command line**, from the [release archives](https://github.com/fernandezvara/backd/releases) (Linux, macOS, Windows). The server itself runs in the containers.
 - **A shell with `openssl` and `curl`** (on Windows, WSL2).
-- **An authenticator app on your phone** (any TOTP app). The template's `admin` role accepts only the `admin_password` strategy (the password, then a code), so `backd login --strategy admin_password` asks you to enroll an authenticator before you see a document. A development realm without that step is planned ([#889](https://github.com/fernandezvara/backd/issues/889)).
+- **An authenticator app on your phone** (any TOTP app). The template's `admin` role accepts only the `admin_password` strategy (the password, then a code), so `backd login --strategy admin_password` asks you to enroll an authenticator before you see a document. A development realm without that step is planned ([#889](https://github.com/fernandezvara/backd/issues/889)); until then, a realm of your own for local work can use `auth: { strategies: { dev: [password] } }`, a single password strategy that nobody has to name.
 
 ## The short version
 

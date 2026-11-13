@@ -61,12 +61,14 @@ roles:
 
 Two strategies add the authenticator app as a second step (`totp` after the first method). The `admin` role lists the strategies it accepts, and both of them end with the authenticator app: a password alone is not enough for the operator.
 
-Restart `backd`. The next time the operator signs in the password is not enough: since they have no second factor yet, the app shows a QR code and the secret. Scan it with an authenticator app (any TOTP app), type the first code it shows and **Turn it on and sign in**. The *Account* page then shows the **recovery codes**, once: each works one time if the phone is lost. Save them.
+Restart `backd`. In the app, the sign-in form has an **I am an operator (password and authenticator code)** box: it signs in with the `password_totp` strategy instead of `password`. The first time, since the operator has no second factor yet, the app shows a QR code and the secret. Scan it with an authenticator app (any TOTP app), type the first code it shows and **Turn it on and sign in**. The *Account* page then shows the **recovery codes**, once: each works one time if the phone is lost. Save them.
 
-From then on a sign-in asks for the code after the password, and `backd` remembers **how** the session was started: `user.mfa` is `true` in rules for it, and `ctx.user.mfa` in functions.
+From then on that strategy asks for the code after the password, and `backd` remembers **how** the session was started: `user.mfa` is `true` in rules for it, `user.strategy` is `password_totp`, and `ctx.user.mfa` and `ctx.user.strategy` say the same in functions.
+
+What if the operator forgets the box and signs in with `password` alone? They get a session, but the `admin` role is **not active** in it: the sign-in answer says `roles_inactive: ["admin"]`, the Admin view refuses them, and the app can offer the stronger way in. That is the point of listing strategies on a role: the password alone never opens the operator's powers.
 
 ```js
-const result = await backd.auth.signIn({ email, password })
+const result = await backd.auth.signIn({ email, password, strategy: 'password_totp' })
 if (result.mfaRequired) {
   const session = await backd.auth.verifyMfa(result.challenge, 'totp', code)
 } else if (result.enrollmentRequired) {
@@ -75,10 +77,10 @@ if (result.mfaRequired) {
 }
 ```
 
-Members can turn it on for themselves on the *Account* page; it is **Two-step sign-in**, next to the password.
+Members can also set an authenticator up for themselves on the *Account* page (**Two-step sign-in**), but only a strategy that lists `totp` ever asks for it: a member who signs in with `password` is not asked for a code, even with an authenticator.
 
 {{< hint style="note" >}}
-Nothing is revoked when a role starts to require a second factor: sessions that already exist keep working until they expire, and the next sign-in enrols. `backd user mfa-status --realm shelf` lists who hasn't yet.
+Roles are worked out from the session's strategy on every request, so an operator session made with `password` before this chapter loses the `admin` role at once, and the next sign-in with `password_totp` enrols. `backd user mfa-status --realm shelf` lists who hasn't enrolled yet.
 {{< /hint >}}
 
 ## A rule that asks for it
@@ -107,7 +109,7 @@ await backd.auth.withProof(
 ## You should see
 
 - *Sign in → Email me a link* puts a message with a link and a code in the Mailbox; either one signs the member in, and then neither works again.
-- The operator's next sign-in shows a QR code. After the first code, the *Account* page lists the recovery codes, and the following sign-ins ask for a code.
+- The operator's next sign-in shows a QR code. After the first code, the *Account* page lists the recovery codes, and the following sign-ins with the operator box ticked ask for a code. Without the box, the operator is signed in with no `admin` role.
 - *Account → Two-step sign-in* lets a member turn it on and off; the operator's *Turn it off* is missing (the role requires it).
 - *Delete my account* and the email and password changes ask for a code (or the password, without a second factor) before they go.
 - The import log answers `200` to the operator and `403` to a curator.

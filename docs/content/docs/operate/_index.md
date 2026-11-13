@@ -182,6 +182,39 @@ blog__main.posts
 shop__orders.items
 ```
 
+### Upgrading to the strategy release
+
+The release after v0.9.9 changes how sign-in is configured. **Every `realm.yaml` needs editing before the new binaries start**; nothing changes in the data or the indexes, and the HTTP API only grows (new fields and one route). A realm that still has the old keys stops at startup, with a message that names where each key went; `backd config check` prints them all at once.
+
+| Before | Now |
+|---|---|
+| `auth: enabled` | `auth:` with `strategies:` (`auth: disabled` stays as it was) |
+| `signup`, `sessions`, `password`, `login_throttle` | `auth.signup`, `auth.sessions`, `auth.password`, `auth.login_throttle` |
+| `providers`, `sign_in` | `auth.providers`, `auth.sign_in` |
+| `magic_link`, `reauth` | `auth.magic_link`, `auth.reauth` |
+| `mfa` (`enabled`, `issuer`) | `auth.totp` |
+| `mfa.required_roles: [a, b]` | a strategy with a `totp` step (`a_totp: [password, totp]`) and `strategies: [a_totp]` on the roles `a` and `b` |
+| `mfa.required_roles: all` | every strategy ends with `totp` |
+
+The smallest conversion of a realm that had `auth: enabled` and `signup: open` is:
+
+```yaml
+auth:
+  strategies:
+    password: [password]
+  signup: open
+```
+
+What else changes, and needs your action:
+
+1. **A user's own authenticator adds no step any more.** Before, a regular user who turned TOTP on was asked for a code at every sign-in. Now only a strategy that lists `totp` asks for it. A realm that wants the code from everyone writes `password: [password, totp]`.
+2. **Several strategies that start with the password need the clients to name one.** With one such strategy nothing changes for the apps. With two (the template's `password` and `admin_password`), a sign-in that names none answers `400 strategy_required`: pass `strategy` (`backd login --strategy`, the clients' option) or set it once in the client.
+3. **Roles can list strategies.** A role that lists some is active only in sessions made with one of them; a role that does not is active in every session. Sessions made before the upgrade keep every role until they expire.
+4. **A sign-in through an organization's own connection** is now the method `sso` of a strategy. A realm with `organizations.sso` needs a strategy that starts with it (`sso: [sso]`), or its connections sign nobody in (`400 unknown_strategy`). Before, such sign-ins asked for no second step and kept every role.
+5. **Clients.** `mfa_required` and `methods` stay in the challenge answer next to the new `next` and `strategy`. The Dart and Python clients, the JavaScript client and the Go client take a `strategy`; older clients keep working against a realm with one password strategy.
+
+How strategies work is in [Authentication strategies](../build/auth/strategies/).
+
 ### Upgrading to v0.9.9
 
 v0.9.9 changes nothing in the data, the provisioned indexes, the configuration or the command line: replace the binaries or the images and run `backd-server provision` as usual. It is built with Go 1.27.4, which fixes GO-2026-6859 in `net/http`, so it is the version to run if you were on v0.9.8. The clients move to `0.9.9` with the server (for Dart, `backd: ^0.9.9`).
