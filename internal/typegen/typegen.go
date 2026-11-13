@@ -269,6 +269,17 @@ func (g *gen) realm(rl *registry.Realm, o Options) string {
 		role = strings.Join(quoted, " | ")
 	}
 	fmt.Fprintf(&tree, "  roles: %s;\n", role)
+	// The realm's strategies, for apps that name one (`strategy: "admin_password"`) and for rules' `user.strategy`.
+	strategies := make([]string, len(rl.Settings.Strategies))
+	for i, st := range rl.Settings.Strategies {
+		strategies[i] = literal(st.Name)
+		g.entries["strategy "+st.Name] = ""
+	}
+	strategy := "never"
+	if len(strategies) > 0 {
+		strategy = strings.Join(strategies, " | ")
+	}
+	fmt.Fprintf(&tree, "  strategies: %s;\n", strategy)
 	// The organization roles the realm declares, for apps that give them (only in realms with organizations).
 	if o := rl.Settings.Organizations; o != nil {
 		var orgRoles []string
@@ -573,4 +584,14 @@ export type %s = {
 
 `, c.Name, name, literal(c.Name), doc, doc)
 	return name
+}
+
+// strategyNames are the realm's strategy names, sorted.
+func strategyNames(rl *registry.Realm) []string {
+	names := make([]string, len(rl.Settings.Strategies))
+	for i, st := range rl.Settings.Strategies {
+		names[i] = st.Name
+	}
+	slices.Sort(names)
+	return names
 }

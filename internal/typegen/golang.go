@@ -721,6 +721,7 @@ func (g *goGen) roleConsts(prefix string, rl *registry.Realm) {
 		g.emit(b.String())
 	}
 	consts("Role", "roles", slices.Sorted(keys(rl.Settings.Roles)))
+	consts("Strategy", "sign-in strategies", strategyNames(rl))
 	if o := rl.Settings.Organizations; o != nil {
 		consts("OrgRole", "organization roles", o.RoleNames())
 		consts("TeamRole", "team roles", o.TeamRoleNames())

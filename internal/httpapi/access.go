@@ -242,7 +242,7 @@ func (d *documents) accessIn(r *http.Request, c *registry.Collection) access {
 	if caller.User != nil {
 		u := caller.User.User
 		mfa, methods := caller.SignInMethods()
-		a.values.User = &rules.User{ID: u.ID, Email: u.Email, EmailVerified: u.EmailVerified, Roles: u.Roles, MFA: mfa, Methods: methods, Consents: u.Consents}
+		a.values.User = &rules.User{ID: u.ID, Email: u.Email, EmailVerified: u.EmailVerified, Roles: u.Roles, MFA: mfa, Methods: methods, Strategy: caller.SignInStrategy(), Consents: u.Consents}
 	}
 	// appConfig() in the collection's rules: the configuration is read once for the request,
 	// and only when a rule asks for it.

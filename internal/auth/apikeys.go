@@ -199,6 +199,15 @@ func (c Caller) SignInMethods() (mfa bool, methods []string) {
 	return false, []string{}
 }
 
+// SignInStrategy is the strategy the user the caller acts as signed in with (`user.strategy`,
+// `ctx.user.strategy`); empty for an API key and for a session from before strategies.
+func (c Caller) SignInStrategy() string {
+	if c.Key == nil && c.User != nil {
+		return c.User.Session.Strategy
+	}
+	return ""
+}
+
 // Subject is who the caller acts as, for ownership fields: "user:<id>",
 // "key:<name>" or "anonymous".
 func (c Caller) Subject() string {

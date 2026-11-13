@@ -103,7 +103,7 @@ func (d *documents) readableConfig(ctx context.Context, realm string, caller aut
 	if hasAuth && caller.User != nil {
 		u := caller.User.User
 		mfa, methods := caller.SignInMethods()
-		vals.User = &rules.User{ID: u.ID, Email: u.Email, EmailVerified: u.EmailVerified, Roles: u.Roles, MFA: mfa, Methods: methods, Consents: u.Consents}
+		vals.User = &rules.User{ID: u.ID, Email: u.Email, EmailVerified: u.EmailVerified, Roles: u.Roles, MFA: mfa, Methods: methods, Strategy: caller.SignInStrategy(), Consents: u.Consents}
 	}
 	flat, public = map[string]any{}, true
 	for _, p := range cfg.SortedPaths() {

@@ -34,6 +34,10 @@ func RulesTest(c *kli.CommandContext) error {
 	var untested []string
 	for _, rl := range reg.SortedRealms() {
 		roles := slices.Sorted(maps.Keys(rl.Settings.Roles))
+		var strategies []string
+		for _, st := range rl.Settings.Strategies {
+			strategies = append(strategies, st.Name)
+		}
 		for _, db := range sortedDatabases(rl) {
 			for _, coll := range db.SortedCollections() {
 				name := rl.Name + "/" + db.Name + "/" + coll.Name
@@ -50,7 +54,7 @@ func RulesTest(c *kli.CommandContext) error {
 				if err != nil {
 					return err
 				}
-				checks, problems := rulestest.Run(coll, roles, fixture)
+				checks, problems := rulestest.RunIn(coll, roles, strategies, fixture)
 				tested++
 				if len(problems) > 0 {
 					broken++

@@ -221,3 +221,27 @@ func TestAConnectionSignInFollowsAnSSOStrategy(t *testing.T) {
 		t.Errorf("no sso strategy: %v", err)
 	}
 }
+
+// A function's data calls on behalf of a user see what the request saw: the session's
+// strategy, and only the roles that strategy keeps active.
+func TestCallbackCallerKeepsTheStrategyAndItsRoles(t *testing.T) {
+	ctx := context.Background()
+	f := newMFAFixture(t)
+	f.svc.Settings.Strategies = strategies()
+	f.svc.Settings.Roles = map[string]registry.Role{"owner": {Strategies: []string{"admin"}}, "editor": {}}
+	if err := f.store.AddRoles(ctx, f.user.ID, []string{"owner", "editor"}, *f.clock); err != nil {
+		t.Fatal(err)
+	}
+	for strategy, want := range map[string][]string{"web": {"editor"}, "admin": {"owner", "editor"}} {
+		c, err := f.svc.CallbackCaller(ctx, CallbackClaims{UserID: f.user.ID, Strategy: strategy, Methods: []string{"password"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.SignInStrategy() != strategy || !slices.Equal(c.User.User.Roles, want) {
+			t.Errorf("%s: strategy %q roles %v, want %v", strategy, c.SignInStrategy(), c.User.User.Roles, want)
+		}
+	}
+	if c := (Caller{}); c.SignInStrategy() != "" {
+		t.Error("an anonymous caller has no strategy")
+	}
+}

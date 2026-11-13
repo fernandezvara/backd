@@ -60,6 +60,9 @@ type User struct {
 	// first factor and, with MFA, "totp" or "recovery". API keys are ["key"].
 	MFA     bool     `expr:"mfa"`
 	Methods []string `expr:"methods"`
+	// Strategy is the strategy the session was made with ("" for an API key and for a session
+	// from before strategies); Roles above are the roles that strategy keeps active.
+	Strategy string `expr:"strategy"`
 	// Consents maps each consent the user holds to the version they accepted.
 	Consents map[string]string `expr:"consents"`
 	// Orgs are the memberships that count, by organization id (design/organizations.md §6):

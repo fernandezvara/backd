@@ -70,7 +70,7 @@ YAML reads a value starting with `'`, `!`, `[` or `{` specially, so quote such r
 
 | Name | Available on | Meaning |
 |---|---|---|
-| `user` | all | The signed-in user: `user.id`, `user.email`, `user.email_verified`, `user.roles`, and how the session was made, `user.mfa` and `user.methods` (see [multi-factor authentication](../mfa/#how-the-session-remembers)), and `user.consents`, the version of each [consent](../consents/) the user holds. `nil` for anonymous callers |
+| `user` | all | The signed-in user: `user.id`, `user.email`, `user.email_verified`, `user.roles` (the roles the session's strategy keeps [active](../#strategies)), and how the session was made, `user.mfa`, `user.methods` and `user.strategy` (see [multi-factor authentication](../mfa/#how-the-session-remembers)), and `user.consents`, the version of each [consent](../consents/) the user holds. `nil` for anonymous callers |
 | `document` | read, update, delete | The stored document, including `document.id` and `document._meta.*` |
 | `data` | create, update | The document being written: the request body on create, the complete result on update |
 | `now` | all | The current time, only for comparing with a timestamp: `document._meta.created_at`, `document._meta.updated_at`, or a field the schema [stores as a date](../../configuration/config-dir/#dates) |
@@ -306,6 +306,7 @@ now: 2026-10-04T12:00:00Z            # optional: what `now` is in the rules (def
 users:                               # callers; "anonymous" always exists
   ada: { id: u1, email: ada@example.com }               # email_verified defaults to true; mfa to false
   bob: { id: u2, email: bob@example.com, roles: [staff] }   # roles must be declared in realm.yaml
+  cy:  { id: u3, email: cy@example.com, strategy: admin_password }   # the strategy of the session; it must be declared in realm.yaml
 
 documents:                           # stored documents, by name
   draft:     { title: Draft, published: false, _meta: { owner: u1 } }
@@ -324,6 +325,7 @@ tests:
       - { document: draft, data: { title: Whole, status: x }, expect: deny }  # the complete new document, as PUT sends it
 ```
 
+- **Strategies.** A user's `strategy` (default none) is what `user.strategy` holds; `roles` are the roles that strategy keeps active, written out by hand. A strategy the realm does not declare is a mistake in the fixture.
 - **Organizations and teams.** A user may belong to organizations, for rules that use [`inOrg`, `hasOrgRole`, `inTeam` and `hasTeamRole`](#organizations): `orgs: { acme: { roles: [member, hr], teams: [sales], team_roles: { sales: [manager] }, claims: { plan: pro } } }` (keys are organization ids; `roles` are the effective roles, `team_roles` map a team id to the roles held there, in force). A document's `_meta` may hold `org` and `team`, and a `create` takes `org` and `team` for `data._meta.org` and `data._meta.team`.
 - **Parents.** For [rules that follow a reference](#rules-that-follow-a-reference), a top-level `parents:` gives the documents each reference points to, by the reference's name and then by id; a parent with `_meta.deleted_at` counts as deleted, like on the server. The items collection of that section is tested with:
 

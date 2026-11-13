@@ -81,6 +81,9 @@ type UserDef struct {
 	// how it was created (default ["password"], with "totp" added when MFA is true).
 	MFA     bool     `yaml:"mfa"`
 	Methods []string `yaml:"methods"`
+	// Strategy is the strategy the session was made with (default none); the realm's strategies are checked
+	// when they are known. Roles are the roles that strategy keeps active.
+	Strategy string `yaml:"strategy"`
 	// Consents are the consents the user holds: name to the version accepted.
 	Consents map[string]string `yaml:"consents"`
 	// Orgs are the organizations the user belongs to, by id: what the organization and team
@@ -150,13 +153,18 @@ type Check struct {
 // problems are mistakes in the fixture itself (unknown names, documents that
 // break the schema): the assertions are not run when there are any.
 func Run(c *registry.Collection, declaredRoles []string, fixture []byte) (checks []Check, problems []error) {
+	return RunIn(c, declaredRoles, nil, fixture)
+}
+
+// RunIn is Run for a realm that also declares strategies: a user's strategy must be one of them.
+func RunIn(c *registry.Collection, declaredRoles, strategies []string, fixture []byte) (checks []Check, problems []error) {
 	var f File
 	dec := yaml.NewDecoder(bytes.NewReader(fixture))
 	dec.KnownFields(true)
 	if err := dec.Decode(&f); err != nil && !errors.Is(err, io.EOF) {
 		return nil, []error{fmt.Errorf("invalid YAML: %w", err)}
 	}
-	r := &runner{c: c, roles: declaredRoles, now: defaultNow, users: map[string]*rules.User{"anonymous": nil}, docs: map[string]map[string]any{}}
+	r := &runner{c: c, roles: declaredRoles, strategies: strategies, now: defaultNow, users: map[string]*rules.User{"anonymous": nil}, docs: map[string]map[string]any{}}
 	r.config = f.Config
 	if f.Now != "" {
 		t, err := time.Parse(time.RFC3339, f.Now)
@@ -179,15 +187,17 @@ func Run(c *registry.Collection, declaredRoles []string, fixture []byte) (checks
 }
 
 type runner struct {
-	c        *registry.Collection
-	roles    []string
-	now      time.Time
-	users    map[string]*rules.User
-	docs     map[string]map[string]any // stored documents, as the server reads them
-	config   map[string]any            // app configuration values, by dot path
-	parents  fixtureParents            // the documents references point to
-	checks   []Check
-	problems []error
+	c     *registry.Collection
+	roles []string
+	// strategies are the realm's strategy names, when the caller knows them.
+	strategies []string
+	now        time.Time
+	users      map[string]*rules.User
+	docs       map[string]map[string]any // stored documents, as the server reads them
+	config     map[string]any            // app configuration values, by dot path
+	parents    fixtureParents            // the documents references point to
+	checks     []Check
+	problems   []error
 }
 
 func (r *runner) problem(format string, args ...any) {
@@ -209,6 +219,9 @@ func (r *runner) load(f File) {
 				r.problem("users.%s: role %q is not declared in realm.yaml (declared: %s)", name, role, strings.Join(r.roles, ", "))
 			}
 		}
+		if u.Strategy != "" && r.strategies != nil && !slices.Contains(r.strategies, u.Strategy) {
+			r.problem("users.%s: strategy %q is not declared in realm.yaml (declared: %s)", name, u.Strategy, strings.Join(r.strategies, ", "))
+		}
 		verified := u.EmailVerified == nil || *u.EmailVerified
 		methods := append([]string{}, u.Methods...)
 		if u.Methods == nil {
@@ -217,7 +230,7 @@ func (r *runner) load(f File) {
 				methods = append(methods, "totp")
 			}
 		}
-		user := &rules.User{ID: u.ID, Email: u.Email, EmailVerified: verified, Roles: append([]string{}, u.Roles...), MFA: u.MFA, Methods: methods, Consents: u.Consents, Orgs: map[string]*rules.UserOrg{}}
+		user := &rules.User{ID: u.ID, Email: u.Email, EmailVerified: verified, Roles: append([]string{}, u.Roles...), MFA: u.MFA, Methods: methods, Strategy: u.Strategy, Consents: u.Consents, Orgs: map[string]*rules.UserOrg{}}
 		for id, o := range u.Orgs {
 			user.Orgs[id] = &rules.UserOrg{Roles: nonNil(o.Roles), Teams: nonNil(o.Teams), TeamRoles: o.TeamRoles, Claims: o.Claims}
 		}

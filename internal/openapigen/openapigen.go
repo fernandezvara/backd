@@ -76,6 +76,7 @@ func (b *builder) public() (*Document, error) {
 	b.responses = map[string]any{}
 	b.ids = map[string]bool{}
 	b.addFileDetails()
+	b.addStrategy()
 
 	prefix := "/v1/{realm}"
 	auth := b.rl.Settings.AuthEnabled
@@ -420,6 +421,11 @@ func (b *builder) prune() map[string]any {
 		}
 	}
 	visit(b.paths)
+	// The realm's strategy names are part of the document whenever it has them: clients read the
+	// enum, even though the generic contract types `strategy` as a plain string.
+	if _, ok := b.extra["Strategy"]; ok {
+		visit(map[string]any{"$ref": "#/components/schemas/Strategy"})
+	}
 	out := map[string]any{}
 	for kind, names := range keep {
 		m := map[string]any{}
@@ -443,4 +449,20 @@ func baseLicense(base map[string]any) any {
 		return info["license"]
 	}
 	return nil
+}
+
+// addStrategy adds the schema of the realm's strategy names: what the `strategy` field of the
+// sign-in calls accepts, and what a session's `strategy` can be.
+func (b *builder) addStrategy() {
+	if !b.rl.Settings.AuthEnabled || len(b.rl.Settings.Strategies) == 0 {
+		return
+	}
+	names := make([]any, len(b.rl.Settings.Strategies))
+	for i, st := range b.rl.Settings.Strategies {
+		names[i] = st.Name
+	}
+	b.extra["Strategy"] = map[string]any{
+		"type": "string", "enum": names,
+		"description": "A sign-in strategy of this realm: the value of `strategy` in the sign-in calls (`GET /_auth/strategies` lists their methods) and of a session's `strategy`.",
+	}
 }
