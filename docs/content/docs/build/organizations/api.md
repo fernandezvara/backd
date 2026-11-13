@@ -101,7 +101,7 @@ An organization can require its members to use [multi-factor authentication](../
 
 ## How long sessions last
 
-An organization can shorten the lifetime of the sessions opened in it: `PATCH /_orgs/{org}` with `{"session_max_age": 28800}` (seconds, at least 3600, never more than the realm's [`sessions.max_lifetime`](../../configuration/realm/#keys); `0` goes back to the realm's), by `manage: org`, with a fresh proof of identity. The expiry of a session is fixed when it is opened, from the organization's value, and never extended, so the change applies to the sessions opened from then on. It is also how a company limits how long someone removed at their identity provider keeps access until the provider can tell backd directly. Audited as `org.update`.
+An organization can shorten the lifetime of the sessions opened in it: `PATCH /_orgs/{org}` with `{"session_max_age": 28800}` (seconds, at least 3600, never more than the realm's [`auth.sessions.max_lifetime`](../../configuration/realm/#keys); `0` goes back to the realm's), by `manage: org`, with a fresh proof of identity. The expiry of a session is fixed when it is opened, from the organization's value, and never extended, so the change applies to the sessions opened from then on. It is also how a company limits how long someone removed at their identity provider keeps access until the provider can tell backd directly. Audited as `org.update`.
 
 ## API keys on behalf of a user
 

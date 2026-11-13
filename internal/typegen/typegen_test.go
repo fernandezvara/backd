@@ -282,7 +282,7 @@ func TestOrganizationTypes(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write("acme/realm.yaml", "organizations:\n  roles:\n    owner: {manage: org}\n    editor: {}\n  team_roles:\n    manager: {}\n    delegate: {}\n")
+	write("acme/realm.yaml", "auth:\n  strategies:\n    password: [password]\norganizations:\n  roles:\n    owner: {manage: org}\n    editor: {}\n  team_roles:\n    manager: {}\n    delegate: {}\n")
 	write("acme/main/projects/schema.json", `{"type": "object", "properties": {"title": {"type": "string"}}}`)
 	write("acme/main/projects/collection.yaml", "organization: required\non_org_delete:\n  action: delete\nrules:\n  read: inOrg(document._meta.org)\n")
 	write("acme/main/tickets/schema.json", `{"type": "object", "properties": {"title": {"type": "string"}}}`)
@@ -318,7 +318,7 @@ func TestOrganizationTypes(t *testing.T) {
 		t.Errorf("flags:\n%s", fns.Types)
 	}
 	// Without organizations there are neither.
-	write("acme/realm.yaml", "signup: open\n")
+	write("acme/realm.yaml", "auth:\n  strategies:\n    password: [password]\n  signup: open\n")
 	write("acme/main/projects/collection.yaml", "rules:\n  read: user != nil\n")
 	write("acme/main/tickets/collection.yaml", "rules:\n  read: user != nil\n")
 	reg, err = registry.Load(root)
@@ -344,7 +344,7 @@ func TestTriggerInputTypes(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write("acme/realm.yaml", "signup: open\n")
+	write("acme/realm.yaml", "auth:\n  strategies:\n    password: [password]\n  signup: open\n")
 	write("acme/main/orders/schema.json", `{"type": "object", "properties": {"status": {"type": "string"}, "total": {"type": "number"}}}`)
 	write("acme/main/orders/collection.yaml", "triggers:\n  on_paid:\n    events: [created, updated]\n    when: \"document.status == 'paid'\"\n    function: main/on-paid\n")
 	write("acme/main/notes/schema.json", `{"type": "object", "properties": {"title": {"type": "string"}}}`)
@@ -399,7 +399,7 @@ func TestTriggerFunctionsAreTypedWithAdminAccess(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write("acme/realm.yaml", "signup: open\n")
+	write("acme/realm.yaml", "auth:\n  strategies:\n    password: [password]\n  signup: open\n")
 	write("acme/main/orders/schema.json", `{"type": "object", "properties": {"status": {"type": "string"}}}`)
 	write("acme/main/orders/collection.yaml", "triggers:\n  on_paid:\n    events: [created]\n    function: main/on-paid\n")
 	write("acme/main/_functions/on-paid/function.yaml", "internal: true\nmode: async\n")

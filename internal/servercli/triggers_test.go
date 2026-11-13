@@ -27,7 +27,7 @@ func TestTriggersRescanCommand(t *testing.T) {
 	realm := "t" + xid.New().String()
 	fnDir := realm + "/main/" + registry.FunctionsDir
 	root := cmdtest.Write(t, map[string]string{
-		realm + "/realm.yaml":                  "auth: enabled\nsignup: open\n",
+		realm + "/realm.yaml":                  "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		realm + "/main/orders/schema.json":     `{"type":"object","properties":{"status":{"type":"string"}}}`,
 		realm + "/main/orders/collection.yaml": "triggers:\n  on_paid:\n    events: [created, updated]\n    when: \"document.status == 'paid'\"\n    function: main/notify\n  needs_before:\n    events: [updated]\n    when: \"before.status != 'paid'\"\n    function: main/notify\n",
 		fnDir + "/notify/function.yaml":        "internal: true\nmode: async\ntimeout: 15s\n",

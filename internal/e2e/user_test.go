@@ -27,9 +27,9 @@ func TestRunUserLifecycle(t *testing.T) {
 	}
 	realm := "t" + xid.New().String()
 	root := cmdtest.Write(t, map[string]string{
-		realm + "/realm.yaml":            "password:\n  min_length: 10\nroles:\n  ops:\n    admin: true\n  owner:\n    admin: true\n  editor:\n    users: [ada@example.com]\n",
+		realm + "/realm.yaml":            "auth:\n  strategies:\n    password: [password]\n  password:\n    min_length: 10\nroles:\n  ops:\n    admin: true\n  owner:\n    admin: true\n  editor:\n    users: [ada@example.com]\n",
 		realm + "/app/notes/schema.json": `{}`,
-		"plain/realm.yaml":               "roles:\n  editor: {}\n",
+		"plain/realm.yaml":               "auth:\n  strategies:\n    password: [password]\nroles:\n  editor: {}\n",
 		"plain/app/notes/schema.json":    `{}`,
 		"open/realm.yaml":                "auth: disabled\n",
 		"open/app/notes/schema.json":     `{}`,

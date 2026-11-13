@@ -8,7 +8,7 @@ import (
 func TestCachePolicy(t *testing.T) {
 	load := func(collection string) (*Collection, error) {
 		reg, err := Load(writeTree(t, map[string]string{
-			"shop/realm.yaml":               "roles:\n  admin: {}\n",
+			"shop/realm.yaml":               "auth:\n  strategies:\n    password: [password]\nroles:\n  admin: {}\n",
 			"shop/db/items/schema.json":     personSchema,
 			"shop/db/items/collection.yaml": collection,
 		}))

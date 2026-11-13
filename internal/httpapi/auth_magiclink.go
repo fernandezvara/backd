@@ -64,7 +64,7 @@ func (a *authAPI) requestMagicLink(w http.ResponseWriter, r *http.Request) {
 	}
 	redirectTo, _ := f["redirect_to"].(string)
 	if redirectTo != "" && !svc.Settings.SignInRedirectAllowed(redirectTo) {
-		writeError(w, r, http.StatusBadRequest, codeInvalidRedirect, "redirect_to isn't within the realm's sign_in.allowed_redirects (or email.allowed_redirects)")
+		writeError(w, r, http.StatusBadRequest, codeInvalidRedirect, "redirect_to isn't within the realm's auth.sign_in.allowed_redirects (or email.allowed_redirects)")
 		return
 	}
 	locale, _ := f["locale"].(string)

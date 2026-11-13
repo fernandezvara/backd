@@ -9,7 +9,7 @@ import (
 func TestPersonalData(t *testing.T) {
 	load := func(collection string) (*Realm, error) {
 		reg, err := Load(writeTree(t, map[string]string{
-			"shop/realm.yaml":               "roles:\n  admin: {}\n",
+			"shop/realm.yaml":               "auth:\n  strategies:\n    password: [password]\nroles:\n  admin: {}\n",
 			"shop/db/items/schema.json":     personSchema,
 			"shop/db/items/collection.yaml": collection,
 			"shop/db/other/schema.json":     personSchema,
@@ -58,7 +58,7 @@ func TestPersonalData(t *testing.T) {
 		"not in organizations": {"rules:\n  read: 'true'\n", false},
 	} {
 		orgTree, err := Load(writeTree(t, map[string]string{
-			"shop/realm.yaml":               "roles:\n  admin: {}\norganizations:\n  roles:\n    owner: { manage: [org, members, roles, teams] }\n",
+			"shop/realm.yaml":               "auth:\n  strategies:\n    password: [password]\nroles:\n  admin: {}\norganizations:\n  roles:\n    owner: { manage: [org, members, roles, teams] }\n",
 			"shop/db/items/schema.json":     personSchema,
 			"shop/db/items/collection.yaml": tc.yaml,
 		}))

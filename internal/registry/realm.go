@@ -151,6 +151,10 @@ type RealmSettings struct {
 	MFA MFASettings
 	// Organizations is the organizations section; nil when the realm doesn't enable them.
 	Organizations *OrgSettings
+	// Strategies are the named lists of methods a person signs in with, in the order the
+	// realm declares them (auth.strategies), and Passkeys the passkey settings.
+	Strategies []Strategy
+	Passkeys   PasskeySettings
 	// ReauthTTL is how long a re-authentication token works (reauth.ttl).
 	ReauthTTL time.Duration
 	// DefaultLocale and Locales are the languages of the realm (default_locale and locales in
@@ -324,27 +328,19 @@ type Role struct {
 	AdminRead bool
 	// Users are seed assignments: normalized (trimmed, lowercased) emails.
 	Users []string
+	// Strategies are the strategies that keep the role active in a session; nil means all.
+	Strategies []string
 }
 
 // realmDoc mirrors realm.yaml. Pointers tell "left out" from "set".
 type realmDoc struct {
-	Auth     *string `yaml:"auth"`
-	Signup   *string `yaml:"signup"`
-	Sessions *struct {
-		IdleTimeout      *string `yaml:"idle_timeout"`
-		MaxLifetime      *string `yaml:"max_lifetime"`
-		AdminIdleTimeout *string `yaml:"admin_idle_timeout"`
-		AdminMaxLifetime *string `yaml:"admin_max_lifetime"`
-		Cookie           *struct {
-			Enabled  *bool   `yaml:"enabled"`
-			SameSite *string `yaml:"same_site"`
-		} `yaml:"cookie"`
-	} `yaml:"sessions"`
-	Password *struct {
-		MinLength *int `yaml:"min_length"`
-	} `yaml:"password"`
-	LoginThrottle *loginThrottleDoc `yaml:"login_throttle"`
-	CORS          *struct {
+	// Auth is the scalar `disabled`, or the section with the strategies and every
+	// setting about signing in (design/auth-strategies.md §3); see parseAuth.
+	Auth yaml.Node `yaml:"auth"`
+	// Extra holds the keys this struct has no field for, so the old top-level
+	// sign-in keys can be answered with where they moved to.
+	Extra map[string]yaml.Node `yaml:",inline"`
+	CORS  *struct {
 		Origins []string `yaml:"origins"`
 	} `yaml:"cors"`
 	Admin *struct {
@@ -367,6 +363,9 @@ type realmDoc struct {
 		Description string      `yaml:"description"`
 		Admin       adminDoc    `yaml:"admin"`
 		Users       []roleEntry `yaml:"users"`
+		// Strategies are the strategies that keep the role active in a session
+		// (design/auth-strategies.md §5); none listed means every strategy.
+		Strategies []string `yaml:"strategies"`
 	} `yaml:"roles"`
 	// Organizations is read by orgsDoc.apply, after the roles and the sign-in redirects.
 	Organizations *orgsDoc `yaml:"organizations"`
@@ -381,34 +380,10 @@ type realmDoc struct {
 	Push          *pushDoc    `yaml:"push"`
 	Storage       *storageDoc `yaml:"storage"`
 	PublicStorage *storageDoc `yaml:"public_storage"`
-	// Providers are the external identity providers users may sign in with, and
-	// SignIn the settings that go with signing in.
-	Providers map[string]*providerDoc `yaml:"providers"`
-	SignIn    *struct {
-		AllowedRedirects []string `yaml:"allowed_redirects"`
-		AppURL           string   `yaml:"app_url"`
-	} `yaml:"sign_in"`
-	// MFA are the second-factor settings (design/mfa-passwordless.md §3).
-	MFA *struct {
-		Enabled *bool  `yaml:"enabled"`
-		Issuer  string `yaml:"issuer"`
-		// RequiredRoles is a list of role names, or the string "all".
-		RequiredRoles yaml.Node `yaml:"required_roles"`
-	} `yaml:"mfa"`
-	// MagicLink lets users sign in with a link or a code sent to their address.
-	MagicLink *struct {
-		Enabled bool `yaml:"enabled"`
-		Signup  bool `yaml:"signup"`
-	} `yaml:"magic_link"`
 	// Consents and Compliance are the consent declarations and their record settings.
 	Consents   yaml.Node `yaml:"consents"`
 	Compliance yaml.Node `yaml:"compliance"`
-	// Reauth is how long a fresh proof of identity, asked for before a sensitive
-	// action, stays good.
-	Reauth *struct {
-		TTL string `yaml:"ttl"`
-	} `yaml:"reauth"`
-	Account *struct {
+	Account    *struct {
 		RequireVerifiedEmail bool   `yaml:"require_verified_email"`
 		WelcomeEmail         bool   `yaml:"welcome_email"`
 		AllowEmailChange     bool   `yaml:"allow_email_change"`
@@ -580,24 +555,15 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 		return s, []error{fmt.Errorf("invalid YAML: %w", err)}
 	}
 
-	var errs []error
-	if doc.Auth != nil {
-		switch *doc.Auth {
-		case "enabled":
-		case "disabled":
-			s.AuthEnabled = false
-		default:
-			errs = append(errs, fmt.Errorf("auth: must be enabled or disabled, got %q", *doc.Auth))
-		}
-	}
+	auth, enabled, errs := parseAuth(doc.Auth, doc.Extra)
+	s.AuthEnabled = enabled
 	if !s.AuthEnabled {
 		// Everything but CORS configures users; reject it rather than ignore it.
 		for _, k := range []struct {
 			key string
 			set bool
 		}{
-			{"signup", doc.Signup != nil}, {"sessions", doc.Sessions != nil},
-			{"password", doc.Password != nil}, {"login_throttle", doc.LoginThrottle != nil}, {"roles", len(doc.Roles) > 0}, {"admin", doc.Admin != nil},
+			{"roles", len(doc.Roles) > 0}, {"admin", doc.Admin != nil},
 			{"audit", doc.Audit != nil},
 		} {
 			if k.set {
@@ -606,37 +572,37 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 		}
 	}
 
-	if doc.LoginThrottle != nil {
-		errs = append(errs, doc.LoginThrottle.apply(&s)...)
+	if auth.LoginThrottle != nil {
+		errs = append(errs, auth.LoginThrottle.apply(&s)...)
 	}
 
-	if doc.Signup != nil {
-		switch *doc.Signup {
+	if auth.Signup != nil {
+		switch *auth.Signup {
 		case SignupOpen, SignupInvite, SignupClosed:
-			s.Signup = *doc.Signup
+			s.Signup = *auth.Signup
 		default:
-			errs = append(errs, fmt.Errorf("signup: must be open, invite or closed, got %q", *doc.Signup))
+			errs = append(errs, fmt.Errorf("auth.signup: must be open, invite or closed, got %q", *auth.Signup))
 		}
 	}
 
-	if ss := doc.Sessions; ss != nil {
-		errs = appendDuration(errs, "sessions.idle_timeout", ss.IdleTimeout, &s.IdleTimeout)
-		errs = appendDuration(errs, "sessions.max_lifetime", ss.MaxLifetime, &s.MaxLifetime)
+	if ss := auth.Sessions; ss != nil {
+		errs = appendDuration(errs, "auth.sessions.idle_timeout", ss.IdleTimeout, &s.IdleTimeout)
+		errs = appendDuration(errs, "auth.sessions.max_lifetime", ss.MaxLifetime, &s.MaxLifetime)
 	}
 	if s.IdleTimeout > s.MaxLifetime {
 		errs = append(errs, fmt.Errorf("sessions: idle_timeout (%s) must not exceed max_lifetime (%s)", s.IdleTimeout, s.MaxLifetime))
 	}
 	// Admin sessions: unset (0) means the regular limits; set, they only
 	// shorten them.
-	if ss := doc.Sessions; ss != nil && (ss.AdminIdleTimeout != nil || ss.AdminMaxLifetime != nil) {
-		errs = appendDuration(errs, "sessions.admin_idle_timeout", ss.AdminIdleTimeout, &s.AdminIdleTimeout)
-		errs = appendDuration(errs, "sessions.admin_max_lifetime", ss.AdminMaxLifetime, &s.AdminMaxLifetime)
+	if ss := auth.Sessions; ss != nil && (ss.AdminIdleTimeout != nil || ss.AdminMaxLifetime != nil) {
+		errs = appendDuration(errs, "auth.sessions.admin_idle_timeout", ss.AdminIdleTimeout, &s.AdminIdleTimeout)
+		errs = appendDuration(errs, "auth.sessions.admin_max_lifetime", ss.AdminMaxLifetime, &s.AdminMaxLifetime)
 		idle, max := cmpDuration(s.AdminIdleTimeout, s.IdleTimeout), cmpDuration(s.AdminMaxLifetime, s.MaxLifetime)
 		if idle > s.IdleTimeout {
-			errs = append(errs, fmt.Errorf("sessions.admin_idle_timeout (%s) must not exceed idle_timeout (%s): it is for shortening admin sessions", idle, s.IdleTimeout))
+			errs = append(errs, fmt.Errorf("auth.sessions.admin_idle_timeout (%s) must not exceed idle_timeout (%s): it is for shortening admin sessions", idle, s.IdleTimeout))
 		}
 		if max > s.MaxLifetime {
-			errs = append(errs, fmt.Errorf("sessions.admin_max_lifetime (%s) must not exceed max_lifetime (%s): it is for shortening admin sessions", max, s.MaxLifetime))
+			errs = append(errs, fmt.Errorf("auth.sessions.admin_max_lifetime (%s) must not exceed max_lifetime (%s): it is for shortening admin sessions", max, s.MaxLifetime))
 		}
 		if idle > max {
 			errs = append(errs, fmt.Errorf("sessions: admin_idle_timeout (%s) must not exceed admin_max_lifetime (%s)", idle, max))
@@ -677,10 +643,10 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 		}
 	}
 
-	if p := doc.Password; p != nil && p.MinLength != nil {
+	if p := auth.Password; p != nil && p.MinLength != nil {
 		n := *p.MinLength
 		if n < minPasswordLength || n > maxPasswordLength {
-			errs = append(errs, fmt.Errorf("password.min_length: must be between %d and %d, got %d", minPasswordLength, maxPasswordLength, n))
+			errs = append(errs, fmt.Errorf("auth.password.min_length: must be between %d and %d, got %d", minPasswordLength, maxPasswordLength, n))
 		} else {
 			s.PasswordMinLength = n
 		}
@@ -696,7 +662,7 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 		}
 	}
 
-	if ss := doc.Sessions; ss != nil && ss.Cookie != nil {
+	if ss := auth.Sessions; ss != nil && ss.Cookie != nil {
 		c := ss.Cookie
 		s.Cookie.SameSite = "lax"
 		if c.SameSite != nil {
@@ -704,7 +670,7 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 			case "lax", "strict", "none":
 				s.Cookie.SameSite = v
 			default:
-				errs = append(errs, fmt.Errorf("sessions.cookie.same_site: must be lax, strict or none, got %q", *c.SameSite))
+				errs = append(errs, fmt.Errorf("auth.sessions.cookie.same_site: must be lax, strict or none, got %q", *c.SameSite))
 			}
 		}
 		if c.Enabled != nil && *c.Enabled {
@@ -712,7 +678,7 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 			// A cookie is sent by the browser on its own: which sites may use it
 			// must be said, not guessed.
 			if slices.Contains(s.CORSOrigins, "*") {
-				errs = append(errs, errors.New("sessions.cookie: cookies can't be used with cors.origins: ['*']; list the origins of your apps"))
+				errs = append(errs, errors.New("auth.sessions.cookie: cookies can't be used with cors.origins: ['*']; list the origins of your apps"))
 			}
 		}
 	}
@@ -850,21 +816,21 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 		}
 	}
 
-	if len(doc.Providers) > 0 || doc.SignIn != nil {
+	if len(auth.Providers) > 0 || auth.SignIn != nil {
 		if !s.AuthEnabled {
 			errs = append(errs, errors.New("providers: only apply when auth is enabled"))
 		} else {
 			var es []error
-			s.Providers, es = parseProviders(doc.Providers)
+			s.Providers, es = parseProviders(auth.Providers)
 			errs = append(errs, es...)
-			if si := doc.SignIn; si != nil {
+			if si := auth.SignIn; si != nil {
 				for i, o := range si.AllowedRedirects {
 					norm, ok := normalizeRedirectOrigin(o)
 					switch {
 					case !ok:
-						errs = append(errs, fmt.Errorf("sign_in.allowed_redirects[%d]: %q must be an origin such as https://app.example.com (no path), or an app scheme such as acme://", i, o))
+						errs = append(errs, fmt.Errorf("auth.sign_in.allowed_redirects[%d]: %q must be an origin such as https://app.example.com (no path), or an app scheme such as acme://", i, o))
 					case slices.Contains(s.SignInRedirects, norm):
-						errs = append(errs, fmt.Errorf("sign_in.allowed_redirects[%d]: %q is listed twice", i, o))
+						errs = append(errs, fmt.Errorf("auth.sign_in.allowed_redirects[%d]: %q is listed twice", i, o))
 					default:
 						s.SignInRedirects = append(s.SignInRedirects, norm)
 					}
@@ -872,12 +838,12 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 				if si.AppURL != "" {
 					s.SignInAppURL = si.AppURL
 					if !s.SignInRedirectAllowed(si.AppURL) {
-						errs = append(errs, fmt.Errorf("sign_in.app_url: %q must be within sign_in.allowed_redirects (or email.allowed_redirects when it has none)", si.AppURL))
+						errs = append(errs, fmt.Errorf("auth.sign_in.app_url: %q must be within auth.sign_in.allowed_redirects (or email.allowed_redirects when it has none)", si.AppURL))
 					}
 				}
 			}
 			if len(s.Providers) > 0 && len(s.SignInRedirects) == 0 && (s.Email == nil || len(s.Email.AllowedRedirects) == 0) {
-				errs = append(errs, errors.New("providers: need sign_in.allowed_redirects (or email.allowed_redirects): the origins and app schemes a sign-in may send the user back to"))
+				errs = append(errs, errors.New("providers: need auth.sign_in.allowed_redirects (or email.allowed_redirects): the origins and app schemes a sign-in may send the user back to"))
 			}
 		}
 	}
@@ -886,30 +852,25 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 		errs = append(errs, doc.Organizations.apply(&s)...)
 	}
 
-	if m := doc.MFA; m != nil {
-		switch {
-		case !s.AuthEnabled:
-			errs = append(errs, errors.New("mfa: only applies when auth is enabled"))
-		default:
-			if m.Enabled != nil {
-				s.MFA.Off = !*m.Enabled
-			}
-			s.MFA.Issuer = strings.TrimSpace(m.Issuer)
-			if len(s.MFA.Issuer) > 64 || strings.ContainsAny(s.MFA.Issuer, ":\n\r") {
-				errs = append(errs, errors.New("mfa.issuer: must be at most 64 characters and have no colon or line break (authenticator apps show it as the name of the account)"))
-			}
-
+	if m := auth.TOTP; m != nil {
+		if m.Enabled != nil {
+			s.MFA.Off = !*m.Enabled
+		}
+		s.MFA.Issuer = strings.TrimSpace(m.Issuer)
+		if len(s.MFA.Issuer) > 64 || strings.ContainsAny(s.MFA.Issuer, ":\n\r") {
+			errs = append(errs, errors.New("auth.totp.issuer: must be at most 64 characters and have no colon or line break (authenticator apps show it as the name of the account)"))
 		}
 	}
+	errs = append(errs, s.parsePasskeys(auth.Passkeys)...)
 
-	if m := doc.MagicLink; m != nil {
+	if m := auth.MagicLink; m != nil {
 		switch {
 		case !s.AuthEnabled:
 			errs = append(errs, errors.New("magic_link: only applies when auth is enabled"))
 		case m.Enabled && s.Email == nil:
-			errs = append(errs, errors.New("magic_link.enabled: needs the email: section (the links and codes are sent by email)"))
+			errs = append(errs, errors.New("auth.magic_link.enabled: needs the email: section (the links and codes are sent by email)"))
 		case m.Signup && !m.Enabled:
-			errs = append(errs, errors.New("magic_link.signup: has no effect while magic_link.enabled is false"))
+			errs = append(errs, errors.New("auth.magic_link.signup: has no effect while auth.magic_link.enabled is false"))
 		default:
 			s.MagicLink = MagicLinkSettings{Enabled: m.Enabled, Signup: m.Signup}
 		}
@@ -928,16 +889,16 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 		}
 	}
 
-	if r := doc.Reauth; r != nil {
+	if r := auth.Reauth; r != nil {
 		if !s.AuthEnabled {
 			errs = append(errs, errors.New("reauth: only applies when auth is enabled"))
 		} else if r.TTL != "" {
 			d, err := strutil.ParseDuration(r.TTL)
 			switch {
 			case err != nil:
-				errs = append(errs, fmt.Errorf("reauth.ttl: %w", err))
+				errs = append(errs, fmt.Errorf("auth.reauth.ttl: %w", err))
 			case d < time.Minute || d > time.Hour:
-				errs = append(errs, fmt.Errorf("reauth.ttl: must be between 1m and 1h, got %s", r.TTL))
+				errs = append(errs, fmt.Errorf("auth.reauth.ttl: must be between 1m and 1h, got %s", r.TTL))
 			default:
 				s.ReauthTTL = d
 			}
@@ -1013,6 +974,7 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 			role.Description = r.Description
 			role.Admin = r.Admin.Rights
 			role.AdminRead = r.Admin.Read
+			role.Strategies = r.Strategies
 			for i, u := range r.Users {
 				email, err := NormalizeEmail(u.Email)
 				if err != nil {
@@ -1050,12 +1012,11 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 		}
 		s.Roles[name] = role
 	}
-	// Which roles must use MFA: after the roles, which it names.
-	if m := doc.MFA; m != nil && s.AuthEnabled {
-		errs = append(errs, s.parseRequiredRoles(m.RequiredRoles)...)
-		if s.MFA.Off && (s.MFA.RequiredAll || len(s.MFA.RequiredRoles) > 0) {
-			errs = append(errs, errors.New("mfa.required_roles: needs mfa.enabled (users can't set a second factor up while it is off)"))
-		}
+	// The strategies are checked after the providers, the email section, totp, passkeys and
+	// the roles, which they name.
+	if s.AuthEnabled {
+		errs = append(errs, s.parseStrategies(auth)...)
+		errs = append(errs, s.checkRoleStrategies()...)
 	}
 	return s, errs
 }

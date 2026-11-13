@@ -352,7 +352,7 @@ func checkExport(s RealmSettings) []error {
 	case c.ExportPage == "":
 		errs = append(errs, errors.New("compliance.export_page: required with compliance.export: the page of your app that the \"your data is ready\" email links to"))
 	case !s.SignInRedirectAllowed(c.ExportPage):
-		errs = append(errs, fmt.Errorf("compliance.export_page: %q must be an absolute URL within sign_in.allowed_redirects (or email.allowed_redirects when it has none)", c.ExportPage))
+		errs = append(errs, fmt.Errorf("compliance.export_page: %q must be an absolute URL within auth.sign_in.allowed_redirects (or email.allowed_redirects when it has none)", c.ExportPage))
 	}
 	return errs
 }

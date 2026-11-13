@@ -53,7 +53,7 @@ The repository maps between the API shape and the stored shape:
 | `id` (string, [xid](https://github.com/rs/xid)) | `_id` (string) |
 | `_meta.created_at` / `_meta.updated_at` | BSON dates |
 | `_meta.version` | 64-bit integer |
-| `_meta.owner`, `_meta.created_by`, `_meta.updated_by` | strings (`owner` may be `null`), in realms with `auth: enabled` |
+| `_meta.owner`, `_meta.created_by`, `_meta.updated_by` | strings (`owner` may be `null`), in realms with an `auth` section |
 | user fields | stored with keys sorted (recursively), after `_id` and `_meta` |
 
 Sorting keys makes stored documents deterministic. It also means that equality on a sub-document doesn't depend on the key order the client sent.

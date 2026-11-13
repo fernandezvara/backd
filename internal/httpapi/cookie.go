@@ -126,7 +126,7 @@ func askedForCookie(w http.ResponseWriter, r *http.Request, s registry.RealmSett
 		return false, true
 	}
 	if !s.Cookie.Enabled {
-		writeError(w, r, http.StatusBadRequest, codeValidation, "this realm doesn't use session cookies", Detail{Path: "cookie", Reason: "sessions.cookie isn't enabled in realm.yaml"})
+		writeError(w, r, http.StatusBadRequest, codeValidation, "this realm doesn't use session cookies", Detail{Path: "cookie", Reason: "auth.sessions.cookie isn't enabled in realm.yaml"})
 		return false, false
 	}
 	if !originAllowed(s, r.Header.Get("Origin"), r) {

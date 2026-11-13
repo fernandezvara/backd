@@ -49,7 +49,7 @@ func TestBuild(t *testing.T) {
 	root := t.TempDir()
 	fn := "shop/app/" + registry.FunctionsDir + "/"
 	write(t, root, map[string]string{
-		"shop/realm.yaml":          "",
+		"shop/realm.yaml":          "auth:\n  strategies:\n    password: [password]\n",
 		fn + "deno.json":           `{"imports": {}}`,
 		fn + "lib/money.ts":        "export const cents = (n: number): number => Math.round(n * 100);\n",
 		fn + "total/function.yaml": "",
@@ -146,7 +146,7 @@ func TestBuildWrongDeno(t *testing.T) {
 	root := t.TempDir()
 	fn := "shop/app/" + registry.FunctionsDir + "/"
 	write(t, root, map[string]string{
-		"shop/realm.yaml":          "",
+		"shop/realm.yaml":          "auth:\n  strategies:\n    password: [password]\n",
 		fn + "hello/function.yaml": "",
 		fn + "hello/index.js":      "export default () => 1;\n",
 	})
@@ -189,7 +189,7 @@ func TestBuildDefineFunction(t *testing.T) {
 			root := t.TempDir()
 			fn := "shop/app/" + registry.FunctionsDir + "/"
 			files := map[string]string{
-				"shop/realm.yaml":          "",
+				"shop/realm.yaml":          "auth:\n  strategies:\n    password: [password]\n",
 				fn + "lib/x.ts":            "export const x = 7;\n",
 				fn + "typed/function.yaml": "",
 				fn + "typed/index.ts":      "import { defineFunction } from \"@backd/functions\";\nimport { x } from \"../lib/x.ts\";\nexport default defineFunction(\"app/typed\", () => ({ x }));\n",

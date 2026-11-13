@@ -45,7 +45,7 @@ func TestBestLocale(t *testing.T) {
 
 // The languages are the realm's, with or without email.
 func TestLanguagesWithoutEmail(t *testing.T) {
-	s, errs := parseRealmSettings([]byte("default_locale: es\nlocales: [es, en, pt-BR]\n"))
+	s, errs := parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\ndefault_locale: es\nlocales: [es, en, pt-BR]\n"))
 	if len(errs) > 0 {
 		t.Fatal(errs)
 	}
@@ -59,9 +59,9 @@ func TestLanguagesWithoutEmail(t *testing.T) {
 		t.Errorf("mapping: %q %q", s.BestLocale("en-GB"), s.BestLocale("fr"))
 	}
 	for name, doc := range map[string]string{
-		"not listed": "default_locale: fr\nlocales: [es]\n",
-		"twice":      "locales: [en, en]\n",
-		"bad tag":    "locales: [english]\n",
+		"not listed": "auth:\n  strategies:\n    password: [password]\ndefault_locale: fr\nlocales: [es]\n",
+		"twice":      "auth:\n  strategies:\n    password: [password]\nlocales: [en, en]\n",
+		"bad tag":    "auth:\n  strategies:\n    password: [password]\nlocales: [english]\n",
 	} {
 		if _, errs := parseRealmSettings([]byte(doc)); len(errs) == 0 {
 			t.Errorf("%s: no error", name)

@@ -223,7 +223,7 @@ func TestCheckDocumentReportsIDsThatDontMatch(t *testing.T) {
 		t.Helper()
 		dir := t.TempDir()
 		for name, content := range map[string]string{
-			"acme/realm.yaml":                "signup: open\n",
+			"acme/realm.yaml":                "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 			"acme/app/notes/schema.json":     `{"type":"object","properties":{"title":{"type":"string"}}}`,
 			"acme/app/notes/collection.yaml": collectionYAML,
 		} {

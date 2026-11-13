@@ -6,25 +6,30 @@ import (
 	"time"
 )
 
-const providersYAML = `auth: enabled
-sign_in:
-  allowed_redirects: [https://app.acme.example, "acme://"]
-  app_url: https://app.acme.example/signed-in
-providers:
-  google:
-    client_id: 1234.apps.googleusercontent.com
-    client_secret: secret:GOOGLE_CLIENT_SECRET
-    native_client_ids: [5678.apps.googleusercontent.com]
-  microsoft:
-    client_id: 00000000-0000-0000-0000-000000000000
-    client_secret: secret:MICROSOFT_CLIENT_SECRET
-    tenant: organizations
-  apple:
-    services_id: com.acme.web
-    bundle_ids: [com.acme.ios]
-    team_id: ABCDE12345
-    key_id: XYZ9876543
-    private_key: secret:APPLE_SIGN_IN_KEY
+const providersYAML = `auth:
+  strategies:
+    password: [password]
+    google: [google]
+    microsoft: [microsoft]
+    apple: [apple]
+  sign_in:
+    allowed_redirects: [https://app.acme.example, "acme://"]
+    app_url: https://app.acme.example/signed-in
+  providers:
+    google:
+      client_id: 1234.apps.googleusercontent.com
+      client_secret: secret:GOOGLE_CLIENT_SECRET
+      native_client_ids: [5678.apps.googleusercontent.com]
+    microsoft:
+      client_id: 00000000-0000-0000-0000-000000000000
+      client_secret: secret:MICROSOFT_CLIENT_SECRET
+      tenant: organizations
+    apple:
+      services_id: com.acme.web
+      bundle_ids: [com.acme.ios]
+      team_id: ABCDE12345
+      key_id: XYZ9876543
+      private_key: secret:APPLE_SIGN_IN_KEY
 `
 
 func TestProvidersAreParsed(t *testing.T) {
@@ -71,31 +76,31 @@ func TestSignInRedirectsFallBackToEmail(t *testing.T) {
 
 func TestProviderErrors(t *testing.T) {
 	cases := []struct{ name, yaml, want string }{
-		{"unknown provider", "providers:\n  github: {client_id: x}\n", "isn't a provider backd knows"},
-		{"type oidc is not available yet", "providers:\n  keycloak: {type: oidc}\n", "isn't available yet"},
-		{"empty", "providers:\n  google:\n", "is empty"},
-		{"no client id", "providers:\n  google: {client_secret: secret:S}\n", "client_id: is required"},
-		{"secret in the clear", "providers:\n  google: {client_id: abc, client_secret: hunter2}\n", "must be secret:NAME"},
-		{"no secret", "providers:\n  google: {client_id: abc}\n", "client_secret: is required"},
-		{"bad tenant", "providers:\n  microsoft: {client_id: 00000000-0000-0000-0000-000000000000, client_secret: secret:S, tenant: everyone}\n", "tenant:"},
-		{"microsoft client id not a guid", "providers:\n  microsoft: {client_id: abc, client_secret: secret:S}\n", "a GUID"},
-		{"apple fields on google", "providers:\n  google: {client_id: abc, client_secret: secret:S, team_id: ABCDE12345}\n", "team_id: doesn't apply to google"},
-		{"google fields on apple", "providers:\n  apple: {services_id: com.a.b, team_id: ABCDE12345, key_id: XYZ9876543, private_key: secret:K, client_id: x}\n", "client_id: doesn't apply to apple"},
-		{"apple without ids", "providers:\n  apple: {team_id: ABCDE12345, key_id: XYZ9876543, private_key: secret:K}\n", "services_id: is required"},
-		{"apple bad team", "providers:\n  apple: {services_id: com.a.b, team_id: abc, key_id: XYZ9876543, private_key: secret:K}\n", "team_id:"},
-		{"duplicate native id", "providers:\n  google: {client_id: abc, client_secret: secret:S, native_client_ids: [x1, x1]}\n", "listed twice"},
-		{"unknown key", "providers:\n  google: {client_id: abc, client_secret: secret:S, colour: red}\n", "colour"},
-		{"no redirects", "auth: enabled\nproviders:\n  google: {client_id: abc, client_secret: secret:S}\n", "need sign_in.allowed_redirects"},
-		{"reserved name password", "providers:\n  password: {client_id: abc}\n", "is reserved"},
-		{"reserved name email", "providers:\n  email: {client_id: abc}\n", "is reserved"},
-		{"app url outside", "auth: enabled\nsign_in:\n  allowed_redirects: [https://app.example]\n  app_url: https://other.example/home\n", "sign_in.app_url"},
-		{"bad redirect", "auth: enabled\nsign_in:\n  allowed_redirects: [https://app.example/path]\n", "must be an origin"},
-		{"auth disabled", "auth: disabled\nproviders:\n  google: {client_id: abc, client_secret: secret:S}\n", "only apply when auth is enabled"},
+		{"unknown provider", "auth:\n  strategies:\n    password: [password]\n    github: [github]\n  providers:\n    github: {client_id: x}\n", "isn't a provider backd knows"},
+		{"type oidc is not available yet", "auth:\n  strategies:\n    password: [password]\n    keycloak: [keycloak]\n  providers:\n    keycloak: {type: oidc}\n", "isn't available yet"},
+		{"empty", "auth:\n  strategies:\n    password: [password]\n    google: [google]\n  providers:\n    google:\n", "is empty"},
+		{"no client id", "auth:\n  strategies:\n    password: [password]\n    google: [google]\n  providers:\n    google: {client_secret: secret:S}\n", "client_id: is required"},
+		{"secret in the clear", "auth:\n  strategies:\n    password: [password]\n    google: [google]\n  providers:\n    google: {client_id: abc, client_secret: hunter2}\n", "must be secret:NAME"},
+		{"no secret", "auth:\n  strategies:\n    password: [password]\n    google: [google]\n  providers:\n    google: {client_id: abc}\n", "client_secret: is required"},
+		{"bad tenant", "auth:\n  strategies:\n    password: [password]\n    microsoft: [microsoft]\n  providers:\n    microsoft: {client_id: 00000000-0000-0000-0000-000000000000, client_secret: secret:S, tenant: everyone}\n", "tenant:"},
+		{"microsoft client id not a guid", "auth:\n  strategies:\n    password: [password]\n    microsoft: [microsoft]\n  providers:\n    microsoft: {client_id: abc, client_secret: secret:S}\n", "a GUID"},
+		{"apple fields on google", "auth:\n  strategies:\n    password: [password]\n    google: [google]\n  providers:\n    google: {client_id: abc, client_secret: secret:S, team_id: ABCDE12345}\n", "team_id: doesn't apply to google"},
+		{"google fields on apple", "auth:\n  strategies:\n    password: [password]\n    apple: [apple]\n  providers:\n    apple: {services_id: com.a.b, team_id: ABCDE12345, key_id: XYZ9876543, private_key: secret:K, client_id: x}\n", "client_id: doesn't apply to apple"},
+		{"apple without ids", "auth:\n  strategies:\n    password: [password]\n    apple: [apple]\n  providers:\n    apple: {team_id: ABCDE12345, key_id: XYZ9876543, private_key: secret:K}\n", "services_id: is required"},
+		{"apple bad team", "auth:\n  strategies:\n    password: [password]\n    apple: [apple]\n  providers:\n    apple: {services_id: com.a.b, team_id: abc, key_id: XYZ9876543, private_key: secret:K}\n", "team_id:"},
+		{"duplicate native id", "auth:\n  strategies:\n    password: [password]\n    google: [google]\n  providers:\n    google: {client_id: abc, client_secret: secret:S, native_client_ids: [x1, x1]}\n", "listed twice"},
+		{"unknown key", "auth:\n  strategies:\n    password: [password]\n    google: [google]\n  providers:\n    google: {client_id: abc, client_secret: secret:S, colour: red}\n", "colour"},
+		{"no redirects", "auth:\n  strategies:\n    password: [password]\n    google: [google]\n  providers:\n    google: {client_id: abc, client_secret: secret:S}\n", "need auth.sign_in.allowed_redirects"},
+		{"reserved name password", "auth:\n  strategies:\n    password: [password]\n    password: [password]\n  providers:\n    password: {client_id: abc}\n", "is reserved"},
+		{"reserved name email", "auth:\n  strategies:\n    password: [password]\n    email: [email]\n  providers:\n    email: {client_id: abc}\n", "is reserved"},
+		{"app url outside", "auth:\n  strategies:\n    password: [password]\n  sign_in:\n    allowed_redirects: [https://app.example]\n    app_url: https://other.example/home\n", "sign_in.app_url"},
+		{"bad redirect", "auth:\n  strategies:\n    password: [password]\n  sign_in:\n    allowed_redirects: [https://app.example/path]\n", "must be an origin"},
+		{"auth disabled", "auth: disabled\nproviders:\n  google: {client_id: abc, client_secret: secret:S}\n", "providers: has moved"},
 	}
 	for _, c := range cases {
 		yaml := c.yaml
 		if !strings.HasPrefix(yaml, "auth:") {
-			yaml = "auth: enabled\nsign_in:\n  allowed_redirects: [https://app.acme.example]\n" + yaml
+			yaml = authBase + "  sign_in:\n    allowed_redirects: [https://app.acme.example]\n" + yaml
 		}
 		_, errs := parseRealmSettings([]byte(yaml))
 		found := false
@@ -117,7 +122,7 @@ func TestOnSignupMustBeAnInternalAsyncFunction(t *testing.T) {
 			"shop/app/_functions/hello/index.ts":      "export default () => 1;\n",
 		})
 	}
-	reg, err := Load(tree("signup: open\naccount:\n  on_signup: app/hello\n", "internal: true\nmode: async\ntimeout: 20s\n"))
+	reg, err := Load(tree("auth:\n  strategies:\n    password: [password]\n  signup: open\naccount:\n  on_signup: app/hello\n", "internal: true\nmode: async\ntimeout: 20s\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,10 +131,10 @@ func TestOnSignupMustBeAnInternalAsyncFunction(t *testing.T) {
 		t.Errorf("account: %+v", a)
 	}
 	for name, tc := range map[string]struct{ realm, fn, want string }{
-		"not a function":   {"signup: open\naccount:\n  on_signup: app/nothing\n", "internal: true\nmode: async\n", "is not a function of this realm"},
-		"not internal":     {"signup: open\naccount:\n  on_signup: app/hello\n", "mode: async\n", "must have `internal: true`"},
-		"not async":        {"signup: open\naccount:\n  on_signup: app/hello\n", "internal: true\n", "must have `mode: async`"},
-		"not a path":       {"signup: open\naccount:\n  on_signup: hello\n", "internal: true\nmode: async\n", "must be <database>/<function>"},
+		"not a function":   {"auth:\n  strategies:\n    password: [password]\n  signup: open\naccount:\n  on_signup: app/nothing\n", "internal: true\nmode: async\n", "is not a function of this realm"},
+		"not internal":     {"auth:\n  strategies:\n    password: [password]\n  signup: open\naccount:\n  on_signup: app/hello\n", "mode: async\n", "must have `internal: true`"},
+		"not async":        {"auth:\n  strategies:\n    password: [password]\n  signup: open\naccount:\n  on_signup: app/hello\n", "internal: true\n", "must have `mode: async`"},
+		"not a path":       {"auth:\n  strategies:\n    password: [password]\n  signup: open\naccount:\n  on_signup: hello\n", "internal: true\nmode: async\n", "must be <database>/<function>"},
 		"auth is disabled": {"auth: disabled\naccount:\n  on_signup: app/hello\n", "internal: true\nmode: async\n", "account: only applies when auth is enabled"},
 	} {
 		if _, err := Load(tree(tc.realm, tc.fn)); err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -139,45 +144,18 @@ func TestOnSignupMustBeAnInternalAsyncFunction(t *testing.T) {
 }
 
 func TestMFASettings(t *testing.T) {
-	s, errs := parseRealmSettings([]byte("auth: enabled\nmfa:\n  issuer: \" Acme Co \"\n"))
+	s, errs := parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\n  totp:\n    issuer: \" Acme Co \"\n"))
 	if len(errs) > 0 || s.MFA.Off || s.MFA.Issuer != "Acme Co" {
 		t.Errorf("default: %+v %v", s.MFA, errs)
 	}
-	s, errs = parseRealmSettings([]byte("auth: enabled\nmfa:\n  enabled: false\n"))
+	s, errs = parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\n  totp:\n    enabled: false\n"))
 	if len(errs) > 0 || !s.MFA.Off {
 		t.Errorf("off: %+v %v", s.MFA, errs)
 	}
 	for name, yaml := range map[string]string{
 		"auth disabled": "auth: disabled\nmfa:\n  enabled: true\n",
-		"bad issuer":    "auth: enabled\nmfa:\n  issuer: \"a:b\"\n",
-		"unknown key":   "auth: enabled\nmfa:\n  colour: red\n",
-	} {
-		if _, errs := parseRealmSettings([]byte(yaml)); len(errs) == 0 {
-			t.Errorf("%s: accepted", name)
-		}
-	}
-}
-
-func TestMFARequiredRoles(t *testing.T) {
-	roles := "roles:\n  owner:\n    admin: true\n  staff: {}\n"
-	s, errs := parseRealmSettings([]byte("auth: enabled\n" + roles + "mfa:\n  required_roles: [owner, staff]\n"))
-	if len(errs) > 0 || len(s.MFA.RequiredRoles) != 2 || s.MFA.RequiredAll {
-		t.Fatalf("list: %+v %v", s.MFA, errs)
-	}
-	if !s.MFA.Required([]string{"staff"}) || s.MFA.Required([]string{"other"}) || s.MFA.Required(nil) {
-		t.Error("Required")
-	}
-	s, errs = parseRealmSettings([]byte("auth: enabled\n" + roles + "mfa:\n  required_roles: all\n"))
-	if len(errs) > 0 || !s.MFA.RequiredAll || !s.MFA.Required(nil) {
-		t.Errorf("all: %+v %v", s.MFA, errs)
-	}
-	for name, yaml := range map[string]string{
-		"undeclared role":  "auth: enabled\n" + roles + "mfa:\n  required_roles: [ghost]\n",
-		"duplicate":        "auth: enabled\n" + roles + "mfa:\n  required_roles: [owner, owner]\n",
-		"all in a list":    "auth: enabled\n" + roles + "mfa:\n  required_roles: [all]\n",
-		"a word":           "auth: enabled\n" + roles + "mfa:\n  required_roles: everyone\n",
-		"a map":            "auth: enabled\n" + roles + "mfa:\n  required_roles: {owner: true}\n",
-		"required but off": "auth: enabled\n" + roles + "mfa:\n  enabled: false\n  required_roles: [owner]\n",
+		"bad issuer":    "auth:\n  strategies:\n    password: [password]\n  totp:\n    issuer: \"a:b\"\n",
+		"unknown key":   "auth:\n  strategies:\n    password: [password]\n  totp:\n    colour: red\n",
 	} {
 		if _, errs := parseRealmSettings([]byte(yaml)); len(errs) == 0 {
 			t.Errorf("%s: accepted", name)
@@ -186,16 +164,16 @@ func TestMFARequiredRoles(t *testing.T) {
 }
 
 func TestReauthTTL(t *testing.T) {
-	s, errs := parseRealmSettings([]byte("auth: enabled\n"))
+	s, errs := parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\n"))
 	if len(errs) > 0 || s.ReauthLifetime() != 5*time.Minute {
 		t.Errorf("default: %v %v", s.ReauthLifetime(), errs)
 	}
-	s, errs = parseRealmSettings([]byte("auth: enabled\nreauth:\n  ttl: 10m\n"))
+	s, errs = parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\n  reauth:\n    ttl: 10m\n"))
 	if len(errs) > 0 || s.ReauthLifetime() != 10*time.Minute {
 		t.Errorf("10m: %v %v", s.ReauthLifetime(), errs)
 	}
 	for _, ttl := range []string{"30s", "2h", "soon"} {
-		if _, errs := parseRealmSettings([]byte("auth: enabled\nreauth:\n  ttl: " + ttl + "\n")); len(errs) == 0 {
+		if _, errs := parseRealmSettings([]byte(authBase + "  reauth:\n    ttl: " + ttl + "\n")); len(errs) == 0 {
 			t.Errorf("%s: accepted", ttl)
 		}
 	}

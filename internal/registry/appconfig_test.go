@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-const appConfigRealm = "roles:\n  beta: {}\nconsents:\n  marketing:\n    current: 1\n"
+const appConfigRealm = "auth:\n  strategies:\n    password: [password]\nroles:\n  beta: {}\nconsents:\n  marketing:\n    current: 1\n"
 
 const appConfigSchema = `{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -172,7 +172,7 @@ func TestAppConfigIsPartOfTheFingerprint(t *testing.T) {
 
 func TestAppConfigInRulesAndFunctions(t *testing.T) {
 	files := map[string]string{
-		"shop/realm.yaml":                "roles: {}\n",
+		"shop/realm.yaml":                "auth:\n  strategies:\n    password: [password]\nroles: {}\n",
 		"shop/_realm/config/schema.json": appConfigSchema,
 		"shop/app/notes/schema.json":     `{"type":"object","properties":{"title":{"type":"string"}}}`,
 		"shop/app/notes/collection.yaml": "rules:\n  create: user != nil && appConfig(\"features.reports.enabled\") == true\n",

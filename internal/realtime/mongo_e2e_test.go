@@ -43,7 +43,7 @@ func TestStreamAgainstMongoDB(t *testing.T) {
 
 	root := t.TempDir()
 	for p, c := range map[string]string{
-		realm + "/realm.yaml":                  "auth: enabled\nsignup: open\n",
+		realm + "/realm.yaml":                  "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		realm + "/main/orders/schema.json":     `{"type":"object","properties":{"status":{"type":"string"}}}`,
 		realm + "/main/orders/collection.yaml": "realtime: true\n",
 	} {
@@ -233,7 +233,7 @@ func TestSessionRevocationReachesTheStream(t *testing.T) {
 	})
 	root := t.TempDir()
 	for p, c := range map[string]string{
-		realm + "/realm.yaml":                  "auth: enabled\nsignup: open\n",
+		realm + "/realm.yaml":                  "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		realm + "/main/orders/schema.json":     `{"type":"object","properties":{"status":{"type":"string"}}}`,
 		realm + "/main/orders/collection.yaml": "realtime: true\n",
 	} {

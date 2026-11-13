@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-const filesRealm = "roles:\n  staff: {}\n" + storageBase
+const filesRealm = authBase + "roles:\n  staff: {}\n" + storageBase
 
 func filesTree(t *testing.T, collectionYAML string, extra map[string]string) (*Registry, error) {
 	t.Helper()
@@ -111,7 +111,7 @@ func TestFileFieldErrors(t *testing.T) {
 	}
 	// A realm without storage can't have file fields.
 	_, err := Load(writeTree(t, map[string]string{
-		"shop/realm.yaml":                "roles:\n  staff: {}\n",
+		"shop/realm.yaml":                "auth:\n  strategies:\n    password: [password]\nroles:\n  staff: {}\n",
 		"shop/app/notes/schema.json":     `{}`,
 		"shop/app/notes/collection.yaml": "files:\n  a: {max_size: 1MB}\n",
 	}))
@@ -128,7 +128,7 @@ func TestFileFieldErrors(t *testing.T) {
 func TestFunctionsCantDeclareTheStorageSecrets(t *testing.T) {
 	for _, name := range []string{"realm.STORAGE_SECRET_KEY", "realm.STORAGE_ACCESS_KEY", "realm.BACKD_FILES_LINK_KEY"} {
 		_, err := Load(writeTree(t, map[string]string{
-			"shop/realm.yaml":                     "auth: enabled\nstorage:\n  provider: minio\n  endpoint: https://minio.internal:9000\n  bucket: tests-backd\n  prefix: p\n  access_key: secret:STORAGE_ACCESS_KEY\n  secret_key: secret:STORAGE_SECRET_KEY\n",
+			"shop/realm.yaml":                     "auth:\n  strategies:\n    password: [password]\nstorage:\n  provider: minio\n  endpoint: https://minio.internal:9000\n  bucket: tests-backd\n  prefix: p\n  access_key: secret:STORAGE_ACCESS_KEY\n  secret_key: secret:STORAGE_SECRET_KEY\n",
 			"shop/app/_functions/f/function.yaml": "secrets: [" + name + "]\n",
 			"shop/app/_functions/f/index.ts":      "export default () => 1\n",
 		}))
@@ -138,7 +138,7 @@ func TestFunctionsCantDeclareTheStorageSecrets(t *testing.T) {
 	}
 	// Another secret of the same realm, or one with the same name in a database, is the function's own.
 	_, err := Load(writeTree(t, map[string]string{
-		"shop/realm.yaml":                     "auth: enabled\nstorage:\n  provider: minio\n  endpoint: https://minio.internal:9000\n  bucket: tests-backd\n  prefix: p\n  access_key: secret:STORAGE_ACCESS_KEY\n  secret_key: secret:STORAGE_SECRET_KEY\n",
+		"shop/realm.yaml":                     "auth:\n  strategies:\n    password: [password]\nstorage:\n  provider: minio\n  endpoint: https://minio.internal:9000\n  bucket: tests-backd\n  prefix: p\n  access_key: secret:STORAGE_ACCESS_KEY\n  secret_key: secret:STORAGE_SECRET_KEY\n",
 		"shop/app/_functions/f/function.yaml": "secrets: [realm.SHARED, STORAGE_SECRET_KEY]\n",
 		"shop/app/_functions/f/index.ts":      "export default () => 1\n",
 	}))
@@ -150,7 +150,7 @@ func TestFunctionsCantDeclareTheStorageSecrets(t *testing.T) {
 func TestStorageQuotaSettings(t *testing.T) {
 	load := func(quota string) (*Registry, error) {
 		return Load(writeTree(t, map[string]string{
-			"shop/realm.yaml": "auth: enabled\nstorage:\n  provider: minio\n  endpoint: https://minio.internal:9000\n  bucket: files\n  prefix: p\n  access_key: secret:A\n  secret_key: secret:B\n" + quota,
+			"shop/realm.yaml": "auth:\n  strategies:\n    password: [password]\nstorage:\n  provider: minio\n  endpoint: https://minio.internal:9000\n  bucket: files\n  prefix: p\n  access_key: secret:A\n  secret_key: secret:B\n" + quota,
 		}))
 	}
 	reg, err := load("  quota:\n    realm: 50GiB\n    user: 2GiB\n")
@@ -303,7 +303,7 @@ func TestDirectUploadsAboveOnePut(t *testing.T) {
 	if f := c.Files["a"]; f == nil || f.MaxSize != 1<<40 || f.Upload != UploadDirect {
 		t.Errorf("field: %+v", f)
 	}
-	do := "roles:\n  staff: {}\nstorage:\n  provider: digitalocean\n  region: ams3\n  bucket: tests-backd\n  prefix: p\n  access_key: secret:K\n  secret_key: secret:S\n"
+	do := "auth:\n  strategies:\n    password: [password]\nroles:\n  staff: {}\nstorage:\n  provider: digitalocean\n  region: ams3\n  bucket: tests-backd\n  prefix: p\n  access_key: secret:K\n  secret_key: secret:S\n"
 	_, err = filesTree(t, "files:\n  a: {max_size: 6GiB, upload: direct}\n", map[string]string{"shop/realm.yaml": do})
 	if err == nil || !strings.Contains(err.Error(), "at most 5 GiB, with digitalocean") {
 		t.Errorf("digitalocean and 6GiB: %v", err)
@@ -313,7 +313,7 @@ func TestDirectUploadsAboveOnePut(t *testing.T) {
 	}
 }
 
-const publicRealm = "roles:\n  staff: {}\n" + storageBase + publicBase
+const publicRealm = authBase + "roles:\n  staff: {}\n" + storageBase + publicBase
 
 func publicTree(t *testing.T, realm, collectionYAML string) (*Registry, error) {
 	t.Helper()
@@ -340,7 +340,7 @@ func TestPublicFileFields(t *testing.T) {
 		t.Error("scan became public")
 	}
 	// A realm with only a public storage can have public fields.
-	if _, err := publicTree(t, "roles:\n  staff: {}\n"+publicBase, "files:\n  photo: {public: true, max_size: 5MiB}\n"); err != nil {
+	if _, err := publicTree(t, authBase+"roles:\n  staff: {}\n"+publicBase, "files:\n  photo: {public: true, max_size: 5MiB}\n"); err != nil {
 		t.Errorf("public storage alone: %v", err)
 	}
 }
@@ -367,7 +367,7 @@ func TestPublicFileFieldErrors(t *testing.T) {
 func TestFunctionsCantDeclareThePublicStorageSecrets(t *testing.T) {
 	for _, name := range []string{"realm.PUBLIC_ACCESS_KEY", "realm.PUBLIC_SECRET_KEY"} {
 		_, err := Load(writeTree(t, map[string]string{
-			"shop/realm.yaml":                     "auth: enabled\n" + publicBase,
+			"shop/realm.yaml":                     authBase + publicBase,
 			"shop/app/_functions/f/function.yaml": "secrets: [" + name + "]\n",
 			"shop/app/_functions/f/index.ts":      "export default () => 1\n",
 		}))

@@ -328,7 +328,7 @@ func TestAdminExportAuthData(t *testing.T) {
 	}
 	mfa := read("mfa")
 	if len(mfa) != 1 || mfa[0]["recovery_codes"] == nil || len(mfa[0]["recovery_codes"].([]any)) != 0 {
-		t.Fatalf("mfa: %v", mfa)
+		t.Fatalf("totp: %v", mfa)
 	}
 	if plain, err := auth.OpenWith(cipher, mfa[0]["secret"].(string)); err != nil || plain != "JBSWY3DPEHPK3PXP" {
 		t.Errorf("the secret under the export key: %q %v", plain, err)

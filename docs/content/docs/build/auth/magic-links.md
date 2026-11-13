@@ -11,13 +11,14 @@ A **magic link** signs a user in with nothing but their mailbox. The email carri
 It proves the same thing a [password reset](../sessions/#password-reset) does (control of the mailbox), so it is as strong as that.
 
 ```yaml
-# realm.yaml: needs the email: section, and BACKD_SECRETS_KEY on the instance
-magic_link:
-  enabled: true
-  signup: false        # true: an address with no account may make one (verified) this way
-sign_in:
-  allowed_redirects: [https://app.acme.example, "acme://"]
-  app_url: https://app.acme.example/signed-in      # where a link goes without redirect_to
+auth:
+  # realm.yaml: needs the email: section, and BACKD_SECRETS_KEY on the instance
+  magic_link:
+    enabled: true
+    signup: false        # true: an address with no account may make one (verified) this way
+  sign_in:
+    allowed_redirects: [https://app.acme.example, "acme://"]
+    app_url: https://app.acme.example/signed-in      # where a link goes without redirect_to
 ```
 
 ## The flow
@@ -44,7 +45,7 @@ sequenceDiagram
 
 1. **Ask.** `POST /_auth/magic-link` with `{"email", "code_challenge", "redirect_to"?, "locale"?}`. `code_challenge` is the S256 challenge of a verifier only your app holds, as in the [provider flow](../providers/#the-flow). The answer is always `202 {"request_id"}`.
 2. **The email** has the link and the code. Redeeming either one uses up the request, so the other stops working.
-3. **The link** opens a page of `backd` with a button (`_realm/pages/magic-link/<locale>.html`, or the built-in one). Opening it **never** uses the link up, so a mail scanner that follows links can't spoil it; only the button does. The button sends the browser to `redirect_to` (else `sign_in.app_url`) with the one-time login code in **`backd_code`**, bound to your app's PKCE challenge, which the app redeems at `POST /_auth/token` as for a provider. A link with nowhere to go (no `redirect_to`, no `app_url`) shows a page that says to type the code, and isn't used up.
+3. **The link** opens a page of `backd` with a button (`_realm/pages/magic-link/<locale>.html`, or the built-in one). Opening it **never** uses the link up, so a mail scanner that follows links can't spoil it; only the button does. The button sends the browser to `redirect_to` (else `auth.sign_in.app_url`) with the one-time login code in **`backd_code`**, bound to your app's PKCE challenge, which the app redeems at `POST /_auth/token` as for a provider. A link with nowhere to go (no `redirect_to`, no `app_url`) shows a page that says to type the code, and isn't used up.
 4. **The code** is typed in the app, which sends it with its `request_id` and **`code_verifier`**: the code works only in the app that asked. Five wrong tries end the request.
 
 An app that uses the [JavaScript client](../../clients/js/) needs no return route: the client sends the current page as `redirect_to` and finishes the sign-in when the page loads (see [Sign in with providers](../providers/)).
@@ -58,7 +59,7 @@ Opening the link on a phone while the app waits on a laptop lands on a page that
 | The address | What happens |
 |---|---|
 | belongs to a user | the link or code signs them in; an unverified address becomes **verified** (only the mailbox's owner could have used it), and the account is **claimed**: the password, linked providers, second factor and sessions that existed before are removed, since someone who only knew the address may have set them (audited as `user.claimed`) |
-| has no account, `magic_link.signup: true` and the realm's `signup: open` | the account is made **when the link or code is used**, never at request time: verified, with `new_user: true`, running [`account.on_signup`](../providers/#the-profile-and-the-sign-up-hook) |
+| has no account, `auth.magic_link.signup: true` and the realm's `signup: open` | the account is made **when the link or code is used**, never at request time: verified, with `new_user: true`, running [`account.on_signup`](../providers/#the-profile-and-the-sign-up-hook) |
 | has no account otherwise | a `no-account` email ("someone tried to sign in with this address; there is no account") |
 | belongs to a disabled or erased user | nothing is sent |
 

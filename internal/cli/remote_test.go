@@ -66,8 +66,11 @@ func (c *cliEnv) expect(wantCode int, want, stdin string, args ...string) string
 // HTTP API; here against a server with an in-memory store.
 func TestCLIThroughAPI(t *testing.T) {
 	root := writeConfig(t, map[string]string{
-		"acme/realm.yaml": `password:
-  min_length: 10
+		"acme/realm.yaml": `auth:
+  strategies:
+    password: [password]
+  password:
+    min_length: 10
 roles:
   ops:
     admin: true
@@ -426,7 +429,7 @@ func TestLoginArguments(t *testing.T) {
 
 func TestUserMFAStatus(t *testing.T) {
 	root := writeConfig(t, map[string]string{
-		"acme/realm.yaml":            "mfa:\n  required_roles: [editor]\nroles:\n  ops:\n    admin: true\n    users: [ada@example.com]\n  editor:\n    users: [bob@example.com, cy@example.com, dan@example.com]\n",
+		"acme/realm.yaml":            "auth:\n  strategies:\n    password: [password]\n    password_totp: [password, totp]\nroles:\n  ops:\n    admin: true\n    users: [ada@example.com]\n  editor:\n    strategies: [password_totp]\n    users: [bob@example.com, cy@example.com, dan@example.com]\n",
 		"acme/app/notes/schema.json": `{}`,
 	})
 	reg, err := registry.Load(root)

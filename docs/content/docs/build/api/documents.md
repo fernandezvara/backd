@@ -19,7 +19,7 @@ Every configured collection gets the same set of endpoints:
 | `POST` | `/v1/{realm}/{database}/_batch` | [Create, replace, patch and delete atomically](#batch-writes) | `200` |
 
 - An unknown realm, database, collection or `id` returns `404 not_found`. PUT and PATCH never create documents: there are no upserts, so create with POST and let the server choose the `id`.
-- In a realm with `auth: enabled`, requests are decided by the collection's [access rules](../../auth/rules/), or allowed outright with an [API key](../../auth/api-keys/) in `Authorization: Bearer …`.
+- In a realm with an `auth` section, requests are decided by the collection's [access rules](../../auth/rules/), or allowed outright with an [API key](../../auth/api-keys/) in `Authorization: Bearer …`.
 - Request bodies must be a single JSON object. Anything else returns `400 invalid_json`.
 
 ## Document shape
@@ -45,7 +45,7 @@ Documents are returned as bare JSON objects:
   - `updated_at` is set on every write.
   - Both timestamps are RFC3339 in UTC with millisecond precision.
   - `version` is `1` on create and increases by one on every write.
-  - In realms with `auth: enabled`, three ownership fields are added:
+  - In realms with an `auth` section, three ownership fields are added:
     - `owner` is the id of the signed-in user who created the document (or the user an API key [acted for](../../auth/api-keys/#acting-on-behalf-of-a-user)), or `null` when an [API key](../../auth/api-keys/) created it on its own. It never changes.
     - `created_by` is who created it, and never changes: `user:<id>`, `key:<name>`, or `anonymous` when a [create rule](../../auth/rules/) lets callers without credentials write.
     - `updated_by` is who made the last write, in the same form.
@@ -312,7 +312,7 @@ Content-Type: application/json
 - Each operation is `{ "op": "create" | "replace" | "patch" | "delete", "collection": "...", ... }`. `create` and `replace` need `document`; `patch` needs `patch` (a JSON Merge Patch, same rules as [PATCH](#update-patch)); `replace`, `patch` and `delete` need `id`. Any of them accepts `if_match`, exactly like the `If-Match` header (a version such as `"3"`, or `"*"` for any existing document).
 - `results` has one entry per operation, in the same order: the written document for `create`, `replace` and `patch`; just `{ "id": ... }` for `delete`.
 - Up to 100 operations per batch.
-- Each operation is validated against its collection's `schema.json` and, in realms with `auth: enabled`, checked against the collection's `create`/`update`/`delete` [access rule](../../auth/rules/) — exactly like a single write. API keys bypass rules, as they always do.
+- Each operation is validated against its collection's `schema.json` and, in realms with an `auth` section, checked against the collection's `create`/`update`/`delete` [access rule](../../auth/rules/) — exactly like a single write. API keys bypass rules, as they always do.
 - The **first** operation that fails aborts the whole batch: nothing from any operation is applied. The response is the usual error envelope, with the failing operation's position (`0`-based) as the `path` in `details`:
 
   ```json

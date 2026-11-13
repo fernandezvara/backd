@@ -8,7 +8,10 @@ import (
 	"time"
 )
 
-const consentRealm = `locales: [en, es]
+const consentRealm = `auth:
+  strategies:
+    password: [password]
+locales: [en, es]
 default_locale: en
 consents:
   terms:
@@ -101,7 +104,7 @@ func TestConsentsErrors(t *testing.T) {
 		"bad name":          {strings.Replace(consentRealm, "  terms:", "  Terms:", 1), nil, "lower-case"},
 		"bad version":       {strings.Replace(consentRealm, `current: "2026-10"`, `current: "../x"`, 1), nil, "version"},
 		"unlisted old text": {strings.Replace(consentRealm, `      "2026-03": { reaccept: false }`, `      "2025-01": { reaccept: false }`, 1), nil, "has no text"},
-		"auth disabled":     {"auth: disabled\n" + consentRealm, nil, "only apply when auth is enabled"},
+		"auth disabled":     {noAuth(consentRealm), nil, "only apply when auth is enabled"},
 	} {
 		_, err := Load(writeTree(t, consentTree(tc.realm, tc.extra)))
 		switch {
@@ -155,7 +158,7 @@ func TestConsentsToAccept(t *testing.T) {
 	}
 }
 
-const exportEmail = "email:\n  function: app/deliver\n  from: \"Acme <no-reply@acme.example>\"\n  public_url: https://api.acme.example\n  allowed_redirects: [https://app.acme.example]\n"
+const exportEmail = "auth:\n  strategies:\n    password: [password]\nemail:\n  function: app/deliver\n  from: \"Acme <no-reply@acme.example>\"\n  public_url: https://api.acme.example\n  allowed_redirects: [https://app.acme.example]\n"
 
 func TestComplianceExportSettings(t *testing.T) {
 	ok := storageBase + exportEmail + "compliance:\n  export: true\n  export_page: https://app.acme.example/my-data\n"
@@ -176,19 +179,19 @@ func TestComplianceExportSettings(t *testing.T) {
 		"no storage":        {exportEmail + "compliance:\n  export: true\n  export_page: https://app.acme.example/x\n", "`storage:` must be configured"},
 		"no email":          {storageBase + "compliance:\n  export: true\n  export_page: https://app.acme.example/x\n", "`email:` must be configured"},
 		"no page":           {storageBase + exportEmail + "compliance:\n  export: true\n", "export_page: required"},
-		"page elsewhere":    {storageBase + exportEmail + "compliance:\n  export: true\n  export_page: https://evil.example/x\n", "within sign_in.allowed_redirects"},
+		"page elsewhere":    {storageBase + exportEmail + "compliance:\n  export: true\n  export_page: https://evil.example/x\n", "within auth.sign_in.allowed_redirects"},
 		"bad retention":     {ok + "  export_retention: soon\n", "export_retention"},
 		"zero retention":    {ok + "  export_retention: 0\n", "longer than zero"},
-		"page without it":   {"compliance:\n  export_page: https://app.acme.example/x\n", "no effect while compliance.export"},
-		"on, auth disabled": {"auth: disabled\n" + ok, "only apply when auth is enabled"},
+		"page without it":   {"auth:\n  strategies:\n    password: [password]\ncompliance:\n  export_page: https://app.acme.example/x\n", "no effect while compliance.export"},
+		"on, auth disabled": {noAuth(ok), "only apply when auth is enabled"},
 	} {
-		_, errs := parseRealmSettings([]byte(tc.yaml))
+		_, errs := parseRealmSettings([]byte(withAuth(tc.yaml)))
 		if len(errs) == 0 || !strings.Contains(errors.Join(errs...).Error(), tc.want) {
 			t.Errorf("%s: %v", name, errs)
 		}
 	}
 	// Off by default, and leaving it off asks for nothing.
-	if s, errs := parseRealmSettings([]byte("compliance:\n  consent_retention: 1y\n")); len(errs) != 0 || s.Compliance.Export {
+	if s, errs := parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\ncompliance:\n  consent_retention: 1y\n")); len(errs) != 0 || s.Compliance.Export {
 		t.Errorf("default: %+v %v", s.Compliance, errs)
 	}
 }

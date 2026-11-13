@@ -424,7 +424,7 @@ func TestFeedOpensEncryptedFieldsWithTheDecryptHook(t *testing.T) {
 // A realm with an app configuration and no realtime collection is still watched for the
 // configuration, so a stream can follow it.
 func TestRealtimeWatchSetFollowsAppConfigWithoutCollections(t *testing.T) {
-	reg := loadRegistryWith(t, "acme", "signup: open\n", map[string]string{
+	reg := loadRegistryWith(t, "acme", "auth:\n  strategies:\n    password: [password]\n  signup: open\n", map[string]string{
 		"app/plain":                 `{"type":"object"}`,
 		"_realm/config/schema.json": `{"type":"object","additionalProperties":false,"properties":{"banner":{"type":"object","additionalProperties":false,"properties":{"on":{"type":"boolean","default":false}}}}}`,
 		"_realm/config/rules.yaml":  "read:\n  banner: \"true\"\n",

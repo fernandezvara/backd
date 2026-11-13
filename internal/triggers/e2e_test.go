@@ -55,7 +55,7 @@ func writeTree(t *testing.T, realm, collectionYAML string) *registry.Registry {
 	t.Helper()
 	root := t.TempDir()
 	files := map[string]string{
-		realm + "/realm.yaml":                            "auth: enabled\nsignup: open\n",
+		realm + "/realm.yaml":                            "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		realm + "/main/orders/schema.json":               orderSchema,
 		realm + "/main/orders/collection.yaml":           collectionYAML,
 		realm + "/main/_functions/deno.json":             "{}",

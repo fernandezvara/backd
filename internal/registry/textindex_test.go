@@ -21,7 +21,7 @@ const articlesSchema = `{
 func articlesTree(t *testing.T, indexes string) (*Registry, error) {
 	t.Helper()
 	return Load(writeTree(t, map[string]string{
-		"shop/realm.yaml":                 "signup: open\n",
+		"shop/realm.yaml":                 "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		"shop/main/articles/schema.json":  articlesSchema,
 		"shop/main/articles/indexes.json": indexes,
 	}))

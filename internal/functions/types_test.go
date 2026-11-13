@@ -12,7 +12,7 @@ func TestJSDocTypes(t *testing.T) {
 	root := t.TempDir()
 	fn := "shop/app/" + registry.FunctionsDir + "/"
 	write(t, root, map[string]string{
-		"shop/realm.yaml":             "",
+		"shop/realm.yaml":             "auth:\n  strategies:\n    password: [password]\n",
 		fn + "checkout/function.yaml": "",
 		fn + "checkout/index.js":      "",
 		fn + "checkout/input.schema.json": `{

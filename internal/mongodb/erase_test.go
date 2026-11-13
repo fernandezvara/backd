@@ -40,7 +40,7 @@ func eraseFixture(t *testing.T) (storage.Eraser, storage.Repository, context.Con
 	client := testClient(t)
 	realm := testRealm(t, client)
 	log, _ := testLogger()
-	reg := loadRegistryWith(t, realm, "signup: open\n", map[string]string{"app/orders": eraseSchema, "app/orders/collection.yaml": erasePolicy})
+	reg := loadRegistryWith(t, realm, "auth:\n  strategies:\n    password: [password]\n  signup: open\n", map[string]string{"app/orders": eraseSchema, "app/orders/collection.yaml": erasePolicy})
 	if err := (&Provisioner{Client: client, Registry: reg, Log: log}).Apply(context.Background()); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}

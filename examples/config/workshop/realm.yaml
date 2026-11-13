@@ -7,8 +7,10 @@
 # Anyone can sign up and place orders. `staff` may call refund; the cron
 # functions need at least one worker (`backd-server serve --with-worker`, which the
 # local stack runs, or a dedicated `backd-server worker`).
-auth: enabled
-signup: open
+auth:
+  strategies:
+    password: [password]
+  signup: open
 
 # Email goes through the function `notifications/email-capture`, which only
 # stores each message in the `outbox` collection instead of sending it: read

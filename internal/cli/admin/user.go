@@ -611,7 +611,7 @@ func UserMFAStatus(c *UserCtx) error {
 	case len(out.RequiredRole) > 0:
 		fmt.Fprintf(c.IO.Stdout, "MFA is required for the roles: %s\n", strings.Join(out.RequiredRole, ", "))
 	default:
-		fmt.Fprintln(c.IO.Stdout, "MFA is required for no role (mfa.required_roles in realm.yaml)")
+		fmt.Fprintln(c.IO.Stdout, "MFA is required for no role (no role lists only strategies with a totp step in realm.yaml)")
 		return nil
 	}
 	if out.Total == 0 {

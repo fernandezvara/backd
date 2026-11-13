@@ -21,7 +21,7 @@ func triggerTree(t *testing.T, collectionYAML, fnYAML, realmYAML string) (*Regis
 		fnYAML = "internal: true\nmode: async\n"
 	}
 	if realmYAML == "" {
-		realmYAML = "auth: enabled\nsignup: open\n"
+		realmYAML = "auth:\n  strategies:\n    password: [password]\n  signup: open\n"
 	}
 	return Load(writeTree(t, map[string]string{
 		"shop/realm.yaml":                            realmYAML,
@@ -120,7 +120,7 @@ func TestTriggerFunctionMustBeInternalAndAsync(t *testing.T) {
 
 func TestRealmTriggerLimits(t *testing.T) {
 	yaml := "triggers:\n  t:\n    events: [created]\n    function: main/on-paid\n"
-	reg, err := triggerTree(t, yaml, "", "auth: enabled\nsignup: open\ntriggers:\n  max_chain: 4\n  max_chained_per_minute: 10\n  max_per_collection: 2\n  max_backlog: 500\n")
+	reg, err := triggerTree(t, yaml, "", "auth:\n  strategies:\n    password: [password]\n  signup: open\ntriggers:\n  max_chain: 4\n  max_chained_per_minute: 10\n  max_per_collection: 2\n  max_backlog: 500\n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestTriggersPerCollectionCap(t *testing.T) {
 		b.WriteString(n)
 		b.WriteString(":\n    events: [created]\n    function: main/on-paid\n")
 	}
-	reg, err := triggerTree(t, b.String(), "", "auth: enabled\nsignup: open\ntriggers:\n  max_per_collection: 2\n")
+	reg, err := triggerTree(t, b.String(), "", "auth:\n  strategies:\n    password: [password]\n  signup: open\ntriggers:\n  max_per_collection: 2\n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,10 +162,10 @@ func TestTriggersPerCollectionCap(t *testing.T) {
 
 func TestRealmTriggerSettingsValidation(t *testing.T) {
 	for name, tc := range map[string]struct{ yaml, want string }{
-		"zero":     {"auth: enabled\ntriggers:\n  max_chain: 0\n", "triggers.max_chain: must be at least 1"},
-		"too deep": {"auth: enabled\ntriggers:\n  max_chain: 1000\n", "triggers.max_chain: must be at most 64"},
-		"negative": {"auth: enabled\ntriggers:\n  max_backlog: -5\n", "triggers.max_backlog: must be at least 1"},
-		"unknown":  {"auth: enabled\ntriggers:\n  max_depth: 3\n", "max_depth"},
+		"zero":     {"auth:\n  strategies:\n    password: [password]\ntriggers:\n  max_chain: 0\n", "triggers.max_chain: must be at least 1"},
+		"too deep": {"auth:\n  strategies:\n    password: [password]\ntriggers:\n  max_chain: 1000\n", "triggers.max_chain: must be at most 64"},
+		"negative": {"auth:\n  strategies:\n    password: [password]\ntriggers:\n  max_backlog: -5\n", "triggers.max_backlog: must be at least 1"},
+		"unknown":  {"auth:\n  strategies:\n    password: [password]\ntriggers:\n  max_depth: 3\n", "max_depth"},
 	} {
 		_, errs := parseRealmSettings([]byte(tc.yaml))
 		found := false

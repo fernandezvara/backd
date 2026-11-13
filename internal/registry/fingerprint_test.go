@@ -8,7 +8,7 @@ import (
 
 func TestFingerprint(t *testing.T) {
 	files := map[string]string{
-		"shop/realm.yaml":                        "roles:\n  staff: {}\n",
+		"shop/realm.yaml":                        "auth:\n  strategies:\n    password: [password]\nroles:\n  staff: {}\n",
 		"shop/app/notes/schema.json":             `{}`,
 		"shop/app/notes/collection.yaml":         rulesSection("read: \"true\"\n"),
 		"shop/app/notes/indexes.json":            `[]`,
@@ -59,7 +59,7 @@ func TestFingerprint(t *testing.T) {
 	}
 	// What backd reads changes it.
 	for rel, content := range map[string]string{
-		"shop/realm.yaml":                      "roles:\n  staff: {}\n  editor: {}\n",
+		"shop/realm.yaml":                      "auth:\n  strategies:\n    password: [password]\nroles:\n  staff: {}\n  editor: {}\n",
 		"shop/app/notes/schema.json":           `{"type": "object"}`,
 		"shop/app/notes/collection.yaml":       rulesSection("read: \"false\"\n"),
 		"shop/app/notes/indexes.json":          `[{"fields": ["id"]}]`,

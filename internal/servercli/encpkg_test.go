@@ -43,7 +43,7 @@ func newClinic(t *testing.T, uri string, keys map[string]string) *clinicRealm {
 	ctx := context.Background()
 	realm := "t" + xid.New().String()
 	root := cmdtest.Write(t, map[string]string{
-		realm + "/realm.yaml":                    "signup: open\n",
+		realm + "/realm.yaml":                    "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		realm + "/main/patients/schema.json":     clinicSchema,
 		realm + "/main/patients/collection.yaml": clinicConfig,
 	})

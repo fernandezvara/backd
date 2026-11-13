@@ -72,7 +72,7 @@ func TestRealm(t *testing.T) {
 
 	// Existing files are never overwritten.
 	custom := filepath.Join(root, "demo", "realm.yaml")
-	if err := os.WriteFile(custom, []byte("signup: open\n"), 0o644); err != nil {
+	if err := os.WriteFile(custom, []byte("auth:\n  strategies:\n    password: [password]\n  signup: open\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	files, err = Realm(root, "demo", true)
@@ -92,7 +92,7 @@ func TestRealm(t *testing.T) {
 	if !reflect.DeepEqual(files, want) {
 		t.Errorf("files = %v, want %v", files, want)
 	}
-	if data, _ := os.ReadFile(custom); string(data) != "signup: open\n" {
+	if data, _ := os.ReadFile(custom); string(data) != "auth:\n  strategies:\n    password: [password]\n  signup: open\n" {
 		t.Errorf("realm.yaml was overwritten: %q", data)
 	}
 

@@ -6,7 +6,7 @@ weight: 550
 toc: true
 ---
 
-The admin API manages the users and API keys of a realm. [`backd user`](../../../build/auth/users/) and [`backd apikey`](../../../build/auth/api-keys/) are command-line clients of it (see [Command-line administration](../cli/)), and server-side services can call it directly. It lives under `/v1/{realm}/_admin` in every realm with `auth: enabled`.
+The admin API manages the users and API keys of a realm. [`backd user`](../../../build/auth/users/) and [`backd apikey`](../../../build/auth/api-keys/) are command-line clients of it (see [Command-line administration](../cli/)), and server-side services can call it directly. It lives under `/v1/{realm}/_admin` in every realm with an `auth` section.
 
 Every request needs one of the realm's [API keys](../../../build/auth/api-keys/) with the `admin` role, acting as itself, or the session of a user holding one of the realm's [admin roles](../../../build/configuration/realm/#roles):
 

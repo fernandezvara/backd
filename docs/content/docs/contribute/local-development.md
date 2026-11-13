@@ -86,7 +86,7 @@ A realm with no administrator has none to sign in as. Create one with the comman
 make dev-server ARGS='bootstrap --realm app --email you@example.com'
 ```
 
-The starter realm requires a second factor of administrators, so their first sign-in enrolls one. Empty `mfa.required_roles` in `config/app/realm.yaml` while developing if you prefer.
+The starter realm requires a second factor of administrators, so their first sign-in enrolls one. Remove `strategies` from the `admin` role in `config/app/realm.yaml` while developing if you prefer.
 
 ### The example realms
 
@@ -156,7 +156,7 @@ The `shop` realm has `auth: disabled`, so these requests need no credentials.
 A realm with `auth: disabled` has **no authentication at all**: anyone who can reach the port can read, change and delete its data. It exists for this walkthrough. Never expose one to the internet.
 {{< /hint >}}
 
-The `blog` realm keeps the default `auth: enabled`, and its `posts` have [access rules](../../build/auth/rules/): anyone can read published posts, and only signed-in users can write. A server-side service writes with an [API key](../../build/auth/api-keys/), which bypasses the rules:
+The `blog` realm has an `auth` section with a `password` strategy, and its `posts` have [access rules](../../build/auth/rules/): anyone can read published posts, and only signed-in users can write. A server-side service writes with an [API key](../../build/auth/api-keys/), which bypasses the rules:
 
 Keys are created by the realm's administrators. Create the first one with `backd-server bootstrap`, log in as them with the CLI in the container, and create a key:
 

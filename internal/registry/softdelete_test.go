@@ -36,7 +36,7 @@ func TestSoftDeleteSettings(t *testing.T) {
 		"alongside the policy": {"soft_delete: true\non_owner_delete:\n  action: delete\n", true, 0},
 	} {
 		t.Run(name, func(t *testing.T) {
-			reg, err := softTree(t, "signup: open\n", tc.yaml, "")
+			reg, err := softTree(t, "auth:\n  strategies:\n    password: [password]\n  signup: open\n", tc.yaml, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -49,7 +49,7 @@ func TestSoftDeleteSettings(t *testing.T) {
 }
 
 func TestSoftDeleteIndexes(t *testing.T) {
-	reg, err := softTree(t, "signup: open\n", "soft_delete:\n  retention: 7d\n", "")
+	reg, err := softTree(t, "auth:\n  strategies:\n    password: [password]\n  signup: open\n", "soft_delete:\n  retention: 7d\n", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestSoftDeleteIndexes(t *testing.T) {
 		t.Errorf("indexes:\n got %s\nwant %s", strings.Join(got, " | "), want)
 	}
 	// Without soft delete nothing changes.
-	reg, _ = softTree(t, "signup: open\n", "", "")
+	reg, _ = softTree(t, "auth:\n  strategies:\n    password: [password]\n  signup: open\n", "", "")
 	c, _ = reg.Collection("shop", "main", "orders")
 	if c.Indexes[0].String() != "code" || c.Indexes[2].String() != "buyer_name,code" || len(c.Indexes) != 4 {
 		t.Errorf("indexes without soft delete: %v", c.Indexes)
@@ -89,7 +89,7 @@ func TestSoftDeleteErrors(t *testing.T) {
 		"purge when off":      {"soft_delete: false\n", "read: 'true'\npurge: 'true'\n", "a purge rule only applies to a collection that soft-deletes"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := softTree(t, "signup: open\nroles:\n  admin: {}\n", tc.collection, tc.rules)
+			_, err := softTree(t, "auth:\n  strategies:\n    password: [password]\n  signup: open\nroles:\n  admin: {}\n", tc.collection, tc.rules)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error = %v, want one containing %q", err, tc.want)
 			}
@@ -104,7 +104,7 @@ func TestSoftDeleteErrors(t *testing.T) {
 		t.Errorf("on_owner_delete without auth: %v", err)
 	}
 	// Rules for restore and purge are fine when the collection soft-deletes.
-	if _, err := softTree(t, "signup: open\nroles:\n  admin: {}\n", "soft_delete: true\n", "read: 'true'\nrestore: hasRole(user, 'admin')\npurge: hasRole(user, 'admin')\n"); err != nil {
+	if _, err := softTree(t, "auth:\n  strategies:\n    password: [password]\n  signup: open\nroles:\n  admin: {}\n", "soft_delete: true\n", "read: 'true'\nrestore: hasRole(user, 'admin')\npurge: hasRole(user, 'admin')\n"); err != nil {
 		t.Errorf("restore and purge with soft_delete: %v", err)
 	}
 }

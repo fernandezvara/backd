@@ -15,7 +15,7 @@ import (
 
 func TestProblemsOfAConfig(t *testing.T) {
 	root := cmdtest.Write(t, map[string]string{
-		"app/realm.yaml":                 "signup: open\nbogus: 1\n",
+		"app/realm.yaml":                 "auth:\n  strategies:\n    password: [password]\n  signup: open\nbogus: 1\n",
 		"app/main/notes/schema.json":     "{bad json",
 		"app/main/tasks/schema.json":     "{}",
 		"app/main/tasks/collection.yaml": "rules:\n  read: user ==\n",
@@ -26,7 +26,7 @@ func TestProblemsOfAConfig(t *testing.T) {
 	}
 	got := Of(fmt.Errorf(ConfigPrefix+"%w", err), root)
 	want := map[string]Problem{
-		"app/realm.yaml":                 {Kind: Config, Line: 2},
+		"app/realm.yaml":                 {Kind: Config, Line: 5},
 		"app/main/notes/schema.json":     {Kind: Config},
 		"app/main/tasks/collection.yaml": {Kind: Rules},
 	}

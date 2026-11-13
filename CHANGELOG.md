@@ -6,6 +6,22 @@ Until a stable release is declared, a minor release may have breaking changes; t
 
 ## Unreleased
 
+### Breaking
+
+- **Sign-in settings move under `auth:`, and `auth` needs `strategies`** (design: `design/auth-strategies.md`). A realm either says `auth: disabled` or has an `auth` section with at least one **strategy**: a named, ordered list of methods such as `password: [password]` or `admin_password: [password, totp]`. A missing `auth` key, `auth: enabled` and a section without strategies stop the start with a message that says what to write. The old top-level keys are refused, each with a message naming its new place:
+
+  | Before | Now |
+  |---|---|
+  | `auth: enabled` | `auth:` with `strategies:` |
+  | `signup`, `sessions`, `password`, `login_throttle` | `auth.signup`, `auth.sessions`, `auth.password`, `auth.login_throttle` |
+  | `providers`, `sign_in` | `auth.providers`, `auth.sign_in` |
+  | `magic_link`, `reauth` | `auth.magic_link`, `auth.reauth` |
+  | `mfa` (`enabled`, `issuer`) | `auth.totp` |
+  | `mfa.required_roles: [a, b]` | a strategy with a `totp` step (`a_totp: [password, totp]`) and `strategies: [a_totp]` on the roles `a` and `b` |
+  | `mfa.required_roles: all` | every strategy ends with `totp` |
+
+  For now a role whose strategies all end in `totp` needs a second factor from its holders, exactly as `mfa.required_roles` did; choosing a strategy at sign-in and roles staying inactive for the others come with the strategy engine. The HTTP API does not change. The example realms, the tutorial and the template are converted.
+
 ### Changed
 
 - **Documentation: "Is backd for you?"** A new page next to Getting started says where `backd` fits and where it doesn't, how it compares with other backends, what it does not do yet (each with what to do meanwhile and its issue) and what was decided against, and states the 0.x stability. The docs home, Getting started and the README link to it.

@@ -7,7 +7,7 @@ import (
 
 func anonRealm(t *testing.T, policy string) *Realm {
 	t.Helper()
-	reg, err := erasureTree(t, "signup: open\n", policy)
+	reg, err := erasureTree(t, "auth:\n  strategies:\n    password: [password]\n  signup: open\n", policy)
 	if err != nil {
 		t.Fatal(err)
 	}

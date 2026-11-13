@@ -27,7 +27,7 @@ func TestGoClientEndToEnd(t *testing.T) {
 	}
 	realm := "t" + xid.New().String()
 	root := cmdtest.Write(t, map[string]string{
-		realm + "/realm.yaml":                "signup: open\n",
+		realm + "/realm.yaml":                "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		realm + "/app/notes/schema.json":     `{"type": "object", "additionalProperties": false, "properties": {"title": {"type": "string"}, "status": {"enum": ["open", "done"]}, "amount": {"type": "integer"}}, "required": ["title", "status"]}`,
 		realm + "/app/notes/collection.yaml": "realtime: true\naggregate:\n  group_by: [status]\n  metrics: [amount]\n" + cmdtest.RulesSection("read: user != nil\nwrite: user != nil\n"),
 		realm + "/_realm/config/rules.yaml":  "read:\n  banner: user != nil\n  limits: user != nil\n",

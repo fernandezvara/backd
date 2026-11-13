@@ -28,7 +28,7 @@ func collectionWith(t *testing.T, schemaSrc, rulesSrc string) *registry.Collecti
 		t.Fatal(err)
 	}
 	for p, content := range map[string]string{
-		filepath.Join(root, "acme", "realm.yaml"): "roles:\n  admin: {}\n  staff: {}\n",
+		filepath.Join(root, "acme", "realm.yaml"): "auth:\n  strategies:\n    password: [password]\nroles:\n  admin: {}\n  staff: {}\n",
 		filepath.Join(dir, "schema.json"):         schemaSrc,
 		filepath.Join(dir, "collection.yaml"):     rulesSection(rulesSrc),
 	} {
@@ -263,7 +263,7 @@ func softCollection(t *testing.T, rulesSrc string) *registry.Collection {
 		t.Fatal(err)
 	}
 	for p, content := range map[string]string{
-		filepath.Join(root, "acme", "realm.yaml"): "roles:\n  admin: {}\n  staff: {}\n",
+		filepath.Join(root, "acme", "realm.yaml"): "auth:\n  strategies:\n    password: [password]\nroles:\n  admin: {}\n  staff: {}\n",
 		filepath.Join(dir, "schema.json"):         schema,
 		filepath.Join(dir, "collection.yaml"):     "soft_delete: true\n" + rulesSection(rulesSrc),
 	} {
@@ -333,7 +333,7 @@ func TestFixtureGivesAppConfig(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write("acme/realm.yaml", "roles:\n  admin: {}\n")
+	write("acme/realm.yaml", "auth:\n  strategies:\n    password: [password]\nroles:\n  admin: {}\n")
 	write("acme/_realm/config/schema.json", `{"type":"object","additionalProperties":false,"properties":{"features":{"type":"object","additionalProperties":false,"properties":{"export":{"type":"boolean","default":true}}}}}`)
 	write("acme/app/posts/schema.json", schema)
 	write("acme/app/posts/collection.yaml", rulesSection("create: user != nil && appConfig(\"features.export\") == true\n"))
@@ -373,7 +373,7 @@ func TestRunOrganizationsAndTeams(t *testing.T) {
 		t.Fatal(err)
 	}
 	for p, content := range map[string]string{
-		filepath.Join(root, "acme", "realm.yaml"): "organizations:\n  roles:\n    owner: { manage: org }\n    hr: {}\n  team_roles:\n    manager: {}\n",
+		filepath.Join(root, "acme", "realm.yaml"): "auth:\n  strategies:\n    password: [password]\norganizations:\n  roles:\n    owner: { manage: org }\n    hr: {}\n  team_roles:\n    manager: {}\n",
 		filepath.Join(dir, "schema.json"):         `{"type":"object","properties":{"title":{"type":"string"}}}`,
 		filepath.Join(dir, "collection.yaml"):     "organization: required\non_org_delete:\n  action: delete\nteam: required\non_team_delete:\n  action: keep\n" + rulesSection("read: inTeam(document._meta.team) || hasTeamRole(document._meta.team, 'manager') || hasOrgRole(document._meta.org, 'hr')\ncreate: inTeam(data._meta.team)\n"),
 	} {

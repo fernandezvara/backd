@@ -16,7 +16,7 @@ curl -X POST https://api.example.com/v1/shop/orders/_func/checkout \
 ```
 
 - The body is the function's input (`ctx.input`), any JSON value; an empty body is `null`. The answer is its output. **`webhook` functions are different:** see [Webhooks](../webhooks/) — the raw body reaches `ctx.request.body` unparsed, `Content-Type` isn't required to be JSON, and the function's own response is returned as-is.
-- In realms with `auth: enabled`, [API keys](../../auth/api-keys/) may always call; other callers need the function's [`invoke` rule](../reference/#invoke-rules) (`webhook` always needs one that allows anonymous callers). With `X-Backd-On-Behalf-Of`, an API key calls as that user.
+- In realms with an `auth` section, [API keys](../../auth/api-keys/) may always call; other callers need the function's [`invoke` rule](../reference/#invoke-rules) (`webhook` always needs one that allows anonymous callers). With `X-Backd-On-Behalf-Of`, an API key calls as that user.
 - With `input.schema.json`, invalid input answers `400 validation_error`; with `output.schema.json`, an output that doesn't match answers `500 invalid_output` (and is logged). Neither applies to `webhook`.
 - An `Idempotency-Key` header reaches the function as `ctx.idempotencyKey`, and also deduplicates the call itself (see [Idempotency](#idempotency)).
 - `sync` functions run immediately and answer with their output, as above. `async` functions ([below](../jobs/)) answer `202` with a job to poll. `webhook` functions ([below](../webhooks/)) set their own response.
@@ -82,7 +82,7 @@ Nothing changes for callers who don't send it, so it is safe to adopt one call a
 - The job is read and finished like an `async` function's: poll `Location` (see [Jobs](../jobs/#knowing-when-a-job-finished)), with a [worker](../../../operate/functions-runtime/#running-the-worker) running. Its result is the function's output or its own error, and the function keeps its own limits (its `timeout` and `max_output` as a `sync` function).
 - It **runs once**: `retry` is a setting of `async` functions, so a failure ends the job. Concurrency limits of the function don't apply while it waits in the queue, only the worker's.
 - With an `Idempotency-Key`, a repeated call replays **whatever the first call was**, the answer or the job, whatever the second one asks for.
-- **Ignored where a job makes no sense:** a `webhook` function (its sender waits for the function's own response), a function called by another function with `ctx.call` (it needs the answer), and a realm without `auth: enabled` (there is nowhere to keep a job). The call is answered inline, without `Preference-Applied`.
+- **Ignored where a job makes no sense:** a `webhook` function (its sender waits for the function's own response), a function called by another function with `ctx.call` (it needs the answer), and a realm without an `auth` section (there is nowhere to keep a job). The call is answered inline, without `Preference-Applied`.
 - An `async` function is always a job; sending the header only gets `Preference-Applied` back.
 
 The JavaScript client sends it with `fn(name, input, { respondAsync: true })` and resolves to a `Job`.
@@ -123,7 +123,7 @@ rate_limit:
 
 - `per: user` counts by the signed-in user's id; a caller with no session (or an API key acting for no one in particular) falls back to `per: ip`, so the limit still applies before anyone signs in. `per: ip` always counts by client address.
 - Over the limit answers `429 too_many_requests` with `Retry-After` set to when the window resets (unlike concurrency's fixed `Retry-After: 1`, which doesn't know when a slot will free up).
-- **Shared across every `backd` instance** — the opposite of [concurrency limits](#concurrency-limits), which are deliberately per instance. Counters live in the realm's system database (`<realm>___system`, so `rate_limit` needs `auth: enabled`), reusing the same "N events per window" mechanism login throttling uses, under its own key namespace. Only functions that declare a `rate_limit` pay the extra write; a function without one is never throttled.
+- **Shared across every `backd` instance** — the opposite of [concurrency limits](#concurrency-limits), which are deliberately per instance. Counters live in the realm's system database (`<realm>___system`, so `rate_limit` needs an `auth` section), reusing the same "N events per window" mechanism login throttling uses, under its own key namespace. Only functions that declare a `rate_limit` pay the extra write; a function without one is never throttled.
 - **Startup warns** for any function whose `invoke` rule allows anonymous callers and declares no `rate_limit` — it names the function, so you can decide whether that's intentional.
 - This is a deliberate exception to "rate limiting is the reverse proxy's job" (see the [hardening checklist](../../../operate/checklist/)): only `backd` knows *who* is calling, since the proxy in front of it only sees IP addresses and can't tell two users on the same NAT apart, or the same user across IPs. The proxy baseline (a per-IP limit in front of `/v1/`) still matters and is unaffected by this.
 

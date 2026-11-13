@@ -304,7 +304,7 @@ func (a *adminAPI) exportPlan(w http.ResponseWriter, r *http.Request, realm stri
 		if body.StagingPassword != "" {
 			svc := usersOf(r)
 			if len(body.StagingPassword) < svc.Settings.PasswordMinLength {
-				writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "staging_password", Reason: fmt.Sprintf("must be at least %d characters (the realm's password.min_length)", svc.Settings.PasswordMinLength)})
+				writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request", Detail{Path: "staging_password", Reason: fmt.Sprintf("must be at least %d characters (the realm's auth.password.min_length)", svc.Settings.PasswordMinLength)})
 				return
 			}
 			if anon.passwordHash, err = svc.Hasher.Hash(r.Context(), body.StagingPassword); err != nil {

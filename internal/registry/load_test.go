@@ -36,7 +36,7 @@ func writeTree(t *testing.T, files map[string]string) string {
 	for p := range files {
 		realm, rest, nested := strings.Cut(p, "/")
 		if _, set := files[realm+"/"+RealmFile]; nested && rest != "" && !set && !strings.HasPrefix(realm, ".") {
-			withRealms[realm+"/"+RealmFile] = ""
+			withRealms[realm+"/"+RealmFile] = authBase
 		}
 	}
 	for p, content := range withRealms {

@@ -10,10 +10,11 @@ A team's library shouldn't be open to whoever finds it. One word in `realm.yaml`
 
 ## Close the door
 
-Before you change anything, check the three accounts of chapter 2 exist: **operator, curator and your member**. Then, in `config/shelf/realm.yaml`, change one line:
+Before you change anything, check the three accounts of chapter 2 exist: **operator, curator and your member**. Then, in `config/shelf/realm.yaml`, change one line under `auth`:
 
 ```yaml
-signup: invite   # was: open
+auth:
+  signup: invite   # was: open
 ```
 
 and save: backd reloads. Existing accounts keep working — this only governs **new** sign-ups. From now on `POST /_auth/signup` without a valid `invitation` token answers `403`:

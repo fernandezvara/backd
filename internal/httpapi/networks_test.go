@@ -21,7 +21,10 @@ import (
 func TestNetworkRestrictions(t *testing.T) {
 	root := t.TempDir()
 	for p, content := range map[string]string{
-		"net/realm.yaml": `signup: open
+		"net/realm.yaml": `auth:
+  strategies:
+    password: [password]
+  signup: open
 admin:
   allowed_networks: [192.0.2.0/24]
 roles:

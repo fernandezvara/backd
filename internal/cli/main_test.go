@@ -91,7 +91,7 @@ func TestRunTemplate(t *testing.T) {
 func TestRunDatabases(t *testing.T) {
 	root := t.TempDir()
 	for p, content := range map[string]string{
-		"blog/realm.yaml":               "",
+		"blog/realm.yaml":               "auth:\n  strategies:\n    password: [password]\n",
 		"blog/main/posts/schema.json":   `{}`,
 		"blog/cms/pages/schema.json":    `{}`,
 		"shop/realm.yaml":               "auth: disabled\n",

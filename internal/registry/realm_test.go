@@ -9,13 +9,14 @@ import (
 )
 
 func TestRealmSettingsDefaults(t *testing.T) {
-	for _, content := range []string{"", "# only comments\n", "{}"} {
+	for _, content := range []string{authBase, "# only comments\n" + authBase, "auth: {strategies: {password: [password]}}"} {
 		s, errs := parseRealmSettings([]byte(content))
 		if len(errs) > 0 {
 			t.Fatalf("%q: %v", content, errs)
 		}
 		want := RealmSettings{
 			AuthEnabled:       true,
+			Strategies:        []Strategy{{Name: "password", Methods: []string{"password"}}},
 			Signup:            SignupClosed,
 			IdleTimeout:       30 * 24 * time.Hour,
 			MaxLifetime:       90 * 24 * time.Hour,
@@ -33,13 +34,15 @@ func TestRealmSettingsDefaults(t *testing.T) {
 
 func TestRealmSettingsFull(t *testing.T) {
 	s, errs := parseRealmSettings([]byte(`
-auth: enabled
-signup: open
-sessions:
-  idle_timeout: 12h
-  max_lifetime: 7d
-password:
-  min_length: 16
+auth:
+  strategies:
+    password: [password]
+  signup: open
+  sessions:
+    idle_timeout: 12h
+    max_lifetime: 7d
+  password:
+    min_length: 16
 audit:
   retention: 30d
 cors:
@@ -56,6 +59,7 @@ roles:
 	}
 	want := RealmSettings{
 		AuthEnabled:       true,
+		Strategies:        []Strategy{{Name: "password", Methods: []string{"password"}}},
 		Signup:            SignupOpen,
 		IdleTimeout:       12 * time.Hour,
 		MaxLifetime:       7 * 24 * time.Hour,
@@ -88,7 +92,7 @@ func TestRealmSettingsAuthDisabled(t *testing.T) {
 // with auth disabled too (unlike sessions, password, roles, admin, audit).
 func TestRealmSettingsFunctionsMaxConcurrency(t *testing.T) {
 	for _, content := range []string{
-		"functions:\n  max_concurrency: 50\n",
+		authBase + "functions:\n  max_concurrency: 50\n",
 		"auth: disabled\nfunctions:\n  max_concurrency: 50\n",
 	} {
 		s, errs := parseRealmSettings([]byte(content))
@@ -99,7 +103,7 @@ func TestRealmSettingsFunctionsMaxConcurrency(t *testing.T) {
 			t.Errorf("%q: FunctionsMaxConcurrency = %d, want 50", content, s.FunctionsMaxConcurrency)
 		}
 	}
-	s, errs := parseRealmSettings([]byte(""))
+	s, errs := parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\n"))
 	if len(errs) > 0 {
 		t.Fatal(errs)
 	}
@@ -109,7 +113,7 @@ func TestRealmSettingsFunctionsMaxConcurrency(t *testing.T) {
 }
 
 func TestRealmSettingsFunctionsLogRetention(t *testing.T) {
-	s, errs := parseRealmSettings([]byte("functions:\n  log_retention: 3d\n"))
+	s, errs := parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\nfunctions:\n  log_retention: 3d\n"))
 	if len(errs) > 0 {
 		t.Fatal(errs)
 	}
@@ -117,7 +121,7 @@ func TestRealmSettingsFunctionsLogRetention(t *testing.T) {
 		t.Errorf("FunctionsLogRetention = %s, want 72h", s.FunctionsLogRetention)
 	}
 
-	s, errs = parseRealmSettings([]byte(""))
+	s, errs = parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\n"))
 	if len(errs) > 0 {
 		t.Fatal(errs)
 	}
@@ -139,47 +143,47 @@ func TestRealmSettingsErrors(t *testing.T) {
 		want          []string
 	}{
 		{"invalid yaml", "auth: [", []string{"invalid YAML"}},
-		{"unknown key", "authentication: enabled", []string{"invalid YAML", "authentication"}},
-		{"unknown nested key", "sessions:\n  idle: 1h", []string{"invalid YAML", "idle"}},
-		{"auth value", "auth: on", []string{`auth: must be enabled or disabled, got "on"`}},
-		{"signup value", "signup: public", []string{`signup: must be open, invite or closed`}},
+		{"unknown key", "authentication: enabled", []string{`unknown key "authentication"`}},
+		{"unknown nested key", "auth:\n  strategies:\n    password: [password]\n  sessions:\n    idle: 1h", []string{"field idle not found"}},
+		{"auth value", "auth: on", []string{"auth: must be `disabled` or a section with `strategies`"}},
+		{"signup value", "auth:\n  strategies:\n    password: [password]\n  signup: public", []string{"auth.signup: must be open, invite or closed"}},
 		{"auth disabled with user settings", "auth: disabled\nsignup: open\npassword:\n  min_length: 12\nroles:\n  admin: {}",
-			[]string{"signup: only applies when auth is enabled", "password: only applies", "roles: only applies"}},
-		{"bad duration", "sessions:\n  idle_timeout: 3 weeks", []string{"sessions.idle_timeout: invalid duration"}},
-		{"too short", "sessions:\n  idle_timeout: 10s", []string{"must be at least 1m0s"}},
-		{"idle beyond max", "sessions:\n  idle_timeout: 100d", []string{"idle_timeout (2400h0m0s) must not exceed max_lifetime"}},
-		{"admin idle beyond idle", "sessions:\n  idle_timeout: 1d\n  admin_idle_timeout: 2d", []string{"admin_idle_timeout (48h0m0s) must not exceed idle_timeout (24h0m0s)"}},
-		{"admin max beyond max", "sessions:\n  max_lifetime: 10d\n  admin_max_lifetime: 20d", []string{"admin_max_lifetime (480h0m0s) must not exceed max_lifetime (240h0m0s)"}},
-		{"admin idle beyond admin max", "sessions:\n  admin_idle_timeout: 20d\n  admin_max_lifetime: 10d", []string{"admin_idle_timeout (480h0m0s) must not exceed admin_max_lifetime (240h0m0s)"}},
-		{"admin idle beyond the regular max", "sessions:\n  max_lifetime: 40d\n  admin_max_lifetime: 3d\n  admin_idle_timeout: 5d", []string{"admin_idle_timeout (120h0m0s) must not exceed admin_max_lifetime (72h0m0s)"}},
-		{"admin too short", "sessions:\n  admin_idle_timeout: 10s", []string{"sessions.admin_idle_timeout: must be at least 1m0s"}},
-		{"cookie same_site", "sessions:\n  cookie:\n    enabled: true\n    same_site: sometimes", []string{`sessions.cookie.same_site: must be lax, strict or none, got "sometimes"`}},
-		{"cookie with a wildcard origin", "sessions:\n  cookie:\n    enabled: true\ncors:\n  origins: ['*']", []string{"cookies can't be used with cors.origins: ['*']"}},
-		{"password too short", "password:\n  min_length: 6", []string{"password.min_length: must be between 8 and 128"}},
-		{"password too long", "password:\n  min_length: 200", []string{"between 8 and 128"}},
-		{"origin with path", "cors:\n  origins: ['https://a.example/app']", []string{"cors.origins[0]: invalid origin"}},
-		{"origin scheme", "cors:\n  origins: ['ftp://a.example']", []string{"invalid origin"}},
-		{"star not alone", "cors:\n  origins: ['*', 'https://a.example']", []string{`"*" must be the only origin`}},
-		{"role name", "roles:\n  Admin: {}", []string{`invalid role name "Admin"`}},
-		{"role email", "roles:\n  admin:\n    users: [nobody]", []string{`roles.admin.users[0]: invalid email address "nobody"`}},
-		{"duplicate email", "roles:\n  admin:\n    users: [a@x.io, A@X.io]", []string{`roles.admin.users[1]: "a@x.io" is listed twice`}},
-		{"duplicate email in object form", "roles:\n  admin:\n    users: [a@x.io, {email: A@X.io}]", []string{`roles.admin.users[1]: "a@x.io" is listed twice`}},
-		{"unknown key in user entry", "roles:\n  admin:\n    users: [{email: a@x.io, name: A}]", []string{`unknown key "name"`}},
-		{"user entry without email", "roles:\n  admin:\n    users: [{}]", []string{"needs an email"}},
-		{"user entry as a list", "roles:\n  admin:\n    users: [[a@x.io]]", []string{"must be an email or an object"}},
-		{"admin flag not a boolean", "roles:\n  admin:\n    admin: sometimes", []string{"invalid YAML"}},
-		{"bad admin network", "admin:\n  allowed_networks: [10.0.0.0/8, office]", []string{`admin.allowed_networks: "office" is not an IP address`}},
+			[]string{"signup: has moved", "password: has moved", "roles: only applies"}},
+		{"bad duration", "auth:\n  strategies:\n    password: [password]\n  sessions:\n    idle_timeout: 3 weeks", []string{"sessions.idle_timeout: invalid duration"}},
+		{"too short", "auth:\n  strategies:\n    password: [password]\n  sessions:\n    idle_timeout: 10s", []string{"must be at least 1m0s"}},
+		{"idle beyond max", "auth:\n  strategies:\n    password: [password]\n  sessions:\n    idle_timeout: 100d", []string{"idle_timeout (2400h0m0s) must not exceed max_lifetime"}},
+		{"admin idle beyond idle", "auth:\n  strategies:\n    password: [password]\n  sessions:\n    idle_timeout: 1d\n    admin_idle_timeout: 2d", []string{"admin_idle_timeout (48h0m0s) must not exceed idle_timeout (24h0m0s)"}},
+		{"admin max beyond max", "auth:\n  strategies:\n    password: [password]\n  sessions:\n    max_lifetime: 10d\n    admin_max_lifetime: 20d", []string{"admin_max_lifetime (480h0m0s) must not exceed max_lifetime (240h0m0s)"}},
+		{"admin idle beyond admin max", "auth:\n  strategies:\n    password: [password]\n  sessions:\n    admin_idle_timeout: 20d\n    admin_max_lifetime: 10d", []string{"admin_idle_timeout (480h0m0s) must not exceed admin_max_lifetime (240h0m0s)"}},
+		{"admin idle beyond the regular max", "auth:\n  strategies:\n    password: [password]\n  sessions:\n    max_lifetime: 40d\n    admin_max_lifetime: 3d\n    admin_idle_timeout: 5d", []string{"admin_idle_timeout (120h0m0s) must not exceed admin_max_lifetime (72h0m0s)"}},
+		{"admin too short", "auth:\n  strategies:\n    password: [password]\n  sessions:\n    admin_idle_timeout: 10s", []string{"sessions.admin_idle_timeout: must be at least 1m0s"}},
+		{"cookie same_site", "auth:\n  strategies:\n    password: [password]\n  sessions:\n    cookie:\n      enabled: true\n      same_site: sometimes", []string{`sessions.cookie.same_site: must be lax, strict or none, got "sometimes"`}},
+		{"cookie with a wildcard origin", "auth:\n  strategies:\n    password: [password]\n  sessions:\n    cookie:\n      enabled: true\ncors:\n  origins: ['*']", []string{"cookies can't be used with cors.origins: ['*']"}},
+		{"password too short", "auth:\n  strategies:\n    password: [password]\n  password:\n    min_length: 6", []string{"password.min_length: must be between 8 and 128"}},
+		{"password too long", "auth:\n  strategies:\n    password: [password]\n  password:\n    min_length: 200", []string{"between 8 and 128"}},
+		{"origin with path", "auth:\n  strategies:\n    password: [password]\ncors:\n  origins: ['https://a.example/app']", []string{"cors.origins[0]: invalid origin"}},
+		{"origin scheme", "auth:\n  strategies:\n    password: [password]\ncors:\n  origins: ['ftp://a.example']", []string{"invalid origin"}},
+		{"star not alone", "auth:\n  strategies:\n    password: [password]\ncors:\n  origins: ['*', 'https://a.example']", []string{`"*" must be the only origin`}},
+		{"role name", "auth:\n  strategies:\n    password: [password]\nroles:\n  Admin: {}", []string{`invalid role name "Admin"`}},
+		{"role email", "auth:\n  strategies:\n    password: [password]\nroles:\n  admin:\n    users: [nobody]", []string{`roles.admin.users[0]: invalid email address "nobody"`}},
+		{"duplicate email", "auth:\n  strategies:\n    password: [password]\nroles:\n  admin:\n    users: [a@x.io, A@X.io]", []string{`roles.admin.users[1]: "a@x.io" is listed twice`}},
+		{"duplicate email in object form", "auth:\n  strategies:\n    password: [password]\nroles:\n  admin:\n    users: [a@x.io, {email: A@X.io}]", []string{`roles.admin.users[1]: "a@x.io" is listed twice`}},
+		{"unknown key in user entry", "auth:\n  strategies:\n    password: [password]\nroles:\n  admin:\n    users: [{email: a@x.io, name: A}]", []string{`unknown key "name"`}},
+		{"user entry without email", "auth:\n  strategies:\n    password: [password]\nroles:\n  admin:\n    users: [{}]", []string{"needs an email"}},
+		{"user entry as a list", "auth:\n  strategies:\n    password: [password]\nroles:\n  admin:\n    users: [[a@x.io]]", []string{"must be an email or an object"}},
+		{"admin flag not a boolean", "auth:\n  strategies:\n    password: [password]\nroles:\n  admin:\n    admin: sometimes", []string{"invalid YAML"}},
+		{"bad admin network", "auth:\n  strategies:\n    password: [password]\nadmin:\n  allowed_networks: [10.0.0.0/8, office]", []string{`admin.allowed_networks: "office" is not an IP address`}},
 		{"admin settings without auth", "auth: disabled\nadmin:\n  allowed_networks: [10.0.0.0/8]", []string{"admin: only applies"}},
-		{"bad user network", "roles:\n  ops:\n    users: [{email: a@x.io, login_networks: [nope]}]", []string{`roles.ops.users[0].login_networks: "nope" is not`}},
-		{"user admin network outside the realm's", "admin:\n  allowed_networks: [10.0.0.0/8]\nroles:\n  ops:\n    users: [{email: a@x.io, admin_networks: [192.168.1.0/24]}]", []string{"must lie within admin.allowed_networks [10.0.0.0/8]"}},
-		{"user admin network wider than the realm's", "admin:\n  allowed_networks: [10.1.0.0/16]\nroles:\n  ops:\n    users: [{email: a@x.io, admin_networks: [10.0.0.0/8]}]", []string{"must lie within"}},
-		{"bad audit retention", "audit:\n  retention: forever", []string{"audit.retention: invalid duration"}},
-		{"audit retention too short", "audit:\n  retention: 12h", []string{"audit.retention: must be at least 1d"}},
+		{"bad user network", "auth:\n  strategies:\n    password: [password]\nroles:\n  ops:\n    users: [{email: a@x.io, login_networks: [nope]}]", []string{`roles.ops.users[0].login_networks: "nope" is not`}},
+		{"user admin network outside the realm's", "auth:\n  strategies:\n    password: [password]\nadmin:\n  allowed_networks: [10.0.0.0/8]\nroles:\n  ops:\n    users: [{email: a@x.io, admin_networks: [192.168.1.0/24]}]", []string{"must lie within admin.allowed_networks [10.0.0.0/8]"}},
+		{"user admin network wider than the realm's", "auth:\n  strategies:\n    password: [password]\nadmin:\n  allowed_networks: [10.1.0.0/16]\nroles:\n  ops:\n    users: [{email: a@x.io, admin_networks: [10.0.0.0/8]}]", []string{"must lie within"}},
+		{"bad audit retention", "auth:\n  strategies:\n    password: [password]\naudit:\n  retention: forever", []string{"audit.retention: invalid duration"}},
+		{"audit retention too short", "auth:\n  strategies:\n    password: [password]\naudit:\n  retention: 12h", []string{"audit.retention: must be at least 1d"}},
 		{"audit settings without auth", "auth: disabled\naudit:\n  retention: 30d", []string{"audit: only applies"}},
-		{"different networks in two roles", "roles:\n  ops:\n    users: [{email: a@x.io, login_networks: [10.0.0.1]}]\n  qa:\n    users: [{email: a@x.io, login_networks: [10.0.0.2]}]", []string{"has different networks in another role"}},
-		{"max_concurrency too low", "functions:\n  max_concurrency: 0", []string{"functions.max_concurrency: must be at least 1, got 0"}},
-		{"log_retention bad duration", "functions:\n  log_retention: forever", []string{"functions.log_retention: invalid duration"}},
-		{"log_retention too short", "functions:\n  log_retention: 1m", []string{"functions.log_retention: must be at least 1h0m0s"}},
+		{"different networks in two roles", "auth:\n  strategies:\n    password: [password]\nroles:\n  ops:\n    users: [{email: a@x.io, login_networks: [10.0.0.1]}]\n  qa:\n    users: [{email: a@x.io, login_networks: [10.0.0.2]}]", []string{"has different networks in another role"}},
+		{"max_concurrency too low", authBase + "functions:\n  max_concurrency: 0", []string{"functions.max_concurrency: must be at least 1, got 0"}},
+		{"log_retention bad duration", authBase + "functions:\n  log_retention: forever", []string{"functions.log_retention: invalid duration"}},
+		{"log_retention too short", authBase + "functions:\n  log_retention: 1m", []string{"functions.log_retention: must be at least 1h0m0s"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -203,7 +207,7 @@ func TestRealmSettingsErrors(t *testing.T) {
 
 func TestLoadRealmFile(t *testing.T) {
 	root := writeTree(t, map[string]string{
-		"shop/realm.yaml":       "signup: open\n",
+		"shop/realm.yaml":       "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		"shop/db/c/schema.json": `{}`,
 	})
 	reg, err := Load(root)
@@ -223,7 +227,7 @@ func TestLoadRealmFile(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	for _, w := range []string{"shop: realm has no realm.yaml (create one with `backd template realm --realm shop`)", "blog/realm.yaml: auth: must be"} {
+	for _, w := range []string{"shop: realm has no realm.yaml (create one with `backd template realm --realm shop`)", "blog/realm.yaml: line 1: auth: must be"} {
 		if !strings.Contains(err.Error(), w) {
 			t.Errorf("error %q does not contain %q", err, w)
 		}
@@ -243,7 +247,7 @@ func TestNormalizeEmail(t *testing.T) {
 
 func TestLoadRules(t *testing.T) {
 	root := writeTree(t, map[string]string{
-		"shop/realm.yaml":               "roles:\n  admin: {}\n",
+		"shop/realm.yaml":               "auth:\n  strategies:\n    password: [password]\nroles:\n  admin: {}\n",
 		"shop/db/items/schema.json":     personSchema,
 		"shop/db/items/collection.yaml": rulesSection("read: \"user != nil && document.name == user.email\"\nwrite: hasRole(user, 'admin')\n"),
 		"shop/db/plain/schema.json":     `{}`,
@@ -293,7 +297,7 @@ func TestLoadRules(t *testing.T) {
 }
 
 func TestAdminRoles(t *testing.T) {
-	s, errs := parseRealmSettings([]byte("roles:\n  ops:\n    admin: true\n  staff:\n    admin: true\n  editor: {}\n"))
+	s, errs := parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\nroles:\n  ops:\n    admin: true\n  staff:\n    admin: true\n  editor: {}\n"))
 	if len(errs) > 0 {
 		t.Fatal(errs)
 	}
@@ -308,7 +312,10 @@ func TestAdminRoles(t *testing.T) {
 }
 
 func TestNetworksSettings(t *testing.T) {
-	s, errs := parseRealmSettings([]byte(`
+	s, errs := parseRealmSettings([]byte(`auth:
+  strategies:
+    password: [password]
+
 admin:
   allowed_networks: [10.0.0.0/8, "2001:db8::/32"]
 roles:
@@ -368,15 +375,15 @@ func TestAdminSessionLimits(t *testing.T) {
 		return s
 	}
 	// Unset: 0, meaning the regular limits.
-	if s := load("signup: open\n"); s.AdminIdleTimeout != 0 || s.AdminMaxLifetime != 0 {
+	if s := load("auth:\n  strategies:\n    password: [password]\n  signup: open\n"); s.AdminIdleTimeout != 0 || s.AdminMaxLifetime != 0 {
 		t.Errorf("unset admin limits = %v, %v", s.AdminIdleTimeout, s.AdminMaxLifetime)
 	}
 	// One or both set; the other stays the regular one.
-	s := load("sessions:\n  admin_idle_timeout: 30m\n")
+	s := load("auth:\n  strategies:\n    password: [password]\n  sessions:\n    admin_idle_timeout: 30m\n")
 	if s.AdminIdleTimeout != 30*time.Minute || s.AdminMaxLifetime != 0 {
 		t.Errorf("only admin_idle_timeout: %v, %v", s.AdminIdleTimeout, s.AdminMaxLifetime)
 	}
-	s = load("sessions:\n  idle_timeout: 7d\n  max_lifetime: 30d\n  admin_idle_timeout: 1h\n  admin_max_lifetime: 12h\n")
+	s = load("auth:\n  strategies:\n    password: [password]\n  sessions:\n    idle_timeout: 7d\n    max_lifetime: 30d\n    admin_idle_timeout: 1h\n    admin_max_lifetime: 12h\n")
 	if s.AdminIdleTimeout != time.Hour || s.AdminMaxLifetime != 12*time.Hour || s.IdleTimeout != 7*24*time.Hour {
 		t.Errorf("both set: %+v", s)
 	}
@@ -384,11 +391,11 @@ func TestAdminSessionLimits(t *testing.T) {
 
 func TestSessionCookieSettings(t *testing.T) {
 	for yaml, want := range map[string]CookieSettings{
-		"": {},
-		"sessions:\n  cookie:\n    enabled: false\n":                                                                  {SameSite: "lax"},
-		"sessions:\n  cookie:\n    enabled: true\ncors:\n  origins: [https://app.example.com]\n":                      {Enabled: true, SameSite: "lax"},
-		"sessions:\n  cookie:\n    enabled: true\n    same_site: Strict\n":                                            {Enabled: true, SameSite: "strict"},
-		"sessions:\n  cookie:\n    enabled: true\n    same_site: none\ncors:\n  origins: [https://app.example.com]\n": {Enabled: true, SameSite: "none"},
+		authBase: {},
+		"auth:\n  strategies:\n    password: [password]\n  sessions:\n    cookie:\n      enabled: false\n":                                                                    {SameSite: "lax"},
+		"auth:\n  strategies:\n    password: [password]\n  sessions:\n    cookie:\n      enabled: true\ncors:\n  origins: [https://app.example.com]\n":                        {Enabled: true, SameSite: "lax"},
+		"auth:\n  strategies:\n    password: [password]\n  sessions:\n    cookie:\n      enabled: true\n      same_site: Strict\n":                                            {Enabled: true, SameSite: "strict"},
+		"auth:\n  strategies:\n    password: [password]\n  sessions:\n    cookie:\n      enabled: true\n      same_site: none\ncors:\n  origins: [https://app.example.com]\n": {Enabled: true, SameSite: "none"},
 	} {
 		s, errs := parseRealmSettings([]byte(yaml))
 		if len(errs) > 0 || s.Cookie != want {
@@ -398,7 +405,10 @@ func TestSessionCookieSettings(t *testing.T) {
 }
 
 func TestAdminRightsInRealmYAML(t *testing.T) {
-	s, errs := parseRealmSettings([]byte(`
+	s, errs := parseRealmSettings([]byte(`auth:
+  strategies:
+    password: [password]
+
 roles:
   root:
     admin: true
@@ -442,11 +452,11 @@ roles:
 
 func TestAdminRightsErrors(t *testing.T) {
 	for name, tc := range map[string]struct{ yaml, want string }{
-		"unknown area":  {"roles:\n  a:\n    admin: [users, billing]\n", `unknown admin area "billing" (want users, invitations, apikeys, secrets, audit, functions, data, config, or read)`},
-		"empty list":    {"roles:\n  a:\n    admin: []\n", "admin: [] opens nothing"},
-		"listed twice":  {"roles:\n  a:\n    admin: [audit, audit]\n", `"audit" is listed twice`},
-		"not a boolean": {"roles:\n  a:\n    admin: sometimes\n", "admin must be true, false, read or a list of areas"},
-		"a mapping":     {"roles:\n  a:\n    admin: {users: true}\n", "admin must be true, false, read or a list of areas"},
+		"unknown area":  {"auth:\n  strategies:\n    password: [password]\nroles:\n  a:\n    admin: [users, billing]\n", `unknown admin area "billing" (want users, invitations, apikeys, secrets, audit, functions, data, config, or read)`},
+		"empty list":    {"auth:\n  strategies:\n    password: [password]\nroles:\n  a:\n    admin: []\n", "admin: [] opens nothing"},
+		"listed twice":  {"auth:\n  strategies:\n    password: [password]\nroles:\n  a:\n    admin: [audit, audit]\n", `"audit" is listed twice`},
+		"not a boolean": {"auth:\n  strategies:\n    password: [password]\nroles:\n  a:\n    admin: sometimes\n", "admin must be true, false, read or a list of areas"},
+		"a mapping":     {"auth:\n  strategies:\n    password: [password]\nroles:\n  a:\n    admin: {users: true}\n", "admin must be true, false, read or a list of areas"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, errs := parseRealmSettings([]byte(tc.yaml))
@@ -458,7 +468,10 @@ func TestAdminRightsErrors(t *testing.T) {
 }
 
 func TestAdminReadLevel(t *testing.T) {
-	s, errs := parseRealmSettings([]byte(`
+	s, errs := parseRealmSettings([]byte(`auth:
+  strategies:
+    password: [password]
+
 admin:
   read_access: { users: true }
 roles:
@@ -513,7 +526,7 @@ roles:
 		}
 	}
 	// With read_access left out nobody reads users or data by reading alone.
-	none, _ := parseRealmSettings([]byte("roles:\n  viewer: { admin: read }\n"))
+	none, _ := parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\nroles:\n  viewer: { admin: read }\n"))
 	v := none.AdminAccess([]string{"viewer"})
 	if v.CanRead(none, RightUsers) || v.CanRead(none, RightData) || !v.CanRead(none, RightAudit|RightFunctions|RightAPIKeys|RightSecrets|RightInvitations) {
 		t.Errorf("default read_access: %+v", v)
@@ -533,7 +546,7 @@ func TestAdminRightsNames(t *testing.T) {
 
 func TestLoginThrottleSettings(t *testing.T) {
 	// Left out: the values the throttle always had.
-	s, errs := parseRealmSettings([]byte("signup: open\n"))
+	s, errs := parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\n  signup: open\n"))
 	if len(errs) > 0 {
 		t.Fatal(errs)
 	}
@@ -542,7 +555,7 @@ func TestLoginThrottleSettings(t *testing.T) {
 		t.Errorf("defaults = %+v, want %+v", got, want)
 	}
 	// Set, in whole or in part.
-	s, errs = parseRealmSettings([]byte("login_throttle:\n  account_threshold: 3\n  window: 1h\n  max_delay: 30m\n"))
+	s, errs = parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\n  login_throttle:\n    account_threshold: 3\n    window: 1h\n    max_delay: 30m\n"))
 	if len(errs) > 0 {
 		t.Fatal(errs)
 	}
@@ -558,14 +571,14 @@ func TestLoginThrottleSettings(t *testing.T) {
 
 func TestLoginThrottleErrors(t *testing.T) {
 	for name, tc := range map[string]struct{ yaml, want string }{
-		"zero threshold":    {"login_throttle:\n  account_threshold: 0\n", "login_throttle.account_threshold: must be at least 1"},
-		"negative ip":       {"login_throttle:\n  ip_threshold: -5\n", "login_throttle.ip_threshold: must be at least 1"},
-		"short window":      {"login_throttle:\n  window: 10s\n", "login_throttle.window: must be at least 1m0s"},
-		"zero max delay":    {"login_throttle:\n  max_delay: 0s\n", "login_throttle.max_delay: must be at least 1s"},
-		"delay past window": {"login_throttle:\n  window: 10m\n  max_delay: 1h\n", "max_delay (1h0m0s) must not exceed window (10m0s)"},
-		"not a duration":    {"login_throttle:\n  window: soon\n", "login_throttle.window"},
-		"unknown key":       {"login_throttle:\n  lockout: true\n", "lockout"},
-		"auth disabled":     {"auth: disabled\nlogin_throttle:\n  window: 1h\n", "login_throttle: only applies when auth is enabled"},
+		"zero threshold":    {"auth:\n  strategies:\n    password: [password]\n  login_throttle:\n    account_threshold: 0\n", "login_throttle.account_threshold: must be at least 1"},
+		"negative ip":       {"auth:\n  strategies:\n    password: [password]\n  login_throttle:\n    ip_threshold: -5\n", "login_throttle.ip_threshold: must be at least 1"},
+		"short window":      {"auth:\n  strategies:\n    password: [password]\n  login_throttle:\n    window: 10s\n", "login_throttle.window: must be at least 1m0s"},
+		"zero max delay":    {"auth:\n  strategies:\n    password: [password]\n  login_throttle:\n    max_delay: 0s\n", "login_throttle.max_delay: must be at least 1s"},
+		"delay past window": {"auth:\n  strategies:\n    password: [password]\n  login_throttle:\n    window: 10m\n    max_delay: 1h\n", "max_delay (1h0m0s) must not exceed window (10m0s)"},
+		"not a duration":    {"auth:\n  strategies:\n    password: [password]\n  login_throttle:\n    window: soon\n", "login_throttle.window"},
+		"unknown key":       {"auth:\n  strategies:\n    password: [password]\n  login_throttle:\n    lockout: true\n", "lockout"},
+		"auth disabled":     {"auth: disabled\nlogin_throttle:\n  window: 1h\n", "login_throttle: has moved"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, errs := parseRealmSettings([]byte(tc.yaml))
@@ -579,7 +592,7 @@ func TestLoginThrottleErrors(t *testing.T) {
 // A directory that still has a rules.yaml does not load: its rules would silently be gone.
 func TestARetiredRulesFileStopsTheLoad(t *testing.T) {
 	root := writeTree(t, map[string]string{
-		"shop/realm.yaml":           "roles:\n  admin: {}\n",
+		"shop/realm.yaml":           "auth:\n  strategies:\n    password: [password]\nroles:\n  admin: {}\n",
 		"shop/db/items/schema.json": personSchema,
 		"shop/db/items/rules.yaml":  "read: 'true'\n",
 	})
@@ -594,7 +607,7 @@ func TestARetiredRulesFileStopsTheLoad(t *testing.T) {
 	}
 	// Even with a collection.yaml that has rules of its own: one place only.
 	root = writeTree(t, map[string]string{
-		"shop/realm.yaml":               "roles:\n  admin: {}\n",
+		"shop/realm.yaml":               "auth:\n  strategies:\n    password: [password]\nroles:\n  admin: {}\n",
 		"shop/db/items/schema.json":     personSchema,
 		"shop/db/items/rules.yaml":      "read: 'true'\n",
 		"shop/db/items/collection.yaml": rulesSection("read: 'true'\n"),
@@ -609,7 +622,7 @@ func TestARetiredRulesFileStopsTheLoad(t *testing.T) {
 func TestRulesSectionOfCollectionYAML(t *testing.T) {
 	load := func(collection string) (*Collection, error) {
 		reg, err := Load(writeTree(t, map[string]string{
-			"shop/realm.yaml":               "roles:\n  admin: {}\n",
+			"shop/realm.yaml":               "auth:\n  strategies:\n    password: [password]\nroles:\n  admin: {}\n",
 			"shop/db/items/schema.json":     personSchema,
 			"shop/db/items/collection.yaml": collection,
 		}))
@@ -641,16 +654,16 @@ func TestRulesSectionOfCollectionYAML(t *testing.T) {
 }
 
 func TestAppConfigCacheTTL(t *testing.T) {
-	s, errs := parseRealmSettings([]byte("app_config:\n  cache_ttl: 90s\n"))
+	s, errs := parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\napp_config:\n  cache_ttl: 90s\n"))
 	if len(errs) > 0 || s.AppConfigCacheTTL != 90*time.Second {
 		t.Fatalf("ttl = %v, %v", s.AppConfigCacheTTL, errs)
 	}
-	s, errs = parseRealmSettings([]byte("{}\n"))
+	s, errs = parseRealmSettings([]byte("auth:\n  strategies:\n    password: [password]\n"))
 	if len(errs) > 0 || s.AppConfigTTL() != DefaultAppConfigCacheTTL {
 		t.Fatalf("default = %v, %v", s.AppConfigTTL(), errs)
 	}
 	for _, bad := range []string{"0s", "2d", "soon"} {
-		if _, errs := parseRealmSettings([]byte("app_config:\n  cache_ttl: " + bad + "\n")); len(errs) == 0 {
+		if _, errs := parseRealmSettings([]byte(authBase + "app_config:\n  cache_ttl: " + bad + "\n")); len(errs) == 0 {
 			t.Errorf("cache_ttl %s accepted", bad)
 		}
 	}

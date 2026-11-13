@@ -1,7 +1,10 @@
-signup: open
-sessions:
-  cookie:
-    enabled: true
+auth:
+  strategies:
+    password: [password]
+  signup: open
+  sessions:
+    cookie:
+      enabled: true
 roles:
   admin: {}
   ops:

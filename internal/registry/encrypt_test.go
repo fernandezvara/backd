@@ -9,7 +9,7 @@ import (
 func encryptTree(t *testing.T, yaml string) (*Registry, error) {
 	t.Helper()
 	return Load(writeTree(t, map[string]string{
-		"clinic/realm.yaml":                    "signup: open\n",
+		"clinic/realm.yaml":                    "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
 		"clinic/main/patients/schema.json":     `{"type":"object","properties":{"tax_id":{"type":"string"},"notes":{"type":"string"},"address":{"type":"object","properties":{"street":{"type":"string"}}}}}`,
 		"clinic/main/patients/collection.yaml": yaml,
 	}))
@@ -52,7 +52,7 @@ func TestEncryptedFieldMistakesAreRefusedWithTheField(t *testing.T) {
 func encryptTreeFiles(t *testing.T, schema, yaml string, extra map[string]string) error {
 	t.Helper()
 	files := map[string]string{
-		"clinic/realm.yaml":                    "signup: open\nroles:\n  staff: {admin: true}\n",
+		"clinic/realm.yaml":                    "auth:\n  strategies:\n    password: [password]\n  signup: open\nroles:\n  staff: {admin: true}\n",
 		"clinic/main/patients/schema.json":     schema,
 		"clinic/main/patients/collection.yaml": yaml,
 	}
@@ -111,7 +111,7 @@ func TestEncryptedFieldsStillLetOtherRulesReadThem(t *testing.T) {
 func encryptTreeFiles2(t *testing.T, yaml string) (*Registry, error) {
 	t.Helper()
 	return Load(writeTree(t, map[string]string{
-		"clinic/realm.yaml":                    "signup: open\nroles:\n  staff: {admin: true}\n",
+		"clinic/realm.yaml":                    "auth:\n  strategies:\n    password: [password]\n  signup: open\nroles:\n  staff: {admin: true}\n",
 		"clinic/main/patients/schema.json":     patientsSchema,
 		"clinic/main/patients/collection.yaml": yaml,
 	}))
