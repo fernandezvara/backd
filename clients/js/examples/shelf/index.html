@@ -613,6 +613,7 @@
             <input x-model="invitation" :required="mode === 'signup' && !joinToken" placeholder="bdi_… from your operator"></label>
           <label>Password <input type="password" x-model="password" required minlength="12"
                                :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"></label>
+          <label x-show="mode === 'login'"><input type="checkbox" x-model="operator"> I am an operator (password and authenticator code)</label>
           <!-- Chapter 17: the consents of the sign-up, with their texts. -->
           <template x-if="mode === 'signup'">
             <div>

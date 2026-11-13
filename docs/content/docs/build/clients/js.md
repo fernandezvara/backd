@@ -82,7 +82,9 @@ The endpoints behind these calls, and their rules, are described in [Sign-up, lo
 
 ### Two-step sign-in and magic links
 
-A user with a [second factor](../../auth/mfa/) doesn't get a session from their password alone. `signIn()` returns the step as a value; `login()` and `signup()`, which promise a session, reject with a `SecondStepRequiredError` carrying the `challenge`.
+A realm with more than one [strategy](../../auth/#strategies) that starts with the password needs to know which one: pass `strategy` to `signIn()` (and to `magicLink.request()`, `signInWith()` and `signInWithIdToken()`), or set it once as `createClient({ url, realm, strategy: 'password' })`; without it the answer is `400 strategy_required` (`ValidationError`). `GET /_auth/strategies` lists the names.
+
+A strategy with a `totp` step doesn't give a session from the password alone. `signIn()` returns the step as a value; `login()` and `signup()`, which promise a session, reject with a `SecondStepRequiredError` carrying the `challenge`.
 
 ```js
 const result = await backd.auth.signIn({ email, password })

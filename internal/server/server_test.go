@@ -301,12 +301,3 @@ func secondStep(s *registry.RealmSettings, roles ...string) {
 		s.Roles[r] = role
 	}
 }
-
-// noSecondStep undoes secondStep.
-func noSecondStep(s *registry.RealmSettings) {
-	s.Strategies = nil
-	for r, role := range s.Roles {
-		role.Strategies = nil
-		s.Roles[r] = role
-	}
-}

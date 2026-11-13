@@ -4,6 +4,7 @@
 auth:
   strategies:
     password: [password]
+    password_totp: [password, totp]
     magic_link: [magic_link]
   signup: open
 
