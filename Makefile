@@ -224,10 +224,10 @@ example-attacks:
 # (each starts its own release or publish workflow). GitHub starts no workflow for
 # any tag of a push that carries more than three tags, so the server tag goes alone
 # and the three client tags together. Usage:
-#   make release-tag VERSION=v0.9.9
+#   make release-tag VERSION=v0.9.10
 # Run it on main, up to date with origin, after the release PR is merged.
 release-tag:
-	@test -n "$(VERSION)" || { echo "release-tag: set VERSION, e.g. make release-tag VERSION=v0.9.9" >&2; exit 1; }
+	@test -n "$(VERSION)" || { echo "release-tag: set VERSION, e.g. make release-tag VERSION=v0.9.10" >&2; exit 1; }
 	@echo "$(VERSION)" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$$' || { echo "release-tag: VERSION must look like vX.Y.Z (got '$(VERSION)')" >&2; exit 1; }
 	@test "$$(git rev-parse --abbrev-ref HEAD)" = main || { echo "release-tag: not on main" >&2; exit 1; }
 	@git diff --quiet && git diff --cached --quiet || { echo "release-tag: the working tree has uncommitted changes" >&2; exit 1; }

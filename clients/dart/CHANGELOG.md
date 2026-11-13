@@ -1,5 +1,6 @@
-## Unreleased
+## 0.9.10
 
+- `strategy` on sign-in (per call, or once as a client option) and `strategies()`; `MfaChallenge` and `EnrollmentChallenge` carry `next` and `strategy`; sessions record their `strategy` and `roles_inactive`. See the server's [upgrade notes](https://fernandezvara.github.io/backd/docs/operate/#upgrading-to-the-strategy-release).
 - `client.auth.passkeys`: `list`, `rename`, `remove`, and the ceremonies around the platform's authenticator: `signInWithOptions`, `registerWithOptions`, `stepWithOptions`, `enrollWithOptions` and `reauthWithOptions` take a callback that receives the `options` JSON and returns the `credential` JSON (the `passkeys` package on iOS and Android), with the plain `…Options` / `…Verify` calls underneath. `verifyStep(…, 'passkey', null, credential: …)` and `reauth('passkey', credential: …)` take a passkey; `EnrollmentChallenge` carries `next`.
 
 ## 0.9.9

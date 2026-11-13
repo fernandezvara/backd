@@ -4,7 +4,9 @@ All notable changes to `backd` and to its JavaScript client `backd-js`, which ar
 
 Until a stable release is declared, a minor release may have breaking changes; they are listed first.
 
-## Unreleased
+## 0.9.10
+
+The **authentication strategies** release: sign-in is configured under `auth:` as named strategies, roles can depend on how a person signed in, and **passkeys** are a new method. **Every `realm.yaml` needs editing before the new binaries start** (see *Breaking* and [Upgrading to v0.9.10](https://fernandezvara.github.io/backd/docs/operate/#upgrading-to-the-strategy-release)); nothing changes in the data. The Go, JavaScript, Dart and Python clients, the command line and the admin interface are released with it.
 
 ### Breaking
 

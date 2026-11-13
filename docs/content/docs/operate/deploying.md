@@ -36,7 +36,7 @@ my-backd-config/
 The `Dockerfile` starts from a released `backd` image and adds the config. `backd config check` runs during the image build, so an invalid config never becomes an image:
 
 ```dockerfile
-FROM ghcr.io/fernandezvara/backd:v0.9.9
+FROM ghcr.io/fernandezvara/backd:v0.9.10
 COPY config /config
 ENV CONFIG_DIR=/config
 RUN ["/backd", "config", "check"]
@@ -51,7 +51,7 @@ Pinning a version isn't trusting one. Each tagged release is published automatic
 - the image is signed with [cosign](https://docs.sigstore.dev/) using GitHub's identity — no keys to manage:
 
 ```sh
-cosign verify ghcr.io/fernandezvara/backd:v0.9.9 \
+cosign verify ghcr.io/fernandezvara/backd:v0.9.10 \
   --certificate-identity-regexp '^https://github.com/fernandezvara/backd/\.github/workflows/release\.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
@@ -103,7 +103,7 @@ on:
     branches: [main]
     tags: ["v*"]
 env:
-  BACKD_VERSION: 0.9.9
+  BACKD_VERSION: 0.9.10
   IMAGE: ghcr.io/my-org/backd-config
 jobs:
   build:

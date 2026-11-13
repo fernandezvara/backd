@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.9.10
 
+- `strategy` on sign-in (per call, or once as a client option) and `strategies()`; `MfaChallenge` and `EnrollmentChallenge` carry `next` and `strategy`; sessions record their `strategy` and `roles_inactive`. See the server's [upgrade notes](https://fernandezvara.github.io/backd/docs/operate/#upgrading-to-the-strategy-release).
 - `client.auth.passkeys`: `list`, `rename`, `remove` and the options and verify calls of each ceremony (`register_*`, `sign_in_*`, `step_options`, `enroll_*`, `reauth_options`), with the credential an authenticator made passed through as JSON. A program has no authenticator, so there is no `sign_in`. `verify_step(..., "passkey", credential=…)` and `reauth({"method": "passkey", "credential": …})` take a passkey; `EnrollmentChallenge` carries `next`.
 
 ## 0.9.9
