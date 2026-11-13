@@ -83,6 +83,33 @@ Members can also set an authenticator up for themselves on the *Account* page (*
 Roles are worked out from the session's strategy on every request, so an operator session made with `password` before this chapter loses the `admin` role at once, and the next sign-in with `password_totp` enrols. `backd user mfa-status --realm shelf` lists who hasn't enrolled yet.
 {{< /hint >}}
 
+## Passkeys
+
+A passkey is a key pair the person's device keeps (behind the screen lock, a fingerprint or a PIN), a password manager or a security key. Nothing is typed, nothing can be phished: the browser signs a challenge for `localhost` only. Add this to `config/shelf/realm.yaml` as well:
+
+```yaml
+auth:
+  strategies:
+    passkey: [passkey]
+  passkeys:
+    enabled: true
+```
+
+The relying party id and the origin come from `auth.sign_in.app_url` (`localhost`, which is allowed over `http` only while `BACKD_DEV` is set). Restart `backd`. A member adds a passkey on the *Account* page (**Passkeys → Add a passkey**, after proving who they are once more), and from then on the sign-in form offers **Sign in with a passkey**; browsers that support it also list the passkey in the email field's autofill, so one tap signs the member in.
+
+```js
+// the button
+const result = await backd.auth.passkeys.signIn({ strategy: 'passkey' })
+// the email field: wait for the person to pick a passkey from the autofill
+const ac = new AbortController()
+backd.auth.passkeys.signIn({ strategy: 'passkey', conditional: true, signal: ac.signal })
+// the account page
+await backd.auth.passkeys.register({ name: 'Laptop' })      // asks for a fresh proof first
+const mine = await backd.auth.passkeys.list()
+```
+
+The input needs `autocomplete="username webauthn"` for the autofill to show passkeys. A strategy can also use `passkey` as a second step, [as the page on strategies explains](../../build/auth/strategies/).
+
 ## A rule that asks for it
 
 The import log (chapter 11) is only for operators. Make the rule say *and on a session that used the second factor*:
@@ -112,6 +139,7 @@ await backd.auth.withProof(
 - The operator's next sign-in shows a QR code. After the first code, the *Account* page lists the recovery codes, and the following sign-ins with the operator box ticked ask for a code. Without the box, the operator is signed in with no `admin` role.
 - *Account → Two-step sign-in* lets a member turn it on and off; the operator's *Turn it off* is missing (the role requires it).
 - *Delete my account* and the email and password changes ask for a code (or the password, without a second factor) before they go.
+- *Account → Passkeys → Add a passkey* makes one, and *Sign out → Sign in with a passkey* signs the member in without typing anything.
 - The import log answers `200` to the operator and `403` to a curator.
 
 The tour of the tutorial (`make shelf-tour`) checks all of it with the same client library, including the operator's enrolment through a computed TOTP code. Read [Multi-factor authentication](../../build/auth/mfa/) and [Magic links](../../build/auth/magic-links/) for the whole picture: limits, lockouts, break-glass resets and the recovery flow.

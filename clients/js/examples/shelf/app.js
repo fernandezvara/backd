@@ -287,9 +287,12 @@ document.addEventListener('alpine:init', () => {
         this.user = null
         this.open = e instanceof NotFoundError
       }
-      if (!this.user) await this.loadOptions()
+      if (!this.user) {
+        this.pkSupport = await backd.auth.passkeys.supported()
+        await this.loadOptions()
+      }
       await this.refilter()
-      if (this.user) await Promise.all([this.loadMine(), this.loadDrafts(), this.loadInvites(), this.loadShares(), this.loadNotifs(), this.ensureMember(), this.loadAdmin(), this.loadMfa(), this.loadConsents(), this.loadExports()])
+      if (this.user) await Promise.all([this.loadMine(), this.loadDrafts(), this.loadInvites(), this.loadShares(), this.loadNotifs(), this.ensureMember(), this.loadAdmin(), this.loadMfa(), this.loadPasskeys(), this.loadConsents(), this.loadExports()])
       if (this.user) await this.loadNames()
       if (this.user) await this.loadTeams()
       this.syncView()
@@ -1119,6 +1122,8 @@ document.addEventListener('alpine:init', () => {
       } catch {
         this.methods = ['password', 'magic_link']
       }
+      // The team may have changed: the autofill waits for a passkey of that team's sign-in.
+      this.startConditional()
     },
 
     // What a join link offers, before anybody signs in: the invitation says which team and which roles.
@@ -1640,6 +1645,94 @@ document.addEventListener('alpine:init', () => {
         this.exportMsg = e.message
       } finally {
         this.busy = false
+      }
+    },
+
+    // --- passkeys (chapter 16) ---------------------------------------------------
+
+    pkSupport: { available: false, conditional: false },
+    passkeys: [],
+    pkName: '',
+    pkAsk: null, // the conditional sign-in waiting in the email field (an AbortController)
+
+    // Sign in with a passkey: the browser asks for one; the team is the one typed (empty: the operators' door).
+    async signInWithPasskey() {
+      this.stopConditional()
+      this.busy = true
+      this.error = null
+      try {
+        signing = clientFor(((this.joinToken ? this.joinOrg : this.company) ?? '').trim())
+        await this.afterFirstStep(await signing.auth.passkeys.signIn({ strategy: 'passkey' }))
+      } catch (e) {
+        if (e.name !== 'AbortError') this.error = e.code === 'passkey_cancelled' ? 'The passkey prompt was dismissed.' : e.message
+      } finally {
+        this.busy = false
+        this.startConditional()
+      }
+    },
+
+    // The email field offers the passkeys of this device (autocomplete="username webauthn"): one tap signs in.
+    async startConditional() {
+      this.stopConditional()
+      if (this.user || !this.pkSupport.conditional) return
+      const ask = new AbortController()
+      this.pkAsk = ask
+      try {
+        signing = clientFor(((this.joinToken ? this.joinOrg : this.company) ?? '').trim())
+        const result = await signing.auth.passkeys.signIn({ strategy: 'passkey', conditional: true, signal: ask.signal })
+        this.pkAsk = null
+        await this.afterFirstStep(result)
+      } catch (e) {
+        if (e.name !== 'AbortError') this.error = e.message
+      }
+    },
+
+    stopConditional() {
+      this.pkAsk?.abort()
+      this.pkAsk = null
+    },
+
+    async loadPasskeys() {
+      this.pkSupport = await backd.auth.passkeys.supported()
+      try {
+        this.passkeys = await backd.auth.passkeys.list()
+      } catch {
+        this.passkeys = [] // a realm without passkeys
+      }
+    },
+
+    async addPasskey() {
+      this.busy = true
+      this.accountMsg = null
+      try {
+        await backd.auth.withProof((methods) => this.askProof(methods), () => backd.auth.passkeys.register({ name: this.pkName.trim() || undefined }))
+        this.pkName = ''
+        await this.loadPasskeys()
+      } catch (e) {
+        this.accountMsg = e.code === 'passkey_cancelled' ? 'The passkey prompt was dismissed.' : e.message
+      } finally {
+        this.busy = false
+      }
+    },
+
+    async renamePasskey(p) {
+      const name = prompt('Name of this passkey:', p.name)
+      if (!name?.trim()) return
+      try {
+        await backd.auth.passkeys.rename(p.id, name.trim())
+        await this.loadPasskeys()
+      } catch (e) {
+        this.accountMsg = e.message
+      }
+    },
+
+    async removePasskey(p) {
+      this.accountMsg = null
+      try {
+        await backd.auth.withProof((methods) => this.askProof(methods), () => backd.auth.passkeys.remove(p.id))
+        await this.loadPasskeys()
+      } catch (e) {
+        this.accountMsg = e.message
       }
     },
 

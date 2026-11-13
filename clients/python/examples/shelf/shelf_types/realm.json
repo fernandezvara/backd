@@ -1,7 +1,7 @@
 {
   "generator": "1",
   "realm": "shelf",
-  "fingerprint": "fb44146b475112f249fd28d0ed05d1ced8c088946bbbb457028d7f6ff0a88aed",
+  "fingerprint": "acceec91cc4514645471d90030971b513295736b4af321a9a011447b7fc3922d",
   "entries": {
     "collection mail/outbox": "",
     "collection main/assets": "",
@@ -155,6 +155,7 @@
     "role curator": "",
     "strategy magic_link": "",
     "strategy magic_link_totp": "",
+    "strategy passkey": "",
     "strategy password": "",
     "strategy password_totp": "",
     "template email account-exists": "",

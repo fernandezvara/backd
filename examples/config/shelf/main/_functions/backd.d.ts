@@ -379,7 +379,7 @@ export interface Realm {
     };
   };
   roles: "admin" | "curator";
-  strategies: "password" | "magic_link" | "password_totp" | "magic_link_totp";
+  strategies: "password" | "magic_link" | "password_totp" | "magic_link_totp" | "passkey";
   org_roles: "admin" | "editor" | "member" | "owner";
   team_roles: never;
 }

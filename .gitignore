@@ -63,3 +63,7 @@ deploy/terraform/**/plan.*
 **/kubeconfig
 **/kubeconfig.*
 **/*.kubeconfig
+
+# Playwright (clients/js)
+clients/js/test-results/
+clients/js/playwright-report/

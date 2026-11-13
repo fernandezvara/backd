@@ -13,6 +13,7 @@ auth:
     magic_link: [magic_link]
     password_totp: [password, totp]
     magic_link_totp: [magic_link, totp]
+    passkey: [passkey]
   signup: invite
 
   # Chapter 16 adds a way in without a password and a second factor. Members
@@ -25,6 +26,13 @@ auth:
     enabled: true
   sign_in:
     app_url: http://localhost:8080/   # within email.allowed_redirects
+
+  # Chapter 16 also lets members sign in with a passkey (the device's screen
+  # lock, a password manager or a security key) instead of the password: they
+  # add one on the account page. The relying party id and the origin come from
+  # sign_in.app_url above (localhost over http is allowed in BACKD_DEV only).
+  passkeys:
+    enabled: true
 
   # The operators hold the keys to everything, so the admin role needs a second
   # factor: the first sign-in sets one up (an authenticator app), the next ones
