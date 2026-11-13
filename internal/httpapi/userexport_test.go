@@ -189,7 +189,7 @@ func TestPersonalExportHoldsWhatTheErasureModelFinds(t *testing.T) {
 	}
 
 	// The system data, one part each, with her account first among them.
-	for _, name := range []string{"account", "identities", "sessions", "devices", "mfa", "organizations", "invitations", "consents", "audit", "invocations"} {
+	for _, name := range []string{"account", "identities", "sessions", "devices", "passkeys", "mfa", "organizations", "invitations", "consents", "audit", "invocations"} {
 		if _, ok := pkg.files["_account/"+name+".jsonl"]; !ok {
 			t.Errorf("_account/%s.jsonl is missing", name)
 		}

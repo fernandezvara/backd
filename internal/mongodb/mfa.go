@@ -60,6 +60,9 @@ func (s *AuthStore) dropSecondFactors(ctx context.Context, userID string) error 
 	if _, err := s.mfa().DeleteOne(ctx, byID(userID)); err != nil {
 		return err
 	}
+	if _, err := s.passkeys().DeleteMany(ctx, bson.D{{Key: "user_id", Value: userID}}); err != nil {
+		return err
+	}
 	_, err := s.challenges().DeleteMany(ctx, bson.D{{Key: "user_id", Value: userID}})
 	return err
 }

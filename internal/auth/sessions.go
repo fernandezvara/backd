@@ -62,6 +62,9 @@ type Session struct {
 	// Strategy is the strategy the session was made with ("" for a session from before
 	// strategies, or one an organization's connection opened): its roles are those that accept it.
 	Strategy string
+	// Passkey is the id of the passkey a sign-in with one used ("" otherwise): removing the passkey
+	// ends the sessions it opened.
+	Passkey string
 	// Org is the organization the session is scoped to: it reaches that one and no other
 	// (design/scoped-sessions.md). "" for an operator's session, and for one from before sessions
 	// were scoped.

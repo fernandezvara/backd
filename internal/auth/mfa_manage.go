@@ -45,11 +45,17 @@ type MFAStatus struct {
 	RecoveryCodesLeft int
 	// Required says a role of the user requires MFA.
 	Required bool
+	// Passkeys is how many passkeys the user has.
+	Passkeys int
 }
 
 // MFAStatusOf reports a user's second-factor state.
 func (s *Users) MFAStatusOf(ctx context.Context, u User) (MFAStatus, error) {
 	st := MFAStatus{Available: !s.Settings.MFA.Off && s.Cipher != nil, Methods: []string{}, Required: s.Settings.TOTPRequired(u.Roles)}
+	var err error
+	if st.Passkeys, err = s.PasskeyCount(ctx, u.ID); err != nil {
+		return MFAStatus{}, err
+	}
 	rec, err := s.Store.MFAOf(ctx, u.ID)
 	if errors.Is(err, ErrNotFound) {
 		return st, nil

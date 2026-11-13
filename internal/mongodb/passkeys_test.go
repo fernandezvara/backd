@@ -89,3 +89,36 @@ func TestAuthStorePasskeys(t *testing.T) {
 		t.Errorf("count after delete = %d", n)
 	}
 }
+
+func TestAuthStoreEndsThePasskeySessionsAndDeletesPasskeysWithTheUser(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Date(2126, 9, 26, 12, 0, 0, 0, time.UTC)
+	if err := s.CreateUser(ctx, auth.User{ID: "u1", Email: "ada@example.com", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	for id, passkeyID := range map[string]string{"s1": "k1", "s2": "k1", "s3": "", "s4": "k2"} {
+		if err := s.CreateSession(ctx, auth.Session{ID: id, UserID: "u1", TokenHash: "h" + id, CreatedAt: now, LastUsedAt: now, ExpiresAt: now.Add(time.Hour), Passkey: passkeyID}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n, err := s.DeleteSessionsOfPasskey(ctx, "u1", "k1")
+	if err != nil || n != 2 {
+		t.Fatalf("ended %d: %v", n, err)
+	}
+	left, _ := s.ListSessions(ctx, "u1")
+	if len(left) != 2 {
+		t.Errorf("sessions left = %d", len(left))
+	}
+	for _, id := range []string{"k1", "k2"} {
+		if err := s.Add(ctx, passkey.Credential{ID: id, UserID: "u1", CredentialID: []byte(id), PublicKey: []byte{1}, RPID: "example.com", CreatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.DeleteUser(ctx, "u1"); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := s.CountByUser(ctx, "u1"); n != 0 {
+		t.Errorf("%d passkeys survive the user", n)
+	}
+}

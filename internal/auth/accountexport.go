@@ -108,6 +108,21 @@ func (s *Users) AccountExport(ctx context.Context, userID string) ([]AccountPart
 	}
 	add("devices", rows, false)
 
+	// Passkeys: what the user named, when, and the flags; never the public key.
+	passkeys, err := s.Store.ListByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	rows = nil
+	for _, p := range passkeys {
+		row := map[string]any{"name": p.Name, "created_at": stamp(p.CreatedAt), "transports": p.Transports, "backup_eligible": p.BackupEligible, "backup_state": p.BackupState}
+		if !p.LastUsedAt.IsZero() {
+			row["last_used_at"] = stamp(p.LastUsedAt)
+		}
+		rows = append(rows, row)
+	}
+	add("passkeys", rows, false)
+
 	mfa := map[string]any{"enabled": false}
 	if rec, err := s.Store.MFAOf(ctx, userID); err == nil {
 		mfa = map[string]any{

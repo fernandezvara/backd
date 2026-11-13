@@ -46,7 +46,7 @@ func (a *authAPI) mfaStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"available": st.Available, "enabled": st.Enabled, "methods": st.Methods,
-		"recovery_codes_left": st.RecoveryCodesLeft, "required": st.Required,
+		"recovery_codes_left": st.RecoveryCodesLeft, "required": st.Required, "passkeys": st.Passkeys,
 	})
 }
 

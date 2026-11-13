@@ -50,7 +50,7 @@ README.html              a readable summary in the user's language
 app/orders.jsonl         one JSON record per line: the documents of each collection
 app/_files/<id>          the files those documents hold
 _account/account.jsonl   the account: address, language, roles, dates
-_account/identities.jsonl, sessions.jsonl, devices.jsonl, mfa.jsonl, organizations.jsonl,
+_account/identities.jsonl, sessions.jsonl, devices.jsonl, passkeys.jsonl, mfa.jsonl, organizations.jsonl,
 _account/invitations.jsonl, consents.jsonl, audit.jsonl, invocations.jsonl
 ```
 
@@ -67,7 +67,7 @@ _account/invitations.jsonl, consents.jsonl, audit.jsonl, invocations.jsonl
 | Tag | Prints |
 |---|---|
 | `{{Realm}}`, `{{Email}}`, `{{Generated}}`, `{{Days}}` | the realm, the user's address, when it was made, how many days the copy is kept |
-| `{{Count.sessions}}` | the records of each `_account` part (`account`, `identities`, `sessions`, `devices`, `mfa`, `organizations`, `invitations`, `consents`, `audit`, `invocations`) |
+| `{{Count.sessions}}` | the records of each `_account` part (`account`, `identities`, `sessions`, `devices`, `passkeys`, `mfa`, `organizations`, `invitations`, `consents`, `audit`, `invocations`) |
 | `{{#Collections}}{{#Items}}{{Part}} {{Documents}}{{/Items}}{{Files}}{{/Collections}}` | the files with documents, and how many files |
 | `{{#Exclusions}}{{#List}}{{What}} {{Reason}}{{/List}}{{/Exclusions}}` | what was left out, and why |
 | `{{#Truncated}}{{#List}}{{Name}}{{/List}}{{/Truncated}}` | parts that stopped at a limit (audit records and function calls are capped at 20 000 each) |

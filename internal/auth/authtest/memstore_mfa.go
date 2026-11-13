@@ -11,6 +11,7 @@ import (
 // dropSecondFactors forgets a user's second factors and pending steps. m.mu is held.
 func (m *MemStore) dropSecondFactors(userID string) {
 	delete(m.mfa, userID)
+	m.passkeys.DeleteUser(userID)
 	for k, c := range m.challenges {
 		if c.UserID == userID {
 			delete(m.challenges, k)

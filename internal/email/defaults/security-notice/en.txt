@@ -6,6 +6,9 @@ Hello,
 {{else if eq .Data.event "recovery-code-used"}}A recovery code was used to sign in to {{.User.Email}} on {{.Realm}}. Codes left: {{.Data.codes_left}}.
 {{else if eq .Data.event "password-set"}}A password was set on {{.User.Email}} on {{.Realm}}.
 {{else if eq .Data.event "password-removed"}}The password of {{.User.Email}} on {{.Realm}} was removed: you sign in another way now.
+{{else if eq .Data.event "passkey-added"}}A passkey was added to {{.User.Email}} on {{.Realm}}.
+{{else if eq .Data.event "passkey-removed"}}A passkey was removed from {{.User.Email}} on {{.Realm}}.
+{{else if eq .Data.event "passkey-clone-suspected"}}A passkey of {{.User.Email}} on {{.Realm}} was used in a way that suggests it may have been copied. If you do not recognise this, remove it and add a new one.
 {{else if eq .Data.event "api-key-created"}}An API key was created for {{.Realm}} by {{.User.Email}}.
 {{else}}Something changed in the security of {{.User.Email}} on {{.Realm}}.
 {{end}}

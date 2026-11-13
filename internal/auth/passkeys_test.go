@@ -29,7 +29,7 @@ func TestPasskeyServiceRunsOnTheRealmsStoreAndChallenges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.FinishRegistration(ctx, id, a.Register(t, opts), "Phone"); err != nil {
+	if _, err := svc.FinishRegistration(ctx, id, f.user.ID, a.Register(t, opts), "Phone"); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	if n, _ := f.store.CountByUser(ctx, f.user.ID); n != 1 {

@@ -44,6 +44,7 @@ All names start with `backd_`; durations are in seconds.
 | `mongodb_operation_duration_seconds` | `operation`, `outcome` | Time MongoDB took to run each command (histogram). `operation` is the command (`find`, `insert`, `update`, `aggregate`, …, or `other`); `outcome` is `ok`, `error` or `timeout`. Measured by the driver for every database call, whatever part of backd made it. |
 | `mongodb_up` | | `1` while the last check (every 15 seconds) of MongoDB worked, `0` when it failed. |
 | `sessions_created_total` | `realm` | Sessions started by sign-up and login. |
+| `passkey_events_total` | `realm`, `event` | Passkey events: `registered`, `removed` and `removed_by_admin`. |
 | `sessions_ended_total` | `realm`, `reason` | Sessions ended on purpose: `logout`, `logout_all`, `revoked`, `password_changed`, `password_reset`, `password_set`, `email_changed`, `email_reverted`, `disabled`, `deactivated`, `erased` or `deleted`. Sessions that expire on their own are not counted. |
 | `rate_limited_total` | `realm`, `scope` | Times a limit stopped someone: `login` (the throttle), `function` (a function's `rate_limit`), `duplicate_id` ([custom ids](../../build/api/documents/#custom-ids) that exist, held after `duplicate_limit`) and `email_function`, `email_invocation`, `email_ip`, `email_recipient` (the [email limits](../../build/functions/email/)). |
 | `id_conflicts_total` | `realm`, `database`, `collection` | Creates of a [custom id](../../build/api/documents/#custom-ids) that already exists (`409 id_taken`). |

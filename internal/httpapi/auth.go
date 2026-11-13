@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"github.com/fernandezvara/backd/internal/auth/passkey"
 	"maps"
 	"net/http"
 	"slices"
@@ -88,6 +89,11 @@ func (a *authAPI) routes(r chi.Router) {
 			r.With(json).Post("/reauth", a.reauth)
 			r.Post("/reauth/email-code", a.reauthEmailCode)
 			r.Get("/mfa", a.mfaStatus)
+			r.Get("/passkeys", a.passkeys)
+			r.With(json).Post("/passkeys/register/options", a.passkeyRegisterOptions)
+			r.With(json).Post("/passkeys/register/verify", a.passkeyRegisterVerify)
+			r.With(json).Patch("/passkeys/{id}", a.passkeyRename)
+			r.Delete("/passkeys/{id}", a.passkeyRemove)
 			r.Delete("/mfa/totp", a.mfaDisable)
 			r.Post("/mfa/recovery-codes", a.mfaRecoveryCodes)
 			r.Get("/sessions", a.sessions)
@@ -583,7 +589,20 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 	var badDevice *auth.InvalidDeviceError
 	var needConsent *auth.ConsentRequiredError
 	var badConsents *auth.InvalidConsentsError
+	var badName *auth.PasskeyNameError
 	switch {
+	case errors.Is(err, auth.ErrPasskeysDisabled):
+		writeError(w, r, http.StatusForbidden, codePasskeyDisabled, err.Error())
+	case errors.Is(err, auth.ErrLastSignInMethod):
+		writeError(w, r, http.StatusConflict, codeLastMethod, "this is the last way to sign in to the account: add another first")
+	case errors.Is(err, auth.ErrPasskeyLimit):
+		writeError(w, r, http.StatusConflict, codePasskeyLimit, err.Error())
+	case errors.As(err, &badName):
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "name", Reason: badName.Reason})
+	case errors.Is(err, passkey.ErrCeremony):
+		writeError(w, r, http.StatusBadRequest, codeInvalidChallenge, "the challenge is invalid or expired: begin again")
+	case errors.Is(err, passkey.ErrInvalid):
+		writeError(w, r, http.StatusBadRequest, codeInvalidPasskey, "the passkey did not verify")
 	case errors.Is(err, auth.ErrStrategyRequired):
 		writeError(w, r, http.StatusBadRequest, codeStrategyRequired, "strategy is required: more than one strategy starts with this method", Detail{Path: "strategy", Reason: "required"})
 	case errors.Is(err, auth.ErrUnknownStrategy):

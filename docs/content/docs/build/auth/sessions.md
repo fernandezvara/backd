@@ -82,6 +82,10 @@ All request bodies are JSON objects sent with `Content-Type: application/json`. 
 |---|---|---|---|
 | `POST /_auth/signup` | no | `{"email", "password", "invitation"?, "locale"?, "redirect_to"?}` | `201` with a session, or `202` without one when the realm [requires a verified email](#email-verification) |
 | `POST /_auth/login` | no | `{"email", "password", "strategy"?}` | `200` with a session, or with a [challenge](../mfa/) when the strategy has a second step; `400 strategy_required` / `unknown_strategy` ([strategies](../#strategies)) |
+| `GET /_auth/passkeys` | yes | none | `200 {"items": […]}`: the user's [passkeys](#passkeys) (name, dates, transports, whether they sync), never a key |
+| `POST /_auth/passkeys/register/options`, `…/verify` | yes, fresh proof | `{}` then `{"challenge_id", "credential", "name"?}` | the options for `navigator.credentials.create`, then `201` with the passkey |
+| `PATCH /_auth/passkeys/{id}` | yes | `{"name"}` | rename; no fresh proof |
+| `DELETE /_auth/passkeys/{id}` | yes, fresh proof | none | `204`; `409 last_sign_in_method` when it is the user's last way in |
 | `GET /_auth/strategies` | no | none | `200 {"strategies": [{"name", "methods"}]}` |
 | `POST /_auth/magic-link` | no | `{"email", "code_challenge", "redirect_to"?}` | `202 {"request_id"}`, the same for every address: a [link and a code](../magic-links/) by email |
 | `POST /_auth/magic-link/verify` | no | `{"request_id", "code", "code_verifier"}` | `200` with a session (or a [challenge](../mfa/)): the code typed in the app that asked |
@@ -275,6 +279,18 @@ Each session says the organization it is scoped to (`org`, none for an operator'
 
 `DELETE /_auth/sessions/{id}` ends one of them, for example a lost device. Ids of other users' sessions return `404 not_found`.
 
+## Passkeys
+
+A signed-in user can add **passkeys** to their account: a fingerprint, face or PIN on a device, a password manager or a security key. Each is a key pair made for the realm's domain (`auth.passkeys.rp_id`); backd keeps only the public key and a name. The realm turns them on with [`auth.passkeys`](../../configuration/realm/); until then the routes answer `403 passkey_disabled`.
+
+**Signing in with a passkey is not available yet:** this step adds, lists, renames and removes them. The page for the whole feature comes with the sign-in.
+
+- **Adding** takes two calls and a fresh [proof of identity](../reauth/): `POST /_auth/passkeys/register/options` answers `{challenge_id, options}`, the app passes `options` to `navigator.credentials.create`, and `POST /_auth/passkeys/register/verify` sends back `{challenge_id, credential, name}`. The options exclude the user's passkeys, require a resident key and user verification, and ask for no attestation, so a security key that cannot store a resident key cannot register. The ceremony lives 5 minutes. Adding a passkey does not end other sessions, changes nothing about how the user signs in otherwise and makes no recovery codes; the user gets a `passkey-added` email and it is audited (`passkey.registered`).
+- **At most 10** per user (`409 passkey_limit`).
+- **Removing** needs a fresh proof too. It refuses the user's last way to sign in (`409 last_sign_in_method`), ends the sessions that passkey opened, sends `passkey-removed` and is audited (`passkey.removed`). An administrator can remove one with `DELETE /_admin/users/{id}/passkeys/{passkey_id}`.
+- A session an organization's connection opened answers `403 sso_session` to adding and removing, like the other account-level actions.
+- `GET /_auth/mfa` also says how many passkeys the user has, the [personal data export](../personal-data/) lists them (name, dates and flags, never a key), and erasing or deleting the account deletes them.
+
 ## Errors
 
 | HTTP | `code` | When |
@@ -289,7 +305,10 @@ Each session says the organization it is scoped to (`org`, none for an operator'
 | 403 | `forbidden` | Sign-up is closed in this realm, or needs a valid invitation |
 | 403 | `email_not_verified` | The password is right but the realm requires a verified address |
 | 404 | `not_found` | Unknown realm, realm with `auth: disabled`, or a session id that isn't yours |
-| 409 | `last_sign_in_method` | Removing the user's only way to sign in |
+| 409 | `last_sign_in_method` | Removing the user's only way to sign in (a password, a provider, or a passkey that is one) |
+| 403 | `passkey_disabled` | The realm has not enabled [passkeys](#passkeys) |
+| 409 | `passkey_limit` | The user has 10 passkeys already |
+| 400 | `invalid_passkey` | A passkey registration that did not verify (challenge, origin, relying party or user verification) |
 | 409 | `email_taken` | Sign-up with a registered email, in a realm that issues a session at sign-up |
 | 429 | `too_many_requests` | Too many failed logins or password checks; wait `Retry-After` seconds |
 | 503 | `unavailable` | Too many password operations at once; retry after the `Retry-After` delay |

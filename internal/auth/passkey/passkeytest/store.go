@@ -96,6 +96,19 @@ func (s *Store) Delete(_ context.Context, userID, id string) error {
 	return passkey.ErrUnknownCredential
 }
 
+// DeleteUser removes every credential of a user (an erased or deleted account).
+func (s *Store) DeleteUser(userID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := s.creds[:0]
+	for _, c := range s.creds {
+		if c.UserID != userID {
+			kept = append(kept, c)
+		}
+	}
+	s.creds = kept
+}
+
 func (s *Store) CountByUser(ctx context.Context, userID string) (int, error) {
 	l, _ := s.ListByUser(ctx, userID)
 	return len(l), nil
