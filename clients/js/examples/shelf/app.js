@@ -476,7 +476,7 @@ document.addEventListener('alpine:init', () => {
       this.error = null
       try {
         signing = clientFor(this.company)
-        await signing.auth.magicLink.request(this.email)
+        await signing.auth.magicLink.request(this.email, { strategy: 'magic_link' })
         this.magicSent = true
       } catch (e) {
         this.error = e.message
