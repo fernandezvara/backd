@@ -13,6 +13,7 @@ import (
 // a closed list in the code.
 type domain struct {
 	sessionsStarted *prometheus.CounterVec
+	passkeys        *prometheus.CounterVec
 	sessionsEnded   *prometheus.CounterVec
 	rateLimited     *prometheus.CounterVec
 	idConflicts     *prometheus.CounterVec
@@ -88,6 +89,7 @@ func newDomain() domain {
 		jobsExpired:     counter("jobs_expired_leases_total", "Jobs claimed again because the worker holding them stopped answering, by realm and kind.", "realm", "kind"),
 		refreshErrors:   prometheus.NewCounter(prometheus.CounterOpts{Namespace: Namespace, Name: "metrics_refresh_errors_total", Help: "Times refreshing the job gauges failed (the last values stay)."}),
 		sessionsStarted: counter("sessions_created_total", "Sessions started (sign-up and login), by realm.", "realm"),
+		passkeys:        counter("passkey_events_total", "Passkey events, by realm and event (registered, removed, removed_by_admin).", "realm", "event"),
 		sessionsEnded: counter("sessions_ended_total",
 			"Sessions ended on purpose, by realm and reason (logout, logout_all, revoked, password_changed, password_reset, password_set, email_changed, email_reverted, disabled, deactivated, erased, deleted). Sessions that expire are not counted.",
 			"realm", "reason"),
@@ -117,7 +119,7 @@ func newDomain() domain {
 }
 
 func (d domain) collectors() []prometheus.Collector {
-	return []prometheus.Collector{newJobsCollector(d.jobs), d.jobsDone, d.jobsRetried, d.jobsExpired, d.refreshErrors, d.egress, d.execRuns, d.execTime, d.execRunning, d.sessionsStarted, d.sessionsEnded, d.rateLimited, d.idConflicts, d.aggregations, d.aggregateTime, d.fnCalls, d.fnTime, d.fnRefusals, d.fnReplays, d.execErrors, d.pushUsers, d.pushDeliveries, d.pushPruned, d.rtStreams, d.rtEvents, d.rtResets, d.rtRefused, d.rtChecks, d.feedOpen, d.feedWatched, d.feedLag, d.feedReopened, d.feedEvents, d.trigEvents, d.trigEnqueued, d.trigDeduped, d.trigGaps, d.trigDropped, d.trigBacklog, d.trigHandoffs, d.trigLag, d.trigWatermark, d.trigLease, d.trigEpoch}
+	return []prometheus.Collector{newJobsCollector(d.jobs), d.jobsDone, d.jobsRetried, d.jobsExpired, d.refreshErrors, d.egress, d.execRuns, d.execTime, d.execRunning, d.sessionsStarted, d.passkeys, d.sessionsEnded, d.rateLimited, d.idConflicts, d.aggregations, d.aggregateTime, d.fnCalls, d.fnTime, d.fnRefusals, d.fnReplays, d.execErrors, d.pushUsers, d.pushDeliveries, d.pushPruned, d.rtStreams, d.rtEvents, d.rtResets, d.rtRefused, d.rtChecks, d.feedOpen, d.feedWatched, d.feedLag, d.feedReopened, d.feedEvents, d.trigEvents, d.trigEnqueued, d.trigDeduped, d.trigGaps, d.trigDropped, d.trigBacklog, d.trigHandoffs, d.trigLag, d.trigWatermark, d.trigLease, d.trigEpoch}
 }
 
 // PushUsers counts n users by what planning a push did with them.
@@ -145,6 +147,13 @@ func (m *Metrics) PushPruned(realm, reason string, n int64) {
 func (m *Metrics) SessionStarted(realm string) {
 	if m != nil {
 		m.sessionsStarted.WithLabelValues(realm).Inc()
+	}
+}
+
+// PasskeyEvent counts a passkey event: registered, removed or removed_by_admin.
+func (m *Metrics) PasskeyEvent(realm, event string) {
+	if m != nil {
+		m.passkeys.WithLabelValues(realm, event).Inc()
 	}
 }
 

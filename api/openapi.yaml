@@ -3122,14 +3122,163 @@ paths:
               schema:
                 type: object
                 additionalProperties: false
-                required: [available, enabled, methods, recovery_codes_left, required]
+                required: [available, enabled, methods, recovery_codes_left, required, passkeys]
                 properties:
+                  passkeys: { type: integer, description: "How many passkeys the user has." }
                   available: { type: boolean, description: "The realm lets users turn a second factor on and the instance has a secrets key." }
                   enabled: { type: boolean }
                   methods: { type: array, items: { type: string, enum: [totp, recovery_code] } }
                   recovery_codes_left: { type: integer }
                   required: { type: boolean }
         "401": { $ref: "#/components/responses/Unauthenticated" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/passkeys:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [auth]
+      summary: The signed-in user's passkeys
+      description: "Never the key material: the name, the dates, the transports and whether the passkey syncs between devices."
+      operationId: listPasskeys
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The passkeys, oldest first.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Passkey" } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/passkeys/register/options:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Start adding a passkey
+      description: |
+        Needs the session and a fresh [re-authentication](#tag/auth) (`X-Backd-Reauth`), and not a
+        session an organization's connection opened (`403 sso_session`). The answer holds the `options`
+        for `navigator.credentials.create` (the browser's JSON form, the `publicKey` member included) and
+        the `challenge_id` to send back with the credential. The options exclude the user's passkeys, require
+        a resident key and user verification, and ask for no attestation. The ceremony lives 5 minutes and
+        is used once. `403 passkey_disabled` when the realm has not enabled passkeys
+        (`auth.passkeys.enabled`); `409 passkey_limit` at 10 passkeys.
+      operationId: passkeyRegisterOptions
+      security: [{ session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
+      responses:
+        "200":
+          description: The options.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [challenge_id, options]
+                properties:
+                  challenge_id: { type: string }
+                  options: { type: object, description: "The PublicKeyCredentialCreationOptions, in the JSON form of the WebAuthn standard (`{ publicKey: … }`)." }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/passkeys/register/verify:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Finish adding a passkey
+      description: |
+        Needs the session and a fresh [re-authentication](#tag/auth). Sends the credential the browser made
+        (the JSON form of the `PublicKeyCredential`) with the `challenge_id` of the options. backd checks the
+        challenge, the origin, the relying party id and that the user was verified, and stores the public
+        key. It does **not** end other sessions, changes nothing about how the user signs in otherwise, and
+        makes no recovery codes; the user is told by email (`passkey-added`) and it is audited
+        (`passkey.registered`). Anything that does not verify is `400 invalid_passkey`; an unknown, used or
+        expired `challenge_id` is `400 invalid_challenge`.
+      operationId: passkeyRegisterVerify
+      security: [{ session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [challenge_id, credential]
+              properties:
+                challenge_id: { type: string }
+                credential: { type: object, description: "The PublicKeyCredential the browser made, in its JSON form." }
+                name: { type: string, maxLength: 64, description: "What the user calls it, such as `Phone`; `Passkey` when left out." }
+      responses:
+        "201":
+          description: The passkey.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Passkey" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/passkeys/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+    patch:
+      tags: [auth]
+      summary: Rename a passkey
+      description: Needs no fresh proof. Someone else's passkey is a `404`.
+      operationId: renamePasskey
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 64 }
+      responses:
+        "200":
+          description: The passkey.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Passkey" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [auth]
+      summary: Remove a passkey
+      description: |
+        Needs a fresh [re-authentication](#tag/auth), and not a session an organization's connection opened
+        (`403 sso_session`). Refused with `409 last_sign_in_method` when it is the user's last way to sign in.
+        Ends the sessions that passkey opened, tells the user (`passkey-removed`) and is audited
+        (`passkey.removed`). Someone else's passkey is a `404`.
+      operationId: removePasskey
+      security: [{ session: [] }]
+      parameters: [{ $ref: "#/components/parameters/reauth" }]
+      responses:
+        "204": { description: Passkey removed. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_auth/mfa/totp/setup:
@@ -5453,8 +5602,9 @@ paths:
               schema:
                 type: object
                 additionalProperties: false
-                required: [available, enabled, methods, recovery_codes_left, required]
+                required: [available, enabled, methods, recovery_codes_left, required, passkeys]
                 properties:
+                  passkeys: { type: integer, description: "How many passkeys the user has." }
                   available: { type: boolean }
                   enabled: { type: boolean }
                   methods: { type: array, items: { type: string, enum: [totp, recovery_code] } }
@@ -5493,6 +5643,27 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/users/{id}/passkeys/{passkey_id}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/id" }
+      - { name: passkey_id, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [admin]
+      summary: Remove one passkey of a user
+      description: |
+        For a lost device the user cannot remove themselves. The user is told by email (`passkey-removed`),
+        the sessions that passkey opened end, and it is audited as `passkey.removed` with the administrator
+        as the actor. Needs the `users` area. Another user's passkey id is a `404`.
+      operationId: adminRemoveUserPasskey
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "204": { description: The passkey was removed., headers: { X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_admin/mfa:
@@ -10988,11 +11159,26 @@ components:
         created_at: { $ref: "#/components/schemas/Timestamp" }
         last_used_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
 
+    Passkey:
+      type: object
+      additionalProperties: false
+      required: [id, name, created_at, last_used_at, transports, backup_eligible, backup_state]
+      description: A registered passkey. Never the key material.
+      properties:
+        id: { type: string }
+        name: { type: string }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        last_used_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
+        transports: { type: array, items: { type: string, enum: [usb, nfc, ble, internal, hybrid] } }
+        backup_eligible: { type: boolean, description: "The passkey syncs between the user's devices." }
+        backup_state: { type: boolean, description: "It has been synced." }
+
     AdminUser:
       type: object
       additionalProperties: false
       required: [id, email, email_verified, roles, locale, disabled, admin_networks, login_networks, created_at, updated_at, erased_at, password_expired_at]
       properties:
+        passkeys: { type: integer, description: "How many passkeys the user has (0 in a realm that has not enabled them). Only in the answer of `GET /_admin/users/{id}`; lists leave it out." }
         password_expired: { type: boolean, description: "Whether the password is expired now (an expiry of this user or the realm's epoch). Only in the answer of `GET /_admin/users/{id}`; lists leave it out." }
         password_expired_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }], description: "When an administrator expired this user's password (`POST /_admin/users/{id}/expire-password`): a password set before it no longer opens the account. Null when none did, and again once the user has a new password; a realm-wide epoch is not shown here." }
         erased_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }], description: "When the user was erased; a tombstone has no email of its own, no roles and can't be enabled." }

@@ -102,6 +102,7 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 			r.Get("/exports/{export}/download", a.downloadUserExport)
 			r.With(json).Post("/consents", a.recordUserConsent)
 			r.Post("/mfa/reset", a.resetUserMFA)
+			r.Delete("/passkeys/{passkey_id}", a.removeUserPasskey)
 			r.Delete("/identities/{provider}", a.unlinkUserIdentity)
 			r.Get("/sessions", a.userSessions)
 			r.Get("/devices", a.userDevices)
@@ -477,6 +478,12 @@ func (a *adminAPI) getUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out["password_expired"] = expired
+	passkeys, err := usersOf(r).PasskeyCount(r.Context(), u.ID)
+	if err != nil {
+		adminError(w, r, err)
+		return
+	}
+	out["passkeys"] = passkeys
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -767,6 +774,12 @@ func fields(w http.ResponseWriter, r *http.Request, obj map[string]any, spec map
 				}
 			}
 			details = append(details, Detail{Path: name, Reason: "must be an RFC 3339 time"})
+		case kind == "object":
+			if m, ok := v.(map[string]any); ok {
+				out[name] = m
+			} else {
+				details = append(details, Detail{Path: name, Reason: "must be an object"})
+			}
 		case kind == "bool":
 			if b, ok := v.(bool); ok {
 				out[name] = b

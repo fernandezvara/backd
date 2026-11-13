@@ -25,6 +25,8 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/internal/auth/passkey"
+	"github.com/fernandezvara/backd/internal/auth/passkey/passkeytest"
 	"github.com/fernandezvara/backd/internal/exportpkg"
 	"github.com/fernandezvara/backd/internal/oauth"
 	"github.com/fernandezvara/backd/internal/oauth/oauthtest"
@@ -929,6 +931,77 @@ func TestContract(t *testing.T) {
 		f.svc.Cipher = nil
 		req("POST", a+"/mfa/totp/setup", "", mine, 503)
 		f.svc.Cipher = cipher
+		// Passkeys: registered, listed, renamed and removed by the signed-in user.
+		{
+			f.svc.Settings.Passkeys = registry.PasskeySettings{Enabled: true, RPID: "acme.example", RPName: "Acme", Origins: []string{"https://app.acme.example"}}
+			f.svc.Settings.SignInRedirects = []string{"https://app.acme.example", "acme://"}
+			req("GET", a+"/passkeys", "", nil, 401)
+			req("POST", a+"/passkeys/register/options", "", nil, 401)
+			req("POST", a+"/passkeys/register/options", "", map[string]string{"Authorization": mine["Authorization"]}, 401) // reauth_required
+			register := func(name string) map[string]any {
+				opts := req("POST", a+"/passkeys/register/options", "", mine, 200)
+				authn := passkeytest.New("https://app.acme.example")
+				raw, _ := json.Marshal(opts["options"])
+				credential := authn.Register(t, raw)
+				body := `{"challenge_id": "` + opts["challenge_id"].(string) + `", "credential": ` + string(credential) + `, "name": "` + name + `"}`
+				return req("POST", a+"/passkeys/register/verify", body, jsonMine, 201)
+			}
+			first := register("Phone")
+			req("POST", a+"/passkeys/register/verify", `{"challenge_id": "nope", "credential": {}}`, jsonMine, 400)
+			req("POST", a+"/passkeys/register/verify", `{}`, jsonMine, 400)
+			req("POST", a+"/passkeys/register/verify", `{"challenge_id": "x", "credential": {}}`, map[string]string{"Content-Type": "application/json"}, 401)
+			list := req("GET", a+"/passkeys", "", mine, 200)["items"].([]any)
+			if len(list) != 1 || list[0].(map[string]any)["name"] != "Phone" {
+				t.Fatalf("passkeys = %v", list)
+			}
+			id := first["id"].(string)
+			req("PATCH", a+"/passkeys/"+id, `{"name": "Laptop"}`, jsonMine, 200)
+			req("PATCH", a+"/passkeys/"+id, `{"name": ""}`, jsonMine, 400)
+			req("PATCH", a+"/passkeys/nope", `{"name": "x"}`, jsonMine, 404)
+			req("PATCH", a+"/passkeys/"+id, `{"name": "x"}`, map[string]string{"Content-Type": "application/json"}, 401)
+			if st := req("GET", a+"/mfa", "", mine, 200); st["passkeys"] != float64(1) {
+				t.Errorf("the passkey count = %v", st["passkeys"])
+			}
+			// A ceremony begun now, finished once the limit is reached.
+			late := req("POST", a+"/passkeys/register/options", "", mine, 200)
+			for i := 1; i < auth.MaxPasskeys; i++ {
+				register("Key")
+			}
+			lateAuthn := passkeytest.New("https://app.acme.example")
+			lateRaw, _ := json.Marshal(late["options"])
+			req("POST", a+"/passkeys/register/verify", `{"challenge_id": "`+late["challenge_id"].(string)+`", "credential": `+string(lateAuthn.Register(t, lateRaw))+`}`, jsonMine, 409)
+			req("POST", a+"/passkeys/register/options", "", mine, 409) // passkey_limit
+			req("DELETE", a+"/passkeys/"+id, "", nil, 401)
+			req("DELETE", a+"/passkeys/nope", "", mine, 404)
+			// A passkey that is the user's last way in stays (last_sign_in_method).
+			me0, _ := f.svc.Find(context.Background(), "enroll2@example.com")
+			if err := f.svc.Store.DeleteIdentity(context.Background(), me0.ID, auth.ProviderPassword); err != nil {
+				t.Fatal(err)
+			}
+			if err := f.svc.Store.Add(context.Background(), passkey.Credential{ID: "pk-last", UserID: me0.ID, CredentialID: []byte{9, 9}, PublicKey: []byte{1}, RPID: "acme.example", Name: "Only", CreatedAt: time.Now()}); err != nil {
+				t.Fatal(err)
+			}
+			strategies := f.svc.Settings.Strategies
+			f.svc.Settings.Strategies = []registry.Strategy{{Name: "pk", Methods: []string{"passkey"}}}
+			for _, c := range req("GET", a+"/passkeys", "", mine, 200)["items"].([]any) {
+				if cid := c.(map[string]any)["id"].(string); cid != "pk-last" {
+					req("DELETE", a+"/passkeys/"+cid, "", mine, 204)
+				}
+			}
+			req("DELETE", a+"/passkeys/pk-last", "", mine, 409)
+			f.svc.Settings.Strategies = strategies
+			f.svc.Settings.Passkeys.Enabled = false
+			req("POST", a+"/passkeys/register/options", "", mine, 403) // passkey_disabled
+			req("POST", a+"/passkeys/register/verify", `{"challenge_id": "x", "credential": {}}`, jsonMine, 403)
+			// A session an organization's connection opened can't add or remove them (sso_session).
+			me, _ := f.svc.Find(context.Background(), "enroll2@example.com")
+			viaSSO := "bds_contract-sso-session"
+			now := f.svc.Clock()
+			if err := f.svc.Store.CreateSession(context.Background(), auth.Session{ID: "s-contract-sso", UserID: me.ID, TokenHash: auth.HashToken(viaSSO), CreatedAt: now, LastUsedAt: now, ExpiresAt: now.Add(time.Hour), Methods: []string{auth.ConnectionMethod("org1", "google")}}); err != nil {
+				t.Fatal(err)
+			}
+			req("DELETE", a+"/passkeys/"+id, "", map[string]string{"Authorization": "Bearer " + viaSSO}, 403) // sso_session
+		}
 		// A required role without a second factor is asked to set one up, at sign-up too.
 		// (Without email, so that the verification message doesn't spend the address's budget.)
 		secondStep(&f.svc.Settings)
@@ -1217,6 +1290,14 @@ func TestContract(t *testing.T) {
 	req("GET", ad+"/users/"+temp.ID+"/mfa", "", ada, 403)
 	req("GET", ad+"/users/nope/mfa", "", key, 404)
 	// Resetting it: one is made for the user, then removed; not twice, not for nobody, not for yourself.
+	// One passkey of a user, removed by an administrator.
+	if err := f.svc.Store.Add(context.Background(), passkey.Credential{ID: "pk-admin", UserID: temp.ID, CredentialID: []byte{4, 2}, PublicKey: []byte{1}, RPID: "acme.example", Name: "Lost phone", CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	req("DELETE", ad+"/users/"+temp.ID+"/passkeys/pk-admin", "", nil, 401)
+	req("DELETE", ad+"/users/"+temp.ID+"/passkeys/pk-admin", "", ada, 403)
+	req("DELETE", ad+"/users/"+temp.ID+"/passkeys/nope", "", key, 404)
+	req("DELETE", ad+"/users/"+temp.ID+"/passkeys/pk-admin", "", key, 204)
 	req("POST", ad+"/users/"+temp.ID+"/mfa/reset", "", key, 409)
 	if err := f.svc.Store.PutMFA(context.Background(), auth.MFARecord{UserID: temp.ID, Secret: "k.n.c", EnabledAt: time.Now(), RecoveryCodes: []string{"x"}}); err != nil {
 		t.Fatal(err)

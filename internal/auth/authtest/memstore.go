@@ -619,6 +619,20 @@ func (m *MemStore) DeleteOrgSessionsNotOpenedBy(_ context.Context, org string) (
 	return n, nil
 }
 
+func (m *MemStore) DeleteSessionsOfPasskey(_ context.Context, userID, passkeyID string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var n int64
+	for k, s := range m.sessions {
+		if s.UserID == userID && s.Passkey == passkeyID {
+			delete(m.sessions, k)
+			m.dropDevicesOfSession(k)
+			n++
+		}
+	}
+	return n, nil
+}
+
 func (m *MemStore) DeleteOtherSessions(_ context.Context, userID, keepID string) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

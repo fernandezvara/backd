@@ -42,6 +42,9 @@ const (
 	codeInvalidRedirect   = "invalid_redirect"
 	// codeStrategyRequired and codeUnknownStrategy answer a sign-in that names no strategy when
 	// several start with its method, and one that names a strategy that does not apply.
+	codePasskeyDisabled  = "passkey_disabled"
+	codePasskeyLimit     = "passkey_limit"
+	codeInvalidPasskey   = "invalid_passkey"
 	codeStrategyRequired = "strategy_required"
 	codeUnknownStrategy  = "unknown_strategy"
 	codeWriteConflict    = "write_conflict"

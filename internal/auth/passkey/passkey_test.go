@@ -38,7 +38,7 @@ func (f *fixture) register(t *testing.T, a *passkeytest.Authenticator) passkey.C
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := f.svc.FinishRegistration(context.Background(), id, a.Register(t, opts), "Phone")
+	c, err := f.svc.FinishRegistration(context.Background(), id, "u1", a.Register(t, opts), "Phone")
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -110,6 +110,19 @@ func TestDiscoverableAndKnownUserSignIn(t *testing.T) {
 	}
 }
 
+func TestARegistrationCeremonyBelongsToItsUser(t *testing.T) {
+	f := newFixture(t)
+	a := passkeytest.New(origin)
+	opts, id, _ := f.svc.BeginRegistration(context.Background(), ada)
+	// Another user cannot finish ada's ceremony with a credential of their own.
+	if _, err := f.svc.FinishRegistration(context.Background(), id, "u2", a.Register(t, opts), "x"); !errors.Is(err, passkey.ErrCeremony) {
+		t.Errorf("finished by another user: %v", err)
+	}
+	if n, _ := f.store.CountByUser(context.Background(), "u2"); n != 0 {
+		t.Errorf("stored %d for the other user", n)
+	}
+}
+
 func TestACeremonyIsUsedOnce(t *testing.T) {
 	f := newFixture(t)
 	a := passkeytest.New(origin)
@@ -156,7 +169,7 @@ func TestWhatDoesNotVerifyIsRefused(t *testing.T) {
 			if tc.step == "register" {
 				tc.set(a)
 				opts, id, _ := f.svc.BeginRegistration(context.Background(), ada)
-				_, err := f.svc.FinishRegistration(context.Background(), id, a.Register(t, opts), "x")
+				_, err := f.svc.FinishRegistration(context.Background(), id, "u1", a.Register(t, opts), "x")
 				if !errors.Is(err, passkey.ErrInvalid) {
 					t.Fatalf("registration: %v", err)
 				}
@@ -197,7 +210,7 @@ func TestACredentialOfAnotherUserIsRefusedForAKnownUser(t *testing.T) {
 	// (a browser would not offer it, but a client can send anything): the server refuses.
 	bob := passkeytest.New(origin)
 	opts, id, _ := f.svc.BeginRegistration(context.Background(), passkey.UserInfo{ID: "u2", Name: "bob@example.com"})
-	if _, err := f.svc.FinishRegistration(context.Background(), id, bob.Register(t, opts), "Bob's"); err != nil {
+	if _, err := f.svc.FinishRegistration(context.Background(), id, "u2", bob.Register(t, opts), "Bob's"); err != nil {
 		t.Fatal(err)
 	}
 	opts, id, _ = f.svc.BeginLogin(context.Background(), "u2")

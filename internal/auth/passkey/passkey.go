@@ -269,12 +269,16 @@ func (s *Service) put(ctx context.Context, kind, userID string, options any, ses
 }
 
 // FinishRegistration checks the browser's answer (the JSON of the PublicKeyCredential) against the
-// ceremony and stores the credential under name. Origin, relying party id, challenge and user
+// ceremony, which must have been begun for userID, and stores the credential under name. Origin, relying party id, challenge and user
 // verification are checked by the library; a mismatch is an *Error.
-func (s *Service) FinishRegistration(ctx context.Context, ceremony string, body []byte, name string) (Credential, error) {
-	data, userID, err := s.ceremonies.Claim(ctx, ceremony, KindRegister)
+func (s *Service) FinishRegistration(ctx context.Context, ceremony, userID string, body []byte, name string) (Credential, error) {
+	data, owner, err := s.ceremonies.Claim(ctx, ceremony, KindRegister)
 	if err != nil {
 		return Credential{}, err
+	}
+	// The ceremony was begun for someone: only they can finish it.
+	if owner != userID {
+		return Credential{}, ErrCeremony
 	}
 	var session webauthn.SessionData
 	if err := json.Unmarshal(data, &session); err != nil {

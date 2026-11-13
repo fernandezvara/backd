@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/fernandezvara/backd/internal/auth"
 )
 
@@ -47,7 +49,7 @@ func (a *adminAPI) userMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"available": st.Available, "enabled": st.Enabled, "methods": st.Methods,
+		"available": st.Available, "enabled": st.Enabled, "methods": st.Methods, "passkeys": st.Passkeys,
 		"recovery_codes_left": st.RecoveryCodesLeft, "required": st.Required,
 	})
 }
@@ -66,6 +68,20 @@ func (a *adminAPI) resetUserMFA(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusForbidden, codeSelfReset, "an administrator can't reset their own second factor: ask another administrator, or an operator with access to the instance")
 	case errors.Is(err, auth.ErrMFANotEnabled):
 		writeError(w, r, http.StatusConflict, codeMFANotEnabled, "the user has no second factor")
+	case err != nil:
+		adminError(w, r, err)
+	default:
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// removeUserPasskey answers DELETE /users/{id}/passkeys/{passkey_id}: an administrator removes one
+// passkey of a user (a lost device); the user is told by email and it is audited.
+func (a *adminAPI) removeUserPasskey(w http.ResponseWriter, r *http.Request) {
+	err := usersOf(r).AdminRemovePasskey(r.Context(), adminUserOf(r).ID, chi.URLParam(r, "passkey_id"))
+	switch {
+	case errors.Is(err, auth.ErrNotFound):
+		writeError(w, r, http.StatusNotFound, codeNotFound, "passkey not found")
 	case err != nil:
 		adminError(w, r, err)
 	default:

@@ -278,6 +278,8 @@ type Store interface {
 	// DeleteOtherSessions revokes every session of the user except keepID
 	// and says how many.
 	DeleteOtherSessions(ctx context.Context, userID, keepID string) (int64, error)
+	// DeleteSessionsOfPasskey revokes the sessions a passkey opened.
+	DeleteSessionsOfPasskey(ctx context.Context, userID, passkeyID string) (int64, error)
 
 	// PutDevice registers a device: a new one, or, when the token's hash exists, that device
 	// moved to this user and session (a new id, so the earlier owner's id is dead) with the
