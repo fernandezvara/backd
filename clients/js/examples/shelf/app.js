@@ -110,6 +110,7 @@ document.addEventListener('alpine:init', () => {
     mode: 'login', // login | signup
     email: '',
     password: '',
+    operator: false,
     // Chapter 20: the team people sign in to (its slug; empty for an operator), what a new
     // team is called when a person starts one, and what the sign-in page can offer for it.
     company: teamRef,
@@ -347,7 +348,9 @@ document.addEventListener('alpine:init', () => {
       this.busy = true
       this.error = null
       try {
-        const credentials = { email: this.email, password: this.password }
+        // Chapter 16: the operators sign in with the strategy that ends in the authenticator code; everyone else
+        // uses the password alone.
+        const credentials = { email: this.email, password: this.password, strategy: this.operator ? 'password_totp' : 'password' }
         // Chapter 17: the consents ticked, by name and the version shown.
         if (this.mode === 'signup' && this.consentList.length) {
           const missing = this.consentList.filter((c) => c.required && !this.ticked[c.name])
@@ -473,7 +476,7 @@ document.addEventListener('alpine:init', () => {
       this.error = null
       try {
         signing = clientFor(this.company)
-        await signing.auth.magicLink.request(this.email)
+        await signing.auth.magicLink.request(this.email, { strategy: 'magic_link' })
         this.magicSent = true
       } catch (e) {
         this.error = e.message

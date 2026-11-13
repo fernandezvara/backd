@@ -48,6 +48,7 @@ func (a *authAPI) routes(r chi.Router) {
 		r.With(json, a.signInOfOrgs).Post("/signup", a.signup)
 		// The public key a browser subscribes with: no session, cacheable.
 		r.Get("/devices/web-key", a.webKey)
+		r.Get("/strategies", a.strategies)
 		r.With(json).Post("/login", a.login)
 		r.With(json).Post("/consents/accept", a.consentsAccept)
 		r.With(json).Post("/mfa/verify", a.mfaVerify)
@@ -253,7 +254,7 @@ func (a *authAPI) login(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"email": "string", "password": "string", "invitation": "string?", "org": "string?", "cookie": "bool?"})
+	f, ok := fields(w, r, obj, map[string]string{"email": "string", "password": "string", "invitation": "string?", "org": "string?", "strategy": "string?", "cookie": "bool?"})
 	if !ok {
 		return
 	}
@@ -262,6 +263,7 @@ func (a *authAPI) login(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	strategy, _ := f["strategy"].(string)
 	r = withOrgContext(r, f, f["email"].(string))
 	var out auth.Redeemed
 	var err error
@@ -269,9 +271,9 @@ func (a *authAPI) login(w http.ResponseWriter, r *http.Request) {
 		// To an organization: the person must belong to it (or hold an invitation), and the
 		// session is scoped to it.
 		invitation, _ := f["invitation"].(string)
-		out, err = usersOf(r).SignInToOrg(r.Context(), auth.OrgSignIn{Org: ref, Email: f["email"].(string), Password: f["password"].(string), IP: clientIP(r), Invitation: invitation})
+		out, err = usersOf(r).SignInToOrg(r.Context(), auth.OrgSignIn{Org: ref, Email: f["email"].(string), Password: f["password"].(string), IP: clientIP(r), Invitation: invitation, Strategy: strategy})
 	} else {
-		out, err = usersOf(r).SignIn(r.Context(), f["email"].(string), f["password"].(string), clientIP(r))
+		out, err = usersOf(r).SignInWith(r.Context(), strategy, f["email"].(string), f["password"].(string), clientIP(r))
 	}
 	if err != nil {
 		orgError(w, r, err)
@@ -317,7 +319,11 @@ func (a *authAPI) answerSignInWith(w http.ResponseWriter, r *http.Request, out a
 // challengeJSON is the answer of a first factor whose user needs a second step.
 func challengeJSON(c *auth.IssuedChallenge) map[string]any {
 	if c.Kind == auth.ChallengeEnroll {
-		return map[string]any{"mfa_enrollment_required": true, "challenge": c.Token}
+		out := map[string]any{"mfa_enrollment_required": true, "challenge": c.Token}
+		if c.Strategy != "" {
+			out["strategy"] = c.Strategy
+		}
+		return out
 	}
 	if c.Kind == auth.ChallengeConsent {
 		list := make([]map[string]string, len(c.Consents))
@@ -326,7 +332,13 @@ func challengeJSON(c *auth.IssuedChallenge) map[string]any {
 		}
 		return map[string]any{"consent_required": true, "challenge": c.Token, "consents": list}
 	}
-	return map[string]any{"mfa_required": true, "challenge": c.Token, "methods": c.Methods}
+	// mfa_required and methods are the names the challenge had before strategies; next and
+	// strategy are the current ones.
+	out := map[string]any{"mfa_required": true, "challenge": c.Token, "methods": c.Methods, "next": c.Next}
+	if c.Strategy != "" {
+		out["strategy"] = c.Strategy
+	}
+	return out
 }
 
 func (a *authAPI) logout(w http.ResponseWriter, r *http.Request) {
@@ -572,6 +584,10 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 	var needConsent *auth.ConsentRequiredError
 	var badConsents *auth.InvalidConsentsError
 	switch {
+	case errors.Is(err, auth.ErrStrategyRequired):
+		writeError(w, r, http.StatusBadRequest, codeStrategyRequired, "strategy is required: more than one strategy starts with this method", Detail{Path: "strategy", Reason: "required"})
+	case errors.Is(err, auth.ErrUnknownStrategy):
+		writeError(w, r, http.StatusBadRequest, codeUnknownStrategy, "unknown strategy", Detail{Path: "strategy", Reason: "unknown"})
 	case errors.As(err, &te):
 		retryAfter(w, te.RetryAfter)
 		writeError(w, r, http.StatusTooManyRequests, codeTooManyRequests, "too many failed attempts; retry later")
@@ -698,6 +714,16 @@ func sessionJSON(p auth.Principal, token, locale string) map[string]any {
 	if p.Session.Org != "" {
 		out["org"] = p.Session.Org
 	}
+	if p.Session.Strategy != "" {
+		out["strategy"] = p.Session.Strategy
+	}
+	// Said only after the person has authenticated: the roles they hold that this strategy
+	// does not allow, so an app can offer a stronger way in.
+	inactive := p.RolesInactive
+	if inactive == nil {
+		inactive = []string{}
+	}
+	out["roles_inactive"] = inactive
 	return out
 }
 
@@ -736,4 +762,22 @@ func (a *authAPI) sessionOrgJSON(r *http.Request, userID, org string) map[string
 	out["require_mfa"] = m.Org.RequireMFA
 	out["mfa_met"] = !m.Org.RequireMFA || principalOf(r).Session.MFA
 	return out
+}
+
+// strategyOf is the strategy a first-step call names, "" when it names none.
+func strategyOf(f map[string]any) string {
+	v, _ := f["strategy"].(string)
+	return v
+}
+
+// strategies handles GET /_auth/strategies: the names of the realm's strategies and their
+// methods, for an app that draws its sign-in screen. It needs no credentials and reveals no
+// roles, users or settings.
+func (a *authAPI) strategies(w http.ResponseWriter, r *http.Request) {
+	list := []map[string]any{}
+	for _, st := range usersOf(r).Settings.Strategies {
+		list = append(list, map[string]any{"name": st.Name, "methods": st.Methods})
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"strategies": list})
 }

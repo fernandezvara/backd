@@ -108,10 +108,13 @@ func (f *cliFixture) code(secret string) string {
 const cliRealm = "auth:\n  strategies:\n    password: [password]\nroles:\n  ops:\n    admin: true\n"
 
 // cliRealmSecondStep makes the ops role need an authenticator code after the password.
-const cliRealmSecondStep = "auth:\n  strategies:\n    password: [password]\n    password_totp: [password, totp]\nroles:\n  ops:\n    admin: true\n    strategies: [password_totp]\n"
+const cliRealmSecondStep = "auth:\n  strategies:\n    password_totp: [password, totp]\nroles:\n  ops:\n    admin: true\n    strategies: [password_totp]\n"
+
+// cliRealmTOTP is a realm whose one strategy asks for the authenticator code after the password.
+const cliRealmTOTP = "auth:\n  strategies:\n    password: [password, totp]\nroles:\n  ops:\n    admin: true\n"
 
 func TestLoginAsksForTheSecondFactor(t *testing.T) {
-	f := newCLIFixture(t, cliRealm)
+	f := newCLIFixture(t, cliRealmTOTP)
 	secret, recovery := f.userWithTOTP("ada@example.com")
 	args := []string{"login", "--realm", "acme", "--url", f.url, "--email", "ada@example.com"}
 
@@ -193,6 +196,7 @@ func TestLoginEnrollsWhenARoleRequiresIt(t *testing.T) {
 
 func TestLoginWithAMagicLinkCode(t *testing.T) {
 	f := newCLIFixture(t, cliRealm)
+	f.svc.Settings.Strategies = []registry.Strategy{{Name: "magic_link", Methods: []string{"magic_link"}}}
 	// (The realm has no delivery function: the email job only has to exist, and the code is made
 	// as the worker would make it.)
 	f.svc.Settings.MagicLink = registry.MagicLinkSettings{Enabled: true}

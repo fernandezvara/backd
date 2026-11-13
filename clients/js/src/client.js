@@ -33,6 +33,8 @@ import { COOKIE_SESSION, memoryStorage } from './storage.js'
  * @property {string} [org]              The organization this client signs in to and works in, by id or by the slug people
  *   know (`'acme'`). Sign-in calls go to `/_auth/orgs/{org}/…`, so the session is scoped to it; the answer carries the id.
  *   Without it, the sign-in calls take `org` as an argument. See {@link Client#org} for an app that works in several.
+ * @property {string} [strategy]       The strategy sign-in calls use when they name none: needed when the realm has more than one
+ *   that starts with the method (`400 strategy_required` otherwise). `GET /_auth/strategies` lists them.
  * @property {TokenStorage} [storage]     Where the session token lives; memory by default.
  * @property {boolean} [cookies]          Browser apps: keep the session in an HttpOnly cookie that scripts can't read,
  *   instead of a token. The realm must enable `sessions.cookie` and list the app's origin in `cors.origins`; the
@@ -163,6 +165,8 @@ export class Client {
     this.realm = options.realm
     /** @internal */
     this.cookies = Boolean(options.cookies)
+    /** @internal */
+    this.strategy = options.strategy
     /** @internal */
     this.apiKey = options.apiKey
     /** @internal */

@@ -6,9 +6,11 @@ weight: 537
 toc: true
 ---
 
-A realm can ask for a **second factor** after the first one. The first factor is whatever the user used to say who they are: a password, a [provider](../providers/) or a [magic link](../magic-links/). The second factor is a one-time code from an authenticator app, or one of ten recovery codes.
+A realm asks for a **second factor** by listing `totp` after the first method in a [strategy](../#strategies), for example `admin_password: [password, totp]`. The first method is whatever the user used to say who they are: a password, a [provider](../providers/) or a [magic link](../magic-links/). The second is a one-time code from an authenticator app, or one of ten recovery codes.
 
-The second step is built **once** and shared by every first factor, so a user with MFA is asked for a code whether they signed in with a password or with Google.
+The second step is built **once** and shared by every first method, so the strategy `admin_google: [google, totp]` asks for a code like `admin_password` does.
+
+**The strategy decides, not the user.** A person who set up an authenticator is asked for it only by the strategies that list `totp`; a strategy without it signs them in with the first method alone. A realm that wants the code from everyone writes it into the strategy.
 
 ## Turning it on
 
@@ -99,18 +101,20 @@ sequenceDiagram
     participant App
     participant B as backd
     App->>B: first factor (password, provider token, login code)
-    B-->>App: 200 { mfa_required, challenge, methods }
+    B-->>App: 200 { challenge, next: ["totp"], strategy }
     App->>B: POST /_auth/mfa/verify { challenge, method, code }
     B-->>App: the session, as the first factor would have answered
 ```
 
-What a first factor answers depends on the user:
+What the first method answers depends on the strategy and the user:
 
-| The user | The answer |
+| The strategy and the user | The answer |
 |---|---|
-| has no second factor, and no role requires one | the session, as always |
-| has a second factor | `200 { "mfa_required": true, "challenge": "…", "methods": ["totp", "recovery_code"] }` |
-| holds a role the realm requires MFA for, and has no second factor yet | `200 { "mfa_enrollment_required": true, "challenge": "…" }` |
+| the strategy has no `totp` step | the session, as always |
+| it has one, and the user has an authenticator | `200 { "mfa_required": true, "challenge": "…", "next": ["totp"], "methods": ["totp", "recovery_code"], "strategy": "…" }` |
+| it has one, and the user has no authenticator yet | `200 { "mfa_enrollment_required": true, "challenge": "…", "strategy": "…" }` |
+
+`next` is the method the strategy asks for now; a recovery code is accepted wherever `totp` is next. `mfa_required` and `methods` are the names the answer had before strategies and stay for now. A strategy with several steps answers a correct code with the next challenge, until the last step gives the session.
 
 The first factors that can end in a challenge are `POST /_auth/login`, `POST /_auth/signup` (a new user in a required role), the redemption of a [login code](../providers/#the-flow) (`POST /_auth/token`: providers and magic links), `POST /_auth/magic-link/verify` and `POST /_auth/oauth/{provider}/id-token`. A challenge is **only** given after the first factor was right, so it says nothing about accounts to someone who doesn't have it.
 
@@ -141,7 +145,7 @@ A time step of a TOTP code is accepted **once**, and an older step can't follow 
 
 ## How the session remembers
 
-A session records how it was created: its `methods` are the first factor and, with a second one, `totp` or `recovery`; `mfa` says a second factor was used. Refreshing the session keeps them.
+A session records how it was created: its `strategy`, its `methods` (the first method and, with a second one, `totp` or `recovery`) and `mfa`, which says a second factor was used. Refreshing the session keeps them.
 
 Rules and functions see them:
 

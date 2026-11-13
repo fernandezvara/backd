@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"github.com/fernandezvara/backd/internal/registry"
 	"net/http"
 	"strings"
 	"testing"
@@ -44,6 +45,7 @@ func newMFAHTTP(t *testing.T) *mfaHTTP {
 	if err := f.store.PutMFA(context.Background(), auth.MFARecord{UserID: u.ID, Secret: sealed, EnabledAt: time.Now(), RecoveryCodes: []string{hash}}); err != nil {
 		t.Fatal(err)
 	}
+	secondStep(&f.svc.Settings) // signing in with the password asks for the code
 	return &mfaHTTP{authFixture: f, user: u, secret: key.Secret()}
 }
 
@@ -163,7 +165,7 @@ func TestMFAVerifyLocksAfterTenWrongCodes(t *testing.T) {
 
 func TestMFARequiredRoleAsksToEnroll(t *testing.T) {
 	f := newAuthFixture(t)
-	f.svc.Settings.MFA.RequiredAll = true
+	secondStep(&f.svc.Settings)
 	rec, out := f.do(t, "POST", authBase+"/signup", `{"email": "new@example.com", "password": "dev-p4ssw0rd!"}`)
 	if rec.Code != 200 || out["mfa_enrollment_required"] != true || out["challenge"] == nil || out["token"] != nil {
 		t.Errorf("signup: %d %v", rec.Code, out)
@@ -294,7 +296,7 @@ func TestMFARefusedWhenTheRealmTurnsItOff(t *testing.T) {
 
 func TestRequiredRoleKeepsMFAOn(t *testing.T) {
 	f := newMFAHTTP(t)
-	f.svc.Settings.MFA.RequiredAll = true
+	secondStep(&f.svc.Settings)
 	token := f.sessionOf(t)
 	if code, out := f.send(t, token, "DELETE", authBase+"/mfa/totp", ""); code != 403 || errCode(out) != "mfa_required_by_role" {
 		t.Errorf("disable: %d %v", code, out)
@@ -334,7 +336,7 @@ func TestEnrollingFromAChallengeOverHTTP(t *testing.T) {
 	f := newAuthFixture(t)
 	f.svc.Realm = "acme"
 	f.svc.Cipher, _ = auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
-	f.svc.Settings.MFA.RequiredAll = true
+	secondStep(&f.svc.Settings)
 	rec, out := f.do(t, "POST", authBase+"/signup", `{"email": "kim@example.com", "password": "dev-p4ssw0rd!"}`)
 	challenge, _ := out["challenge"].(string)
 	if rec.Code != 200 || out["mfa_enrollment_required"] != true || challenge == "" {
@@ -404,5 +406,56 @@ func TestAdminResetsASecondFactor(t *testing.T) {
 	}
 	if rec, _ := f.doH(t, "POST", admin+"/users/nope/mfa/reset", "", jsonHdr(f.key)); rec.Code != http.StatusNotFound {
 		t.Errorf("unknown: %d", rec.Code)
+	}
+}
+
+// secondStep makes sign-in need a totp step: of everyone when no role is named, else of the
+// holders of those roles, who accept only the strategy that has it.
+func secondStep(s *registry.RealmSettings, roles ...string) {
+	if len(roles) == 0 {
+		s.Strategies = []registry.Strategy{{Name: "password", Methods: []string{"password", "totp"}}}
+		return
+	}
+	s.Strategies = []registry.Strategy{{Name: "password", Methods: []string{"password"}}, {Name: "password_totp", Methods: []string{"password", "totp"}}}
+	if s.Roles == nil {
+		s.Roles = map[string]registry.Role{}
+	}
+	for _, r := range roles {
+		role := s.Roles[r]
+		role.Strategies = []string{"password_totp"}
+		s.Roles[r] = role
+	}
+}
+
+// noSecondStep undoes secondStep.
+func noSecondStep(s *registry.RealmSettings) {
+	s.Strategies = nil
+	for r, role := range s.Roles {
+		role.Strategies = nil
+		s.Roles[r] = role
+	}
+}
+
+// addFirstStrategies gives each provider and the magic link a strategy of their own, for tests
+// that switch them on after the realm was parsed.
+func addFirstStrategies(s *registry.RealmSettings) {
+	has := func(first string) bool {
+		for _, st := range s.Strategies {
+			if st.Methods[0] == first {
+				return true
+			}
+		}
+		return false
+	}
+	if len(s.Strategies) == 0 {
+		s.Strategies = []registry.Strategy{{Name: "password", Methods: []string{"password"}}}
+	}
+	for _, p := range s.Providers {
+		if !has(p.Name) {
+			s.Strategies = append(s.Strategies, registry.Strategy{Name: p.Name, Methods: []string{p.Name}})
+		}
+	}
+	if s.MagicLink.Enabled && !has("magic_link") {
+		s.Strategies = append(s.Strategies, registry.Strategy{Name: "magic_link", Methods: []string{"magic_link"}})
 	}
 }

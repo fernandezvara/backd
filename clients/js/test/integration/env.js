@@ -35,7 +35,9 @@ export async function user(name) {
 // the links of the account emails can be read from its outbox.
 export const mailApiKey = process.env.BACKD_MAIL_API_KEY ?? ''
 /** @param {Partial<import('../../src/index.js').ClientOptions>} [opts] */
-export const mailClient = (opts = {}) => createClient({ url, realm: 'mail', ...opts })
+// The mail realm has the password alone and the password with an authenticator code: tests sign in with the first
+// unless they ask for the other.
+export const mailClient = (opts = {}) => createClient({ url, realm: 'mail', strategy: 'password', ...opts })
 
 /**
  * Waits for an email of a kind to an address and returns the token in its

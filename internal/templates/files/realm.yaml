@@ -11,9 +11,10 @@
 # A strategy is a named list of methods a person completes to sign in, in order:
 # `password`, `totp`, `magic_link` or the name of a provider below. The first
 # method says who is signing in; the later one is `totp`.
-# A role can list the strategies it accepts (`strategies:` under roles). For now a role
-# whose strategies all end in `totp` makes its users set up and use a second step; picking a
-# strategy on sign-in, and roles staying inactive for the others, come in a later version.
+# A role can list the strategies it accepts (`strategies:` under roles); it is active in a
+# session only if the session's strategy is one of them, so a password alone does not open
+# the admin role below. Clients name the strategy when more than one starts with the
+# password (`backd login --strategy admin_password`).
 # The keys below the strategies configure the methods; the commented ones show their defaults.
 auth:
   strategies:
@@ -305,7 +306,7 @@ auth:
 #   invitation_link: "https://app.example.com/join?token={token}&org={org}"   # within sign_in.allowed_redirects
 #   # Let organizations connect their own Google Workspace or Microsoft tenant (needs a role
 #   # with manage: sso, e.g. owner: { manage: [org, members, roles, teams, sso] }):
-#   sso: { providers: [google, microsoft] }
+#   sso: { providers: [google, microsoft] }   # also add a strategy that starts with sso, e.g. `sso: [sso]`
 
 # Roles that access rules can check. `users` lists emails that get the role
 # at startup (seed assignments): plain emails, or objects with an `email`.

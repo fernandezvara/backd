@@ -4,6 +4,7 @@
 auth:
   strategies:
     password: [password]
+    sso: [sso]
   signup: open
 
 # Read-only administrators may read users too (they never get a control that

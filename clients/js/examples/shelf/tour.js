@@ -53,7 +53,7 @@ const heading = (/** @type {string} */ text) => console.log(`\n${text}`)
 // The consents of chapters 17 and 26: the terms and the privacy notice are required (the version in
 // force), and the members of the tour also opt in to the digest by email.
 const consentVersions = await (async () => {
-  const list = await createClient({ url, realm: 'shelf' }).consents.current()
+  const list = await createClient({ url, realm: 'shelf', strategy: 'password' }).consents.current()
   return Object.fromEntries(list.map((c) => [c.name, c.current.version]))
 })()
 const ALL_CONSENTS = { terms: consentVersions.terms, privacy: consentVersions.privacy, marketing: consentVersions.marketing }
@@ -66,7 +66,7 @@ const teamOf = (/** @type {string} */ email) => email.split('@')[0].toLowerCase(
  * team (the account, the team and the session in one call). The client is bound to that team.
  */
 async function signedIn(/** @type {string} */ email, /** @type {any} */ operator) {
-  const backd = /** @type {any} */ (createClient({ url, realm: 'shelf', org: teamOf(email) }))
+  const backd = /** @type {any} */ (createClient({ url, realm: 'shelf', strategy: 'password', org: teamOf(email) }))
   backd.tourEmail = email
   try {
     await backd.auth.login({ email, password: PASSWORD })
@@ -129,7 +129,8 @@ function inStack(/** @type {string[]} */ args, /** @type {string} */ input = '')
 // The operator is a different case: signup is invite-only and only an admin
 // can invite, so on a fresh stack it exists only once bootstrap creates it.
 async function operatorClient() {
-  const backd = createClient({ url, realm: 'shelf' })
+  // The operator signs in with the strategy that ends in the authenticator code.
+  const backd = createClient({ url, realm: 'shelf', strategy: 'password_totp' })
   /** @type {any} */
   let result
   try {
@@ -156,7 +157,7 @@ async function operatorClient() {
   return { backd, ...(await enrol(backd, result)) }
 }
 
-const anonymous = createClient({ url, realm: 'shelf' })
+const anonymous = createClient({ url, realm: 'shelf', strategy: 'password' })
 const operatorLogin = await operatorClient()
 const operator = operatorLogin.backd
 /** A proof for a sensitive action: one of the operator's recovery codes, each good once. */
@@ -169,7 +170,7 @@ heading('The accounts (ch2, ch4)')
 check('the operator holds the admin role', (await operator.auth.me()).roles.includes('admin'))
 check('the curator holds the curator role', (await curator.auth.me()).roles.includes('curator'))
 check('the member has no role', (await member.auth.me()).roles.length === 0)
-await refused('starting a team without the operator\'s invitation is refused', () => createClient({ url, realm: 'shelf' }).auth.signUpWithOrg({ email: `no-${MEMBER}`, password: PASSWORD, name: 'No', slug: `no-${teamOf(MEMBER)}`, consents: ALL_CONSENTS }), ForbiddenError, '')
+await refused('starting a team without the operator\'s invitation is refused', () => createClient({ url, realm: 'shelf', strategy: 'password' }).auth.signUpWithOrg({ email: `no-${MEMBER}`, password: PASSWORD, name: 'No', slug: `no-${teamOf(MEMBER)}`, consents: ALL_CONSENTS }), ForbiddenError, '')
 check('the member signed in to a team of their own, named by their address', (await member.auth.org())?.slug === teamOf(MEMBER), JSON.stringify(await member.auth.org()))
 
 heading('Drafts, the gallery and publish (ch1, ch3, ch5)')
@@ -259,7 +260,7 @@ const keyName = `tour-${Date.now().toString(36)}`
 await operatorProof()
 const key = /** @type {any} */ (await operator.admin.apiKeys.create({ name: keyName, expiresIn: '90d', scopes: ['read:main'] }))
 check('the key is shown once, prefixed bdk_', key.key.startsWith('bdk_'))
-const keyed = createClient({ url, realm: 'shelf', apiKey: key.key })
+const keyed = createClient({ url, realm: 'shelf', strategy: 'password', apiKey: key.key })
 check('the key reads the collection it is scoped to', (await keyed.db('main').collection('assets').list({ limit: 1 })).items.length >= 0)
 await refused('a read-scoped key may not write', () => keyed.db('main').collection('assets').create({ title: 'x', kind: 'note' }), ForbiddenError, '')
 await operator.admin.apiKeys.revoke(keyName)
@@ -397,13 +398,13 @@ const mailboxCode = async (/** @type {string} */ kind, /** @type {string} */ to)
   }
   throw new Error(`no ${kind} email with a code for ${to} in the mailbox`)
 }
-const linkClient = createClient({ url, realm: 'shelf', org: teamOf(MEMBER) })
-await linkClient.auth.magicLink.request(MEMBER)
+const linkClient = createClient({ url, realm: 'shelf', strategy: 'password', org: teamOf(MEMBER) })
+await linkClient.auth.magicLink.request(MEMBER, { strategy: 'magic_link' })
 const viaLink = /** @type {any} */ (await linkClient.auth.magicLink.verifyCode(await mailboxCode('magic-link', MEMBER)))
 check('the code of the magic-link email signs a member in, no password', viaLink.user?.email === MEMBER, JSON.stringify(viaLink))
 await refused('a stranger asking for a link is told nothing (and nothing is created)', async () => {
-  const c = createClient({ url, realm: 'shelf', org: teamOf(MEMBER) })
-  await c.auth.magicLink.request(`stranger-${MEMBER}`)
+  const c = createClient({ url, realm: 'shelf', strategy: 'password', org: teamOf(MEMBER) })
+  await c.auth.magicLink.request(`stranger-${MEMBER}`, { strategy: 'magic_link' })
   await c.auth.magicLink.verifyCode('000000')
 }, Error, '')
 const opStatus = await operator.auth.mfa.status()
@@ -416,9 +417,10 @@ await member.auth.reauth({ method: 'password', password: PASSWORD })
 const memberSetup = await member.auth.mfa.setup()
 const memberOn = await member.auth.mfa.confirm({ setupId: memberSetup.setup_id, code: totp(memberSetup.secret) })
 check('a member sets up an authenticator app and gets recovery codes', memberOn.recovery_codes.length >= 8, JSON.stringify(memberOn))
-const second = createClient({ url, realm: 'shelf', org: teamOf(MEMBER) })
+// The member's own authenticator asks for nothing on the password strategy: the strategy that ends in the code does.
+const second = createClient({ url, realm: 'shelf', strategy: 'password_totp', org: teamOf(MEMBER) })
 const step = /** @type {any} */ (await second.auth.signIn({ email: MEMBER, password: PASSWORD }))
-check('the password alone no longer opens a session', step.mfaRequired === true && step.methods.includes('totp'), JSON.stringify(step))
+check('a strategy with a code step does not open a session on the password alone', step.mfaRequired === true && step.methods.includes('totp'), JSON.stringify(step))
 await refused('a wrong code is refused (invalid_code)', () => second.auth.verifyMfa(step.challenge, 'totp', '000000'), ValidationError, 'invalid_code')
 const memberSession = await second.auth.verifyMfa(step.challenge, 'recovery_code', memberOn.recovery_codes[0])
 check('a recovery code finishes the sign-in', memberSession.user.email === MEMBER, JSON.stringify(memberSession))
@@ -435,7 +437,7 @@ check('the realm asks for the terms (required) and the digest (optional)', terms
 const text17 = await anonymous.consents.text('terms', consentVersions.terms)
 check('the exact text has a SHA-256, public', text17.hash.length === 64 && text17.text.includes('terms of use'), JSON.stringify(text17).slice(0, 200))
 const refusedInvite = await operator.admin.invitations.create({ email: `no-terms-${MEMBER}` })
-await refused('a sign-up without the terms is refused (400 consent_required)', () => createClient({ url, realm: 'shelf' }).auth.signUpWithOrg({ email: `no-terms-${MEMBER}`, password: PASSWORD, name: 'No terms', slug: `no-terms-${teamOf(MEMBER)}`, invitation: refusedInvite.token }), ConsentRequiredError, 'consent_required')
+await refused('a sign-up without the terms is refused (400 consent_required)', () => createClient({ url, realm: 'shelf', strategy: 'password' }).auth.signUpWithOrg({ email: `no-terms-${MEMBER}`, password: PASSWORD, name: 'No terms', slug: `no-terms-${teamOf(MEMBER)}`, invitation: refusedInvite.token }), ConsentRequiredError, 'consent_required')
 const held = await member.consents.state()
 check('the member holds both, and has nothing left to accept', held.consents.terms === consentVersions.terms && held.consents.marketing === consentVersions.marketing && held.to_accept.length === 0, JSON.stringify(held))
 check('the history says how: at sign-up, or at the prompt', held.history.every((h) => ['signup', 'prompt'].includes(h.method)), JSON.stringify(held.history))
@@ -468,7 +470,7 @@ const currentVersion = async () => (await adminConfig('GET', '', undefined, ''))
 // Start from the defaults, whatever an earlier run left.
 await adminConfig('PATCH', '', { reset: ['maintenance', 'features'] }, await currentVersion())
 
-const visitor = createClient({ url, realm: 'shelf' })
+const visitor = createClient({ url, realm: 'shelf', strategy: 'password' })
 const seen = await visitor.config.load()
 check('a visitor reads the public banner, nothing else', seen.maintenance?.enabled === false && seen.features === undefined, JSON.stringify(seen))
 const memberSeen = await member.config.load(['maintenance', 'features'])
@@ -501,7 +503,7 @@ check('an unchanged banner revalidates with a 304, and is public for a CDN', aga
     for (const end = Date.now() + ms; !cond() && Date.now() < end; ) await new Promise((r) => setTimeout(r, 50))
     return cond()
   }
-  const watchers = [createClient({ url, realm: 'shelf' }), createClient({ url, realm: 'shelf', storage: member.storage })]
+  const watchers = [createClient({ url, realm: 'shelf', strategy: 'password' }), createClient({ url, realm: 'shelf', strategy: 'password', storage: member.storage })]
   const [anon17, signed17] = watchers
   const heard = watchers.map(() => /** @type {string[]} */ ([]))
   for (const [i, w] of watchers.entries()) {
@@ -548,7 +550,7 @@ const withTypes = (/** @type {string} */ fp) => fetch(`${url}/v1/shelf/_config?p
 check('current types are not flagged', (await withTypes(committed19.fingerprint)).headers.get('X-Backd-Types-Stale') === null)
 check('out-of-date types are flagged, and the request still works', await withTypes('0000').then((r) => r.headers.get('X-Backd-Types-Stale') === 'true' && r.ok))
 let warned19 = 0
-const devClient = createClient({ url, realm: 'shelf', types: '0000', onStaleTypes: () => warned19++ })
+const devClient = createClient({ url, realm: 'shelf', strategy: 'password', types: '0000', onStaleTypes: () => warned19++ })
 await devClient.config.load(['maintenance'], { refresh: true })
 await devClient.config.load(['maintenance'], { refresh: true })
 check('the client warns once', warned19 === 1, String(warned19))
@@ -1019,7 +1021,7 @@ heading('Your data (ch26)')
   const privacy = listed.find((c) => c.name === 'privacy')
   check('the realm also asks for the privacy notice (required), with a public text', privacy?.required === true && (await anonymous.consents.text('privacy', privacy.current.version)).text.includes('privacy notice'), JSON.stringify(privacy))
   const invite = await operator.admin.invitations.create({ email: `only-terms-${STAMP}@shelf.example` })
-  await refused('a sign-up with the terms but not the privacy notice is refused (400 consent_required)', () => createClient({ url, realm: 'shelf' }).auth.signUpWithOrg({ email: `only-terms-${STAMP}@shelf.example`, password: PASSWORD, name: 'Only terms', slug: `only-terms-${STAMP}`, invitation: invite.token, consents: { terms: consentVersions.terms } }), ConsentRequiredError, 'consent_required')
+  await refused('a sign-up with the terms but not the privacy notice is refused (400 consent_required)', () => createClient({ url, realm: 'shelf', strategy: 'password' }).auth.signUpWithOrg({ email: `only-terms-${STAMP}@shelf.example`, password: PASSWORD, name: 'Only terms', slug: `only-terms-${STAMP}`, invitation: invite.token, consents: { terms: consentVersions.terms } }), ConsentRequiredError, 'consent_required')
 
   // A member with something of their own: a pin in a team, with a private note (chapter 25).
   const ana = await signedIn(`ana26-${STAMP}@shelf.example`, operator)

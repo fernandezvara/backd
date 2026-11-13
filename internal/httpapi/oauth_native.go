@@ -48,7 +48,7 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 	}
 	f, ok := fields(w, r, obj, map[string]string{
 		"id_token": "string", "nonce": "string", "authorization_code": "string?", "intent": "string?",
-		"invitation": "string?", "locale": "string?", "cookie": "bool?",
+		"invitation": "string?", "locale": "string?", "strategy": "string?", "cookie": "bool?",
 	})
 	if !ok {
 		return
@@ -81,6 +81,16 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 	useCookie, ok := askedForCookie(w, r, svc.Settings, asked)
 	if !ok {
 		return
+	}
+	// A sign-in with a provider follows a strategy that starts with it (an organization's connection: with sso).
+	strategy := ""
+	if intent == auth.IntentSignIn {
+		st, err := svc.ChooseStrategy(str("strategy"), strategyMethodOf(p))
+		if err != nil {
+			authError(w, r, err)
+			return
+		}
+		strategy = st.Name
 	}
 	var who auth.Principal
 	if intent == auth.IntentLink {
@@ -158,7 +168,7 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.keepAppleToken(r, svc, p, res.User.ID, claims.Audience, refresh)
-	out, err := svc.StartProviderSessionIn(r.Context(), res.User, signInMethod(p), res.NewUser, res.Profile, scopeOrg)
+	out, err := svc.StartProviderSessionFor(r.Context(), res.User, signInMethod(p), strategy, res.NewUser, res.Profile, scopeOrg)
 	if err != nil {
 		authError(w, r, err)
 		return

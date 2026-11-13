@@ -87,10 +87,9 @@ func TestRolesListTheirStrategies(t *testing.T) {
 	if s.Roles["staff"].Strategies != nil {
 		t.Errorf("a role with no list allows every strategy, got %v", s.Roles["staff"].Strategies)
 	}
-	// Until the strategy engine reads them, a role whose every strategy has a totp step is
-	// the old "second step required for this role".
-	if !s.MFA.Required([]string{"owner"}) || s.MFA.Required([]string{"staff"}) {
-		t.Errorf("MFA = %+v", s.MFA)
+	// A role whose every strategy has a totp step makes its holders enrol an authenticator.
+	if !s.TOTPRequired([]string{"owner"}) || s.TOTPRequired([]string{"staff"}) {
+		t.Errorf("TOTPRequired: owner %v, staff %v", s.TOTPRequired([]string{"owner"}), s.TOTPRequired([]string{"staff"}))
 	}
 	for name, tc := range map[string]struct{ roles, want string }{
 		"unknown strategy": {"roles:\n  owner:\n    strategies: [ghost]\n", `no strategy named "ghost"`},
@@ -103,8 +102,8 @@ func TestRolesListTheirStrategies(t *testing.T) {
 	}
 	// Every strategy has a second step: everyone needs it.
 	s, errs = parseRealmSettings([]byte("auth:\n  strategies:\n    a: [password, totp]\n"))
-	if len(errs) > 0 || !s.MFA.RequiredAll {
-		t.Errorf("all: %+v %v", s.MFA, errs)
+	if len(errs) > 0 || !s.TOTPRequired(nil) {
+		t.Errorf("all: %v", errs)
 	}
 }
 
@@ -122,5 +121,72 @@ func TestPasskeysSection(t *testing.T) {
 	}
 	if got := authErrors(t, strings.Replace(ok, "    rp_id: example.com\n", "", 1)); !strings.Contains(got, "rp_id") {
 		t.Errorf("missing rp_id: %q", got)
+	}
+}
+
+func TestEveryMethodIsClassified(t *testing.T) {
+	for _, m := range AllMethods {
+		if _, ok := methodSteps[m]; !ok {
+			t.Errorf("method %q is not classified in methodSteps (first step, later step or both)", m)
+		}
+	}
+	if len(methodSteps) != len(AllMethods) {
+		t.Errorf("methodSteps has %d entries and AllMethods %d: list every method in both", len(methodSteps), len(AllMethods))
+	}
+	if st := MethodSteps("google"); !st.First || st.Later {
+		t.Errorf("a provider is a first step only, got %+v", st)
+	}
+}
+
+func TestStrategyFor(t *testing.T) {
+	s := RealmSettings{Strategies: []Strategy{
+		{Name: "web", Methods: []string{"password"}},
+		{Name: "admin", Methods: []string{"password", "totp"}},
+		{Name: "google", Methods: []string{"google"}},
+	}}
+	if _, err := s.StrategyFor("", "password"); err != ErrStrategyRequired {
+		t.Errorf("two start with password and none is named: %v", err)
+	}
+	if st, err := s.StrategyFor("admin", "password"); err != nil || st.Name != "admin" {
+		t.Errorf("admin: %+v %v", st, err)
+	}
+	if st, err := s.StrategyFor("", "google"); err != nil || st.Name != "google" {
+		t.Errorf("only one starts with google: %+v %v", st, err)
+	}
+	for name, tc := range map[string][2]string{"not listed": {"ghost", "password"}, "wrong first method": {"google", "password"}, "no strategy starts with it": {"", "magic_link"}} {
+		if _, err := s.StrategyFor(tc[0], tc[1]); err != ErrUnknownStrategy {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
+func TestActiveRoles(t *testing.T) {
+	s := RealmSettings{Roles: map[string]Role{
+		"admin":  {Strategies: []string{"admin_password"}},
+		"editor": {Strategies: []string{"users_passkey"}},
+		"staff":  {},
+	}}
+	active, inactive := s.ActiveRoles([]string{"admin", "editor", "staff"}, "admin_password")
+	if len(active) != 2 || active[0] != "admin" || active[1] != "staff" || len(inactive) != 1 || inactive[0] != "editor" {
+		t.Errorf("admin_password: active %v inactive %v", active, inactive)
+	}
+	if active, inactive := s.ActiveRoles([]string{"admin"}, "users_password"); len(active) != 0 || len(inactive) != 1 {
+		t.Errorf("a role listed for no matching strategy: %v %v", active, inactive)
+	}
+	if active, _ := s.ActiveRoles([]string{"admin", "editor"}, ""); len(active) != 2 {
+		t.Errorf("a session with no strategy keeps every role: %v", active)
+	}
+}
+
+func TestSSOStrategyNeedsOrganizationSSO(t *testing.T) {
+	if got := authErrors(t, "auth:\n  strategies:\n    sso: [sso]\n"); !strings.Contains(got, "sso needs organizations.sso") {
+		t.Errorf("without organizations.sso: %q", got)
+	}
+	ok := "auth:\n  strategies:\n    password: [password]\n    sso: [sso]\n    sso_totp: [sso, totp]\norganizations:\n  sso: {}\n  roles:\n    owner: {manage: [org, members, roles, teams, sso]}\n    member: {}\n  default_roles: [member]\n"
+	if got := authErrors(t, ok); got != "" {
+		t.Errorf("with organizations.sso: %q", got)
+	}
+	if st := MethodSteps("sso"); !st.First || st.Later {
+		t.Errorf("sso is a first step only: %+v", st)
 	}
 }

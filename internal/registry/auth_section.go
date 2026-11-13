@@ -20,7 +20,34 @@ const (
 	MethodPasskey   = "passkey"
 	MethodTOTP      = "totp"
 	MethodMagicLink = "magic_link"
+	// MethodSSO is the sign-in through an organization's own connection (organizations.sso).
+	MethodSSO = "sso"
 )
+
+// Steps says where a method may stand in a strategy.
+type Steps struct{ First, Later bool }
+
+// methodSteps classifies every method: a new Method constant is not usable until it is
+// listed here, and TestEveryMethodIsClassified fails until it is.
+var methodSteps = map[string]Steps{
+	MethodPassword:  {First: true, Later: false}, // as a later step it needs the engine's password step (not built yet)
+	MethodPasskey:   {First: true, Later: true},
+	MethodTOTP:      {First: false, Later: true},
+	MethodMagicLink: {First: true},
+	MethodSSO:       {First: true},
+}
+
+// AllMethods lists the Method constants.
+var AllMethods = []string{MethodPassword, MethodPasskey, MethodTOTP, MethodMagicLink, MethodSSO}
+
+// MethodSteps says where method may stand: a provider's name (anything not built in) can only
+// be first.
+func MethodSteps(method string) Steps {
+	if st, ok := methodSteps[method]; ok {
+		return st
+	}
+	return Steps{First: true}
+}
 
 // Strategy is a named, ordered list of methods that a person completes to sign in. Every
 // method must succeed, in order; the first one identifies the person.
@@ -253,22 +280,24 @@ func (s RealmSettings) methodProblem(method string, pos int) string {
 		if !s.MagicLink.Enabled {
 			return "magic_link needs auth.magic_link.enabled: true (and the email section)"
 		}
+	case MethodSSO:
+		if s.Organizations == nil || s.Organizations.SSO == nil {
+			return "sso needs organizations.sso (the organizations' own sign-in connections)"
+		}
 	case "recovery_code":
 		return "recovery codes are not a method: they stand in for totp wherever a strategy lists totp"
 	default:
 		if _, ok := s.Providers[method]; !ok {
-			return fmt.Sprintf("%q is not a method (password, passkey, totp, magic_link) or a provider declared in auth.providers", method)
+			return fmt.Sprintf("%q is not a method (password, passkey, totp, magic_link, sso) or a provider declared in auth.providers", method)
 		}
 	}
-	if pos > 0 && method != MethodPassword && method != MethodTOTP && method != MethodPasskey {
-		return fmt.Sprintf("%s can only be the first method: a later step is password, totp or passkey", method)
+	if pos > 0 && !MethodSteps(method).Later {
+		return fmt.Sprintf("%s can only be the first method: a later step is totp or passkey", method)
 	}
 	return ""
 }
 
-// checkRoleStrategies validates the strategies the roles list and derives, until the strategy
-// engine exists, the roles that must use a second step: those whose every strategy has a totp
-// step (and everyone when every strategy has one).
+// checkRoleStrategies validates the strategies the roles list.
 func (s *RealmSettings) checkRoleStrategies() []error {
 	var errs []error
 	for _, name := range sortedRoleNames(s.Roles) {
@@ -289,35 +318,6 @@ func (s *RealmSettings) checkRoleStrategies() []error {
 				errs = append(errs, fmt.Errorf("roles.%s.strategies[%d]: %q is listed twice", name, i, sn))
 			}
 			seen[sn] = true
-		}
-	}
-	if len(s.Strategies) == 0 {
-		return errs
-	}
-	// The adapter: a second step means the old MFA requirement.
-	allTotp := true
-	for _, st := range s.Strategies {
-		if !st.HasLaterStep(MethodTOTP) {
-			allTotp = false
-		}
-	}
-	if allTotp {
-		s.MFA.RequiredAll = true
-		return errs
-	}
-	for _, name := range sortedRoleNames(s.Roles) {
-		role := s.Roles[name]
-		if len(role.Strategies) == 0 {
-			continue
-		}
-		every := true
-		for _, sn := range role.Strategies {
-			if st, ok := s.StrategyByName(sn); !ok || !st.HasLaterStep(MethodTOTP) {
-				every = false
-			}
-		}
-		if every {
-			s.MFA.RequiredRoles = append(s.MFA.RequiredRoles, name)
 		}
 	}
 	return errs
@@ -380,4 +380,107 @@ func (s *RealmSettings) parsePasskeys(p *passkeysDoc) []error {
 
 func isLoopbackHost(h string) bool {
 	return h == "localhost" || strings.HasSuffix(h, ".localhost") || h == "127.0.0.1" || h == "::1"
+}
+
+// The errors of choosing a strategy to sign in with.
+var (
+	// ErrStrategyRequired: the call named no strategy and more than one starts with its method.
+	ErrStrategyRequired = errors.New("strategy is required: more than one strategy starts with this method")
+	// ErrUnknownStrategy: no strategy of that name, or it does not start with the method of
+	// the call. The same answer for both, so it tells nothing else.
+	ErrUnknownStrategy = errors.New("unknown strategy")
+)
+
+// StrategyFor chooses the strategy a first-step call signs in with. name may be empty when
+// exactly one strategy starts with first (the call's method: password, magic_link or a
+// provider). Settings built by hand without strategies (tests) answer an unnamed strategy
+// of that one method; a parsed realm always has strategies.
+func (s RealmSettings) StrategyFor(name, first string) (Strategy, error) {
+	if len(s.Strategies) == 0 {
+		if name != "" {
+			return Strategy{}, ErrUnknownStrategy
+		}
+		return Strategy{Methods: []string{first}}, nil
+	}
+	if name != "" {
+		st, ok := s.StrategyByName(name)
+		if !ok || st.Methods[0] != first {
+			return Strategy{}, ErrUnknownStrategy
+		}
+		return st, nil
+	}
+	var found []Strategy
+	for _, st := range s.Strategies {
+		if st.Methods[0] == first {
+			found = append(found, st)
+		}
+	}
+	switch len(found) {
+	case 0:
+		return Strategy{}, ErrUnknownStrategy
+	case 1:
+		return found[0], nil
+	}
+	return Strategy{}, ErrStrategyRequired
+}
+
+// ActiveRoles splits the roles a user holds by a session made with strategy: a role is
+// active when it lists no strategies or lists that one. A session without a strategy (made
+// before strategies, or through an organization's connection) keeps every role.
+func (s RealmSettings) ActiveRoles(held []string, strategy string) (active, inactive []string) {
+	for _, r := range held {
+		list := s.Roles[r].Strategies
+		if strategy == "" || len(list) == 0 || slices.Contains(list, strategy) {
+			active = append(active, r)
+		} else {
+			inactive = append(inactive, r)
+		}
+	}
+	return active, inactive
+}
+
+// TOTPRequired says whether a user with these roles has to enrol an authenticator: every
+// strategy of the realm ends in a totp step, or one of the roles accepts only strategies that do.
+func (s RealmSettings) TOTPRequired(roles []string) bool {
+	if len(s.Strategies) == 0 {
+		return false
+	}
+	all := true
+	for _, st := range s.Strategies {
+		if !st.HasLaterStep(MethodTOTP) {
+			all = false
+		}
+	}
+	if all {
+		return true
+	}
+	for _, r := range roles {
+		list := s.Roles[r].Strategies
+		if len(list) == 0 {
+			continue
+		}
+		every := true
+		for _, sn := range list {
+			if st, ok := s.StrategyByName(sn); !ok || !st.HasLaterStep(MethodTOTP) {
+				every = false
+			}
+		}
+		if every {
+			return true
+		}
+	}
+	return false
+}
+
+// TOTPRoles lists the roles that need a totp step, and whether every user does.
+func (s RealmSettings) TOTPRoles() (roles []string, everyone bool) {
+	if s.TOTPRequired(nil) {
+		return nil, true
+	}
+	for _, r := range sortedRoleNames(s.Roles) {
+		if s.TOTPRequired([]string{r}) {
+			roles = append(roles, r)
+		}
+	}
+	return roles, false
 }

@@ -111,6 +111,7 @@ function authBase(org) {
  *   the realm's `sign_in.app_url`.
  * @property {string} [invitation]    An invitation token, for realms with `signup: invite`.
  * @property {string} [locale]
+ * @property {string} [strategy]      The strategy to sign in with (the client's `strategy` option when left out).
  * @property {Record<string, string>} [consents]  Consents accepted for the account the sign-in may make
  *   (name to version); a new account made without them is asked at its first sign-in.
  * @property {(url: string) => void | Promise<void>} [navigate]  How to go to the provider; `location.assign` by default.
@@ -244,7 +245,7 @@ class MagicLink {
    * at its first sign-in).
    * `org` is the organization the person signs in to (an id or a slug; the client's own when it was
    * made with one): only its members are sent a link, and the session it gives is scoped to it.
-   * @param {{ redirectTo?: string, locale?: string, org?: string, consents?: Record<string, string> }} [options]
+   * @param {{ redirectTo?: string, locale?: string, org?: string, strategy?: string, consents?: Record<string, string> }} [options]
    * @param {RequestOptions} [opts]
    * @returns {Promise<{ requestId: string }>}
    */
@@ -254,7 +255,7 @@ class MagicLink {
     const { verifier, challenge } = newPKCE()
     const { data } = await this.auth.client.request({
       method: 'POST', path: [...this.auth.base(options.org), 'magic-link'], auth: false, ...opts,
-      body: compact({ email, redirect_to: redirectTo, code_challenge: challenge, locale: options.locale, consents: options.consents }),
+      body: compact({ email, redirect_to: redirectTo, code_challenge: challenge, locale: options.locale, strategy: options.strategy ?? this.auth.client.strategy, consents: options.consents }),
     })
     savePending(this.auth.oauthStorage(), { verifier, provider: 'magic-link', intent: 'signin', requestId: data.request_id })
     return { requestId: data.request_id }
@@ -562,12 +563,14 @@ export class Auth {
    * `invitation` is an invitation token of the organization, used as part of the sign-in.
    * A right password that an administrator expired rejects with a `PasswordExpiredError`
    * (`resetEmailQueued` says whether backd queued the email with the link to choose a new one).
-   * @param {{ email: string, password: string, org?: string, invitation?: string }} input
+   * `strategy` names the strategy to sign in with (the client's `strategy` option when left out); a realm with
+   * more than one strategy that starts with the password needs it (`strategy_required`).
+   * @param {{ email: string, password: string, org?: string, invitation?: string, strategy?: string }} input
    * @param {RequestOptions} [opts]
    * @returns {Promise<SignInResult>}
    */
-  async signIn({ email, password, org, invitation }, opts) {
-    const body = compact({ email, password, invitation, cookie: this.client.cookies ? true : undefined })
+  async signIn({ email, password, org, invitation, strategy }, opts) {
+    const body = compact({ email, password, invitation, strategy: strategy ?? this.client.strategy, cookie: this.client.cookies ? true : undefined })
     const { data } = await this.client.request({ method: 'POST', path: [...this.base(org), 'login'], body, auth: false, ...opts })
     return this.step(data)
   }
@@ -621,7 +624,7 @@ export class Auth {
     const redirectTo = options.redirectTo ?? (here ? here.origin + here.pathname : undefined)
     // Without a page of its own the realm's `sign_in.app_url` is where the flow ends (or the server refuses).
     const { verifier, challenge } = newPKCE()
-    const body = compact({ redirect_to: redirectTo, code_challenge: challenge, intent, invitation: options.invitation, locale: options.locale, consents: options.consents })
+    const body = compact({ redirect_to: redirectTo, code_challenge: challenge, intent, invitation: options.invitation, locale: options.locale, consents: options.consents, strategy: intent === 'link' ? undefined : (options.strategy ?? this.client.strategy) })
     const { data } = await this.client.request({
       method: 'POST', path: [...(intent === 'link' ? authBase(options.org) : this.base(options.org)), 'oauth', provider, 'start'], body, auth: intent === 'link', ...opts,
     })
@@ -754,11 +757,11 @@ export class Auth {
     return data
   }
 
-  /** @param {{ idToken: string, nonce: string, authorizationCode?: string, invitation?: string, locale?: string, consents?: Record<string, string> }} input */
+  /** @param {{ idToken: string, nonce: string, authorizationCode?: string, invitation?: string, locale?: string, strategy?: string, consents?: Record<string, string> }} input */
   #idTokenBody(input) {
     return compact({
       id_token: input.idToken, nonce: input.nonce, authorization_code: input.authorizationCode,
-      invitation: input.invitation, locale: input.locale, consents: input.consents, cookie: this.client.cookies ? true : undefined,
+      invitation: input.invitation, locale: input.locale, consents: input.consents, strategy: input.strategy ?? this.client.strategy, cookie: this.client.cookies ? true : undefined,
     })
   }
 

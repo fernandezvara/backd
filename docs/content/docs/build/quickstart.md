@@ -15,7 +15,7 @@ This page is the shortest honest path to a `backd` you can build against: instal
 - **Docker with Compose** (Docker Desktop, or Docker Engine and the Compose plugin; rootless Podman with `podman-compose` also works). The first `up` pulls the images for MongoDB, MinIO and `backd`, so allow for a download; later runs start from the local copies.
 - **The `backd` command line**, from the [release archives](https://github.com/fernandezvara/backd/releases) (Linux, macOS, Windows). The server itself runs in the containers.
 - **A shell with `openssl` and `curl`** (on Windows, WSL2).
-- **An authenticator app on your phone** (any TOTP app). The template's `admin` role requires a second factor, so the first `backd login` asks you to enroll one before you see a document. A development realm without that step is planned ([#889](https://github.com/fernandezvara/backd/issues/889)).
+- **An authenticator app on your phone** (any TOTP app). The template's `admin` role accepts only the `admin_password` strategy (the password, then a code), so `backd login --strategy admin_password` asks you to enroll an authenticator before you see a document. A development realm without that step is planned ([#889](https://github.com/fernandezvara/backd/issues/889)).
 
 ## The short version
 
@@ -31,7 +31,7 @@ EOF
 docker compose up -d
 until curl -sf http://127.0.0.1:8080/readyz >/dev/null; do sleep 2; done   # MongoDB takes a moment
 docker compose exec backd backd-server bootstrap --realm demo --email me@example.com
-backd login --realm demo --url http://127.0.0.1:8080 --email me@example.com
+backd login --realm demo --url http://127.0.0.1:8080 --email me@example.com --strategy admin_password
 KEY=$(backd apikey create --realm demo --name local --expires 1d)
 curl -X POST http://127.0.0.1:8080/v1/demo/main/posts \
   -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
@@ -113,7 +113,7 @@ docker compose exec backd backd-server bootstrap --realm demo --email me@example
 Sign in with the CLI. The template's `admin` role requires a second factor, so this first login enrolls an authenticator app (see [Multi-factor authentication](../auth/mfa/) for what it shows and asks). Then create an API key for calls:
 
 ```sh
-backd login --realm demo --url http://127.0.0.1:8080 --email me@example.com
+backd login --realm demo --url http://127.0.0.1:8080 --email me@example.com --strategy admin_password
 KEY=$(backd apikey create --realm demo --name local --expires 1d)
 ```
 
@@ -161,7 +161,7 @@ export MONGO_URI='mongodb://localhost:27017/?replicaSet=rs0'   # a single-node r
 backd-server provision
 backd-server bootstrap --realm demo --email me@example.com          # the first administrator; asks for a password
 HTTP_ADDR=127.0.0.1:9090 backd-server serve &
-backd login --realm demo --url http://127.0.0.1:9090 --email me@example.com
+backd login --realm demo --url http://127.0.0.1:9090 --email me@example.com --strategy admin_password
 KEY=$(backd apikey create --realm demo --name local --expires 1d)
 curl http://127.0.0.1:9090/v1/demo/main/posts -H "Authorization: Bearer $KEY"
 ```

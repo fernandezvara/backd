@@ -261,12 +261,15 @@ type SignInInput struct {
 	// Org signs in through this organization's routes (the client's own by default).
 	Org        string
 	Invitation string
+	// Strategy names the strategy to sign in with; it may be empty while exactly one strategy
+	// starts with the password.
+	Strategy string
 }
 
 // SignIn checks the first factor and returns the step it leads to: the session (stored), or the
 // second step to take. Use Login when a second step should be an error.
 func (a *Auth) SignIn(ctx context.Context, in SignInInput, opts ...RequestOption) (*Step, error) {
-	b := body{}.set("email", in.Email).set("password", in.Password).set("invitation", in.Invitation)
+	b := body{}.set("email", in.Email).set("password", in.Password).set("invitation", in.Invitation).set("strategy", in.Strategy)
 	var raw json.RawMessage
 	if _, err := a.c.Do(ctx, "POST", join(a.base(in.Org), "login"), b, &raw, append([]RequestOption{WithoutAuth()}, opts...)...); err != nil {
 		return nil, err

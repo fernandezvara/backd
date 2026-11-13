@@ -470,7 +470,7 @@ func TestUserMFAStatus(t *testing.T) {
 	}))
 	defer srv.Close()
 	c := &cliEnv{t: t, env: map[string]string{"BACKD_CREDENTIALS": filepath.Join(t.TempDir(), "credentials")}}
-	c.expect(0, "logged in", pw+"\n", "login", "--realm", "acme", "--url", srv.URL, "--email", "ada@example.com")
+	c.expect(0, "logged in", pw+"\n", "login", "--realm", "acme", "--url", srv.URL, "--email", "ada@example.com", "--strategy", "password")
 	out := c.expect(0, "required for the roles: editor", "", "user", "mfa-status", "--realm", "acme")
 	if !strings.Contains(out, "1 user(s) have none yet") || !strings.Contains(out, "bob@example.com (editor)") || strings.Contains(out, "cy@") || strings.Contains(out, "dan@") {
 		t.Errorf("overview: %s", out)

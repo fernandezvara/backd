@@ -49,6 +49,9 @@ func TestACodeIssuedBeforeRequiringTheConnectionCannotBeRedeemedAfter(t *testing
 	ctx := context.Background()
 	verifier, challenge, _ := auth.NewPKCE()
 	// A code for the organization from a way that is not its connection (a link, say).
+	addFirstStrategies(&s.svc.Settings)
+	s.svc.Settings.MagicLink.Enabled = true
+	addFirstStrategies(&s.svc.Settings)
 	code, err := s.svc.IssueLoginCodeIn(ctx, s.anaID, auth.MagicLinkLoginMethod, challenge, false, nil, s.org)
 	if err != nil {
 		t.Fatal(err)

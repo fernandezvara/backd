@@ -145,6 +145,7 @@ paths:
                 locale: { type: string, description: "The language to use for the user, such as `es` or `es-MX`; mapped silently to one the realm lists." }
                 redirect_to: { type: string, description: "Where the page after the verification link may send the user: an absolute URL within the realm's `email.allowed_redirects` (`400 invalid_redirect` otherwise)." }
                 cookie: { type: boolean, description: "Keep the session in an HttpOnly cookie, as for login." }
+                strategy: { type: string, description: "The strategy to sign in with. May be left out while exactly one strategy starts with this method (`400 strategy_required` otherwise); a name that does not exist or starts with another method is `400 unknown_strategy`." }
                 org: { type: string, description: "The organization the person comes from, an organization id. It is used only when the address belongs to one of its members (or has an invitation by email to it): the emails of the flow, and the pages of their links, then carry its context (`email.data_hook`, `pages.data_hook`). Anything else is ignored, with the same answer and work." }
                 consents: { $ref: "#/components/schemas/ConsentsGiven" }
       responses:
@@ -174,17 +175,57 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_auth/strategies:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [auth]
+      summary: The realm's sign-in strategies
+      description: |
+        The names of the strategies the realm defines and their methods in order, so an app can draw
+        its sign-in screen. It needs no credentials and reveals nothing else: no roles, users or
+        settings. The first-step routes (`POST /_auth/login`, `POST /_auth/magic-link`, the provider
+        routes) take one of these names as `strategy`.
+      operationId: strategies
+      security: [{}]
+      responses:
+        "200":
+          description: The strategies.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [strategies]
+                properties:
+                  strategies:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [name, methods]
+                      properties:
+                        name: { type: string }
+                        methods: { type: array, items: { type: string } }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_auth/login:
     parameters: [{ $ref: "#/components/parameters/realm" }]
     post:
       tags: [auth]
       summary: Sign in with email and password
       description: |
-        The first factor. A user without a second factor gets the session. A user who has one
-        (TOTP) gets `{mfa_required, challenge, methods}` instead, and trades the challenge and a
-        code for the session at `POST /_auth/mfa/verify`; a user in a role the realm requires to
-        use MFA who has none yet gets `{mfa_enrollment_required, challenge}`. A challenge is not
-        a session, and it is only given after the password was checked.
+        The first step of a strategy that starts with `password`; `strategy` names it (it may be left out
+        while only one strategy starts with the password: `400 strategy_required`, `400 unknown_strategy`).
+        A strategy that is only the password gives the session. One with a `totp` step gives
+        `{mfa_required, challenge, methods, next, strategy}` instead (`next` is `["totp"]`), and the
+        challenge and a code are traded for the session at `POST /_auth/mfa/verify` (a strategy with more
+        steps answers with the next challenge); a person with no authenticator yet gets
+        `{mfa_enrollment_required, challenge, strategy}`. A user's own authenticator adds no step to a
+        strategy that has none. A challenge is not a session, and it is only given after the password
+        was checked. The session says its `strategy`, and `roles_inactive` lists the roles the strategy
+        does not allow.
 
         A correct password that was set before the realm's password epoch, or after an
         administrator expired it, gets no session: `401 password_expired`, and a reset email is
@@ -204,6 +245,7 @@ paths:
               properties:
                 email: { type: string }
                 password: { type: string }
+                strategy: { type: string, description: "The strategy to sign in with. May be left out while exactly one strategy starts with this method (`400 strategy_required` otherwise); a name that does not exist or starts with another method is `400 unknown_strategy`." }
                 org: { type: string, description: "The organization the person comes from, an organization id. It is used only when the address belongs to one of its members (or has an invitation by email to it): the emails of the flow, and the pages of their links, then carry its context (`email.data_hook`, `pages.data_hook`). Anything else is ignored, with the same answer and work." }
                 cookie:
                   type: boolean
@@ -358,6 +400,7 @@ paths:
               properties:
                 email: { type: string }
                 redirect_to: { type: string, description: "Where the page after the reset may send the user: within the realm's `email.allowed_redirects`." }
+                strategy: { type: string, description: "The strategy to sign in with. May be left out while exactly one strategy starts with this method (`400 strategy_required` otherwise); a name that does not exist or starts with another method is `400 unknown_strategy`." }
                 org: { type: string, description: "The organization the person comes from, an organization id. It is used only when the address belongs to one of its members (or has an invitation by email to it): the emails of the flow, and the pages of their links, then carry its context (`email.data_hook`, `pages.data_hook`). Anything else is ignored, with the same answer and work." }
       responses:
         "202":
@@ -2081,6 +2124,7 @@ paths:
         - { name: code_challenge, in: query, required: true, schema: { type: string, minLength: 43, maxLength: 43 } }
         - { name: invitation, in: query, schema: { type: string }, description: "An invitation token, for realms with `signup: invite`." }
         - { name: locale, in: query, schema: { type: string } }
+        - { name: strategy, in: query, schema: { type: string }, description: "The strategy to sign in with (a name from `GET /_auth/strategies` that starts with this provider). May be left out while exactly one strategy starts with it; else `400 strategy_required`, and a name that does not exist or starts with another method is `400 unknown_strategy`." }
       responses:
         "302":
           description: To the provider.
@@ -2121,6 +2165,7 @@ paths:
                 code_challenge: { type: string, minLength: 43, maxLength: 43, description: The S256 PKCE challenge of the app's verifier. }
                 intent: { type: string, enum: [signin, link], default: signin }
                 invitation: { type: string }
+                strategy: { type: string, description: "The strategy to sign in with. May be left out while exactly one strategy starts with this method (`400 strategy_required` otherwise); a name that does not exist or starts with another method is `400 unknown_strategy`." }
                 consents: { $ref: "#/components/schemas/ConsentsGiven" }
                 locale: { type: string }
       responses:
@@ -2364,6 +2409,7 @@ paths:
               properties:
                 email: { type: string }
                 password: { type: string }
+                strategy: { type: string, description: "The strategy to sign in with. May be left out while exactly one strategy starts with this method (`400 strategy_required` otherwise); a name that does not exist or starts with another method is `400 unknown_strategy`." }
                 invitation: { type: string, description: "An invitation token of this organization (`bdo_…`)." }
                 cookie: { type: boolean, description: "As for `POST /_auth/login`." }
       responses:
@@ -2453,6 +2499,7 @@ paths:
                 code_challenge: { type: string, minLength: 43, maxLength: 43 }
                 redirect_to: { type: string }
                 locale: { type: string }
+                strategy: { type: string, description: "The strategy to sign in with. May be left out while exactly one strategy starts with this method (`400 strategy_required` otherwise); a name that does not exist or starts with another method is `400 unknown_strategy`." }
                 consents: { $ref: "#/components/schemas/ConsentsGiven" }
       responses:
         "202":
@@ -2599,6 +2646,7 @@ paths:
         - { name: code_challenge, in: query, required: true, schema: { type: string, minLength: 43, maxLength: 43 } }
         - { name: invitation, in: query, schema: { type: string } }
         - { name: locale, in: query, schema: { type: string } }
+        - { name: strategy, in: query, schema: { type: string }, description: "The strategy to sign in with (a name from `GET /_auth/strategies` that starts with this provider). May be left out while exactly one strategy starts with it; else `400 strategy_required`, and a name that does not exist or starts with another method is `400 unknown_strategy`." }
       responses:
         "302":
           description: To the provider.
@@ -2637,6 +2685,7 @@ paths:
                 code_challenge: { type: string, minLength: 43, maxLength: 43 }
                 intent: { type: string, enum: [signin, link], default: signin }
                 invitation: { type: string }
+                strategy: { type: string, description: "The strategy to sign in with. May be left out while exactly one strategy starts with this method (`400 strategy_required` otherwise); a name that does not exist or starts with another method is `400 unknown_strategy`." }
                 consents: { $ref: "#/components/schemas/ConsentsGiven" }
                 locale: { type: string }
       responses:
@@ -2736,6 +2785,7 @@ paths:
                 nonce: { type: string }
                 intent: { type: string, enum: [signin, link], default: signin }
                 invitation: { type: string }
+                strategy: { type: string, description: "The strategy to sign in with. May be left out while exactly one strategy starts with this method (`400 strategy_required` otherwise); a name that does not exist or starts with another method is `400 unknown_strategy`." }
                 consents: { $ref: "#/components/schemas/ConsentsGiven" }
                 locale: { type: string }
                 cookie: { type: boolean }
@@ -2808,6 +2858,7 @@ paths:
                 authorization_code: { type: string, description: "Apple only, required unless `revoke_on_delete: false`: the authorization code that came with the ID token." }
                 intent: { type: string, enum: [signin, link], default: signin }
                 invitation: { type: string, description: "An invitation token, for realms with `signup: invite`." }
+                strategy: { type: string, description: "The strategy to sign in with. May be left out while exactly one strategy starts with this method (`400 strategy_required` otherwise); a name that does not exist or starts with another method is `400 unknown_strategy`." }
                 consents: { $ref: "#/components/schemas/ConsentsGiven" }
                 locale: { type: string }
                 cookie: { type: boolean, description: "As in `POST /_auth/login`." }
@@ -3187,6 +3238,8 @@ paths:
                   token: { type: string, pattern: "^bds_" }
                   token_type: { const: Bearer }
                   session_id: { type: string }
+                  strategy: { type: string }
+                  roles_inactive: { type: array, items: { type: string } }
                   expires_at: { $ref: "#/components/schemas/Timestamp" }
                   user: { $ref: "#/components/schemas/User" }
                   new_user: { type: boolean, description: "With a challenge from a provider sign-in: whether it made the user." }
@@ -3365,6 +3418,7 @@ paths:
                 code_challenge: { type: string, minLength: 43, maxLength: 43, description: "The S256 PKCE challenge of a verifier only the app holds." }
                 redirect_to: { type: string }
                 locale: { type: string }
+                strategy: { type: string, description: "The strategy to sign in with. May be left out while exactly one strategy starts with this method (`400 strategy_required` otherwise); a name that does not exist or starts with another method is `400 unknown_strategy`." }
                 org: { type: string, description: "The organization the person comes from, an organization id. It is used only when the address belongs to one of its members (or has an invitation by email to it): the emails of the flow, and the pages of their links, then carry its context (`email.data_hook`, `pages.data_hook`). Anything else is ignored, with the same answer and work." }
                 consents: { $ref: "#/components/schemas/ConsentsGiven" }
           application/x-www-form-urlencoded:
@@ -7123,6 +7177,7 @@ paths:
       security: [{}]
       parameters:
         - { name: locale, in: query, schema: { type: string } }
+        - { name: strategy, in: query, schema: { type: string }, description: "The strategy to sign in with (a name from `GET /_auth/strategies` that starts with this provider). May be left out while exactly one strategy starts with it; else `400 strategy_required`, and a name that does not exist or starts with another method is `400 unknown_strategy`." }
       responses:
         "200":
           description: The text.
@@ -11557,6 +11612,8 @@ components:
         expires_at: { $ref: "#/components/schemas/Timestamp" }
         user: { $ref: "#/components/schemas/User" }
         org: { type: string, description: "The organization the session is scoped to, when it was opened by signing in to one (`/_auth/orgs/{org}/…`)." }
+        strategy: { type: string, description: "The strategy the session was made with; absent for sessions from before strategies and for sign-ins through an organization's connection." }
+        roles_inactive: { type: array, items: { type: string }, description: "The roles the user holds that this session's strategy does not allow (they are absent from `user.roles`): an app can offer a stronger way in. Said only after authentication." }
         recovery_codes_left: { type: integer, description: "Only when a recovery code ended the sign-in: how many remain." }
 
     OrganizationSession:
@@ -11572,19 +11629,23 @@ components:
         expires_at: { $ref: "#/components/schemas/Timestamp" }
         user: { $ref: "#/components/schemas/User" }
         org: { type: string }
+        strategy: { type: string }
+        roles_inactive: { type: array, items: { type: string } }
         organization: { $ref: "#/components/schemas/Organization" }
 
     MFAChallenge:
       type: object
       additionalProperties: false
-      required: [mfa_required, challenge, methods]
+      required: [mfa_required, challenge, methods, next]
       description: >-
         The first factor was right and the user has a second one: send the `challenge` with
         a code to `POST /_auth/mfa/verify`. It lives 5 minutes and allows 5 attempts.
       properties:
-        mfa_required: { const: true }
+        mfa_required: { const: true, description: "Always true; kept from before strategies. `next` is the current name." }
         challenge: { type: string }
-        methods: { type: array, items: { type: string, enum: [totp, recovery_code] } }
+        methods: { type: array, items: { type: string, enum: [totp, recovery_code] }, description: "The methods the person may use now, with recovery_code for totp. Kept from before strategies." }
+        next: { type: array, items: { type: string, enum: [totp] }, description: "The method the strategy asks for next. A recovery code is accepted wherever `totp` is next." }
+        strategy: { type: string, description: "The strategy the sign-in follows; absent when the realm has none named (settings built by hand)." }
 
     ConsentsGiven:
       type: object
@@ -11654,6 +11715,7 @@ components:
       properties:
         mfa_enrollment_required: { const: true }
         challenge: { type: string }
+        strategy: { type: string }
 
     ProviderSession:
       type: object
@@ -11671,6 +11733,8 @@ components:
         expires_at: { $ref: "#/components/schemas/Timestamp" }
         user: { $ref: "#/components/schemas/User" }
         org: { type: string, description: "The organization the session is scoped to, when the sign-in was to one." }
+        strategy: { type: string, description: "As for a login's session." }
+        roles_inactive: { type: array, items: { type: string }, description: "As for a login's session." }
         new_user: { type: boolean }
         recovery_codes_left: { type: integer, description: "Only when a recovery code ended the sign-in: how many remain." }
         profile:

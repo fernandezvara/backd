@@ -15,6 +15,7 @@ import (
 type oauthStateDoc struct {
 	ID            string   `bson:"_id"`
 	Provider      string   `bson:"provider"`
+	Strategy      string   `bson:"strategy,omitempty"`
 	Org           string   `bson:"org,omitempty"`
 	ScopeOrg      string   `bson:"scope_org,omitempty"`
 	Intent        string   `bson:"intent"`
@@ -35,6 +36,7 @@ type loginCodeDoc struct {
 	ID            string            `bson:"_id"`
 	UserID        string            `bson:"user_id"`
 	Method        string            `bson:"method"`
+	Strategy      string            `bson:"strategy,omitempty"`
 	CodeChallenge string            `bson:"code_challenge"`
 	NewUser       bool              `bson:"new_user,omitempty"`
 	Profile       map[string]string `bson:"profile,omitempty"`

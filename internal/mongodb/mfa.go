@@ -17,6 +17,7 @@ type challengeDoc struct {
 	Kind          string            `bson:"kind"`
 	UserID        string            `bson:"user_id"`
 	Factor        string            `bson:"factor,omitempty"`
+	Strategy      string            `bson:"strategy,omitempty"`
 	NewUser       bool              `bson:"new_user,omitempty"`
 	Profile       map[string]string `bson:"profile,omitempty"`
 	ViaOrg        string            `bson:"via_org,omitempty"`

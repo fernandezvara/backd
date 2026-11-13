@@ -58,6 +58,8 @@ func (e *RefusedError) Is(target error) bool { return target == ErrSignInRefused
 type OAuthState struct {
 	ID       string // HashToken(state)
 	Provider string
+	// Strategy is the strategy the app asked for ("" when it named none).
+	Strategy string
 	// Org is the organization whose connection the attempt goes through ("" for the realm's
 	// own providers): the callback must be the one of that organization.
 	Org string
@@ -86,7 +88,9 @@ type LoginCode struct {
 	UserID string
 	// Method is the first factor the code stands for: the provider's name (magic links will
 	// add their own), so that a second step can be asked for after the code is redeemed.
-	Method        string
+	Method string
+	// Strategy is the strategy the sign-in follows.
+	Strategy      string
 	CodeChallenge string
 	// NewUser says the sign-in made the user, and Profile is what the provider said of them:
 	// the redemption hands both over once.
@@ -164,12 +168,17 @@ func (s *Users) IssueLoginCode(ctx context.Context, userID, method, challenge st
 // IssueLoginCodeIn is IssueLoginCode for a person an organization's connection signed in: the
 // session the code becomes records the organization.
 func (s *Users) IssueLoginCodeIn(ctx context.Context, userID, method, challenge string, newUser bool, profile map[string]string, org string) (string, error) {
+	return s.IssueLoginCodeFor(ctx, userID, method, "", challenge, newUser, profile, org)
+}
+
+// IssueLoginCodeFor is IssueLoginCodeIn for a sign-in that follows the named strategy.
+func (s *Users) IssueLoginCodeFor(ctx context.Context, userID, method, strategy, challenge string, newUser bool, profile map[string]string, org string) (string, error) {
 	code, err := randomValue()
 	if err != nil {
 		return "", err
 	}
 	now := s.now()
-	lc := LoginCode{ID: HashToken(code), UserID: userID, Method: method, CodeChallenge: challenge, NewUser: newUser, Org: org, CreatedAt: now, ExpiresAt: now.Add(LoginCodeTTL)}
+	lc := LoginCode{ID: HashToken(code), UserID: userID, Method: method, Strategy: strategy, CodeChallenge: challenge, NewUser: newUser, Org: org, CreatedAt: now, ExpiresAt: now.Add(LoginCodeTTL)}
 	if newUser && len(profile) > 0 {
 		lc.Profile = profile
 	}
@@ -206,7 +215,7 @@ func (s *Users) RedeemLoginCode(ctx context.Context, code, verifier string) (Red
 	if method == "" {
 		method = "oauth"
 	}
-	return s.afterFirstFactor(ctx, u, method, handover{newUser: lc.NewUser, profile: lc.Profile, org: lc.Org})
+	return s.afterFirstFactor(ctx, u, method, handover{newUser: lc.NewUser, profile: lc.Profile, org: lc.Org, strategy: lc.Strategy})
 }
 
 // Redeemed is the outcome of redeeming a login code: the session, whether the sign-in made the
@@ -231,7 +240,12 @@ func (s *Users) StartProviderSession(ctx context.Context, u User, provider strin
 // StartProviderSessionIn is StartProviderSession for a person an organization's connection
 // signed in: the session records the organization.
 func (s *Users) StartProviderSessionIn(ctx context.Context, u User, provider string, newUser bool, profile map[string]string, org string) (Redeemed, error) {
-	return s.afterFirstFactor(ctx, u, provider, handover{newUser: newUser, profile: profile, org: org})
+	return s.StartProviderSessionFor(ctx, u, provider, "", newUser, profile, org)
+}
+
+// StartProviderSessionFor is StartProviderSessionIn for a sign-in that follows the named strategy.
+func (s *Users) StartProviderSessionFor(ctx context.Context, u User, provider, strategy string, newUser bool, profile map[string]string, org string) (Redeemed, error) {
+	return s.afterFirstFactor(ctx, u, provider, handover{newUser: newUser, profile: profile, org: org, strategy: strategy})
 }
 
 // ProviderLogin is a person an external provider has vouched for.

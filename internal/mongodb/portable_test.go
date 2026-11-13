@@ -148,10 +148,11 @@ func TestAuthDataMovesBetweenRealms(t *testing.T) {
 	}
 
 	// bob has no second factor: password only. ada is asked for her authenticator.
-	if p, tok, err := to.Login(ctx, "bob@example.com", pw, ""); err != nil || tok == "" || p.Session.MFA {
+	to.Settings.Strategies = []registry.Strategy{{Name: "web", Methods: []string{"password"}}, {Name: "admin", Methods: []string{"password", "totp"}}}
+	if out, err := to.SignInWith(ctx, "web", "bob@example.com", pw, ""); err != nil || out.Token == "" || out.Principal.Session.MFA {
 		t.Errorf("bob: %v", err)
 	}
-	out, err := to.SignIn(ctx, "ada@example.com", pw, "")
+	out, err := to.SignInWith(ctx, "admin", "ada@example.com", pw, "")
 	if err != nil || out.Challenge == nil || out.Challenge.Kind != auth.ChallengeMFA {
 		t.Fatalf("ada's first factor: %+v %v", out, err)
 	}

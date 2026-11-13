@@ -554,6 +554,7 @@ type sessionDoc struct {
 	ExpiresAt   time.Time `bson:"expires_at"`
 	Methods     []string  `bson:"methods,omitempty"`
 	MFA         bool      `bson:"mfa,omitempty"`
+	Strategy    string    `bson:"strategy,omitempty"`
 	Org         string    `bson:"org,omitempty"`
 	MaxLifetime int64     `bson:"max_lifetime,omitempty"` // seconds
 }
@@ -562,7 +563,7 @@ func (d sessionDoc) session() auth.Session {
 	return auth.Session{
 		ID: d.ID, UserID: d.UserID, TokenHash: d.TokenHash,
 		CreatedAt: d.CreatedAt.UTC(), LastUsedAt: d.LastUsedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC(),
-		Methods: d.Methods, MFA: d.MFA, Org: d.Org, MaxLifetime: time.Duration(d.MaxLifetime) * time.Second,
+		Methods: d.Methods, MFA: d.MFA, Strategy: d.Strategy, Org: d.Org, MaxLifetime: time.Duration(d.MaxLifetime) * time.Second,
 	}
 }
 
@@ -570,7 +571,7 @@ func (s *AuthStore) CreateSession(ctx context.Context, x auth.Session) error {
 	_, err := s.sessions().InsertOne(ctx, sessionDoc{
 		ID: x.ID, TokenHash: x.TokenHash, UserID: x.UserID,
 		CreatedAt: x.CreatedAt, LastUsedAt: x.LastUsedAt, ExpiresAt: x.ExpiresAt,
-		Methods: x.Methods, MFA: x.MFA, Org: x.Org, MaxLifetime: int64(x.MaxLifetime / time.Second),
+		Methods: x.Methods, MFA: x.MFA, Strategy: x.Strategy, Org: x.Org, MaxLifetime: int64(x.MaxLifetime / time.Second),
 	})
 	return err
 }

@@ -63,6 +63,15 @@ func (a *authAPI) oauthRoutes(r chi.Router, json func(http.Handler) http.Handler
 // signInMethod is how a session records the first factor of a provider sign-in: the provider's
 // name, or, through an organization's connection, the connection itself, so that session is never
 // taken for one opened by the realm's own provider.
+// strategyMethodOf is the method a provider's sign-in starts a strategy with: the provider's name,
+// or sso for a connection of an organization.
+func strategyMethodOf(p *registry.Provider) string {
+	if p.Org != "" {
+		return registry.MethodSSO
+	}
+	return p.Name
+}
+
 func signInMethod(p *registry.Provider) string {
 	if p.Org != "" {
 		return auth.ConnectionMethod(p.Org, p.Name)
@@ -256,7 +265,7 @@ func (a *authAPI) providerUnavailable(w http.ResponseWriter, r *http.Request, wh
 
 // startInput is what a start call carries.
 type startInput struct {
-	redirectTo, challenge, intent, invitation, locale string
+	redirectTo, challenge, intent, invitation, locale, strategy string
 	// consents are accepted for the account the sign-in may make (POST only).
 	consents map[string]string
 }
@@ -267,7 +276,7 @@ func (a *authAPI) oauthStartGet(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, codeValidation, "linking a provider needs a POST (it carries the session)", Detail{Path: "intent", Reason: "only signin is allowed in a GET"})
 		return
 	}
-	in := startInput{redirectTo: q.Get("redirect_to"), challenge: q.Get("code_challenge"), intent: auth.IntentSignIn, invitation: q.Get("invitation"), locale: q.Get("locale")}
+	in := startInput{redirectTo: q.Get("redirect_to"), challenge: q.Get("code_challenge"), intent: auth.IntentSignIn, invitation: q.Get("invitation"), locale: q.Get("locale"), strategy: q.Get("strategy")}
 	if u, ok := a.startOAuth(w, r, in, auth.Principal{}); ok {
 		w.Header().Set("Location", u)
 		w.WriteHeader(http.StatusFound)
@@ -283,12 +292,12 @@ func (a *authAPI) oauthStartPost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"redirect_to": "string?", "code_challenge": "string", "intent": "string?", "invitation": "string?", "locale": "string?"})
+	f, ok := fields(w, r, obj, map[string]string{"redirect_to": "string?", "code_challenge": "string", "intent": "string?", "invitation": "string?", "locale": "string?", "strategy": "string?"})
 	if !ok {
 		return
 	}
 	str := func(k string) string { v, _ := f[k].(string); return v }
-	in := startInput{redirectTo: str("redirect_to"), challenge: str("code_challenge"), intent: str("intent"), invitation: str("invitation"), locale: str("locale"), consents: consents}
+	in := startInput{redirectTo: str("redirect_to"), challenge: str("code_challenge"), intent: str("intent"), invitation: str("invitation"), locale: str("locale"), strategy: str("strategy"), consents: consents}
 	if in.intent == "" {
 		in.intent = auth.IntentSignIn
 	}
@@ -340,6 +349,17 @@ func (a *authAPI) startOAuth(w http.ResponseWriter, r *http.Request, in startInp
 		writeError(w, r, http.StatusBadRequest, codeInvalidRedirect, "redirect_to isn't within the realm's auth.sign_in.allowed_redirects (or email.allowed_redirects)")
 		return "", false
 	}
+	// A sign-in with a provider follows a strategy that starts with it (an organization's connection:
+	// with sso); linking signs nobody in.
+	strategy := ""
+	if in.intent == auth.IntentSignIn {
+		st, err := svc.ChooseStrategy(in.strategy, strategyMethodOf(p))
+		if err != nil {
+			authError(w, r, err)
+			return "", false
+		}
+		strategy = st.Name
+	}
 	if err := svc.RateLimit(r.Context(), "oauth-start:"+clientIP(r), oauthRateLimit, time.Minute); err != nil {
 		authError(w, r, err)
 		return "", false
@@ -365,7 +385,7 @@ func (a *authAPI) startOAuth(w http.ResponseWriter, r *http.Request, in startInp
 		authError(w, r, err)
 		return "", false
 	}
-	st := auth.OAuthState{Provider: p.Name, Org: p.Org, ScopeOrg: routeScope(r, sc), Intent: in.intent, CodeChallenge: in.challenge, RedirectTo: in.redirectTo, LinkUserID: who.User.ID,
+	st := auth.OAuthState{Provider: p.Name, Strategy: strategy, Org: p.Org, ScopeOrg: routeScope(r, sc), Intent: in.intent, CodeChallenge: in.challenge, RedirectTo: in.redirectTo, LinkUserID: who.User.ID,
 		Locales: append([]string{in.locale}, acceptLanguages(r.Header.Get("Accept-Language"))...), Consents: in.consents}
 	if in.invitation != "" {
 		st.InvitationID = auth.HashToken(in.invitation)
@@ -522,7 +542,7 @@ func (a *authAPI) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		back(paramLinked, p.Name)
 		return
 	}
-	loginCode, err := svc.IssueLoginCodeIn(r.Context(), res.User.ID, signInMethod(p), st.CodeChallenge, res.NewUser, res.Profile, st.ScopeOrg)
+	loginCode, err := svc.IssueLoginCodeFor(r.Context(), res.User.ID, signInMethod(p), st.Strategy, st.CodeChallenge, res.NewUser, res.Profile, st.ScopeOrg)
 	if err != nil {
 		logger(r.Context()).Error("issue a login code", "error", err)
 		back(paramError, oauthProviderError)

@@ -43,6 +43,7 @@ func newMFAFixture(t *testing.T) *mfaFixture {
 	}
 	f := &mfaFixture{svc: svc, store: store, clock: &clock, user: u}
 	f.secret, f.codes = f.enroll(t, u)
+	secondStep(&svc.Settings) // the password strategy ends with the code
 	return f
 }
 
@@ -106,7 +107,8 @@ func TestSecondFactorIsAskedAfterTheFirst(t *testing.T) {
 	if _, _, err := f.svc.Login(ctx, "ada@example.com", mfaPassword, ""); !errors.Is(err, ErrSecondStepRequired) {
 		t.Errorf("Login: %v", err)
 	}
-	// Someone without a second factor still gets their session at once.
+	// Someone without a second factor still gets their session at once, where the strategy asks for none.
+	noSecondStep(&f.svc.Settings)
 	if _, err := f.svc.Create(ctx, "bob@example.com", new(mfaPassword)); err != nil {
 		t.Fatal(err)
 	}
@@ -264,8 +266,8 @@ func TestRequiredRoleWithoutMFAIsAskedToEnroll(t *testing.T) {
 	if err := f.store.AddRoles(ctx, boss.ID, []string{"owner"}, *f.clock); err != nil {
 		t.Fatal(err)
 	}
-	f.svc.Settings.MFA.RequiredRoles = []string{"owner"}
-	out, err := f.svc.SignIn(ctx, "boss@example.com", mfaPassword, "")
+	secondStep(&f.svc.Settings, "owner")
+	out, err := f.svc.SignInWith(ctx, "password_totp", "boss@example.com", mfaPassword, "")
 	if err != nil || out.Challenge == nil || out.Challenge.Kind != ChallengeEnroll || out.Token != "" {
 		t.Fatalf("outcome: %+v, %v", out, err)
 	}
@@ -274,7 +276,7 @@ func TestRequiredRoleWithoutMFAIsAskedToEnroll(t *testing.T) {
 		t.Errorf("verify with an enroll challenge: %v", err)
 	}
 	// `all` asks everyone who has no second factor yet.
-	f.svc.Settings.MFA = registry.MFASettings{RequiredAll: true}
+	secondStep(&f.svc.Settings)
 	if _, err := f.svc.Create(ctx, "bob@example.com", new(mfaPassword)); err != nil {
 		t.Fatal(err)
 	}
@@ -320,5 +322,56 @@ func TestOrganizationOfASignInSurvivesTheSecondStep(t *testing.T) {
 	code, _ := totp.GenerateCodeCustom(secret, f.clock.Add(30*time.Second), totp.ValidateOpts{Period: 30, Digits: otp.DigitsSix, Algorithm: otp.AlgorithmSHA1})
 	if v, err = f.svc.VerifyMFA(ctx, out.Challenge.Token, MethodTOTP, code, ""); err != nil || v.Principal.Session.Org != "" {
 		t.Errorf("session org = %q, %v", v.Principal.Session.Org, err)
+	}
+}
+
+// secondStep makes sign-in need a totp step: of everyone when no role is named, else of the
+// holders of those roles, who accept only the strategy that has it.
+func secondStep(s *registry.RealmSettings, roles ...string) {
+	if len(roles) == 0 {
+		s.Strategies = []registry.Strategy{{Name: "password", Methods: []string{"password", "totp"}}, {Name: "google", Methods: []string{"google", "totp"}}}
+		return
+	}
+	s.Strategies = []registry.Strategy{{Name: "password", Methods: []string{"password"}}, {Name: "password_totp", Methods: []string{"password", "totp"}}}
+	if s.Roles == nil {
+		s.Roles = map[string]registry.Role{}
+	}
+	for _, r := range roles {
+		role := s.Roles[r]
+		role.Strategies = []string{"password_totp"}
+		s.Roles[r] = role
+	}
+}
+
+// noSecondStep undoes secondStep.
+func noSecondStep(s *registry.RealmSettings) {
+	s.Strategies = nil
+	for r, role := range s.Roles {
+		role.Strategies = nil
+		s.Roles[r] = role
+	}
+}
+
+// addFirstStrategies gives each provider and the magic link a strategy of their own, for tests
+// that switch them on after the realm was parsed.
+func addFirstStrategies(s *registry.RealmSettings) {
+	has := func(first string) bool {
+		for _, st := range s.Strategies {
+			if st.Methods[0] == first {
+				return true
+			}
+		}
+		return false
+	}
+	if len(s.Strategies) == 0 {
+		s.Strategies = []registry.Strategy{{Name: "password", Methods: []string{"password"}}}
+	}
+	for _, p := range s.Providers {
+		if !has(p.Name) {
+			s.Strategies = append(s.Strategies, registry.Strategy{Name: p.Name, Methods: []string{p.Name}})
+		}
+	}
+	if s.MagicLink.Enabled && !has("magic_link") {
+		s.Strategies = append(s.Strategies, registry.Strategy{Name: "magic_link", Methods: []string{"magic_link"}})
 	}
 }

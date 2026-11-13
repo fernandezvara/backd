@@ -33,7 +33,7 @@ test('a second factor: enrol, sign in with a code, then with a recovery code', {
   assert.equal((await c.auth.mfa.status()).enabled, true)
 
   // The password alone is not a session any more.
-  const other = mailClient()
+  const other = mailClient({ strategy: 'password_totp' })
   const step = /** @type {any} */ (await other.auth.signIn({ email: address, password }))
   assert.equal(step.mfaRequired, true)
   assert.equal(await other.auth.token(), null)
@@ -42,7 +42,7 @@ test('a second factor: enrol, sign in with a code, then with a recovery code', {
   const session = await other.auth.verifyMfa(step.challenge, 'totp', totp(setup.secret, Date.now() + 30000))
   assert.ok(session.token)
 
-  const third = mailClient()
+  const third = mailClient({ strategy: 'password_totp' })
   const step2 = /** @type {any} */ (await third.auth.signIn({ email: address, password }))
   const viaRecovery = await third.auth.verifyMfa(step2.challenge, 'recovery_code', done.recovery_codes[0])
   assert.equal(viaRecovery.recovery_codes_left, 9)
@@ -51,7 +51,7 @@ test('a second factor: enrol, sign in with a code, then with a recovery code', {
 test('magic link: a new account by code, then a second factor is asked for', { skip }, async () => {
   const address = email('link')
   const c = mailClient()
-  const asked = await c.auth.magicLink.request(address, { redirectTo: 'http://localhost:5173/in' })
+  const asked = await c.auth.magicLink.request(address, { redirectTo: 'http://localhost:5173/in', strategy: 'magic_link' })
   assert.ok(asked.requestId)
   const { code } = await mailCode('magic-link', address)
   await assert.rejects(c.auth.magicLink.verifyCode('000000'), (/** @type {any} */ e) => e.code === 'invalid_code')

@@ -29,7 +29,7 @@ func (s *Users) finishSignIn(ctx context.Context, u User, methods []string, h ha
 	if todo := s.Settings.ConsentsToAccept(u.Consents); len(todo) > 0 {
 		return s.issueConsentChallenge(ctx, u, methods, todo, h)
 	}
-	p, token, err := s.startSessionWith(ctx, u, methods, len(methods) > 1, h.org)
+	p, token, err := s.startSessionWith(ctx, u, methods, len(methods) > 1, h.org, h.strategy)
 	if err != nil {
 		return Redeemed{}, err
 	}
@@ -43,7 +43,7 @@ func (s *Users) issueConsentChallenge(ctx context.Context, u User, methods []str
 	}
 	now := s.now()
 	c := AuthChallenge{
-		ID: HashToken(token), Kind: ChallengeConsent, UserID: u.ID, Factor: methods[0], Methods: methods,
+		ID: HashToken(token), Kind: ChallengeConsent, UserID: u.ID, Factor: methods[0], Strategy: h.strategy, Methods: methods,
 		NewUser: h.newUser, ViaOrg: h.org, CreatedAt: now, ExpiresAt: now.Add(ChallengeTTL),
 	}
 	if h.newUser && len(h.profile) > 0 {
@@ -98,7 +98,7 @@ func (s *Users) AcceptConsents(ctx context.Context, challenge string, given map[
 		return Verified{}, err
 	}
 	u.Consents = mergeConsents(u.Consents, given)
-	p, token, err := s.startSessionWith(ctx, u, c.Methods, len(c.Methods) > 1, c.ViaOrg)
+	p, token, err := s.startSessionWith(ctx, u, c.Methods, len(c.Methods) > 1, c.ViaOrg, c.Strategy)
 	if err != nil {
 		return Verified{}, err
 	}
