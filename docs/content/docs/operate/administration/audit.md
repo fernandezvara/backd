@@ -1,6 +1,6 @@
 ---
 title: "Audit trail"
-description: "A permanent, append-only record of who changed users, roles, network restrictions, API keys and invitations, and when."
+description: "A permanent, append-only record of who changed users, roles, second factors, passkeys, organizations, secrets and API keys, and when; every action it records."
 icon: "clock-counter-clockwise"
 weight: 560
 toc: true
@@ -20,6 +20,7 @@ Each realm with an `auth` section keeps an **audit trail**: one record per secur
 | `password.expire_notify` | The job that [tells the users](../../../build/auth/users/#telling-the-users) to choose a new password ended | `job_id`, `queued`, `skipped`, `deferred` |
 | `session.revoke_all` | An administrator ended every session of the realm | `sessions` |
 | `user.password_change` | A user changes their own password | |
+| `user.password_set`, `user.password_removed` | A user sets a password on an account that had none, or removes their own password | |
 | `user.verify_email` | An administrator marks an email as verified, or not; or a user verifies it with the link in their email | `verified` |
 | `user.password_reset` | A user sets a new password with a reset link | `verified_address` |
 | `user.email_changed` | A user's address changes: confirmed by the new address, or set by an administrator | `by` (`self` or `admin`) |
@@ -27,7 +28,16 @@ Each realm with an `auth` section keeps an **audit trail**: one record per secur
 | `user.purged_unverified` | A worker deletes accounts that never verified their address | `count`, `older_than` |
 | `push.test` | An administrator sent a [test push](../../../build/push/records/#the-test-send) to a user | `send`, `kind` |
 | `device.removed` | An administrator removes a user's push device | `platform`, `device` |
+| `push.devices_removed` | An administrator removes every device of a platform at once, after rotating the [Web Push keys](../../providers/push/web-push/); the target is `realm:<realm>` | `platform`, `count` |
 | `user.claimed` | A link or code verified an address that was never verified, and took the account away from whoever made it: password, providers, second factor and sessions are removed | `methods`, `mfa` |
+| `user.mfa_enabled`, `user.mfa_disabled` | A user turns their [authenticator app](../../../build/auth/mfa/) (TOTP) on or off | |
+| `user.mfa_reset` | An administrator resets a user's second factor: the TOTP secret, the recovery codes and the passkeys go, and the sessions end. The actor is the administrator, or `instance` for `backd-server user mfa-reset` | `passkeys_removed` |
+| `user.recovery_codes_regenerated` | A user makes a new set of recovery codes; the earlier ones stop working | |
+| `user.recovery_code_used` | A recovery code is used, to sign in or to [re-authenticate](../../../build/auth/reauth/) | `codes_left` |
+| `user.reauth` | A user gives a [fresh proof](../../../build/auth/reauth/) before a sensitive action | `method` (`totp`, `recovery_code`, `passkey`, `password` or `email_code`); never the code |
+| `user.consent_recorded` | An administrator records a [consent](../../../build/auth/consents/) for a user | `consent`, `version`, `action`, `evidence` |
+| `consents.notify` | An administrator asks the users to review a consent's new version; the target is `consent:<name>` | `version`, `matched`, `queued`, `limited` |
+| `appconfig.change` | The [app configuration](../../../build/configuration/app-config/) changes: set or rolled back by an administrator, or set by a function (the actor is `function:<database>/<name>`); the target is `app-config` | `version`, `kind` (`set` or `rollback`), `paths`; never values |
 | `function.invoke_manual` | An administrator runs a function by hand ([admin API](../admin/)) | `as` (the user's **id**, never their email, or null) |
 | `files.versions.regenerate` | An administrator runs [`backd files regenerate`](../../../build/files/file-fields/#after-you-change-a-declaration) ([admin API](../admin/)) | `version`, `missing_only`, `job_id` |
 | `storage.reconcile` | An administrator runs [`backd storage reconcile`](../../storage-maintenance/#reconciling) ([admin API](../admin/)) | `delete`, `orphans` (how many were found), `deleted` |
@@ -57,19 +67,28 @@ Each realm with an `auth` section keeps an **audit trail**: one record per secur
 | `org.create`, `org.update` | An organization is created (by a user or an administrator) or renamed | `by`, `creator` / `fields` |
 | `org.member_add`, `org.member_remove`, `org.member_leave`, `org.roles` | A member is added without an invitation (`by` is `admin` or `sso`), removed, leaves, or has roles changed | `user`, `roles`, `by` / `added`, `removed` |
 | `org.team_create`, `org.team_update`, `org.team_delete`, `org.team_member_add`, `org.team_member_remove` | A team is made, changed or deleted, or someone joins or leaves it | `team`, `name`, `roles` / `user` |
+| `org.team_role_grant`, `org.team_role_change`, `org.team_role_revoke` | A member is given a [team role](../../../build/organizations/team-roles/), its time window changes, or it is taken away; the target is `org:<id>` | `team`, `user`, `role`; `from`, `until` when set (grant and change) |
+| `org.team_deleted` | The cleanup after a team was deleted ended (the actor is `system`) | `team`, `job_id`, `counts` (documents removed per collection; never content) |
+| `org.template_save`, `org.template_delete`, `org.template_test` | An organization saves or deletes one of its [email templates](../../../build/organizations/email-templates/), or sends a test of one to the caller's own address | `kind`, `locale`; `version` when saved; never the text |
 | `org.invitation_create`, `org.invitation_link`, `org.invitation_accept`, `org.invitation_revoke` | An organization invitation is made, given a new link, accepted or revoked | `invitation`, `binding`, `roles`, `teams`, `sent` / `user` |
 | `org.require_mfa` | An organization turns its second-factor requirement on or off | `value` |
-| `org.delete`, `org.deleted`, `org.reactivate` | An organization is deleted (access ends), its cleanup ends, or it is brought back | `by`, `job_id` / `counts` (documents removed per collection; never content) / `slug` |
+| `org.delete`, `org.deleted`, `org.reactivate` | An organization is deleted (access ends), its cleanup ends (the actor is `system`), or it is brought back | `by`, `job_id` / `job_id`, `counts` (documents removed per collection; never content), `connections` (sign-in connections removed) / `slug` |
+| `org.orphaned` | An organization lost its last manager because that user was erased; the members keep their access until an administrator assigns a manager (`org.owner_assign`) | `user` |
 | `org.sso.set`, `org.sso.deleted`, `org.sso.disabled` | An organization's sign-in connection is set, removed, or switched off by backd because the manager who set it no longer holds the roles it gives on joining | `provider`, `enabled`, `secret_changed` / `provider`, `by` / `provider`, `reason` (never the secret) |
 | `org.sso_required` | An organization turns on or off the requirement to sign in through its connection, or backd turns it off because the last working connection went | `value`; turning it on `without_sso`, `revoked`; backd turning it off `reason` |
 | `org.sso.login` | A person signed in through an organization's connection | `user`, `provider`, `joined` (this sign-in made them a member) |
 | `org.claims`, `org.owner_assign` | Claims are replaced; a manager is assigned | `keys` / `user` |
 | `secret.key.create`, `secret.key.rotate`, `secret.key.delete` | A [field key](../../../build/configuration/field-keys/) is created, imported, rotated or deleted | `fingerprint` (the new one), `generated` or `previous` and `rewrapped`; never the key |
+| `secret.set`, `secret.delete` | A [function secret](../../../build/functions/secrets/) is set or deleted; the target is `secret:<database>/<name>` (`secret:realm/<name>` for the realm's) | `database` (empty for the realm's) or `org`; never the value |
+| `secret.rotate_key` | An operator re-encrypts every function secret with `backd-server secret rotate-key` | `count` |
 | `apikey.create`, `apikey.revoke` | An API key is created or revoked | `role`, `networks`, `expires_at` |
 | `invitation.create`, `invitation.revoke` | An invitation is created or revoked | `bound_to_email` (whether it is), `expires_at` |
 | `invitation.sent` | An invitation is emailed to its address | `expires_at` |
 | `passkey.registered` | A user added a passkey | `passkey`, `name`, `synced` |
 | `passkey.removed` | A passkey was removed, by the user or an administrator | `passkey`, `name`, `by` (`self` or `admin`), `sessions_ended` |
+| `passkey.login` | A user signs in with a [passkey](../../../build/auth/passkeys/) | `passkey`, `synced`, `strategy` |
+| `passkey.login_failed` | A passkey sign-in, or a passkey step after another method, fails; the app is only told `invalid_passkey`. The target is the user when the passkey is known, else `anonymous` | `reason` (such as `unknown_credential`, `unknown_or_expired_challenge`, `counter_regressed`, `disabled`, `erased`, `network`, `email_not_verified`, `not_a_member`), `step` (a step after another method), `passkey` |
+| `passkey.clone_suspected` | A passkey's signature counter went backwards, which can mean a copied authenticator; the sign-in is refused and, in a realm that sends email, the user is told | `passkey`, `name` |
 | `admin.login` | A user holding an admin role logs in | `session_id`, `strategy`, `methods` |
 | `encrypt.start`, `encrypt.rekey`, `encrypt.migrate` | An [encryption migration](../../../build/configuration/field-keys/#change-encryption-on-existing-data) was started, a field rekeyed, or a migration finished (by the job) | `database`, `collection`, `fields`, `dry_run`, `job_id`, `generation`; the counts and the number of retired keys; never a value |
 | `data.reveal` | A full administrator read documents that hold [encrypted fields](../../../build/configuration/field-keys/#who-sees-an-encrypted-field) in plain through the admin data route (one record per read) | `database`, `collection`, `fields`, `documents`; never a value |
@@ -78,7 +97,10 @@ Each realm with an `auth` section keeps an **audit trail**: one record per secur
 | `admin.refused` | An admin API request is refused: by a network restriction, or because the administrator's roles don't open the [area](../admin/#admin-rights) or hold the rights of the user or role involved | `reason`, `method`, `path` |
 | `realm.bootstrap` | `backd-server bootstrap` creates the realm's first administrator | `role` |
 
-Failed logins aren't recorded here: they are [throttled](../../../build/auth/sessions/#brute-force-protection) and counted, and every request is in the access log.
+Which sign-ins are recorded:
+
+- **Recorded:** a sign-in by a user who holds an admin role (`admin.login`), every passkey sign-in and its failures (`passkey.login`, `passkey.login_failed`), and a sign-in through an organization's connection (`org.sso.login`).
+- **Not recorded:** other users signing in with a password, an emailed code, a magic link or Google, Microsoft or Apple, and failed attempts of those methods. Failures are [throttled](../../../build/auth/sessions/#brute-force-protection) and counted, and every request is in the access log.
 
 ## Records
 
@@ -95,8 +117,8 @@ Failed logins aren't recorded here: they are [throttled](../../../build/auth/ses
 }
 ```
 
-- **`actor`** is who acted: `user:<id>` (a session), `key:<name>` (an API key), `anonymous` (sign-ups and refused requests), `config:realm.yaml` (seeds applied at startup) or `cli:bootstrap`.
-- **`target`** is what the action applied to: `user:<id>`, `key:<name>`, `invitation:<id>`, or null.
+- **`actor`** is who acted: `user:<id>` (a session), `key:<name>` (an API key), `function:<database>/<name>` (a function), `anonymous` (sign-ups and refused requests), `config:realm.yaml` (seeds applied at startup), `system` (backd's own background work), `instance` (`backd-server` with direct access to the instance), `cli:offline` (export and import straight on MongoDB) or `cli:bootstrap`.
+- **`target`** is what the action applied to, such as `user:<id>`, `key:<name>`, `invitation:<id>` or `org:<id>` (the table says when it is something else), or null.
 - **`request_id`** matches the request's `X-Request-ID` and its line in the access log. **`client_ip`** follows [`TRUSTED_PROXIES`](../../#client-addresses-behind-a-proxy).
 
 Records name users by id, never by email, and **never** contain passwords or password hashes, session tokens, API keys, invitation tokens, or request bodies. A test checks this for every action.

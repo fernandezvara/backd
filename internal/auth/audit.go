@@ -71,13 +71,12 @@ const (
 	// (disabled, network, erased, …).
 	AuditSignInRefused = "identity.signin_refused"
 	// Second factors; the target is the user. user.mfa_reset: by an administrator (the
-	// actor) or `instance`; user.mfa_locked: details retry_after_seconds; never codes.
+	// actor) or `instance`; never codes.
 	AuditMFAEnabled         = "user.mfa_enabled"
 	AuditMFADisabled        = "user.mfa_disabled"
 	AuditMFAReset           = "user.mfa_reset"
 	AuditRecoveryRegenerate = "user.recovery_codes_regenerated"
 	AuditRecoveryCodeUsed   = "user.recovery_code_used" // details: codes_left
-	AuditMFALocked          = "user.mfa_locked"
 	// A fresh proof of identity before a sensitive action; details: method (never a code).
 	AuditReauth = "user.reauth"
 	// The admin data route (documents written past the collections' rules);

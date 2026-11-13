@@ -4,6 +4,12 @@ All notable changes to `backd` and to its JavaScript client `backd-js`, which ar
 
 Until a stable release is declared, a minor release may have breaking changes; they are listed first.
 
+## Unreleased
+
+### Documentation
+
+- **The audit trail page lists every action backd records.** 27 actions were missing: passkey sign-ins and their failures, second-factor and recovery-code events, re-authentication, function secrets, team roles, organization email templates, consents, the app configuration and push devices. The page now says which sign-ins are recorded and which actors exist. `scripts/check-docs-audit.py`, run in CI, fails when an action has no row or a row has no action. The unused `user.mfa_locked` constant is removed: it was never recorded.
+
 ## 0.9.10
 
 The **authentication strategies** release: sign-in is configured under `auth:` as named strategies, roles can depend on how a person signed in, and **passkeys** are a new method. **Every `realm.yaml` needs editing before the new binaries start** (see *Breaking* and [Upgrading to v0.9.10](https://fernandezvara.github.io/backd/docs/operate/#upgrading-to-the-strategy-release)); nothing changes in the data. The Go, JavaScript, Dart and Python clients, the command line and the admin interface are released with it.

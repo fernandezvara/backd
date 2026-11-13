@@ -134,5 +134,7 @@ jobs:
         run: scripts/check-docs-links.py
       - name: Check the docs callouts
         run: scripts/check-docs-callouts.py
+      - name: Check the audit actions are documented
+        run: scripts/check-docs-audit.py
       - name: Check the Grafana dashboards
         run: scripts/check-dashboards.py
