@@ -369,7 +369,7 @@ func (s *RealmSettings) parsePasskeys(p *passkeysDoc) []error {
 		switch {
 		case err != nil || u.Host == "" || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "":
 			errs = append(errs, fmt.Errorf("auth.passkeys.origins[%d]: %q must be an origin such as https://app.example.com, or android:apk-key-hash:<hash>", i, o))
-		case u.Scheme != "https" && !(u.Scheme == "http" && isLoopbackHost(u.Hostname())):
+		case u.Scheme != "https" && (u.Scheme != "http" || !isLoopbackHost(u.Hostname())):
 			errs = append(errs, fmt.Errorf("auth.passkeys.origins[%d]: %q must be https (http only for localhost)", i, o))
 		case s.Passkeys.RPID != "" && u.Hostname() != s.Passkeys.RPID && !strings.HasSuffix(u.Hostname(), "."+s.Passkeys.RPID):
 			errs = append(errs, fmt.Errorf("auth.passkeys.origins[%d]: the host of %q must be the rp_id (%s) or a subdomain of it: browsers refuse passkeys otherwise", i, o, s.Passkeys.RPID))
