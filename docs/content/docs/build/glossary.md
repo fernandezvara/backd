@@ -52,6 +52,10 @@ The record of an `async` function call: the call answers `202` at once and a [wo
 
 The part of every document that the server owns: timestamps, `version`, and in a realm with auth the owner and who created and last changed it. Requests cannot set it. See [Documents](../api/documents/).
 
+## Method
+
+One step of a [strategy](#strategy): `password`, `magic_link`, `sso`, a [provider](#provider)'s name, or `totp` after another method. The first method says who is signing in. See [Authentication strategies](../auth/strategies/).
+
 ## Organization
 
 A group of users that documents can belong to and rules can ask about: a company, a workspace, a club. Not the same as a [realm](#realm), which is the whole application. See [Organizations](../organizations/).
@@ -79,6 +83,10 @@ A restriction on an [API key](#api-key): the operations it may use and, in a rea
 ## Session
 
 What signing in creates: a token for one user (and, in a realm with organizations, one organization), with an idle timeout and a maximum lifetime. See [Sign-up, login and sessions](../auth/sessions/).
+
+## Strategy
+
+A named, ordered list of [methods](#method) a person completes to sign in, such as `admin_password: [password, totp]`; the app says which one it uses, and a role may accept only some. See [Authentication strategies](../auth/strategies/).
 
 ## Team
 

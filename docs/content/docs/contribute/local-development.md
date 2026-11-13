@@ -86,7 +86,7 @@ A realm with no administrator has none to sign in as. Create one with the comman
 make dev-server ARGS='bootstrap --realm app --email you@example.com'
 ```
 
-The starter realm requires a second factor of administrators, so their first sign-in enrolls one. Remove `strategies` from the `admin` role in `config/app/realm.yaml` while developing if you prefer.
+The starter realm requires a second factor of administrators, so their first sign-in enrolls one. While developing you can remove `strategies` from the `admin` role in `config/app/realm.yaml`: it is then active in every session, so `backd login --strategy password` (no code) gives an administrator session.
 
 ### The example realms
 
