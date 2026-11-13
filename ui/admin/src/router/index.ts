@@ -14,6 +14,7 @@ declare module 'vue-router' {
 export const routes: RouteRecordRaw[] = [
   { path: '/', name: 'realm', component: () => import('@/views/SignInView.vue') },
   { path: '/r/:realm/signin', name: 'signin', component: () => import('@/views/SignInView.vue'), props: true },
+  { path: '/r/:realm/account', name: 'account', component: () => import('@/views/AccountView.vue'), props: true, meta: { auth: true } },
   { path: '/r/:realm/users', name: 'users', component: () => import('@/views/UsersView.vue'), props: true, meta: { auth: true, area: 'users' as const } },
   { path: '/r/:realm/users/:id', name: 'user', component: () => import('@/views/UserView.vue'), props: true, meta: { auth: true, area: 'users' as const } },
   { path: '/r/:realm/orgs', name: 'orgs', component: () => import('@/views/OrgsView.vue'), props: true, meta: { auth: true, area: 'users' as const } },

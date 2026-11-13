@@ -92,6 +92,7 @@ function authBase(org) {
  * @typedef {object} EnrollmentChallenge
  * @property {true} enrollmentRequired
  * @property {string} challenge
+ * @property {string[]} [next]     The method to set up (`['passkey']` when the strategy asks for one: `auth.passkeys.enroll`).
  * @property {string} [strategy]
  */
 
@@ -420,7 +421,7 @@ export class Auth {
    */
   async step(data) {
     if (data?.mfa_required) return { mfaRequired: true, challenge: data.challenge, methods: data.methods, ...compact({ next: data.next, strategy: data.strategy }) }
-    if (data?.mfa_enrollment_required) return { enrollmentRequired: true, challenge: data.challenge, ...compact({ strategy: data.strategy }) }
+    if (data?.mfa_enrollment_required) return { enrollmentRequired: true, challenge: data.challenge, ...compact({ next: data.next, strategy: data.strategy }) }
     if (data?.consent_required) return { consentRequired: true, challenge: data.challenge, consents: data.consents }
     return this.signedIn(data)
   }

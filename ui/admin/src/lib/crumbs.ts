@@ -28,6 +28,7 @@ const str = (v: string | string[] | undefined) => (Array.isArray(v) ? v.join('/'
  * Every page of the shell that is not a page of the menus must be here: the test walks the router.
  */
 export const EXTRA: Record<string, (c: CrumbContext, p: Params) => Crumb[]> = {
+  account: (c) => [{ label: c.t('account.title') }],
   user: (c, p) => [{ label: c.name('user', str(p.id)) ?? str(p.id) }],
   org: (c, p) => [{ label: c.name('org', str(p.id)) ?? str(p.id) }],
   'data-checks': (c) => [{ label: c.t('checks.title') }],

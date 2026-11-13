@@ -3,6 +3,7 @@ package account
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/fernandezvara/backd/internal/cli/clicore"
@@ -24,8 +25,14 @@ func finishStep(t *clicore.Target, uio cmdutil.IO, step *client.Step, res *sessi
 		*res = sessionOf(step.Session)
 		return nil
 	case client.StepMFA:
+		if slices.Contains(step.Next, "passkey") {
+			return errNeedsBrowser
+		}
 		return askSecondFactor(t, uio, step.Challenge, res)
 	case client.StepEnrollment:
+		if slices.Contains(step.Next, "passkey") {
+			return errNeedsBrowser
+		}
 		return enrollInTerminal(t, uio, step.Challenge, res)
 	}
 	return errors.New("the server answered with neither a session nor a second step")

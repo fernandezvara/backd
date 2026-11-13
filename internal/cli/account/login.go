@@ -90,6 +90,9 @@ func login(realm, flagURL, email string, magicLink bool, strategy string, getenv
 		if strategy, err = chooseStrategy(t, uio, strategy, terminal); err != nil {
 			return err
 		}
+		if err := refuseBrowserStrategy(t, strategy); err != nil {
+			return err
+		}
 		pw, err := cmdutil.ReadSecret(uio, false, "Password")
 		if err != nil {
 			return err
@@ -253,6 +256,28 @@ func StrategiesAction(c *kli.CommandContext) error {
 	out := cmdutil.IOOf(c).Stdout
 	for _, st := range list {
 		fmt.Fprintf(out, "%s: %s\n", st.Name, strings.Join(st.Methods, " -> "))
+	}
+	return nil
+}
+
+// errNeedsBrowser is what a method that only a browser or an app can do answers in the terminal.
+// A passkey is signed by an authenticator the browser talks to, and a browser hand-off would be a
+// phishing pattern (design/mfa-passwordless.md §16), so there is no passkey sign-in here.
+var errNeedsBrowser = errors.New("this method needs a browser or an app: a passkey cannot be used from the terminal (sign in with a strategy that uses a password, a code or a link)")
+
+// refuseBrowserStrategy stops before the password is asked when the named strategy starts with a passkey.
+func refuseBrowserStrategy(t *clicore.Target, name string) error {
+	if name == "" {
+		return nil
+	}
+	list, err := t.Client.Auth().Strategies(t.Ctx)
+	if err != nil {
+		return nil // the sign-in itself will say what is wrong
+	}
+	for _, st := range list {
+		if st.Name == name && len(st.Methods) > 0 && st.Methods[0] == "passkey" {
+			return errNeedsBrowser
+		}
 	}
 	return nil
 }

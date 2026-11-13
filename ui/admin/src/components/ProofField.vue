@@ -16,6 +16,7 @@ const { t } = useI18n()
     <TextField v-if="method === 'password'" v-model="value" type="password" :label="t('proof.password')" autocomplete="current-password" required />
     <TextField v-else-if="method === 'totp'" v-model="value" :label="t('proof.totp')" autocomplete="one-time-code" inputmode="numeric" required />
     <TextField v-else-if="method === 'recovery_code'" v-model="value" :label="t('proof.recovery')" autocomplete="off" required />
+    <p v-else-if="method === 'passkey'" class="text-sm" data-testid="proof-passkey">{{ t('proof.passkey') }}</p>
     <template v-else-if="method === 'email_code'">
       <AppButton type="button" variant="secondary" @click="$emit('sendCode')">{{ codeSent ? t('proof.resend') : t('proof.send') }}</AppButton>
       <TextField v-model="value" :label="t('proof.emailCode')" autocomplete="one-time-code" inputmode="numeric" required />

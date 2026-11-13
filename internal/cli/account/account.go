@@ -127,3 +127,48 @@ func AccountRecoveryCodes(c *kli.CommandContext) error {
 	showRecoveryCodes(uio, codes)
 	return nil
 }
+
+// AccountPasskeysList lists the signed-in user's passkeys.
+func AccountPasskeysList(c *kli.CommandContext) error {
+	t, uio, err := accountTarget(c)
+	if err != nil {
+		return err
+	}
+	list, err := t.Client.Auth().Passkeys.List(t.Ctx)
+	if err != nil {
+		return err
+	}
+	if len(list) == 0 {
+		fmt.Fprintln(uio.Stdout, "no passkeys (add one on the realm's account page or in its app)")
+		return nil
+	}
+	for _, p := range list {
+		used := "never used"
+		if p.LastUsedAt != nil {
+			used = "last used " + *p.LastUsedAt
+		}
+		kind := "this device only"
+		if p.BackupEligible {
+			kind = "syncs between devices"
+		}
+		fmt.Fprintf(uio.Stdout, "%s  %s  (%s; %s; added %s)\n", p.ID, p.Name, kind, used, p.CreatedAt)
+	}
+	return nil
+}
+
+// AccountPasskeysRemove removes one of the user's passkeys, after a fresh proof.
+func AccountPasskeysRemove(c *kli.CommandContext) error {
+	t, uio, err := accountTarget(c)
+	if err != nil {
+		return err
+	}
+	proof, err := t.Proof(uio)
+	if err != nil {
+		return err
+	}
+	if err := t.Client.Auth().Passkeys.Remove(t.Ctx, cmdutil.Str(c, "id"), clicore.WithProof(proof)...); err != nil {
+		return err
+	}
+	fmt.Fprintln(uio.Stdout, "the passkey is removed; the sessions it opened ended")
+	return nil
+}

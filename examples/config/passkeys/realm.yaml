@@ -1,0 +1,24 @@
+# The realm of the admin interface's passkey e2e tests (ui/admin/e2e/passkeys.spec.ts): the nginx of the
+# local stack serves the interface at https://localhost:8443, the origin passkeys are bound to here.
+# Local stacks and CI only: the passwords are the documented development one.
+auth:
+  strategies:
+    password: [password]
+    passkey: [passkey]
+    password_passkey: [password, passkey]
+  signup: open
+  sign_in:
+    app_url: https://localhost:8443/
+    allowed_redirects: [https://localhost:8443]
+  passkeys:
+    enabled: true
+
+roles:
+  admin:
+    description: Full administrator
+    admin: true
+    users:
+      - admin@passkeys.example
+  viewer:
+    description: Read-only administrator
+    admin: read

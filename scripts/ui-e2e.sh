@@ -51,6 +51,8 @@ docker compose up -d --no-deps backd executor egress nginx
 # The adminui realm has organizations, so nobody signs up to it: its first administrator is made here,
 # and the Playwright setup makes the others with the admin API.
 docker compose run --rm -T --no-deps backd bootstrap --realm adminui --email admin@adminui.example <<<'dev-p4ssw0rd!' >/dev/null
+# The passkeys realm (the passkey tests) is bootstrapped the same way.
+docker compose run --rm -T --no-deps backd bootstrap --realm passkeys --email admin@passkeys.example <<<'dev-p4ssw0rd!' >/dev/null
 
 ready() { curl -sf --cacert "$ca" "$origin/readyz" >/dev/null; }
 for _ in $(seq 1 120); do

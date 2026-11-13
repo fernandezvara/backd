@@ -102,6 +102,7 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 			r.Get("/exports/{export}/download", a.downloadUserExport)
 			r.With(json).Post("/consents", a.recordUserConsent)
 			r.Post("/mfa/reset", a.resetUserMFA)
+			r.Get("/passkeys", a.userPasskeys)
 			r.Delete("/passkeys/{passkey_id}", a.removeUserPasskey)
 			r.Delete("/identities/{provider}", a.unlinkUserIdentity)
 			r.Get("/sessions", a.userSessions)

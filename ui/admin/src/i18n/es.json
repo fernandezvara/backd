@@ -52,7 +52,32 @@
     "label": "Ruta de navegación"
   },
   "account": {
-    "label": "Cuenta"
+    "label": "Cuenta",
+    "title": "Cuenta",
+    "passkeys": {
+      "title": "Llaves de acceso",
+      "help": "Una llave de acceso te permite entrar con el bloqueo de pantalla de tu dispositivo, un gestor de contraseñas o una llave de seguridad, sin escribir nada. Añadir o quitar una te pide confirmar que eres tú.",
+      "unsupported": "Este navegador no puede crear llaves de acceso; aun así puedes ver y quitar las que tengas.",
+      "loadFailed": "No se pudieron cargar las llaves de acceso.",
+      "name": "Nombre",
+      "kind": "Tipo",
+      "created": "Añadida",
+      "lastUsed": "Último uso",
+      "actions": "Acciones",
+      "synced": "Se sincroniza entre tus dispositivos",
+      "device": "Solo este dispositivo",
+      "rename": "Renombrar",
+      "empty": "Todavía no hay llaves de acceso.",
+      "add": "Añadir una llave de acceso",
+      "addTitle": "Añadir una llave de acceso",
+      "addBody": "Tu navegador te pedirá crearla. Ponle un nombre que reconozcas, como Portátil.",
+      "addSubmit": "Añadir",
+      "nameLabel": "Nombre",
+      "added": "Llave de acceso añadida.",
+      "removed": "Llave de acceso {name} quitada.",
+      "removeTitle": "¿Quitar {name}?",
+      "removeBody": "Deja de funcionar aquí de inmediato y se cierran las sesiones que abrió. Si una estrategia tuya necesita una llave de acceso y es la última, backd lo rechaza."
+    }
   },
   "realm": {
     "label": "Realm",
@@ -61,6 +86,17 @@
   "signIn": {
     "strategy": "Estrategia de acceso",
     "strategyHelp": "Los roles que tienes dependen de la estrategia: un rol de administrador puede exigir una más fuerte.",
+    "passkey": {
+      "button": "Usar una llave de acceso",
+      "strategy": "Estrategia de inicio con llave de acceso",
+      "stepIntro": "Usa tu llave de acceso para terminar de iniciar sesión.",
+      "use": "Usar mi llave de acceso",
+      "enrollIntro": "Esta cuenta debe usar una llave de acceso. Añade una en este dispositivo o llave de seguridad para continuar.",
+      "name": "Nombre (por ejemplo, Portátil)",
+      "add": "Añadir una llave de acceso e iniciar sesión",
+      "cancelled": "Se cerró el aviso de la llave de acceso o se agotó el tiempo.",
+      "failed": "Esa llave de acceso no funcionó."
+    },
     "expired": {
       "intro": "Esta contraseña ha caducado. Elige una nueva: escribe la contraseña actual y la nueva dos veces.",
       "emailed": "También te hemos enviado un enlace para elegir una.",
@@ -137,6 +173,7 @@
     "menu": "Menú",
     "close": "Cerrar el menú",
     "overview": "Resumen",
+    "account": "Cuenta",
     "users": "Usuarios",
     "orgs": "Organizaciones",
     "invitations": "Invitaciones",
@@ -158,6 +195,7 @@
     },
     "desc": {
       "overview": "Estado del realm y por dónde empezar",
+      "account": "Tu inicio de sesión: llaves de acceso",
       "users": "Cuentas, sesiones e inicio de sesión",
       "orgs": "Organizaciones, miembros e inicio de sesión",
       "invitations": "Invitaciones pendientes y pasadas",
@@ -368,6 +406,18 @@
       "removed": "{role} quitado.",
       "unlisted": "Nombre de un rol declarado en realm.yaml"
     },
+    "passkeys": {
+        "title": "Llaves de acceso",
+        "none": "Sin llaves de acceso.",
+        "name": "Nombre",
+        "added": "Añadida",
+        "lastUsed": "Último uso",
+        "remove": "Quitar",
+        "removeTitle": "¿Quitar la llave de acceso {name}?",
+        "removeBody": "Deja de funcionar de inmediato, se cierran las sesiones que abrió y se avisa al usuario por correo. Para quitarlo todo de una vez, restablece el segundo factor.",
+        "removed": "Llave de acceso {name} quitada.",
+        "loadFailed": "No se pudieron cargar las llaves de acceso."
+      },
     "mfa": {
       "title": "Verificación en dos pasos",
       "on": "Activada. Códigos de recuperación restantes: {left}.",
@@ -1055,7 +1105,8 @@
     "recovery": "Un código de recuperación",
     "emailCode": "El código que te enviamos por correo",
     "send": "Envíame un código por correo",
-    "resend": "Envíame otro código por correo"
+    "resend": "Envíame otro código por correo",
+    "passkey": "Se te pedirá tu llave de acceso al confirmar."
   },
   "orgs": {
     "title": "Organizaciones",

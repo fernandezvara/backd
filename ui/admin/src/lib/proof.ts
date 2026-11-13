@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { useSession } from '@/stores/session'
 
-export type ProofMethod = 'totp' | 'recovery_code' | 'password' | 'email_code'
+export type ProofMethod = 'totp' | 'recovery_code' | 'password' | 'email_code' | 'passkey'
 
 /**
  * The fresh proof of identity sensitive actions ask for (creating an API key as a signed-in
@@ -29,8 +29,8 @@ export function useProof() {
     codeSent.value = false
     try {
       const me = await session.client!.auth.me()
-      // (A passkey as the proof comes with the passkey screens of the admin UI.)
-      methods.value = (me.reauth_methods ?? []).filter((m): m is ProofMethod => m !== 'passkey')
+      // A code is typed; a passkey is asked by the browser when the proof is given. Typed codes first.
+      methods.value = [...(me.reauth_methods ?? [])].sort((a, b) => Number(a === 'passkey') - Number(b === 'passkey'))
       method.value = methods.value[0] ?? ''
     } catch {
       methods.value = []
@@ -49,7 +49,8 @@ export function useProof() {
   async function prove() {
     if (!needed.value) return
     const m = method.value as ProofMethod
-    await session.client!.auth.reauth(m === 'password' ? { method: m, password: value.value } : { method: m, code: value.value.trim() })
+    if (m === 'passkey') await session.client!.auth.reauth({ method: m })
+    else await session.client!.auth.reauth(m === 'password' ? { method: m, password: value.value } : { method: m, code: value.value.trim() })
     value.value = ''
   }
 

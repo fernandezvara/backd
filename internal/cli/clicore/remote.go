@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -340,7 +341,12 @@ func (t *Target) Proof(uio cmdutil.IO) (map[string]string, error) {
 	if len(me.ReauthMethods) == 0 {
 		return nil, nil
 	}
-	in := client.ReauthInput{Method: me.ReauthMethods[0]}
+	// (A passkey needs a browser or an app: the terminal gives one of the others.)
+	methods := slices.DeleteFunc(slices.Clone(me.ReauthMethods), func(m string) bool { return m == "passkey" })
+	if len(methods) == 0 {
+		return nil, errors.New("this account can only prove it is you with a passkey, which needs a browser or an app")
+	}
+	in := client.ReauthInput{Method: methods[0]}
 	switch in.Method {
 	case "password":
 		pw, err := cmdutil.ReadSecret(uio, false, "Password (to confirm it is you)")

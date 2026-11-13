@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import AppCard from '@/components/AppCard.vue'
-import type { AdminUser, Identity, OwnedReport, UserSession } from 'backd-js'
+import type { AdminUser, Identity, OwnedReport, Passkey, UserSession } from 'backd-js'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -185,6 +185,7 @@ interface MfaState {
   methods: string[]
   recovery_codes_left: number
   required: boolean
+  passkeys?: number
 }
 const mfa = ref<MfaState>()
 const mfaError = ref('')
@@ -196,12 +197,40 @@ async function loadMfa() {
     mfaError.value = errorText(e, t('user.mfa.loadFailed'))
   }
 }
+// Passkeys: the list, to remove the one of a lost device.
+const passkeys = ref<Passkey[]>([])
+const passkeysError = ref('')
+async function loadPasskeys() {
+  passkeysError.value = ''
+  try {
+    passkeys.value = await admin.users.passkeys(props.id)
+  } catch (e) {
+    passkeysError.value = errorText(e, t('user.passkeys.loadFailed'))
+  }
+}
+const removingPasskey = ref<Passkey | null>(null)
+const removePasskeyOpen = ref(false)
+function askRemovePasskey(p: Passkey) {
+  removingPasskey.value = p
+  removePasskeyOpen.value = true
+}
+async function removePasskey() {
+  const p = removingPasskey.value
+  if (!p) return
+  try {
+    await admin.users.removePasskey(props.id, p.id)
+    toasts.push(t('user.passkeys.removed', { name: p.name }))
+    await Promise.all([loadPasskeys(), loadMfa(), loadSessions()])
+  } catch (e) {
+    toasts.push(errorText(e, t('common.unexpected')), 'error')
+  }
+}
 const resetting = ref(false)
 async function resetMfa() {
   try {
     await admin.users.resetMfa(props.id)
     toasts.push(t('user.mfa.resetDone', { email: user.value?.email ?? '' }))
-    await Promise.all([loadMfa(), loadSessions()])
+    await Promise.all([loadMfa(), loadPasskeys(), loadSessions()])
   } catch (e) {
     // The server's refusal (not on yourself; none to reset) is shown as is.
     toasts.push(errorText(e, t('common.unexpected')), 'error')
@@ -298,7 +327,7 @@ const statusText = computed(() => {
 onMounted(async () => {
   await load()
   if (user.value && !erased.value) {
-    await Promise.all([loadSessions(), loadIdentities(), loadMfa(), realmConfig.load()])
+    await Promise.all([loadSessions(), loadIdentities(), loadMfa(), loadPasskeys(), realmConfig.load()])
     await loadDevices()
   }
 })
@@ -411,9 +440,37 @@ onMounted(async () => {
         <div v-else-if="mfa" class="mt-2 flex flex-wrap items-center gap-4 text-sm" data-testid="user-mfa">
           <p data-testid="user-mfa-state">{{ mfa.enabled ? t('user.mfa.on', { left: mfa.recovery_codes_left }) : t('user.mfa.off') }}</p>
           <p v-if="mfa.required" class="text-slate-600 dark:text-slate-400">{{ t('user.mfa.required') }}</p>
-          <AppButton v-if="canWrite && mfa.enabled && !isSelf" variant="danger" @click="resetting = true">{{ t('user.mfa.reset') }}</AppButton>
-          <p v-else-if="mfa.enabled && isSelf" class="text-slate-600 dark:text-slate-400">{{ t('user.mfa.self') }}</p>
+          <AppButton v-if="canWrite && (mfa.enabled || mfa.passkeys) && !isSelf" variant="danger" @click="resetting = true">{{ t('user.mfa.reset') }}</AppButton>
+          <p v-else-if="(mfa.enabled || mfa.passkeys) && isSelf" class="text-slate-600 dark:text-slate-400">{{ t('user.mfa.self') }}</p>
         </div>
+      </section>
+
+      <section class="mt-8" aria-labelledby="passkeys-h">
+        <h2 id="passkeys-h" class="text-lg font-semibold">{{ t('user.passkeys.title') }}</h2>
+        <AppAlert v-if="passkeysError" kind="error" class="mt-2">{{ passkeysError }}</AppAlert>
+        <p v-else-if="!passkeys.length" class="mt-2 text-sm text-slate-600 dark:text-slate-400" data-testid="user-passkeys-none">{{ t('user.passkeys.none') }}</p>
+        <AppCard v-else flush class="mt-2">
+          <table class="w-full text-left text-sm" data-testid="user-passkeys">
+            <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
+              <tr>
+                <th scope="col" class="px-3 py-2">{{ t('user.passkeys.name') }}</th>
+                <th scope="col" class="px-3 py-2">{{ t('user.passkeys.added') }}</th>
+                <th scope="col" class="px-3 py-2">{{ t('user.passkeys.lastUsed') }}</th>
+                <th v-if="canWrite" scope="col" class="px-3 py-2"><span class="sr-only">{{ t('user.passkeys.remove') }}</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="p in passkeys" :key="p.id" class="border-b border-slate-100 last:border-0 dark:border-slate-800">
+                <td class="px-3 py-2 font-medium">{{ p.name }}</td>
+                <td class="px-3 py-2">{{ formatDate(p.created_at) }}</td>
+                <td class="px-3 py-2">{{ p.last_used_at ? formatDate(p.last_used_at) : t('common.never') }}</td>
+                <td v-if="canWrite" class="px-3 py-2 text-right">
+                  <button type="button" class="underline" :aria-label="`${t('user.passkeys.remove')} ${p.name}`" @click="askRemovePasskey(p)">{{ t('user.passkeys.remove') }}</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </AppCard>
       </section>
 
       <section class="mt-8" aria-labelledby="sessions-h">
@@ -492,6 +549,7 @@ onMounted(async () => {
       <TextField v-model="email.value.value" type="email" :label="t('user.email.label')" :help="t('user.email.help')" autocomplete="off" required />
     </FormDialog>
 
+    <ConfirmDialog v-model:open="removePasskeyOpen" :title="t('user.passkeys.removeTitle', { name: removingPasskey?.name ?? '' })" :description="t('user.passkeys.removeBody')" :expected="removingPasskey?.name ?? ''" :action="t('user.passkeys.remove')" @confirm="removePasskey" />
     <ConfirmDialog v-model:open="resetting" :title="t('user.mfa.resetTitle', { email: user.email })" :description="t('user.mfa.resetBody')" :expected="user.email" :action="t('user.mfa.reset')" @confirm="resetMfa" />
     <ConfirmDialog v-model:open="unlinkOpen" :title="t('user.identities.unlinkTitle', { provider: unlinking })" :description="t('user.identities.unlinkBody')" :expected="unlinking" :action="t('user.identities.unlink')" @confirm="unlink" />
     <ConfirmDialog v-model:open="erasing" :title="t('user.erase.title', { email: user.email })" :description="t('user.erase.body')" :expected="user.email" :action="t('user.erase.action')" :busy="erasingBusy" @confirm="erase">

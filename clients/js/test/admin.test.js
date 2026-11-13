@@ -624,3 +624,15 @@ test('orgs.sso, setSso and deleteSso manage any organization\'s connections', as
   await a.deleteSso('o1', 'microsoft')
   assert.equal(m.calls[2].method, 'DELETE')
 })
+
+test('admin.users lists a user\'s passkeys and removes one', async () => {
+  const p = { id: 'p1', name: 'Laptop', created_at: 't', last_used_at: null, transports: [], backup_eligible: false, backup_state: false }
+  const m = mockFetch([{ body: { items: [p] } }, { status: 204 }, { status: 404, body: errorBody('not_found') }])
+  const admin = adminOf(m)
+  assert.deepEqual(await admin.users.passkeys('u1'), [p])
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/users/u1/passkeys')
+  await admin.users.removePasskey('u1', 'p1')
+  assert.equal(m.calls[1].method, 'DELETE')
+  assert.equal(m.calls[1].url.pathname, '/v1/acme/_admin/users/u1/passkeys/p1')
+  await assert.rejects(admin.users.removePasskey('u1', 'nope'), NotFoundError)
+})

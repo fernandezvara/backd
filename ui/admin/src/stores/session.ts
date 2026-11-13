@@ -97,7 +97,7 @@ export const useSession = defineStore('session', () => {
   }
 
   /** What the sign-in waits for after a right password: a code of the second factor, setting one up, or consents to accept. */
-  const step = ref<{ kind: 'code' | 'enroll' | 'consent'; challenge: string; consents?: { name: string; version: string; text: string }[] } | null>(null)
+  const step = ref<{ kind: 'code' | 'enroll' | 'consent' | 'passkey' | 'enrollPasskey'; challenge: string; consents?: { name: string; version: string; text: string }[] } | null>(null)
 
   /** The step that asks for consents: their texts are public, and shown as they are. */
   async function toConsentStep(c: Client, challenge: string, consents: { name: string; version: string }[]) {
@@ -118,22 +118,66 @@ export const useSession = defineStore('session', () => {
     }
   }
 
-  /** Signs in; resolves with what is still needed: nothing (`done`), a code, an enrolment or consents. */
-  async function signIn(forRealm: string, emailAddress: string, password: string, keepInTab: boolean, withStrategy?: string): Promise<'done' | 'code' | 'enroll' | 'consent'> {
-    begin(forRealm, keepInTab)
-    const c = client.value!
-    const result = await c.auth.signIn({ email: emailAddress, password, strategy: withStrategy })
+  type Next = 'done' | 'code' | 'enroll' | 'consent' | 'passkey' | 'enrollPasskey'
+
+  /** What a sign-in step led to: the session (adopted), or the step that is still to take. */
+  async function proceed(c: Client, result: Awaited<ReturnType<Client['auth']['signIn']>>): Promise<Next> {
     if ('consentRequired' in result) {
       await toConsentStep(c, result.challenge, result.consents)
       return 'consent'
     }
     if ('challenge' in result) {
-      step.value = { kind: 'mfaRequired' in result ? 'code' : 'enroll', challenge: result.challenge }
-      return step.value.kind
+      const enrolling = 'enrollmentRequired' in result
+      const passkey = result.next?.[0] === 'passkey'
+      const kind = enrolling ? (passkey ? 'enrollPasskey' : 'enroll') : passkey ? 'passkey' : 'code'
+      step.value = { kind, challenge: result.challenge }
+      return kind
     }
     step.value = null
     await adopt(c)
     return 'done'
+  }
+
+  /** Signs in; resolves with what is still needed: nothing (`done`), a code, an enrolment, a passkey or consents. */
+  async function signIn(forRealm: string, emailAddress: string, password: string, keepInTab: boolean, withStrategy?: string): Promise<Next> {
+    begin(forRealm, keepInTab)
+    const c = client.value!
+    return proceed(c, await c.auth.signIn({ email: emailAddress, password, strategy: withStrategy }))
+  }
+
+  /**
+   * The strategies of a realm that start with a passkey: what the sign-in offers as the passkey button
+   * (and, in the email field, the browser's autofill). Public; an unreachable realm has none.
+   */
+  async function passkeyStrategies(forRealm: string): Promise<string[]> {
+    try {
+      const c = createClient({ url: window.location.origin, realm: forRealm, storage: memoryStore() })
+      return (await c.auth.strategies()).filter((s) => s.methods[0] === 'passkey').map((s) => s.name)
+    } catch {
+      return []
+    }
+  }
+
+  /**
+   * Signs in with a passkey (the first method of `withStrategy`). With `conditional`, it waits for the person
+   * to pick a passkey in the email field's autofill until `signal` aborts (an AbortError).
+   */
+  async function signInWithPasskey(forRealm: string, keepInTab: boolean, withStrategy: string, opts: { conditional?: boolean; signal?: AbortSignal } = {}): Promise<Next> {
+    begin(forRealm, keepInTab)
+    const c = client.value!
+    return proceed(c, await c.auth.passkeys.signIn({ strategy: withStrategy, ...opts }))
+  }
+
+  /** The later step of a strategy that asks for a passkey after the first method: the browser asks for it. */
+  async function verifyPasskey(): Promise<Next> {
+    const c = client.value!
+    return proceed(c, await c.auth.verifyStep(step.value!.challenge, 'passkey'))
+  }
+
+  /** A sign-in whose strategy needs a passkey the user has none of: make the first one and finish. */
+  async function enrollPasskey(name?: string): Promise<Next> {
+    const c = client.value!
+    return proceed(c, await c.auth.passkeys.enroll({ challenge: step.value!.challenge, name }))
   }
 
   /** Changes the password with the current one, with no session (a password that expired for this user alone). */
@@ -240,5 +284,5 @@ export const useSession = defineStore('session', () => {
     idleSeconds.value = n
   }
 
-  return { realm, client, access, ended, strategy, signedIn, email, passwordStrategies, idleSeconds, readable, writable, canRead, canWrite, step, signIn, updatePassword, verifyCode, startEnrollment, confirmEnrollment, acceptConsents, cancelStep, restore, signOut, expired, setIdleSeconds }
+  return { realm, client, access, ended, strategy, signedIn, email, passwordStrategies, passkeyStrategies, signInWithPasskey, verifyPasskey, enrollPasskey, idleSeconds, readable, writable, canRead, canWrite, step, signIn, updatePassword, verifyCode, startEnrollment, confirmEnrollment, acceptConsents, cancelStep, restore, signOut, expired, setIdleSeconds }
 })

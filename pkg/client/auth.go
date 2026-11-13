@@ -106,7 +106,7 @@ type Step struct {
 	Challenge string
 	// Methods are the second factors the user can use with StepMFA ("totp", "recovery_code").
 	Methods []string
-	// Next is the method the strategy asks for now (StepMFA: "totp"); Strategy the strategy followed.
+	// Next is the method the strategy asks for now ("totp" or "passkey", for StepMFA and StepEnrollment); Strategy the strategy followed.
 	Next     []string
 	Strategy string
 	// Consents are the ones to accept with StepConsent.
@@ -171,12 +171,16 @@ type Auth struct {
 	MFA *MFA
 	// MagicLink signs in with a link sent by email, and a code to type when the link opens elsewhere.
 	MagicLink *MagicLink
+	// Passkeys are the signed-in user's passkeys. A program has no authenticator, so it can list and
+	// remove them, but not make or use one.
+	Passkeys *Passkeys
 }
 
 func newAuth(c *Client) *Auth {
 	a := &Auth{c: c, listeners: map[int]func(AuthChange){}}
 	a.MFA = &MFA{a}
 	a.MagicLink = &MagicLink{a}
+	a.Passkeys = &Passkeys{a}
 	c.expired = func(ctx context.Context) { _ = a.signedOut(ctx, SessionExpired) }
 	return a
 }
@@ -337,7 +341,7 @@ func (a *Auth) step(ctx context.Context, raw json.RawMessage) (*Step, error) {
 	case d.MFARequired:
 		return &Step{Kind: StepMFA, Challenge: d.Challenge, Methods: d.Methods, Next: d.Next, Strategy: d.Strategy}, nil
 	case d.MFAEnrollmentRequired:
-		return &Step{Kind: StepEnrollment, Challenge: d.Challenge, Strategy: d.Strategy}, nil
+		return &Step{Kind: StepEnrollment, Challenge: d.Challenge, Next: d.Next, Strategy: d.Strategy}, nil
 	case d.ConsentRequired:
 		return &Step{Kind: StepConsent, Challenge: d.Challenge, Consents: d.Consents}, nil
 	}
@@ -1144,4 +1148,37 @@ func (m *MagicLink) VerifyCode(ctx context.Context, code string, opts ...Request
 	}
 	_ = m.a.c.oauth.Remove(ctx)
 	return m.a.step(ctx, raw)
+}
+
+// Passkeys are the signed-in user's passkeys: c.Auth().Passkeys. The ceremony needs an authenticator,
+// which is in a browser or an app, so here they can only be listed and removed.
+type Passkeys struct{ a *Auth }
+
+// Passkey is a registered passkey. Never the key material.
+type Passkey struct {
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	CreatedAt      string   `json:"created_at"`
+	LastUsedAt     *string  `json:"last_used_at"`
+	Transports     []string `json:"transports"`
+	BackupEligible bool     `json:"backup_eligible"`
+	BackupState    bool     `json:"backup_state"`
+}
+
+// List returns the user's passkeys.
+func (p *Passkeys) List(ctx context.Context, opts ...RequestOption) ([]Passkey, error) {
+	var out struct {
+		Items []Passkey `json:"items"`
+	}
+	if _, err := p.a.c.Do(ctx, "GET", path("_auth", "passkeys"), nil, &out, opts...); err != nil {
+		return nil, err
+	}
+	return out.Items, nil
+}
+
+// Remove deletes a passkey (and ends the sessions it opened). It needs a recent proof (Reauth);
+// credential_required (a ConflictError) when a strategy of the user needs it and nothing replaces it.
+func (p *Passkeys) Remove(ctx context.Context, id string, opts ...RequestOption) error {
+	_, err := p.a.c.Do(ctx, "DELETE", path("_auth", "passkeys", id), nil, nil, append(opts, WithReauth())...)
+	return err
 }
