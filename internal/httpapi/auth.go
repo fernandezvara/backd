@@ -51,6 +51,8 @@ func (a *authAPI) routes(r chi.Router) {
 		r.Get("/devices/web-key", a.webKey)
 		r.Get("/strategies", a.strategies)
 		r.With(json).Post("/login", a.login)
+		r.Post("/passkey/login/options", a.passkeyLoginOptions)
+		r.With(json).Post("/passkey/login/verify", a.passkeyLoginVerify)
 		r.With(json).Post("/consents/accept", a.consentsAccept)
 		r.With(json).Post("/mfa/verify", a.mfaVerify)
 		// A magic link: JSON asks for one, a form (the page's button) uses it.
@@ -591,6 +593,8 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 	var badConsents *auth.InvalidConsentsError
 	var badName *auth.PasskeyNameError
 	switch {
+	case errors.Is(err, auth.ErrInvalidPasskey):
+		writeError(w, r, http.StatusUnauthorized, codeInvalidPasskey, "the passkey did not work")
 	case errors.Is(err, auth.ErrPasskeysDisabled):
 		writeError(w, r, http.StatusForbidden, codePasskeyDisabled, err.Error())
 	case errors.Is(err, auth.ErrLastSignInMethod):

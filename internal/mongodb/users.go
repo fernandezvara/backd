@@ -546,25 +546,26 @@ func (s *AuthStore) CountPasswordIdentities(ctx context.Context) (int64, error) 
 }
 
 type sessionDoc struct {
-	ID          string    `bson:"_id"`
-	TokenHash   string    `bson:"token_hash"`
-	UserID      string    `bson:"user_id"`
-	CreatedAt   time.Time `bson:"created_at"`
-	LastUsedAt  time.Time `bson:"last_used_at"`
-	ExpiresAt   time.Time `bson:"expires_at"`
-	Methods     []string  `bson:"methods,omitempty"`
-	MFA         bool      `bson:"mfa,omitempty"`
-	Strategy    string    `bson:"strategy,omitempty"`
-	Passkey     string    `bson:"passkey,omitempty"`
-	Org         string    `bson:"org,omitempty"`
-	MaxLifetime int64     `bson:"max_lifetime,omitempty"` // seconds
+	ID            string    `bson:"_id"`
+	TokenHash     string    `bson:"token_hash"`
+	UserID        string    `bson:"user_id"`
+	CreatedAt     time.Time `bson:"created_at"`
+	LastUsedAt    time.Time `bson:"last_used_at"`
+	ExpiresAt     time.Time `bson:"expires_at"`
+	Methods       []string  `bson:"methods,omitempty"`
+	MFA           bool      `bson:"mfa,omitempty"`
+	Strategy      string    `bson:"strategy,omitempty"`
+	Passkey       string    `bson:"passkey,omitempty"`
+	PasskeySynced bool      `bson:"passkey_synced,omitempty"`
+	Org           string    `bson:"org,omitempty"`
+	MaxLifetime   int64     `bson:"max_lifetime,omitempty"` // seconds
 }
 
 func (d sessionDoc) session() auth.Session {
 	return auth.Session{
 		ID: d.ID, UserID: d.UserID, TokenHash: d.TokenHash,
 		CreatedAt: d.CreatedAt.UTC(), LastUsedAt: d.LastUsedAt.UTC(), ExpiresAt: d.ExpiresAt.UTC(),
-		Methods: d.Methods, MFA: d.MFA, Strategy: d.Strategy, Passkey: d.Passkey, Org: d.Org, MaxLifetime: time.Duration(d.MaxLifetime) * time.Second,
+		Methods: d.Methods, MFA: d.MFA, Strategy: d.Strategy, Passkey: d.Passkey, PasskeySynced: d.PasskeySynced, Org: d.Org, MaxLifetime: time.Duration(d.MaxLifetime) * time.Second,
 	}
 }
 
@@ -572,7 +573,7 @@ func (s *AuthStore) CreateSession(ctx context.Context, x auth.Session) error {
 	_, err := s.sessions().InsertOne(ctx, sessionDoc{
 		ID: x.ID, TokenHash: x.TokenHash, UserID: x.UserID,
 		CreatedAt: x.CreatedAt, LastUsedAt: x.LastUsedAt, ExpiresAt: x.ExpiresAt,
-		Methods: x.Methods, MFA: x.MFA, Strategy: x.Strategy, Passkey: x.Passkey, Org: x.Org, MaxLifetime: int64(x.MaxLifetime / time.Second),
+		Methods: x.Methods, MFA: x.MFA, Strategy: x.Strategy, Passkey: x.Passkey, PasskeySynced: x.PasskeySynced, Org: x.Org, MaxLifetime: int64(x.MaxLifetime / time.Second),
 	})
 	return err
 }

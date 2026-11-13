@@ -210,6 +210,84 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_auth/passkey/login/options:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Start signing in with a passkey
+      description: |
+        The first step of a strategy that starts with `passkey`, for example `users_passkey: [passkey]`. It
+        needs no email and no session, and answers the same whether or not anybody has a passkey. `strategy`
+        may be left out while exactly one strategy starts with `passkey` (`400 strategy_required`,
+        `400 unknown_strategy`). The answer holds the `options` for `navigator.credentials.get` (user
+        verification required, no `allowCredentials`: the browser offers the passkeys it holds, or, with
+        `mediation: "conditional"`, in the username field) and the `challenge_id` to send back. The ceremony
+        lives 5 minutes and is used once. `403 passkey_disabled` when the realm has not enabled passkeys;
+        `429` past 60 calls a minute from one address (each stores a challenge).
+
+        In a realm with organizations the realm's own door is the operators' alone; everyone else uses
+        `/_auth/orgs/{org}/passkey/login/options`.
+      operationId: passkeyLoginOptions
+      security: [{}]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                strategy: { type: string }
+      responses:
+        "200":
+          description: The options.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PasskeyLoginOptions" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/passkey/login/verify:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Finish signing in with a passkey
+      description: |
+        Sends the assertion the browser made (the JSON of the `PublicKeyCredential`) with the `challenge_id`.
+        backd checks the challenge, the origin, the relying party id, that the user was verified and the
+        signature, then the same account checks as the password sign-in (a disabled or erased user, an unverified
+        address in a realm that requires one, the user's login networks). The strategy goes on: a strategy of the
+        passkey alone gives the session (`methods: ["passkey"]`, `mfa` true) or the consent challenge; with more
+        steps the answer is the challenge for the next one. **Every** failure is `401 invalid_passkey`, whatever
+        the cause; the cause goes to the audit log (`passkey.login_failed`). A ceremony is tried once. Failures
+        count in the per-address login limit and, for a credential backd knows, in the user's second-factor limit
+        (`429 mfa_locked`). A counter that went backwards fails the sign-in, flags the passkey, audits
+        `passkey.clone_suspected` and sends the user `passkey-clone-suspected`.
+      operationId: passkeyLoginVerify
+      security: [{}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [challenge_id, credential]
+              properties:
+                challenge_id: { type: string }
+                credential: { type: object, description: "The PublicKeyCredential the browser made, in its JSON form." }
+                cookie: { type: boolean, description: "As for `POST /_auth/login`." }
+      responses:
+        "200": { $ref: "#/components/responses/SignInResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_auth/login:
     parameters: [{ $ref: "#/components/parameters/realm" }]
     post:
@@ -2376,6 +2454,80 @@ paths:
                   status: { type: string, enum: [accepted] }
         "400": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/orgs/{org}/passkey/login/options:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/orgSignIn" }
+    post:
+      tags: [auth]
+      summary: Start signing in to an organization with a passkey
+      description: |
+        The first step of a strategy that starts with `passkey`, for example `users_passkey: [passkey]`. It
+        needs no email and no session, and answers the same whether or not anybody has a passkey. `strategy`
+        may be left out while exactly one strategy starts with `passkey` (`400 strategy_required`,
+        `400 unknown_strategy`). The answer holds the `options` for `navigator.credentials.get` (user
+        verification required, no `allowCredentials`: the browser offers the passkeys it holds, or, with
+        `mediation: "conditional"`, in the username field) and the `challenge_id` to send back. The ceremony
+        lives 5 minutes and is used once. `403 passkey_disabled` when the realm has not enabled passkeys;
+        `429` past 60 calls a minute from one address (each stores a challenge).
+
+        Like `POST /_auth/passkey/login/options`, for one organization: the session will be scoped to it.
+      operationId: orgPasskeyLoginOptions
+      security: [{}]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                strategy: { type: string }
+      responses:
+        "200":
+          description: The options.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PasskeyLoginOptions" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/orgs/{org}/passkey/login/verify:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/orgSignIn" }
+    post:
+      tags: [auth]
+      summary: Finish signing in to an organization with a passkey
+      description: |
+        Like `POST /_auth/passkey/login/verify`, then the membership check of the password sign-in to an
+        organization, with the same uniform failure for a non-member (`401 invalid_passkey`). A passkey belongs to
+        the user, so one passkey signs in to each organization the person belongs to.
+      operationId: orgPasskeyLoginVerify
+      security: [{}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [challenge_id, credential]
+              properties:
+                challenge_id: { type: string }
+                credential: { type: object, description: "The PublicKeyCredential the browser made, in its JSON form." }
+                cookie: { type: boolean, description: "As for `POST /_auth/login`." }
+      responses:
+        "200": { $ref: "#/components/responses/SignInResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
         default: { $ref: "#/components/responses/Error" }
 
@@ -11158,6 +11310,15 @@ components:
         email_verified: { type: boolean }
         created_at: { $ref: "#/components/schemas/Timestamp" }
         last_used_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
+
+    PasskeyLoginOptions:
+      type: object
+      additionalProperties: false
+      required: [challenge_id, strategy, options]
+      properties:
+        challenge_id: { type: string }
+        strategy: { type: string, description: "The strategy the sign-in follows." }
+        options: { type: object, description: "The PublicKeyCredentialRequestOptions, in the JSON form of the WebAuthn standard (`{ publicKey: … }`)." }
 
     Passkey:
       type: object

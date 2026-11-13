@@ -24,9 +24,10 @@ The **methods** are:
 | `magic_link` | uses a link or code sent to their address ([Magic links](../magic-links/)) | the first method |
 | a provider's name (`google`, `microsoft`, `apple`) | signs in at the provider ([Sign in with a provider](../providers/)) | the first method |
 | `sso` | signs in through their organization's own connection ([Organization sign-in](../../../operate/organization-sign-in/)) | the first method |
+| `passkey` | uses a passkey on their device, a password manager or a security key ([Passkeys](../sessions/#passkeys)) | the first method |
 | `totp` | types the code of an authenticator app, or a recovery code ([Multi-factor authentication](../mfa/)) | a later method |
 
-Passkeys are planned as one more method.
+A passkey as a later step (`[password, passkey]`) and as a re-authentication proof are planned.
 
 ## The common setups
 
@@ -55,6 +56,8 @@ roles:
 ```
 
 Both strategies start with the password, so the app now says which it means: `backd login --strategy admin_password`, `signIn({ email, password, strategy: 'admin_password' })` in JavaScript, and the same option in the other clients. `GET /_auth/strategies` lists the names so an app can draw its sign-in screen, and the admin interface offers them in a list.
+
+**Passkeys for users.** `users_passkey: [passkey]` lets people sign in without typing anything: the browser offers the passkeys it holds, and a verified passkey counts as two factors on its own (`mfa` is true). The realm turns passkeys on with `auth.passkeys`.
 
 **Providers next to the password.** `google: [google]` lets people sign in with Google, `admin_google: [google, totp]` asks administrators for a code after it.
 

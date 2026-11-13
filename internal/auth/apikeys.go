@@ -208,6 +208,12 @@ func (c Caller) SignInStrategy() string {
 	return ""
 }
 
+// SignInPasskeySynced says the session the user the caller acts as signed in with was opened with a
+// passkey that syncs between devices.
+func (c Caller) SignInPasskeySynced() bool {
+	return c.Key == nil && c.User != nil && c.User.Session.PasskeySynced
+}
+
 // Subject is who the caller acts as, for ownership fields: "user:<id>",
 // "key:<name>" or "anonymous".
 func (c Caller) Subject() string {

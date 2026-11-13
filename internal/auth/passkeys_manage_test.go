@@ -26,7 +26,16 @@ func passkeyFixture(t *testing.T) (*Users, *authtest.MemStore, User) {
 // addPasskey runs a whole registration of a new software authenticator for the user.
 func addPasskey(t *testing.T, svc *Users, u User, name string) (*passkeytest.Authenticator, PasskeyInfo) {
 	t.Helper()
+	return addPasskeyWith(t, svc, u, name, nil)
+}
+
+// addPasskeyWith is addPasskey for an authenticator set up first (for example one that syncs).
+func addPasskeyWith(t *testing.T, svc *Users, u User, name string, set func(*passkeytest.Authenticator)) (*passkeytest.Authenticator, PasskeyInfo) {
+	t.Helper()
 	a := passkeytest.New(passkeyOrigin)
+	if set != nil {
+		set(a)
+	}
 	opts, id, err := svc.BeginPasskeyRegistration(context.Background(), u)
 	if err != nil {
 		t.Fatal(err)

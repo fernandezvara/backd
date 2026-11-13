@@ -170,6 +170,15 @@ func (s *Users) passkeysAreSignIn() bool {
 	return false
 }
 
+// passkeySignIns counts the user's passkeys as ways to sign in: all of them when some strategy starts
+// with a passkey, none otherwise.
+func (s *Users) passkeySignIns(ctx context.Context, userID string) (int, error) {
+	if !s.passkeysAreSignIn() {
+		return 0, nil
+	}
+	return s.Store.CountByUser(ctx, userID)
+}
+
 // RemovePasskey removes one of the user's passkeys. It refuses (ErrLastSignInMethod) the user's last way
 // to sign in, ends the sessions that passkey opened, tells the user and audits it.
 func (s *Users) RemovePasskey(ctx context.Context, u User, id string) error {

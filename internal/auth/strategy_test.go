@@ -169,8 +169,8 @@ func TestEverySignInEntryPointEndsInTheEngine(t *testing.T) {
 		return out
 	}
 	want := map[string]map[string]int{
-		// the entry points: password (sign-in, sign-up, verify email), magic link, providers, organizations
-		"s.afterFirstFactor": {"sessions.go": 2, "verify.go": 1, "orgsignin.go": 1, "magiclink.go": 1, "oauth.go": 2},
+		// the entry points: password (sign-in, sign-up, verify email), magic link, providers, organizations, passkeys
+		"s.afterFirstFactor": {"sessions.go": 2, "verify.go": 1, "orgsignin.go": 1, "magiclink.go": 1, "oauth.go": 2, "passkeys_signin.go": 1},
 		// the engine finishes the strategy; the consent step finishes what it paused
 		"s.finishSignIn": {"mfa.go": 1},
 		// a session is started in these places only

@@ -1870,6 +1870,86 @@ func TestContract(t *testing.T) {
 		req("POST", "/v1/acme/_auth/consents/accept", `{"challenge": "`+ch["challenge"].(string)+`", "consents": {"terms": "1"}}`, nil, 200)
 		f.svc.Settings.Consents = saved
 	}
+	// Signing in with a passkey, to the realm's door (operators) and to an organization.
+	{
+		ctx := context.Background()
+		const origin = "https://app.acme.example"
+		f.svc.Settings.Passkeys = registry.PasskeySettings{Enabled: true, RPID: "acme.example", RPName: "Acme", Origins: []string{origin}}
+		f.svc.Settings.SignInRedirects = []string{origin, "acme://"}
+		strategies := f.svc.Settings.Strategies
+		f.svc.Settings.Strategies = append(slices.Clone(strategies), registry.Strategy{Name: "users_passkey", Methods: []string{"passkey"}})
+		hasPasskey := func(userID string) *passkeytest.Authenticator {
+			u, err := f.svc.Store.UserByID(ctx, userID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			authn := passkeytest.New(origin)
+			opts, id, err := f.svc.BeginPasskeyRegistration(ctx, u)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.svc.FinishPasskeyRegistration(ctx, u, id, authn.Register(t, opts), "Contract"); err != nil {
+				t.Fatal(err)
+			}
+			return authn
+		}
+		assert := func(authn *passkeytest.Authenticator, optsPath, verifyPath string, status int) map[string]any {
+			opts := req("POST", optsPath, "", nil, 200)
+			raw := jsonBytes(opts["options"])
+			return req("POST", verifyPath, `{"challenge_id": "`+opts["challenge_id"].(string)+`", "credential": `+string(authn.Assert(t, raw))+`}`, map[string]string{"Content-Type": "application/json"}, status)
+		}
+		pw := "dev-p4ssw0rd!"
+		operator, err := f.svc.Create(ctx, "operator-pk@example.com", &pw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.svc.Store.AddRoles(ctx, operator.ID, []string{"staff"}, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		bobKey, adaKey := hasPasskey(f.bobID), hasPasskey(operator.ID)
+		org, door := "/v1/acme/_auth/orgs/home-bob/passkey/login/", a+"/passkey/login/"
+		// A member signs in to the organization; an operator at the realm's own door.
+		if out := assert(bobKey, org+"options", org+"verify", 200); out["token"] == nil || out["strategy"] != "users_passkey" || out["org"] == nil {
+			t.Errorf("organization sign-in = %v", out)
+		}
+		if out := assert(adaKey, door+"options", door+"verify", 200); out["token"] == nil || out["strategy"] != "users_passkey" {
+			t.Errorf("operator sign-in = %v", out)
+		}
+		// Everyone else is refused alike: a member at the realm's door, the wrong organization, a bad credential.
+		assert(bobKey, door+"options", door+"verify", 401)
+		assert(bobKey, org+"options", door+"verify", 401)
+		req("POST", org+"verify", `{"challenge_id": "nope", "credential": {}}`, map[string]string{"Content-Type": "application/json"}, 401)
+		req("POST", org+"verify", `{}`, map[string]string{"Content-Type": "application/json"}, 400)
+		req("POST", door+"verify", `{}`, map[string]string{"Content-Type": "application/json"}, 400)
+		req("POST", door+"options", `{"strategy": "ghost"}`, map[string]string{"Content-Type": "application/json"}, 400)
+		req("POST", org+"options", `{"strategy": "ghost"}`, map[string]string{"Content-Type": "application/json"}, 400)
+		// A cookie asked for from a page that is not an origin of the realm is refused.
+		req("POST", door+"verify", `{"challenge_id": "x", "credential": {}, "cookie": true}`, map[string]string{"Content-Type": "application/json", "Origin": "https://evil.example"}, 403)
+		req("POST", org+"verify", `{"challenge_id": "x", "credential": {}, "cookie": true}`, map[string]string{"Content-Type": "application/json", "Origin": "https://evil.example"}, 403)
+		// Failures are limited per address.
+		throttle := f.svc.Settings.LoginThrottle
+		f.svc.Settings.LoginThrottle = registry.LoginThrottle{AccountThreshold: 1, IPThreshold: 1, Window: time.Hour, MaxDelay: time.Hour}
+		req("POST", door+"verify", `{"challenge_id": "nope", "credential": {}}`, map[string]string{"Content-Type": "application/json"}, 429)
+		req("POST", org+"verify", `{"challenge_id": "nope", "credential": {}}`, map[string]string{"Content-Type": "application/json"}, 429)
+		f.svc.Settings.LoginThrottle = throttle
+		limited := false
+		for range 100 {
+			if rec, _ := f.doH(t, "POST", door+"options", "", nil); rec.Code == http.StatusTooManyRequests {
+				limited = true
+				break
+			}
+		}
+		if !limited {
+			t.Error("a flood of passkey options was never limited")
+		}
+		req("POST", door+"options", "", nil, 429)
+		req("POST", org+"options", "", nil, 429)
+		f.svc.Settings.Passkeys.Enabled = false
+		req("POST", door+"options", "", nil, 403)
+		req("POST", org+"options", "", nil, 403)
+		f.svc.Settings.Passkeys.Enabled = true
+		f.svc.Settings.Strategies = strategies
+	}
 
 	// A user's own consents: read, withdraw, and what can't be withdrawn.
 	{

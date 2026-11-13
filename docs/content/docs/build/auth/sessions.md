@@ -83,6 +83,7 @@ All request bodies are JSON objects sent with `Content-Type: application/json`. 
 | `POST /_auth/signup` | no | `{"email", "password", "invitation"?, "locale"?, "redirect_to"?}` | `201` with a session, or `202` without one when the realm [requires a verified email](#email-verification) |
 | `POST /_auth/login` | no | `{"email", "password", "strategy"?}` | `200` with a session, or with a [challenge](../mfa/) when the strategy has a second step; `400 strategy_required` / `unknown_strategy` ([strategies](../#strategies)) |
 | `GET /_auth/passkeys` | yes | none | `200 {"items": […]}`: the user's [passkeys](#passkeys) (name, dates, transports, whether they sync), never a key |
+| `POST /_auth/passkey/login/options`, `…/verify` | no | `{strategy?}` then `{challenge_id, credential}` | [signing in with a passkey](#passkeys): the options, then the session, a consent challenge or the next step; `401 invalid_passkey` for every failure |
 | `POST /_auth/passkeys/register/options`, `…/verify` | yes, fresh proof | `{}` then `{"challenge_id", "credential", "name"?}` | the options for `navigator.credentials.create`, then `201` with the passkey |
 | `PATCH /_auth/passkeys/{id}` | yes | `{"name"}` | rename; no fresh proof |
 | `DELETE /_auth/passkeys/{id}` | yes, fresh proof | none | `204`; `409 last_sign_in_method` when it is the user's last way in |
@@ -283,7 +284,20 @@ Each session says the organization it is scoped to (`org`, none for an operator'
 
 A signed-in user can add **passkeys** to their account: a fingerprint, face or PIN on a device, a password manager or a security key. Each is a key pair made for the realm's domain (`auth.passkeys.rp_id`); backd keeps only the public key and a name. The realm turns them on with [`auth.passkeys`](../../configuration/realm/); until then the routes answer `403 passkey_disabled`.
 
-**Signing in with a passkey is not available yet:** this step adds, lists, renames and removes them. The page for the whole feature comes with the sign-in.
+**Signing in** needs a [strategy](../strategies/) that starts with `passkey`, such as `users_passkey: [passkey]`:
+
+1. `POST /_auth/passkey/login/options` with `{strategy?}` (no email, no session) answers `{challenge_id, strategy, options}`; the app passes `options` to `navigator.credentials.get` (the browser offers the passkeys it holds for the realm, or fills them in the username field with `mediation: "conditional"`). It answers the same whether or not anyone has a passkey, and is limited to 60 calls a minute per address.
+2. `POST /_auth/passkey/login/verify` with `{challenge_id, credential}` checks the challenge, the origin, the relying party id, user verification and the signature, then the account checks of the password sign-in (disabled or erased users, unverified addresses when the realm requires them, login networks). A strategy that is the passkey alone ends in a session with `methods: ["passkey"]` and `mfa: true` (or the [consent](../consents/) challenge); with more steps the answer is the challenge for the next one.
+3. **Every** failure is `401 invalid_passkey`, whatever the cause; the cause is in the audit log (`passkey.login_failed`). A ceremony is tried once, failures count in the per-address login limit and, for a known credential, in the user's second-factor limit.
+4. **Cloned keys.** Synced passkeys keep a counter of 0, hardware keys count up. A counter that goes backwards fails the sign-in, flags the passkey, audits `passkey.clone_suspected` and sends the user `passkey-clone-suspected`; backd does not remove it.
+5. In a realm with organizations, the realm's own door (`/_auth/passkey/login/…`) is the operators' alone and people sign in at `/_auth/orgs/{org}/passkey/login/…`, with the membership check of the password sign-in. One passkey signs in to every organization the person belongs to.
+
+Rules and functions see `user.passkey_synced`, true when the passkey syncs between devices (backup eligible): demand a hardware key with `user.methods` holding `"passkey"` and `!user.passkey_synced`:
+
+```yaml
+rules:
+  delete: user != nil && "passkey" in user.methods && !user.passkey_synced
+```
 
 - **Adding** takes two calls and a fresh [proof of identity](../reauth/): `POST /_auth/passkeys/register/options` answers `{challenge_id, options}`, the app passes `options` to `navigator.credentials.create`, and `POST /_auth/passkeys/register/verify` sends back `{challenge_id, credential, name}`. The options exclude the user's passkeys, require a resident key and user verification, and ask for no attestation, so a security key that cannot store a resident key cannot register. The ceremony lives 5 minutes. Adding a passkey does not end other sessions, changes nothing about how the user signs in otherwise and makes no recovery codes; the user gets a `passkey-added` email and it is audited (`passkey.registered`).
 - **At most 10** per user (`409 passkey_limit`).
@@ -309,6 +323,7 @@ A signed-in user can add **passkeys** to their account: a fingerprint, face or P
 | 403 | `passkey_disabled` | The realm has not enabled [passkeys](#passkeys) |
 | 409 | `passkey_limit` | The user has 10 passkeys already |
 | 400 | `invalid_passkey` | A passkey registration that did not verify (challenge, origin, relying party or user verification) |
+| 401 | `invalid_passkey` | Any failure of a sign-in with a passkey, whatever the cause |
 | 409 | `email_taken` | Sign-up with a registered email, in a realm that issues a session at sign-up |
 | 429 | `too_many_requests` | Too many failed logins or password checks; wait `Retry-After` seconds |
 | 503 | `unavailable` | Too many password operations at once; retry after the `Retry-After` delay |

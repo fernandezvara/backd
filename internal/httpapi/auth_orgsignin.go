@@ -19,6 +19,8 @@ import (
 // organization from the path.
 func (a *authAPI) orgSignInRoutes(r chi.Router, json func(http.Handler) http.Handler) {
 	r.With(json, a.ssoGate).Post("/login", a.login)
+	r.With(a.ssoGate).Post("/passkey/login/options", a.passkeyLoginOptions)
+	r.With(json, a.ssoGate).Post("/passkey/login/verify", a.passkeyLoginVerify)
 	r.With(json, a.ssoGate).Post("/signup", a.signup)
 	r.With(json, a.ssoGate).Post("/magic-link", a.requestMagicLink)
 	r.With(json, a.ssoGate).Post("/reset-password/request", a.requestPasswordReset)

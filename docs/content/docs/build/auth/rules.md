@@ -70,7 +70,7 @@ YAML reads a value starting with `'`, `!`, `[` or `{` specially, so quote such r
 
 | Name | Available on | Meaning |
 |---|---|---|
-| `user` | all | The signed-in user: `user.id`, `user.email`, `user.email_verified`, `user.roles` (the roles the session's strategy keeps [active](../#strategies)), and how the session was made, `user.mfa`, `user.methods` and `user.strategy` (see [multi-factor authentication](../mfa/#how-the-session-remembers)), and `user.consents`, the version of each [consent](../consents/) the user holds. `nil` for anonymous callers |
+| `user` | all | The signed-in user: `user.id`, `user.email`, `user.email_verified`, `user.roles` (the roles the session's strategy keeps [active](../#strategies)), and how the session was made, `user.mfa`, `user.methods`, `user.strategy` and `user.passkey_synced` (a [passkey](../sessions/#passkeys) that syncs between devices opened the session) (see [multi-factor authentication](../mfa/#how-the-session-remembers)), and `user.consents`, the version of each [consent](../consents/) the user holds. `nil` for anonymous callers |
 | `document` | read, update, delete | The stored document, including `document.id` and `document._meta.*` |
 | `data` | create, update | The document being written: the request body on create, the complete result on update |
 | `now` | all | The current time, only for comparing with a timestamp: `document._meta.created_at`, `document._meta.updated_at`, or a field the schema [stores as a date](../../configuration/config-dir/#dates) |
