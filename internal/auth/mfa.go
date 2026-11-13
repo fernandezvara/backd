@@ -24,6 +24,8 @@ import (
 const (
 	MethodTOTP     = "totp"
 	MethodRecovery = "recovery_code"
+	// MethodPasskey is a passkey proving a sign-in step.
+	MethodPasskey = "passkey"
 )
 
 // The kinds of AuthChallenge.
@@ -97,6 +99,10 @@ type AuthChallenge struct {
 	Factor string
 	// Strategy is the strategy the sign-in follows; Methods (below) are the steps done so far.
 	Strategy string
+	// Passkey and PasskeySynced say which passkey proved the first step (a consent challenge keeps them
+	// until the session starts).
+	Passkey       string
+	PasskeySynced bool
 	// NewUser and Profile are what a provider sign-in hands over with the session: kept
 	// until the second step ends it.
 	NewUser bool
@@ -162,6 +168,9 @@ type handover struct {
 	profile map[string]string
 	// org is the organization whose connection signed the person in; the session records it.
 	org string
+	// passkey is the passkey that proved the first step, and passkeySynced whether it syncs.
+	passkey       string
+	passkeySynced bool
 	// strategy is the name of the strategy the sign-in follows, "" until it is chosen.
 	strategy string
 }

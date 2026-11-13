@@ -392,6 +392,8 @@ export interface CallUser {
   /** Whether the session used a second factor, and how it was created (the first method, then totp or recovery). */
   mfa: boolean;
   methods: string[];
+  /** True when a passkey that syncs between devices opened the session (false for a hardware key and for other methods). */
+  passkey_synced?: boolean;
   /** The strategy the session was made with (absent for an API key); roles are the ones it keeps active. */
   strategy?: string;
   /** The organization the session belongs to (only in realms with organizations). */

@@ -711,7 +711,7 @@ export class FunctionError extends Error {
  * @typedef {object} ContextOptions
  * @property {any} [input]              ctx.input.
  * @property {{ maxDepth?: number, maxPaths?: number, maxArray?: number, maxDocs?: number }} [expand] Lower the expansion limits (backd's defaults: 2 levels, 5 paths, 100 ids, 2000 documents) to test a function against them.
- * @property {{id: string, email: string, email_verified?: boolean, roles?: string[], mfa?: boolean, methods?: string[], strategy?: string, consents?: Record<string, string>} | null} [user] ctx.user. `strategy` is the strategy the session was made with (the realm's names are in `backd.d.ts`); `roles` are the roles it keeps active.
+ * @property {{id: string, email: string, email_verified?: boolean, roles?: string[], mfa?: boolean, methods?: string[], strategy?: string, passkey_synced?: boolean, consents?: Record<string, string>} | null} [user] ctx.user. `strategy` is the strategy the session was made with (the realm's names are in `backd.d.ts`); `roles` are the roles it keeps active.
  * @property {Record<string, string>} [secrets]  ctx.secrets.
  * @property {string | null} [idempotencyKey]
  * @property {string} [requestId]

@@ -852,7 +852,7 @@ func rulesUser(c auth.Caller) *rules.User {
 	}
 	u := c.User.User
 	mfa, methods := c.SignInMethods()
-	return &rules.User{ID: u.ID, Email: u.Email, EmailVerified: u.EmailVerified, Roles: u.Roles, MFA: mfa, Methods: methods, Strategy: c.SignInStrategy(), Consents: u.Consents}
+	return &rules.User{ID: u.ID, Email: u.Email, EmailVerified: u.EmailVerified, Roles: u.Roles, MFA: mfa, Methods: methods, Strategy: c.SignInStrategy(), PasskeySynced: c.SignInPasskeySynced(), Consents: u.Consents}
 }
 
 // userEnvelope is ctx.user: the user the call acts as, or null.
@@ -870,7 +870,7 @@ func userEnvelope(c auth.Caller, orgs map[string]any) json.RawMessage {
 	if consents == nil {
 		consents = map[string]string{}
 	}
-	env := map[string]any{"id": u.ID, "email": u.Email, "email_verified": u.EmailVerified, "roles": roles, "mfa": mfa, "methods": methods, "strategy": c.SignInStrategy(), "consents": consents}
+	env := map[string]any{"id": u.ID, "email": u.Email, "email_verified": u.EmailVerified, "roles": roles, "mfa": mfa, "methods": methods, "strategy": c.SignInStrategy(), "passkey_synced": c.SignInPasskeySynced(), "consents": consents}
 	if orgs != nil {
 		env["orgs"] = orgs
 	}
@@ -934,6 +934,7 @@ func (f *functions) callback(realm, database, name string, fn *registry.Function
 		claims.UserID = c.User.User.ID
 		claims.MFA, claims.Methods = c.SignInMethods()
 		claims.Strategy = c.SignInStrategy()
+		claims.PasskeySynced = c.SignInPasskeySynced()
 		claims.Org = c.User.Session.Org
 	}
 	if c.Key != nil {

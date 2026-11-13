@@ -43,7 +43,11 @@ func (s *Users) UnlinkIn(ctx context.Context, userID, provider, org, by string) 
 	if err != nil {
 		return err
 	}
-	if s.signInMethodsLeft(u, ids, provider, org) == 0 {
+	pk, err := s.passkeySignIns(ctx, u.ID)
+	if err != nil {
+		return err
+	}
+	if s.signInMethodsLeft(u, ids, provider, org)+pk == 0 {
 		return ErrLastSignInMethod
 	}
 	if provider == ProviderApple {
@@ -85,8 +89,8 @@ func (s *Users) signInMethodsLeft(u User, ids []Identity, without, withoutOrg st
 	return n
 }
 
-// SignInMethods lists the ways the user can sign in now: "password", "magic_link" and the
-// provider names, in that order.
+// SignInMethods lists the ways the user can sign in now: "password", "magic_link", "passkey" (when
+// the realm has a strategy that starts with one and the user has one) and the provider names, in that order.
 func (s *Users) SignInMethods(ctx context.Context, u User) ([]string, error) {
 	ids, err := s.Identities(ctx, u.ID)
 	if err != nil {
@@ -112,6 +116,11 @@ func (s *Users) SignInMethods(ctx context.Context, u User) ([]string, error) {
 	if s.magicLinkAvailable(u) {
 		out = append(out, "magic_link")
 	}
+	if n, err := s.passkeySignIns(ctx, u.ID); err != nil {
+		return nil, err
+	} else if n > 0 {
+		out = append(out, MethodPasskey)
+	}
 	return append(out, providers...), nil
 }
 
@@ -135,7 +144,11 @@ func (s *Users) RemovePassword(ctx context.Context, p Principal) error {
 	if err != nil {
 		return err
 	}
-	if s.signInMethodsLeft(u, ids, ProviderPassword, "") == 0 {
+	pk, err := s.passkeySignIns(ctx, u.ID)
+	if err != nil {
+		return err
+	}
+	if s.signInMethodsLeft(u, ids, ProviderPassword, "")+pk == 0 {
 		return ErrLastSignInMethod
 	}
 	if err := s.Store.DeleteIdentity(ctx, u.ID, ProviderPassword); err != nil {

@@ -18,6 +18,8 @@ type challengeDoc struct {
 	UserID        string            `bson:"user_id"`
 	Factor        string            `bson:"factor,omitempty"`
 	Strategy      string            `bson:"strategy,omitempty"`
+	Passkey       string            `bson:"passkey,omitempty"`
+	PasskeySynced bool              `bson:"passkey_synced,omitempty"`
 	NewUser       bool              `bson:"new_user,omitempty"`
 	Profile       map[string]string `bson:"profile,omitempty"`
 	ViaOrg        string            `bson:"via_org,omitempty"`

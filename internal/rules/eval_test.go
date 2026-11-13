@@ -35,6 +35,8 @@ func TestFilter(t *testing.T) {
 		{"signed in only: user", `read: user != nil`, bob, storage.Const(true)},
 		{"strategy: the one asked for", `read: user != nil && user.strategy == "admin_password"`, &User{ID: "u3", Strategy: "admin_password"}, storage.Const(true)},
 		{"strategy: another one", `read: user != nil && user.strategy == "admin_password"`, &User{ID: "u3", Strategy: "web"}, storage.Const(false)},
+		{"passkey_synced: a hardware key", `read: user != nil && "passkey" in user.methods && !user.passkey_synced`, &User{ID: "u3", Methods: []string{"passkey"}}, storage.Const(true)},
+		{"passkey_synced: a synced passkey", `read: user != nil && "passkey" in user.methods && !user.passkey_synced`, &User{ID: "u3", Methods: []string{"passkey"}, PasskeySynced: true}, storage.Const(false)},
 		{"strategy: anonymous", `read: user != nil && user.strategy == "admin_password"`, nil, storage.Const(false)},
 		{"owner: anonymous", `read: user != nil && document._meta.owner == user.id`, nil, storage.Const(false)},
 		{"owner: user", `read: user != nil && document._meta.owner == user.id`, ada, cond("_meta.owner", storage.OpEq, "u1")},

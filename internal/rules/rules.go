@@ -63,6 +63,9 @@ type User struct {
 	// Strategy is the strategy the session was made with ("" for an API key and for a session
 	// from before strategies); Roles above are the roles that strategy keeps active.
 	Strategy string `expr:"strategy"`
+	// PasskeySynced is true when the session was opened with a passkey that syncs between devices
+	// (backup eligible): a rule that wants a hardware key asks for user.methods to hold "passkey" and this false.
+	PasskeySynced bool `expr:"passkey_synced"`
 	// Consents maps each consent the user holds to the version they accepted.
 	Consents map[string]string `expr:"consents"`
 	// Orgs are the memberships that count, by organization id (design/organizations.md §6):

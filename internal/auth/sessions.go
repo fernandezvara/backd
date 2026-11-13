@@ -65,6 +65,9 @@ type Session struct {
 	// Passkey is the id of the passkey a sign-in with one used ("" otherwise): removing the passkey
 	// ends the sessions it opened.
 	Passkey string
+	// PasskeySynced says that passkey syncs between devices (backup eligible): rules see it as
+	// user.passkey_synced, so one can demand a hardware key.
+	PasskeySynced bool
 	// Org is the organization the session is scoped to: it reaches that one and no other
 	// (design/scoped-sessions.md). "" for an operator's session, and for one from before sessions
 	// were scoped.
@@ -348,13 +351,13 @@ func (s *Users) dummyHash(ctx context.Context) (string, error) {
 }
 
 // startSessionWith starts a session that records how it was created.
-func (s *Users) startSessionWith(ctx context.Context, u User, methods []string, mfa bool, org, strategy string) (Principal, string, error) {
+func (s *Users) startSessionWith(ctx context.Context, u User, methods []string, mfa bool, org, strategy string, pk passkeyUse) (Principal, string, error) {
 	token, err := NewSessionToken()
 	if err != nil {
 		return Principal{}, "", err
 	}
 	now := s.now()
-	sess := Session{ID: xid.New().String(), UserID: u.ID, TokenHash: HashToken(token), CreatedAt: now, LastUsedAt: now, Methods: methods, MFA: mfa, Strategy: strategy, Org: org}
+	sess := Session{ID: xid.New().String(), UserID: u.ID, TokenHash: HashToken(token), CreatedAt: now, LastUsedAt: now, Methods: methods, MFA: mfa, Strategy: strategy, Passkey: pk.id, PasskeySynced: pk.synced, Org: org}
 	if org != "" {
 		if o, err := s.Store.OrgByID(ctx, org); err == nil {
 			// Every session of an organization that requires its connection comes through it: this is
@@ -581,4 +584,16 @@ func (s *Users) comparePassword(ctx context.Context, u User, password string) er
 		return ErrPasswordExpired
 	}
 	return nil
+}
+
+// passkeyUse is the passkey a session was opened with, if any.
+type passkeyUse struct {
+	id     string
+	synced bool
+}
+
+// secondFactorUsed says a session's methods hold two kinds of proof, or a passkey: a passkey is a
+// possession proved with a PIN or a biometric, so it counts as multi-factor on its own.
+func secondFactorUsed(methods []string) bool {
+	return len(methods) > 1 || (len(methods) == 1 && methods[0] == MethodPasskey)
 }

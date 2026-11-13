@@ -245,7 +245,7 @@ func (s *Users) OpenOrgSession(ctx context.Context, p Principal, orgID string) (
 	if _, err := s.MembershipOf(ctx, p.User.ID, orgID); err != nil {
 		return Principal{}, "", err
 	}
-	return s.startSessionWith(ctx, p.User, slices.Clone(p.Session.Methods), p.Session.MFA, orgID, p.Session.Strategy)
+	return s.startSessionWith(ctx, p.User, slices.Clone(p.Session.Methods), p.Session.MFA, orgID, p.Session.Strategy, passkeyUse{p.Session.Passkey, p.Session.PasskeySynced})
 }
 
 // The "which companies am I in?" email (design/scoped-sessions.md §5.4).

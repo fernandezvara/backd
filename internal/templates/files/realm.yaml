@@ -87,9 +87,10 @@ auth:
   #   issuer: Acme                 # the name authenticator apps show; the realm's name by default
 
   # Passkeys (WebAuthn): sign in with a fingerprint, face or PIN on a device, a password
-  # manager or a security key. A strategy lists `passkey` to use them (design/passkeys.md);
-  # the settings are checked now. The `rp_id` is the domain the passkeys are bound to and
-  # cannot change later without losing them.
+  # manager or a security key. A strategy starts with `passkey` to sign in with them
+  # (`users_passkey: [passkey]`); people add them to their account once the section is on.
+  # The `rp_id` is the domain the passkeys are bound to and cannot change later without
+  # losing them.
   # passkeys:
   #   enabled: false                       # a strategy that lists `passkey` needs true
   #   rp_id: acme.example                  # default: the host of sign_in.app_url
