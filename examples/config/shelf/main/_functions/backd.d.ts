@@ -379,6 +379,7 @@ export interface Realm {
     };
   };
   roles: "admin" | "curator";
+  strategies: "password" | "magic_link" | "password_totp" | "magic_link_totp";
   org_roles: "admin" | "editor" | "member" | "owner";
   team_roles: never;
 }
@@ -388,6 +389,11 @@ export interface CallUser {
   id: string;
   email: string;
   roles: string[];
+  /** Whether the session used a second factor, and how it was created (the first method, then totp or recovery). */
+  mfa: boolean;
+  methods: string[];
+  /** The strategy the session was made with (absent for an API key); roles are the ones it keeps active. */
+  strategy?: string;
   /** The organization the session belongs to (only in realms with organizations). */
   org?: string;
   /** The user's membership of that organization, by id (only in realms with organizations): the session reaches it and no other. */

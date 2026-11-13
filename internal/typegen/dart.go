@@ -1612,6 +1612,7 @@ func (g *dartGen) roleConsts(prefix string, rl *registry.Realm) {
 		g.emit(b.String())
 	}
 	consts(prefix+"Role", "roles", slices.Sorted(keys(rl.Settings.Roles)))
+	consts(prefix+"Strategy", "sign-in strategies", strategyNames(rl))
 	if o := rl.Settings.Organizations; o != nil {
 		consts(prefix+"OrgRole", "organization roles", o.RoleNames())
 		consts(prefix+"TeamRole", "team roles", o.TeamRoleNames())

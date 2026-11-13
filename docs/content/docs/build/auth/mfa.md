@@ -153,13 +153,14 @@ Rules and functions see them:
 rules:
   read: user != nil && user.mfa && hasRole(user, "finance")
   write: user != nil && "google" in user.methods
+  delete: user != nil && user.strategy == "admin_password"   # only sessions made with that strategy
 ```
 
 | In | Name | Value |
 |---|---|---|
-| [rules](../rules/) | `user.mfa`, `user.methods` | `true` when a second factor was used; the list of methods |
-| [functions](../../functions/writing/) | `ctx.user.mfa`, `ctx.user.methods` | the same; a function's own data calls see the session's too |
+| [rules](../rules/) | `user.mfa`, `user.methods`, `user.strategy` | `true` when a second factor was used; the list of methods; the name of the [strategy](../#strategies) the session was made with |
+| [functions](../../functions/writing/) | `ctx.user.mfa`, `ctx.user.methods`, `ctx.user.strategy` | the same; a function's own data calls see the session's too, with the same roles |
 
-An **API key** (also when acting on behalf of a user with `X-Backd-On-Behalf-Of`) is never MFA: `user.mfa` is `false` and `user.methods` is `["key"]`. Sessions that began before methods were recorded have none, so a rule that requires `user.mfa` asks those users to sign in again.
+An **API key** (also when acting on behalf of a user with `X-Backd-On-Behalf-Of`) is never MFA: `user.mfa` is `false`, `user.methods` is `["key"]` and `user.strategy` is empty. Sessions that began before methods were recorded have none, so a rule that requires `user.mfa` asks those users to sign in again.
 
 Anonymous callers have no `user`: guard with `user != nil &&` as with any other field.

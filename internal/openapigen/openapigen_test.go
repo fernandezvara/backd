@@ -458,3 +458,19 @@ func TestAggregatePathIsPerCollection(t *testing.T) {
 		t.Errorf("group_by is not described with the declared fields: %v", op["parameters"])
 	}
 }
+
+func TestStrategyNamesAreInTheDocument(t *testing.T) {
+	reg := load(t, map[string]string{
+		"app/realm.yaml":             "auth:\n  strategies:\n    web: [password]\n    admin_password: [password, totp]\n",
+		"app/main/notes/schema.json": noteSchema,
+	})
+	doc := generate(t, reg, "app")
+	schema, _ := doc["components"].(map[string]any)["schemas"].(map[string]any)["Strategy"].(map[string]any)
+	enum, _ := schema["enum"].([]any)
+	if len(enum) != 2 || enum[0] != "web" || enum[1] != "admin_password" {
+		t.Errorf("Strategy schema = %v", schema)
+	}
+	if !slices.Contains(pathsOf(doc), "/v1/app/_auth/strategies") {
+		t.Error("GET /_auth/strategies is not in the document")
+	}
+}

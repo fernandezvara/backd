@@ -76,6 +76,7 @@ func (b *builder) public() (*Document, error) {
 	b.responses = map[string]any{}
 	b.ids = map[string]bool{}
 	b.addFileDetails()
+	b.addStrategy()
 
 	prefix := "/v1/{realm}"
 	auth := b.rl.Settings.AuthEnabled
@@ -419,6 +420,7 @@ func (b *builder) prune() map[string]any {
 			}
 		}
 	}
+	b.typeStrategies()
 	visit(b.paths)
 	out := map[string]any{}
 	for kind, names := range keep {
@@ -443,4 +445,50 @@ func baseLicense(base map[string]any) any {
 		return info["license"]
 	}
 	return nil
+}
+
+// addStrategy adds the schema of the realm's strategy names: what the `strategy` field of the
+// sign-in calls accepts, and what a session's `strategy` can be.
+func (b *builder) addStrategy() {
+	if !b.rl.Settings.AuthEnabled || len(b.rl.Settings.Strategies) == 0 {
+		return
+	}
+	names := make([]any, len(b.rl.Settings.Strategies))
+	for i, st := range b.rl.Settings.Strategies {
+		names[i] = st.Name
+	}
+	b.extra["Strategy"] = map[string]any{
+		"type": "string", "enum": names,
+		"description": "A sign-in strategy of this realm: the value of `strategy` in the sign-in calls (`GET /_auth/strategies` lists their methods) and of a session's `strategy`.",
+	}
+}
+
+// typeStrategies makes every `strategy` property of the contract (the sign-in calls, the sessions
+// and the challenges) the realm's Strategy enum, so clients generated from the document know the names.
+func (b *builder) typeStrategies() {
+	if _, ok := b.extra["Strategy"]; !ok {
+		return
+	}
+	var walk func(v any)
+	walk = func(v any) {
+		switch t := v.(type) {
+		case map[string]any:
+			if props, ok := t["properties"].(map[string]any); ok {
+				if p, ok := props["strategy"].(map[string]any); ok && p["$ref"] == nil && p["type"] == "string" {
+					props["strategy"] = map[string]any{"$ref": "#/components/schemas/Strategy"}
+				}
+			}
+			for _, e := range t {
+				walk(e)
+			}
+		case []any:
+			for _, e := range t {
+				walk(e)
+			}
+		}
+	}
+	walk(b.paths)
+	walk(b.components("schemas"))
+	walk(b.extra)
+	walk(b.responses)
 }

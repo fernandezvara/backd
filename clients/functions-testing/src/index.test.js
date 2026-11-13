@@ -47,6 +47,15 @@ Deno.test('ctx.input, ctx.user, ctx.secrets, ctx.requestId', () => {
   assertEquals(ctx.idempotencyKey, null)
 })
 
+Deno.test('ctx.user carries the strategy, the methods and mfa of the session it fakes', () => {
+  const { ctx } = createContext({
+    user: { id: 'u1', email: 'ada@example.com', roles: ['admin'], strategy: 'admin_password', methods: ['password', 'totp'], mfa: true },
+  })
+  assertEquals(ctx.user.strategy, 'admin_password')
+  assertEquals(ctx.user.methods, ['password', 'totp'])
+  assertEquals(ctx.user.mfa, true)
+})
+
 Deno.test('ctx.error makes a FunctionError; a bad status throws instead', () => {
   const { ctx } = createContext()
   const e = ctx.error(409, 'out_of_stock', 'Not enough stock', [{ path: 'items[0]', reason: 'sold out' }])

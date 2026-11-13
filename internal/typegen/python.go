@@ -866,6 +866,7 @@ func (g *pyGen) roleConsts(prefix string, rl *registry.Realm) {
 		g.emit(strings.TrimRight(b.String(), "\n"))
 	}
 	consts("Roles", "roles", slices.Sorted(keys(rl.Settings.Roles)))
+	consts("Strategies", "sign-in strategies", strategyNames(rl))
 	if o := rl.Settings.Organizations; o != nil {
 		consts("OrgRoles", "organization roles", o.RoleNames())
 		consts("TeamRoles", "team roles", o.TeamRoleNames())

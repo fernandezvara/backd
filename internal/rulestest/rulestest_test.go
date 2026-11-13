@@ -420,3 +420,35 @@ tests:
 		t.Errorf("%d assertions ran", len(checks))
 	}
 }
+
+func TestUsersCarryTheStrategyOfTheirSession(t *testing.T) {
+	c := collection(t, "read: user != nil && user.strategy == 'admin_password'\n")
+	fixture := []byte(`
+users:
+  weak:   { id: u1, email: a@example.com, strategy: web }
+  strong: { id: u2, email: b@example.com, strategy: admin_password }
+  none:   { id: u3, email: c@example.com }
+documents:
+  d: { title: D, published: true, _meta: { owner: u9 } }
+tests:
+  - as: strong
+    read: { allow: [d] }
+  - as: weak
+    read: { deny: [d] }
+  - as: none
+    read: { deny: [d] }
+`)
+	checks, problems := RunIn(c, roles, []string{"web", "admin_password"}, fixture)
+	if len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	for _, ch := range checks {
+		if !ch.Pass {
+			t.Errorf("%s: %s", ch.What, ch.Detail)
+		}
+	}
+	// A strategy the realm does not declare is a mistake in the fixture.
+	if _, problems := RunIn(c, roles, []string{"web"}, fixture); len(problems) == 0 || !strings.Contains(problems[0].Error(), `strategy "admin_password" is not declared`) {
+		t.Errorf("an undeclared strategy: %v", problems)
+	}
+}

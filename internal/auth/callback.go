@@ -50,6 +50,9 @@ type CallbackClaims struct {
 	// rules in the function's own data calls see the same `user.mfa` and `user.methods`.
 	MFA     bool     `json:"x,omitempty"`
 	Methods []string `json:"y,omitempty"`
+	// Strategy is the session's strategy: the roles of the user the call acts as are those it keeps
+	// active, as in the request that started the call.
+	Strategy string `json:"z,omitempty"`
 	// ChainRoot and ChainDepth say the invocation is a trigger run (or was called by one):
 	// the documents it writes are stamped `_meta.chain = {root, depth}`, which is how a change
 	// caused by a trigger is told from a first-party one (design/triggers-and-realtime.md §11).
@@ -143,7 +146,10 @@ func (s *Users) CallbackCaller(ctx context.Context, c CallbackClaims) (Caller, e
 		if err != nil || u.Disabled {
 			return Caller{}, ErrInvalidCallback
 		}
-		caller.User = &Principal{User: u, Session: Session{MFA: c.MFA, Methods: c.Methods, Org: c.Org}}
+		sess := Session{MFA: c.MFA, Methods: c.Methods, Strategy: c.Strategy, Org: c.Org}
+		active, inactive := s.Settings.ActiveRoles(u.Roles, c.Strategy)
+		u.Roles = active
+		caller.User = &Principal{User: u, Session: sess, RolesInactive: inactive}
 	}
 	return caller, nil
 }
