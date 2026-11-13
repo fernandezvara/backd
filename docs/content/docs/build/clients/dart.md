@@ -186,6 +186,31 @@ await backd.auth.acceptInvitation(token, password);            // an emailed inv
 
 The rules behind each flow are in [Sign-up, login and sessions](../../auth/sessions/).
 
+### Passkeys
+
+A [passkey](../../auth/sessions/#passkeys) is made and used by the platform's authenticator, which this package does not talk to: the `…WithOptions` methods of `client.auth.passkeys` take a callback that receives the `options` JSON (`{"publicKey": …}`) and returns the JSON of the `PublicKeyCredential`, and make the calls on both sides of it. On iOS and Android the callback is the [`passkeys`](https://pub.dev/packages/passkeys) package (or the platform's credential manager); **Flutter web** uses the JavaScript client's `navigator.credentials` path instead.
+
+```dart
+// signWithPlatform and makeWithPlatform are yours: they hand the options to the platform's authenticator
+// (for example with the passkeys package) and return the credential as a Map<String, Object?>.
+Future<Map<String, Object?>> signWithPlatform(Map<String, Object?> options) async => /* … */;
+
+// Sign in with a passkey (the strategy starts with one); resolves like signIn()
+final result = await client.auth.passkeys.signInWithOptions(signWithPlatform, strategy: 'passkey');
+
+// The signed-in user's own (adding and removing need a fresh proof: withProof, or reauthWithOptions)
+await client.auth.passkeys.registerWithOptions(makeWithPlatform, name: 'Phone');
+final mine = await client.auth.passkeys.list();
+await client.auth.passkeys.rename(mine.first.id, 'Work phone');
+await client.auth.passkeys.remove(mine.first.id);
+
+// A strategy that asks for a passkey after the password, or for the first one of a person who has none
+await client.auth.passkeys.stepWithOptions(result.challenge, signWithPlatform);
+await client.auth.passkeys.enrollWithOptions(enrol.challenge, makeWithPlatform);
+```
+
+Under the callback methods are the plain calls (`signInOptions` / `signInVerify`, `registerOptions` / `registerVerify`, `stepOptions`, `enrollOptions` / `enrollVerify`, `reauthOptions`), for an app that sequences them itself. The app must be associated with the realm's `rp_id` (the `assetlinks.json` and `apple-app-site-association` files of the domain) and its origin listed in `auth.passkeys.origins` (`android:apk-key-hash:…` for Android).
+
 ### Sign in with a provider on desktop
 
 In a realm that lists [providers](../../auth/providers/), a desktop app owns the whole round trip: `signInWith` hands back the provider's address for the system browser, the browser comes back to the app on a deep link (or a loopback listener), and the app gives the address to `completeSignIn`.

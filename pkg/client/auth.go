@@ -492,10 +492,13 @@ func (a *Auth) PreviewInvitation(ctx context.Context, token, org string, opts ..
 
 // ReauthInput proves who the user is again before a sensitive action.
 type ReauthInput struct {
-	// Method is one of the user's reauth_methods: "totp", "recovery_code", "password" or "email_code".
+	// Method is one of the user's reauth_methods: "totp", "recovery_code", "password", "email_code" or "passkey".
 	Method   string
 	Code     string
 	Password string
+	// Credential is the JSON of the PublicKeyCredential an authenticator made for Method "passkey"
+	// (see Passkeys.ReauthOptions).
+	Credential json.RawMessage
 }
 
 // ReauthProof is the fresh proof of identity; the client sends it with sensitive calls while it is good.
@@ -512,6 +515,9 @@ func (a *Auth) Reauth(ctx context.Context, in ReauthInput, opts ...RequestOption
 		ExpiresAt string `json:"expires_at"`
 	}
 	b := body{}.set("method", in.Method).set("code", in.Code).set("password", in.Password)
+	if len(in.Credential) > 0 {
+		b["credential"] = in.Credential
+	}
 	if _, err := a.c.Do(ctx, "POST", path("_auth", "reauth"), b, &out, opts...); err != nil {
 		return nil, err
 	}
@@ -1148,37 +1154,4 @@ func (m *MagicLink) VerifyCode(ctx context.Context, code string, opts ...Request
 	}
 	_ = m.a.c.oauth.Remove(ctx)
 	return m.a.step(ctx, raw)
-}
-
-// Passkeys are the signed-in user's passkeys: c.Auth().Passkeys. The ceremony needs an authenticator,
-// which is in a browser or an app, so here they can only be listed and removed.
-type Passkeys struct{ a *Auth }
-
-// Passkey is a registered passkey. Never the key material.
-type Passkey struct {
-	ID             string   `json:"id"`
-	Name           string   `json:"name"`
-	CreatedAt      string   `json:"created_at"`
-	LastUsedAt     *string  `json:"last_used_at"`
-	Transports     []string `json:"transports"`
-	BackupEligible bool     `json:"backup_eligible"`
-	BackupState    bool     `json:"backup_state"`
-}
-
-// List returns the user's passkeys.
-func (p *Passkeys) List(ctx context.Context, opts ...RequestOption) ([]Passkey, error) {
-	var out struct {
-		Items []Passkey `json:"items"`
-	}
-	if _, err := p.a.c.Do(ctx, "GET", path("_auth", "passkeys"), nil, &out, opts...); err != nil {
-		return nil, err
-	}
-	return out.Items, nil
-}
-
-// Remove deletes a passkey (and ends the sessions it opened). It needs a recent proof (Reauth);
-// credential_required (a ConflictError) when a strategy of the user needs it and nothing replaces it.
-func (p *Passkeys) Remove(ctx context.Context, id string, opts ...RequestOption) error {
-	_, err := p.a.c.Do(ctx, "DELETE", path("_auth", "passkeys", id), nil, nil, append(opts, WithReauth())...)
-	return err
 }

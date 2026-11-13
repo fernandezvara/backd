@@ -20,6 +20,7 @@ from ..models import (
     EnrollmentChallenge,
     Me,
     MfaChallenge,
+    Passkey,
     ProviderSession,
     ReauthMethod,
     Session,
@@ -49,10 +50,14 @@ class _ReauthRequired(TypedDict):
 
 class ReauthInput(_ReauthRequired, total=False):
     """A proof of identity: ``totp`` or ``recovery_code`` with a ``code``, ``password`` with a ``password``,
-    or ``email_code`` with the ``code`` that ``request_reauth_code`` sent."""
+    ``email_code`` with the ``code`` that ``request_reauth_code`` sent, or ``passkey`` with the ``credential``
+    an authenticator signed."""
 
     code: str
     password: str
+    #: The JSON of the ``PublicKeyCredential`` an authenticator made, for ``method="passkey"``
+    #: (see ``auth.passkeys.reauth_options``).
+    credential: dict[str, Any]
 
 
 def _compact(**fields: Any) -> dict[str, Any]:
@@ -116,6 +121,107 @@ class AsyncMfa:
         """Replaces the recovery codes; the new ones are shown once."""
         res = await self._auth._client.request("POST", ["_auth", "mfa", "recovery-codes"], reauth=True)
         return cast(list[str], cast(dict[str, Any], res.data)["recovery_codes"])
+
+
+class AsyncPasskeys:
+    """The signed-in user's passkeys, and the calls of the ceremonies (``client.auth.passkeys``).
+
+    A passkey is made and used by an authenticator (a phone, a security key, a password manager), which a program
+    does not have, so there is no ``sign_in`` here: the browser or the app does the ceremony. What this gives is
+    the plain calls around it: list, rename and remove, and the options and verify calls of each ceremony, so a
+    test (with a software authenticator) or an app with its own platform code can drive the server. The options
+    are the JSON of the WebAuthn standard (``{"publicKey": …}``) and the credential the authenticator answers is
+    the JSON of the ``PublicKeyCredential``; both pass through untouched. Adding and removing need a fresh proof
+    (:meth:`AsyncAuth.reauth`).
+    """
+
+    def __init__(self, auth: AsyncAuth) -> None:
+        self._auth = auth
+
+    async def list(self) -> list[Passkey]:
+        """The user's passkeys, oldest first."""
+        res = await self._auth._client.request("GET", ["_auth", "passkeys"])
+        return cast("list[Passkey]", cast(dict[str, Any], res.data)["items"])
+
+    async def rename(self, passkey_id: str, name: str) -> Passkey:
+        """Gives a passkey another name."""
+        res = await self._auth._client.request("PATCH", ["_auth", "passkeys", passkey_id], body={"name": name})
+        return cast(Passkey, res.data)
+
+    async def remove(self, passkey_id: str) -> None:
+        """Removes a passkey (and ends the sessions it opened). ``credential_required`` (a ``ConflictError``) when a
+        strategy of the user needs it and nothing replaces it."""
+        await self._auth._client.request("DELETE", ["_auth", "passkeys", passkey_id], reauth=True)
+
+    async def register_options(self) -> dict[str, Any]:
+        """Starts adding a passkey: ``challenge_id`` and the ``options`` for ``navigator.credentials.create``."""
+        res = await self._auth._client.request(
+            "POST", ["_auth", "passkeys", "register", "options"], body={}, reauth=True
+        )
+        return cast(dict[str, Any], res.data)
+
+    async def register_verify(self, challenge_id: str, credential: dict[str, Any], name: str | None = None) -> Passkey:
+        """Finishes adding a passkey with the ``credential`` the authenticator made; ``name`` is what it is called."""
+        body = _compact(challenge_id=challenge_id, credential=credential, name=name)
+        res = await self._auth._client.request(
+            "POST", ["_auth", "passkeys", "register", "verify"], body=body, reauth=True
+        )
+        return cast(Passkey, res.data)
+
+    async def sign_in_options(self, *, strategy: str | None = None, org: str | None = None) -> dict[str, Any]:
+        """Starts signing in with a passkey as the first step of a strategy: ``challenge_id``, ``strategy`` and the
+        ``options`` for ``navigator.credentials.get`` (no allow-list). ``strategy`` is needed when more than one starts
+        with a passkey (the client's own ``strategy`` option otherwise)."""
+        client = self._auth._client
+        body = _compact(strategy=strategy or getattr(client, "strategy", None))
+        res = await client.request(
+            "POST", [*self._auth.base(org), "passkey", "login", "options"], body=body, auth=False
+        )
+        return cast(dict[str, Any], res.data)
+
+    async def sign_in_verify(
+        self, challenge_id: str, credential: dict[str, Any], *, org: str | None = None
+    ) -> SignInResult:
+        """Finishes it with the credential the authenticator signed: the session (stored) or the next step. Every
+        failure is ``invalid_passkey`` (an ``AuthenticationError``)."""
+        res = await self._auth._client.request(
+            "POST",
+            [*self._auth.base(org), "passkey", "login", "verify"],
+            body={"challenge_id": challenge_id, "credential": credential},
+            auth=False,
+        )
+        return await self._auth._step(res.data)
+
+    async def step_options(self, challenge: str) -> dict[str, Any]:
+        """The options for the passkey a sign-in challenge asks for next (``MfaChallenge.next`` is ``["passkey"]``)."""
+        res = await self._auth._client.request(
+            "POST", ["_auth", "mfa", "passkey", "options"], body={"challenge": challenge}, auth=False
+        )
+        return cast(dict[str, Any], res.data)
+
+    async def enroll_options(self, challenge: str) -> dict[str, Any]:
+        """Starts adding the first passkey during a sign-in whose strategy needs one (an
+        :class:`EnrollmentChallenge` whose ``next`` is ``["passkey"]``)."""
+        res = await self._auth._client.request(
+            "POST", ["_auth", "mfa", "passkey", "register", "options"], body={"challenge": challenge}, auth=False
+        )
+        return cast(dict[str, Any], res.data)
+
+    async def enroll_verify(self, challenge: str, credential: dict[str, Any], name: str | None = None) -> SignInResult:
+        """Finishes it with the credential the authenticator made: the session (stored) or the next step."""
+        res = await self._auth._client.request(
+            "POST",
+            ["_auth", "mfa", "passkey", "register", "verify"],
+            body=_compact(challenge=challenge, credential=credential, name=name),
+            auth=False,
+        )
+        return await self._auth._step(res.data)
+
+    async def reauth_options(self) -> dict[str, Any]:
+        """The options for proving who you are with a passkey; send the credential to :meth:`AsyncAuth.reauth` as
+        ``{"method": "passkey", "credential": …}``."""
+        res = await self._auth._client.request("POST", ["_auth", "reauth", "passkey", "options"], body={})
+        return cast(dict[str, Any], res.data)
 
 
 class AsyncMagicLink:
@@ -195,6 +301,8 @@ class AsyncAuth:
         self.current: Session | None = None
         #: The signed-in user's second factor: ``client.auth.mfa``.
         self.mfa = AsyncMfa(self)
+        #: The signed-in user's passkeys and the calls of their ceremonies: ``client.auth.passkeys``.
+        self.passkeys = AsyncPasskeys(self)
         #: Sign-in by an emailed link and code: ``client.auth.magic_link``.
         self.magic_link = AsyncMagicLink(self)
         #: Setting and removing the password.
@@ -319,7 +427,7 @@ class AsyncAuth:
         if d.get("mfa_required"):
             return MfaChallenge(d["challenge"], d.get("methods") or [], d.get("next") or [], d.get("strategy"))
         if d.get("mfa_enrollment_required"):
-            return EnrollmentChallenge(d["challenge"], d.get("strategy"))
+            return EnrollmentChallenge(d["challenge"], d.get("strategy"), d.get("next") or [])
         if d.get("consent_required"):
             return ConsentChallenge(d["challenge"], d.get("consents") or [])
         return await self._signed_in(d)
@@ -352,15 +460,24 @@ class AsyncAuth:
             )
         return result
 
-    async def verify_step(self, challenge: str, method: Literal["totp", "recovery_code"], code: str) -> SignInResult:
+    async def verify_step(
+        self,
+        challenge: str,
+        method: Literal["totp", "recovery_code", "passkey"],
+        code: str | None = None,
+        *,
+        credential: dict[str, Any] | None = None,
+    ) -> SignInResult:
         """:meth:`verify_mfa` for strategies with more steps: returns what the code led to, the session (stored)
-        or, when the strategy asks for another step, the next :class:`MfaChallenge`."""
-        res = await self._client.request(
-            "POST",
-            ["_auth", "mfa", "verify"],
-            body={"challenge": challenge, "method": method, "code": code},
-            auth=False,
-        )
+        or, when the strategy asks for another step, the next :class:`MfaChallenge`. For ``method="passkey"``
+        send the ``credential`` an authenticator signed instead of a ``code`` (the options come from
+        ``auth.passkeys.step_options``)."""
+        body: dict[str, Any] = {"challenge": challenge, "method": method}
+        if method == "passkey":
+            body["credential"] = credential
+        else:
+            body["code"] = code
+        res = await self._client.request("POST", ["_auth", "mfa", "verify"], body=body, auth=False)
         return await self._step(res.data)
 
     async def strategies(self) -> list[dict[str, Any]]:
@@ -743,7 +860,12 @@ class AsyncAuth:
         proof is an ``AuthenticationError`` (``invalid_credentials``) or a ``ValidationError``
         (``invalid_code``) and counts against the same limits as signing in. A password an administrator expired
         is a :class:`PasswordExpiredError`. Returns ``reauth_token`` and ``expires_at``."""
-        body = _compact(method=proof["method"], code=proof.get("code"), password=proof.get("password"))
+        body = _compact(
+            method=proof["method"],
+            code=proof.get("code"),
+            password=proof.get("password"),
+            credential=proof.get("credential"),
+        )
         res = await self._client.request("POST", ["_auth", "reauth"], body=body)
         data = cast(dict[str, str], res.data)
         self._client._proof = (data["reauth_token"], parse_time(data["expires_at"]))

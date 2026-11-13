@@ -262,8 +262,8 @@ final class MfaChallenge extends SignInResult {
   /// `totp`, `recovery_code`.
   final List<String> methods;
 
-  /// The method the strategy asks for now (`totp`); a recovery code stands in
-  /// for it.
+  /// The method the strategy asks for now (`totp` or `passkey`); a recovery
+  /// code stands in for a code.
   final List<String> next;
 
   /// The strategy the sign-in follows.
@@ -275,9 +275,17 @@ final class MfaChallenge extends SignInResult {
 /// `auth.mfa.confirm(setupId: …, code: …, challenge: …)`, which gives the
 /// session.
 final class EnrollmentChallenge extends SignInResult {
-  const EnrollmentChallenge({required this.challenge, this.strategy});
+  const EnrollmentChallenge({
+    required this.challenge,
+    this.strategy,
+    this.next = const [],
+  });
 
   final String challenge;
+
+  /// The method to set up: `passkey` when the strategy asks for one (make it
+  /// with `auth.passkeys.enrollWithOptions`).
+  final List<String> next;
 
   /// The strategy the sign-in follows.
   final String? strategy;
@@ -472,6 +480,10 @@ final class Auth {
   /// fresh proof: see [reauth].
   late final Mfa mfa = Mfa(this);
 
+  /// The signed-in user's passkeys and the ceremonies around them:
+  /// `client.auth.passkeys`.
+  late final Passkeys passkeys = Passkeys(this);
+
   /// Sign-in by an emailed link and code: `client.auth.magicLink`.
   late final MagicLink magicLink = MagicLink(this);
 
@@ -663,6 +675,7 @@ final class Auth {
         return EnrollmentChallenge(
           challenge: map['challenge'] as String,
           strategy: map['strategy'] as String?,
+          next: [for (final m in map['next'] as List? ?? const []) '$m'],
         );
       }
       if (map['consent_required'] == true) {
@@ -1110,17 +1123,26 @@ final class Auth {
   /// [verifyMfa] for strategies with more steps: resolves with what the code
   /// led to, the session (stored) or, when the strategy asks for another step,
   /// the next [MfaChallenge].
+  ///
+  /// For `method: 'passkey'` send the `credential` an authenticator signed
+  /// instead of a `code` (see [Passkeys.stepWithOptions], which does both
+  /// calls).
   Future<SignInResult> verifyStep(
     String challenge,
     String method,
-    String code, {
+    String? code, {
+    Map<String, Object?>? credential,
     RequestOptions? options,
   }) async {
     final res = await client.request(RequestInit(
       method: 'POST',
       path: const ['_auth', 'mfa', 'verify'],
       auth: false,
-      body: {'challenge': challenge, 'method': method, 'code': code},
+      body: {
+        'challenge': challenge,
+        'method': method,
+        ..._compact({'code': code, 'credential': credential}),
+      },
       retry: options?.retry,
       headers: options?.headers,
       cache: options?.cache ?? true,
@@ -1430,8 +1452,9 @@ final class Auth {
   /// (changing the password or the address, deleting the account, unlinking a
   /// sign-in method, managing the second factor). `method` is the strongest
   /// proof the user has (see [Me.reauthMethods]): `totp` or `recovery_code`
-  /// with a second factor, `password`, or `email_code` after
-  /// [requestReauthCode]. The client keeps the proof and sends it with the
+  /// with a second factor, `password`, `email_code` after
+  /// [requestReauthCode], or `passkey` with the `credential` an authenticator
+  /// signed ([Passkeys.reauthWithOptions] does both calls). The client keeps the proof and sends it with the
   /// sensitive requests while it is good (the realm's `reauth.ttl`, 5 minutes
   /// by default), so one prompt covers a settings page. A wrong proof is an
   /// [AuthenticationError] (`invalid_credentials`) or a [ValidationError]
@@ -1440,12 +1463,18 @@ final class Auth {
     String method, {
     String? code,
     String? password,
+    Map<String, Object?>? credential,
     RequestOptions? options,
   }) async {
     final res = await client.request(RequestInit(
       method: 'POST',
       path: const ['_auth', 'reauth'],
-      body: _compact({'method': method, 'code': code, 'password': password}),
+      body: _compact({
+        'method': method,
+        'code': code,
+        'password': password,
+        'credential': credential,
+      }),
       retry: options?.retry,
       headers: options?.headers,
       cache: options?.cache ?? true,
@@ -1794,4 +1823,316 @@ final class PasswordAuth {
         headers: options?.headers,
         cache: options?.cache ?? true,
       ));
+}
+
+
+/// A registered passkey. Never the key material.
+final class Passkey {
+  const Passkey({
+    required this.id,
+    required this.name,
+    required this.createdAt,
+    required this.lastUsedAt,
+    required this.transports,
+    required this.backupEligible,
+    required this.backupState,
+  });
+
+  factory Passkey.fromJson(Map<String, Object?> json) => Passkey(
+        id: json['id'] as String,
+        name: json['name'] as String? ?? '',
+        createdAt: json['created_at'] as String? ?? '',
+        lastUsedAt: json['last_used_at'] as String?,
+        transports: [for (final t in json['transports'] as List? ?? const []) '$t'],
+        backupEligible: json['backup_eligible'] as bool? ?? false,
+        backupState: json['backup_state'] as bool? ?? false,
+      );
+
+  final String id;
+  final String name;
+  final String createdAt;
+  final String? lastUsedAt;
+  final List<String> transports;
+
+  /// The passkey syncs between the user's devices.
+  final bool backupEligible;
+
+  /// It has been synced.
+  final bool backupState;
+}
+
+/// The start of a ceremony: the `options` for the authenticator (the JSON of
+/// the WebAuthn standard, `{"publicKey": …}`) and the id to send back with the
+/// credential (none for the step, enrolment and reauthentication options).
+final class PasskeyCeremony {
+  const PasskeyCeremony({this.challengeId, this.strategy, required this.options});
+
+  factory PasskeyCeremony.fromJson(Map<String, Object?> json) => PasskeyCeremony(
+        challengeId: json['challenge_id'] as String?,
+        strategy: json['strategy'] as String?,
+        options: Map<String, Object?>.from(json['options'] as Map? ?? const {}),
+      );
+
+  final String? challengeId;
+  final String? strategy;
+  final Map<String, Object?> options;
+}
+
+/// What the platform does with the options of a ceremony: it receives the
+/// `options` JSON (`{"publicKey": …}`) and returns the JSON of the
+/// `PublicKeyCredential` the authenticator made or signed. On iOS and Android
+/// that is the [`passkeys`](https://pub.dev/packages/passkeys) package (or the
+/// platform's own credential manager); Flutter web uses the JavaScript
+/// client's `navigator.credentials` path.
+typedef PasskeyCallback = Future<Map<String, Object?>> Function(
+  Map<String, Object?> options,
+);
+
+/// The signed-in user's passkeys and the calls of their ceremonies:
+/// `client.auth.passkeys`.
+///
+/// The authenticator is platform code, so this package does not talk to it:
+/// the `…WithOptions` methods take a [PasskeyCallback] that does, and make both
+/// calls around it; the plain `…Options` and `…Verify` methods are there for
+/// an app that sequences them itself. Adding and removing need a fresh proof
+/// ([Auth.reauth]).
+final class Passkeys {
+  Passkeys(this._auth);
+
+  final Auth _auth;
+
+  Future<Object?> _post(
+    List<String> path,
+    Map<String, Object?> body, {
+    bool auth = true,
+    bool reauth = false,
+    RequestOptions? options,
+  }) async =>
+      (await _auth.client.request(RequestInit(
+        method: 'POST',
+        path: path,
+        auth: auth,
+        reauth: reauth,
+        body: body,
+        retry: options?.retry,
+        headers: options?.headers,
+        cache: options?.cache ?? true,
+      )))
+          .data;
+
+  /// The user's passkeys, oldest first.
+  Future<List<Passkey>> list({RequestOptions? options}) async {
+    final res = await _auth.client.request(RequestInit(
+      method: 'GET',
+      path: const ['_auth', 'passkeys'],
+      retry: options?.retry,
+      headers: options?.headers,
+      cache: options?.cache ?? true,
+    ));
+    return [
+      for (final p in (res.data as Map)['items'] as List? ?? const [])
+        Passkey.fromJson(Map<String, Object?>.from(p as Map)),
+    ];
+  }
+
+  /// Gives a passkey another name.
+  Future<Passkey> rename(String id, String name, {RequestOptions? options}) async {
+    final res = await _auth.client.request(RequestInit(
+      method: 'PATCH',
+      path: ['_auth', 'passkeys', id],
+      body: {'name': name},
+      retry: options?.retry,
+      headers: options?.headers,
+      cache: options?.cache ?? true,
+    ));
+    return Passkey.fromJson(Map<String, Object?>.from(res.data as Map));
+  }
+
+  /// Removes a passkey (and ends the sessions it opened). `credential_required`
+  /// (a [ConflictError]) when a strategy of the user needs it and nothing
+  /// replaces it.
+  Future<void> remove(String id, {RequestOptions? options}) =>
+      _auth.client.request(RequestInit(
+        method: 'DELETE',
+        path: ['_auth', 'passkeys', id],
+        reauth: true,
+        retry: options?.retry,
+        headers: options?.headers,
+        cache: options?.cache ?? true,
+      ));
+
+  /// Starts adding a passkey: the options for the authenticator.
+  Future<PasskeyCeremony> registerOptions({RequestOptions? options}) async =>
+      PasskeyCeremony.fromJson(Map<String, Object?>.from(await _post(
+        const ['_auth', 'passkeys', 'register', 'options'],
+        const {},
+        reauth: true,
+        options: options,
+      ) as Map));
+
+  /// Finishes adding a passkey with the credential the authenticator made.
+  Future<Passkey> registerVerify(
+    String challengeId,
+    Map<String, Object?> credential, {
+    String? name,
+    RequestOptions? options,
+  }) async =>
+      Passkey.fromJson(Map<String, Object?>.from(await _post(
+        const ['_auth', 'passkeys', 'register', 'verify'],
+        {
+          'challenge_id': challengeId,
+          'credential': credential,
+          ..._compact({'name': name}),
+        },
+        reauth: true,
+        options: options,
+      ) as Map));
+
+  /// Adds a passkey: `callback` makes it with the platform's authenticator.
+  Future<Passkey> registerWithOptions(
+    PasskeyCallback callback, {
+    String? name,
+    RequestOptions? options,
+  }) async {
+    final start = await registerOptions(options: options);
+    final credential = await callback(start.options);
+    return registerVerify(start.challengeId!, credential,
+        name: name, options: options);
+  }
+
+  /// Starts signing in with a passkey as the first step of a strategy: the
+  /// options for the authenticator, with no allow-list. `strategy` is needed
+  /// when more than one starts with a passkey (the client's `strategy` option
+  /// otherwise).
+  Future<PasskeyCeremony> signInOptions({
+    String? strategy,
+    String? org,
+    RequestOptions? options,
+  }) async =>
+      PasskeyCeremony.fromJson(Map<String, Object?>.from(await _post(
+        [..._auth.base(org), 'passkey', 'login', 'options'],
+        _compact({'strategy': strategy ?? _auth.client.strategy}),
+        auth: false,
+        options: options,
+      ) as Map));
+
+  /// Finishes it with the credential the authenticator signed: the session
+  /// (stored) or the next step. Every failure is `invalid_passkey` (an
+  /// [AuthenticationError]).
+  Future<SignInResult> signInVerify(
+    String challengeId,
+    Map<String, Object?> credential, {
+    String? org,
+    RequestOptions? options,
+  }) async =>
+      _auth.step(await _post(
+        [..._auth.base(org), 'passkey', 'login', 'verify'],
+        {'challenge_id': challengeId, 'credential': credential},
+        auth: false,
+        options: options,
+      ));
+
+  /// Signs in with a passkey: `callback` signs the challenge with the
+  /// platform's authenticator. Resolves like [Auth.signIn].
+  Future<SignInResult> signInWithOptions(
+    PasskeyCallback callback, {
+    String? strategy,
+    String? org,
+    RequestOptions? options,
+  }) async {
+    final start = await signInOptions(
+        strategy: strategy, org: org, options: options);
+    final credential = await callback(start.options);
+    return signInVerify(start.challengeId!, credential,
+        org: org, options: options);
+  }
+
+  /// The options for the passkey a sign-in challenge asks for next
+  /// ([MfaChallenge.next] is `passkey`).
+  Future<PasskeyCeremony> stepOptions(
+    String challenge, {
+    RequestOptions? options,
+  }) async =>
+      PasskeyCeremony.fromJson(Map<String, Object?>.from(await _post(
+        const ['_auth', 'mfa', 'passkey', 'options'],
+        {'challenge': challenge},
+        auth: false,
+        options: options,
+      ) as Map));
+
+  /// Answers a passkey step: `callback` signs it with the platform's
+  /// authenticator. Resolves like [Auth.verifyStep].
+  Future<SignInResult> stepWithOptions(
+    String challenge,
+    PasskeyCallback callback, {
+    RequestOptions? options,
+  }) async {
+    final start = await stepOptions(challenge, options: options);
+    final credential = await callback(start.options);
+    return _auth.verifyStep(challenge, 'passkey', null,
+        credential: credential, options: options);
+  }
+
+  /// Starts adding the first passkey during a sign-in whose strategy needs one
+  /// (an [EnrollmentChallenge] whose `next` is `passkey`).
+  Future<PasskeyCeremony> enrollOptions(
+    String challenge, {
+    RequestOptions? options,
+  }) async =>
+      PasskeyCeremony.fromJson(Map<String, Object?>.from(await _post(
+        const ['_auth', 'mfa', 'passkey', 'register', 'options'],
+        {'challenge': challenge},
+        auth: false,
+        options: options,
+      ) as Map));
+
+  /// Finishes it with the credential the authenticator made: the session
+  /// (stored) or the next step.
+  Future<SignInResult> enrollVerify(
+    String challenge,
+    Map<String, Object?> credential, {
+    String? name,
+    RequestOptions? options,
+  }) async =>
+      _auth.step(await _post(
+        const ['_auth', 'mfa', 'passkey', 'register', 'verify'],
+        {
+          'challenge': challenge,
+          'credential': credential,
+          ..._compact({'name': name}),
+        },
+        auth: false,
+        options: options,
+      ));
+
+  /// Adds the first passkey of a sign-in: `callback` makes it.
+  Future<SignInResult> enrollWithOptions(
+    String challenge,
+    PasskeyCallback callback, {
+    String? name,
+    RequestOptions? options,
+  }) async {
+    final start = await enrollOptions(challenge, options: options);
+    final credential = await callback(start.options);
+    return enrollVerify(challenge, credential, name: name, options: options);
+  }
+
+  /// The options for proving who you are with a passkey.
+  Future<PasskeyCeremony> reauthOptions({RequestOptions? options}) async =>
+      PasskeyCeremony.fromJson(Map<String, Object?>.from(await _post(
+        const ['_auth', 'reauth', 'passkey', 'options'],
+        const {},
+        options: options,
+      ) as Map));
+
+  /// Proves who the user is with a passkey: `callback` signs the challenge.
+  /// Like [Auth.reauth], the client keeps the proof.
+  Future<({String reauthToken, String expiresAt})> reauthWithOptions(
+    PasskeyCallback callback, {
+    RequestOptions? options,
+  }) async {
+    final start = await reauthOptions(options: options);
+    final credential = await callback(start.options);
+    return _auth.reauth('passkey', credential: credential, options: options);
+  }
 }

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `client.auth.passkeys`: `list`, `rename`, `remove` and the options and verify calls of each ceremony (`register_*`, `sign_in_*`, `step_options`, `enroll_*`, `reauth_options`), with the credential an authenticator made passed through as JSON. A program has no authenticator, so there is no `sign_in`. `verify_step(..., "passkey", credential=…)` and `reauth({"method": "passkey", "credential": …})` take a passkey; `EnrollmentChallenge` carries `next`.
+
 ## 0.9.9
 
 No changes; released on the same version as the `backd` server.

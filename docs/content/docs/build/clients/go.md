@@ -112,6 +112,29 @@ step, err = auth.SignInWithIDToken(ctx, "apple", client.IDTokenInput{IDToken: jw
 
 The PKCE verifier of a redirect sign-in is kept in an `OAuthStorage` (memory by default, `Options.OAuthStorage`) between the start and the end. The email flows (`VerifyEmail`, `RequestPasswordReset`, `ResetPassword`, `RequestEmailChange`, …) send no credentials and answer alike whether or not the address is known.
 
+### Passkeys
+
+A passkey is made and used by an authenticator (a phone, a security key, a password manager), which a program does not have, so the Go client has **no passkey sign-in**: the browser or an app does the ceremony. `c.Auth().Passkeys` has what surrounds it: `List`, `Rename` and `Remove` for the signed-in user's own (adding and removing need a fresh proof, `Auth().Reauth`), and the plain options and verify calls of each ceremony, so a test with a software authenticator, or a program with its own platform code, can drive the server. The options and the credential pass through as JSON (`json.RawMessage`).
+
+```go
+start, _ := c.Auth().Passkeys.RegisterOptions(ctx)                       // needs a recent proof
+credential := authenticator.Register(start.Options)                      // yours: a software or platform authenticator
+passkey, _ := c.Auth().Passkeys.RegisterVerify(ctx, start.ChallengeID, credential, "Laptop")
+
+in, _ := c.Auth().Passkeys.SignInOptions(ctx, client.PasskeySignInInput{Strategy: "passkey"})
+step, _ := c.Auth().Passkeys.SignInVerify(ctx, "", in.ChallengeID, authenticator.Assert(in.Options))   // the session, or the next step
+
+// a strategy with a passkey after the password: Step.Next is ["passkey"]
+opts, _ := c.Auth().Passkeys.StepOptions(ctx, step.Challenge)
+c.Auth().Passkeys.VerifyStep(ctx, step.Challenge, authenticator.Assert(opts.Options))
+
+// a passkey as the fresh proof
+re, _ := c.Auth().Passkeys.ReauthOptions(ctx)
+c.Auth().Reauth(ctx, client.ReauthInput{Method: "passkey", Credential: authenticator.Assert(re.Options)})
+```
+
+`EnrollOptions` and `EnrollVerify` add the first passkey of a sign-in whose strategy needs one (`Step.Kind` is `StepEnrollment`, `Step.Next` is `["passkey"]`). The `backd` command line (built on this client) lists and removes passkeys too; see [the command line](../../../operate/administration/cli/).
+
 ### Sensitive actions
 
 Changing a password, an address, the second factor, deleting the account or linking a provider asks for a **fresh proof of identity**. `Reauth` gets one and the client sends it while it is good; `WithProof` does the asking for you:

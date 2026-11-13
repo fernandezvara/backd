@@ -122,6 +122,28 @@ A realm that verifies addresses answers a sign-up with `VerificationRequiredErro
 
 An **API key** needs no sign-in: pass `api_key=` and every call sends it. Keep it to server-side programs.
 
+### Passkeys
+
+A passkey is made and used by an authenticator (a phone, a security key, a password manager), which a script does not have, so the Python client has **no passkey sign-in**: the browser or an app does the ceremony. `client.auth.passkeys` has what surrounds it: `list`, `rename` and `remove` for the signed-in user's own (adding and removing need a fresh proof, `auth.reauth`), and the plain options and verify calls of each ceremony, so a test with a software authenticator, or a program with its own platform code, can drive the server. The options and the credential pass through as JSON (dicts).
+
+```python
+start = client.auth.passkeys.register_options()                          # needs a recent proof
+passkey = client.auth.passkeys.register_verify(start["challenge_id"], make_credential(start["options"]), "Laptop")
+
+begun = client.auth.passkeys.sign_in_options(strategy="passkey")
+result = client.auth.passkeys.sign_in_verify(begun["challenge_id"], sign(begun["options"]))   # the session, or the next step
+
+# a strategy with a passkey after the password: MfaChallenge.next == ["passkey"]
+opts = client.auth.passkeys.step_options(result.challenge)
+client.auth.verify_step(result.challenge, "passkey", credential=sign(opts["options"]))
+
+# a passkey as the fresh proof
+re = client.auth.passkeys.reauth_options()
+client.auth.reauth({"method": "passkey", "credential": sign(re["options"])})
+```
+
+`enroll_options` and `enroll_verify` add the first passkey of a sign-in whose strategy needs one (an `EnrollmentChallenge` whose `next` is `["passkey"]`). Every call exists on `AsyncClient` too, awaited.
+
 ### Sensitive actions
 
 Changing the password or the address, deleting the account, unlinking a sign-in method, managing the second factor: the server wants a fresh proof. `client.auth.reauth({"method": "password", "password": ...})` (or `totp`, `recovery_code`, `email_code` after `request_reauth_code()`) gives it, and the client sends it with the sensitive calls while it is good. `with_proof(ask, action)` runs an action and, when the server asks for a proof, calls `ask(methods)` for it and tries the action once more.
