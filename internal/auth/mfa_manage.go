@@ -277,8 +277,11 @@ func (s *Users) enrollChallenge(ctx context.Context, token string) (AuthChalleng
 // role requires MFA): the same secret and QR as BeginTOTPSetup, asked for with the challenge
 // the first factor gave instead of a session.
 func (s *Users) BeginEnrollment(ctx context.Context, challenge string) (TOTPSetup, error) {
-	_, u, err := s.enrollChallenge(ctx, challenge)
-	if err != nil {
+	c, u, err := s.enrollChallenge(ctx, challenge)
+	if err != nil || s.pendingMethod(c) != MethodTOTP {
+		if err == nil {
+			err = ErrInvalidChallenge // the step asks for a passkey, not an authenticator
+		}
 		return TOTPSetup{}, err
 	}
 	return s.BeginTOTPSetup(ctx, u)
@@ -290,6 +293,9 @@ func (s *Users) BeginEnrollment(ctx context.Context, challenge string) (TOTPSetu
 // challenge.
 func (s *Users) CompleteEnrollment(ctx context.Context, challenge, setupID, code string) (Verified, []string, error) {
 	c, u, err := s.enrollChallenge(ctx, challenge)
+	if err == nil && s.pendingMethod(c) != MethodTOTP {
+		err = ErrInvalidChallenge
+	}
 	if err != nil {
 		return Verified{}, nil, err
 	}
@@ -317,7 +323,7 @@ func (s *Users) CompleteEnrollment(ctx context.Context, challenge, setupID, code
 		}
 		st = registry.Strategy{Methods: append(slices.Clone(doneOf(c)), MethodTOTP)}
 	}
-	out, err := s.nextStep(ctx, u, st, append(slices.Clone(doneOf(c)), MethodTOTP), handover{newUser: c.NewUser, profile: c.Profile, org: c.ViaOrg, strategy: c.Strategy})
+	out, err := s.nextStep(ctx, u, st, append(slices.Clone(doneOf(c)), MethodTOTP), handover{newUser: c.NewUser, profile: c.Profile, org: c.ViaOrg, strategy: c.Strategy, passkey: c.Passkey, passkeySynced: c.PasskeySynced})
 	if err != nil {
 		return Verified{}, nil, err
 	}
@@ -362,13 +368,27 @@ func (s *Users) ResetMFA(ctx context.Context, userID, actorID string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := s.Store.MFAOf(ctx, userID); errors.Is(err, ErrNotFound) {
-		return ErrMFANotEnabled
-	} else if err != nil {
+	_, mfaErr := s.Store.MFAOf(ctx, userID)
+	if mfaErr != nil && !errors.Is(mfaErr, ErrNotFound) {
+		return mfaErr
+	}
+	keys, err := s.Store.ListByUser(ctx, userID)
+	if err != nil {
 		return err
 	}
-	if err := s.Store.DeleteMFA(ctx, userID); err != nil {
-		return err
+	if errors.Is(mfaErr, ErrNotFound) && len(keys) == 0 {
+		return ErrMFANotEnabled
+	}
+	// Both kinds of second step go: the authenticator and the passkeys.
+	if mfaErr == nil {
+		if err := s.Store.DeleteMFA(ctx, userID); err != nil {
+			return err
+		}
+	}
+	for _, k := range keys {
+		if err := s.Store.Delete(ctx, userID, k.ID); err != nil {
+			return err
+		}
 	}
 	if err := s.Store.DeleteChallengesOfUser(ctx, userID); err != nil {
 		return err
@@ -376,7 +396,7 @@ func (s *Users) ResetMFA(ctx context.Context, userID, actorID string) error {
 	if err := s.endSessions(ctx, userID, "mfa_reset"); err != nil {
 		return err
 	}
-	s.Audit(ctx, AuditMFAReset, userTarget(userID), nil)
+	s.Audit(ctx, AuditMFAReset, userTarget(userID), map[string]any{"passkeys_removed": len(keys)})
 	if s.Settings.Email != nil && u.ErasedAt.IsZero() && !u.Disabled {
 		s.queueNotice(ctx, EmailRequest{Kind: email.MFAReset, UserID: u.ID, Address: u.Email, Locale: s.LocaleOf(u), Notice: true})
 	}

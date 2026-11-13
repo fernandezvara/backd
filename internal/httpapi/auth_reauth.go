@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/fernandezvara/backd/internal/auth"
@@ -57,7 +58,7 @@ func (a *authAPI) reauth(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"method": "string", "code": "string?", "password": "string?"})
+	f, ok := fields(w, r, obj, map[string]string{"method": "string", "code": "string?", "password": "string?", "credential": "object?"})
 	if !ok {
 		return
 	}
@@ -78,8 +79,15 @@ func (a *authAPI) reauth(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		proof = c
+	case auth.ReauthPasskey:
+		cred, has := f["credential"]
+		if !has {
+			writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "credential", Reason: "is required for the passkey method"})
+			return
+		}
+		proof = string(jsonBytes(cred))
 	default:
-		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "method", Reason: "must be totp, recovery_code, password or email_code"})
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "method", Reason: "must be totp, recovery_code, passkey, password or email_code"})
 		return
 	}
 	g, err := usersOf(r).Reauthenticate(r.Context(), principalOf(r), method, proof, clientIP(r))
@@ -99,4 +107,15 @@ func (a *authAPI) reauthEmailCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"status": "accepted"})
+}
+
+// reauthPasskeyOptions handles POST /_auth/reauth/passkey/options: the options for proving who the
+// signed-in user is with one of their passkeys; the proof is then sent to POST /_auth/reauth.
+func (a *authAPI) reauthPasskeyOptions(w http.ResponseWriter, r *http.Request) {
+	options, err := usersOf(r).BeginPasskeyReauth(r.Context(), principalOf(r))
+	if err != nil {
+		authError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"options": json.RawMessage(options)})
 }

@@ -15,6 +15,7 @@ A session proves who a request comes from **when it started**, not that the pers
 | The user has | The proof (`method`) |
 |---|---|
 | a [second factor](../mfa/) | `{"method": "totp" or "recovery_code", "code": "…"}`; a password alone is **not** enough |
+| a [passkey](../sessions/#passkeys) | `POST /_auth/reauth/passkey/options` gives the options (bound to the session, this user's passkeys), then `{"method": "passkey", "credential": {…}}`; a user with a passkey may use it with or without TOTP, and a password alone is not enough |
 | a password, no second factor | `{"method": "password", "password": "…"}` |
 | neither (a provider-only user) | `{"method": "email_code", "code": "…"}`, after `POST /_auth/reauth/email-code` emails a 6-digit code (the `reauth-code` message; 10 minutes, 5 attempts) |
 

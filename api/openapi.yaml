@@ -3219,6 +3219,102 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_auth/mfa/passkey/options:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Options for the passkey a sign-in waits for
+      description: |
+        When the strategy's next step is a passkey (`next: ["passkey"]`), the app asks for the options of
+        `navigator.credentials.get` with the `challenge` of the first step. Only this user's passkeys are allowed:
+        the first step already said who they are. The answer to the ceremony goes to `POST /_auth/mfa/verify` with
+        `method: "passkey"` and the `credential`. A challenge that is unknown, used, expired or waiting for
+        something else is `400 invalid_challenge`.
+      operationId: mfaPasskeyOptions
+      security: [{}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [challenge]
+              properties:
+                challenge: { type: string }
+      responses:
+        "200":
+          description: The options.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PasskeyOptions" }
+        "400": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/mfa/passkey/register/options:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Options for adding the passkey a sign-in waits for
+      description: |
+        A person who completes a strategy with a passkey step and has none gets the enrolment challenge
+        (`mfa_enrollment_required` with `next: ["passkey"]`). With it, the app asks for the options of
+        `navigator.credentials.create` (a resident key, user verification, no attestation). `400 invalid_challenge`
+        for a challenge that does not wait for a passkey.
+      operationId: mfaPasskeyRegisterOptions
+      security: [{}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [challenge]
+              properties:
+                challenge: { type: string }
+      responses:
+        "200":
+          description: The options.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PasskeyOptions" }
+        "400": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_auth/mfa/passkey/register/verify:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Add the passkey and finish the sign-in
+      description: |
+        Sends the credential the browser made with the enrolment `challenge`. The passkey is stored and the
+        sign-in goes on in the strategy: the answer is the session (or the next step), as for
+        `POST /_auth/mfa/verify`. A passkey step makes **no recovery codes**. A credential that does not verify is
+        `400 invalid_passkey`; five of them end the challenge (`400 invalid_challenge`).
+      operationId: mfaPasskeyRegisterVerify
+      security: [{}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [challenge, credential]
+              properties:
+                challenge: { type: string }
+                credential: { type: object, description: "The PublicKeyCredential the browser made, in its JSON form." }
+                name: { type: string, maxLength: 64 }
+                cookie: { type: boolean, description: "As in `POST /_auth/login`." }
+      responses:
+        "200": { $ref: "#/components/responses/SignInResult" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_auth/mfa/verify:
     parameters: [{ $ref: "#/components/parameters/realm" }]
     post:
@@ -3226,8 +3322,10 @@ paths:
       summary: Finish a sign-in with a second factor
       description: |
         Trades the `challenge` a first factor answered with and a code of the user's second
-        factor (`method`: `totp`, or `recovery_code`) for the session the first factor was
-        waiting for. The answer is the first factor's own (a provider's includes `new_user` and
+        factor (`method`: `totp`, or `recovery_code`) or the credential of a passkey (`method: "passkey"` with
+        `credential`, when the challenge says `next: ["passkey"]`) for the session the first factor was
+        waiting for (or, in a strategy of more steps, the next challenge). A method that is not the step
+        asked for is `400 invalid_code`. The answer is the first factor's own (a provider's includes `new_user` and
         `profile`); a recovery code adds `recovery_codes_left`.
 
         A wrong code is `400 invalid_code` with the attempts left in `details`; a challenge
@@ -3243,11 +3341,12 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [challenge, method, code]
+              required: [challenge, method]
               properties:
                 challenge: { type: string }
-                method: { type: string, enum: [totp, recovery_code] }
-                code: { type: string, description: "The 6 digits of the authenticator app, or a recovery code (`xxxxx-xxxxx`)." }
+                method: { type: string, enum: [totp, recovery_code, passkey], description: "The step the challenge waits for: `totp` (or `recovery_code`) or `passkey`." }
+                code: { type: string, description: "For `totp` and `recovery_code`: the 6 digits of the authenticator app, or a recovery code (`xxxxx-xxxxx`)." }
+                credential: { type: object, description: "For `passkey`: the PublicKeyCredential the browser made with the options of `POST /_auth/mfa/passkey/options`." }
                 cookie: { type: boolean, description: "As in `POST /_auth/login`." }
       responses:
         "200": { $ref: "#/components/responses/SignInResult" }
@@ -3606,6 +3705,28 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_auth/reauth/passkey/options:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth]
+      summary: Options for proving who you are with a passkey
+      description: |
+        For a user who has a passkey: the options of `navigator.credentials.get`, bound to the session. The
+        answer goes to `POST /_auth/reauth` with `method: "passkey"` and the `credential`. A user without a
+        passkey is `400 validation_error` (`method`).
+      operationId: reauthPasskeyOptions
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The options.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PasskeyOptions" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_auth/reauth:
     parameters: [{ $ref: "#/components/parameters/realm" }]
     post:
@@ -3618,7 +3739,8 @@ paths:
         administrator signed in with a session.
 
         The proof is the strongest the user has (`reauth_methods` of `GET /_auth/me`): `totp` or
-        `recovery_code` with a second factor (a password alone is not enough then), `password`
+        `recovery_code` with a second factor, or `passkey` for a user who has one (with or without TOTP; a
+        password alone is not enough then), `password`
         without one, `email_code` (a code sent by `POST /_auth/reauth/email-code`) for a user with
         neither. The token is bound to the session, stored only as a hash, and works for the
         realm's `reauth.ttl` and any number of actions in it. Wrong proofs count against the same
@@ -3635,8 +3757,9 @@ paths:
               additionalProperties: false
               required: [method]
               properties:
-                method: { type: string, enum: [totp, recovery_code, password, email_code] }
+                method: { type: string, enum: [totp, recovery_code, passkey, password, email_code] }
                 code: { type: string, description: "For `totp`, `recovery_code` and `email_code`." }
+                credential: { type: object, description: "For `passkey`: the PublicKeyCredential made with the options of `POST /_auth/reauth/passkey/options`." }
                 password: { type: string, description: "For `password`." }
       responses:
         "200":
@@ -11266,7 +11389,7 @@ components:
           type: array
           description: >-
             The proofs `POST /_auth/reauth` takes from this user: `totp` and `recovery_code` with a
-            second factor, else `password`, else `email_code`. Empty when the user has no way to give
+            second factor and `passkey` with a passkey, else `password`, else `email_code`. Empty when the user has no way to give
             one (no password, no second factor, a realm that sends no email): sensitive actions then
             don't ask.
           items: { type: string, enum: [totp, recovery_code, password, email_code] }
@@ -11310,6 +11433,13 @@ components:
         email_verified: { type: boolean }
         created_at: { $ref: "#/components/schemas/Timestamp" }
         last_used_at: { oneOf: [{ $ref: "#/components/schemas/Timestamp" }, { type: "null" }] }
+
+    PasskeyOptions:
+      type: object
+      additionalProperties: false
+      required: [options]
+      properties:
+        options: { type: object, description: "The WebAuthn options in their JSON form (`{ publicKey: … }`)." }
 
     PasskeyLoginOptions:
       type: object
@@ -11990,8 +12120,8 @@ components:
       properties:
         mfa_required: { const: true, description: "Always true; kept from before strategies. `next` is the current name." }
         challenge: { type: string }
-        methods: { type: array, items: { type: string, enum: [totp, recovery_code] }, description: "The methods the person may use now, with recovery_code for totp. Kept from before strategies." }
-        next: { type: array, items: { type: string, enum: [totp] }, description: "The method the strategy asks for next. A recovery code is accepted wherever `totp` is next." }
+        methods: { type: array, items: { type: string, enum: [totp, recovery_code, passkey] }, description: "The methods the person may use now, with recovery_code for totp. Kept from before strategies." }
+        next: { type: array, items: { type: string, enum: [totp, passkey] }, description: "The method the strategy asks for next. A recovery code is accepted wherever `totp` is next." }
         strategy: { type: string, description: "The strategy the sign-in follows; absent when the realm has none named (settings built by hand)." }
 
     ConsentsGiven:
@@ -12062,6 +12192,7 @@ components:
       properties:
         mfa_enrollment_required: { const: true }
         challenge: { type: string }
+        next: { type: array, items: { type: string, enum: [totp, passkey] }, description: "What the person is asked to set up: an authenticator (`totp`) or a passkey." }
         strategy: { type: string }
 
     ProviderSession:
