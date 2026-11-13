@@ -69,7 +69,7 @@ sections:
 
       - title: Users and single sign-on
         icon: "users"
-        description: "Built-in users per realm with argon2id passwords, sessions valid across the realm's databases, API keys for services, invitations and brute-force protection. Sign in with Google, Microsoft or Apple, a second factor, magic links, email verification, password reset and address changes through any email provider you call from a function, consents, and erasure of a user's data on request."
+        description: "Built-in users per realm with argon2id passwords, sessions valid across the realm's databases, API keys for services, invitations and brute-force protection. Sign in with Google, Microsoft or Apple, passkeys, a second factor, magic links, email verification, password reset and address changes through any email provider you call from a function, consents, and erasure of a user's data on request."
 
       - title: Access rules
         icon: "shield-check"

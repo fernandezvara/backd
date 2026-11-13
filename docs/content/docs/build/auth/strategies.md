@@ -24,7 +24,7 @@ The **methods** are:
 | `magic_link` | uses a link or code sent to their address ([Magic links](../magic-links/)) | the first method |
 | a provider's name (`google`, `microsoft`, `apple`) | signs in at the provider ([Sign in with a provider](../providers/)) | the first method |
 | `sso` | signs in through their organization's own connection ([Organization sign-in](../../../operate/organization-sign-in/)) | the first method |
-| `passkey` | uses a passkey on their device, a password manager or a security key ([Passkeys](../sessions/#passkeys)) | the first method |
+| `passkey` | uses a passkey on their device, a password manager or a security key ([Passkeys](../passkeys/)) | the first method |
 | `totp` | types the code of an authenticator app, or a recovery code ([Multi-factor authentication](../mfa/)) | a later method |
 
 A passkey can also be a **later step** (`admin_passkey: [password, passkey]`): after the password, the challenge says `next: ["passkey"]` and the app finishes the sign-in with the passkey, as it would with a code; a person who has none is led to add one as part of signing in. The session records `methods: ["password", "passkey"]`.

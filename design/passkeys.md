@@ -1,7 +1,7 @@
 # Design: passkeys (WebAuthn)
 
-- **Issues:** milestone `41-passkeys` (#907–#916), to be re-planned on [auth-strategies.md](./auth-strategies.md) (§15)
-- **Status:** decided (2026-11-12; §16 records the answers). Two things are verified in the first step of the work, not assumed: the library's licence and API, and the browser test authenticator (§15, P1).
+- **Issues:** milestone `42-passkeys` (#909–#916), built on [auth-strategies.md](./auth-strategies.md) (§15); implemented (PRs #932–#938 and the documentation step)
+- **Status:** decided and implemented (2026-11-12; §16 records the answers). Two things are verified in the first step of the work, not assumed: the library's licence and API, and the browser test authenticator (§15, P1).
 - **Builds on:** [auth-strategies.md](./auth-strategies.md) (**decided; comes first**: a passkey is one *method* of a strategy) and [mfa-passwordless.md](./mfa-passwordless.md) (challenges, reauth, recovery, limits). That design deferred passkeys to this one.
 - **Related designs:** [scoped-sessions.md](./scoped-sessions.md) (sessions in realms with organizations), [account-lifecycle.md](./account-lifecycle.md), [email-delivery.md](./email-delivery.md) (hosted pages, `allowed_redirects`), [identity-providers.md](./identity-providers.md), [admin-ui.md](./admin-ui.md)
 

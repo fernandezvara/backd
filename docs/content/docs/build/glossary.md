@@ -60,6 +60,10 @@ One step of a [strategy](#strategy): `password`, `magic_link`, `sso`, a [provide
 
 A group of users that documents can belong to and rules can ask about: a company, a workspace, a club. Not the same as a [realm](#realm), which is the whole application. See [Organizations](../organizations/).
 
+## Passkey
+
+A key pair made on a person's device, password manager or security key for the realm's domain: backd keeps the public key, and the person signs in with a fingerprint, face or PIN instead of a password. A [method](#method) of a strategy. See [Passkeys](../auth/passkeys/).
+
 ## Provider
 
 An outside sign-in service, such as Google, Microsoft or Apple, declared in the realm's `providers:`. For a company's own use of one, see [connection](#connection). See [Sign in with a provider](../auth/providers/).
@@ -67,6 +71,10 @@ An outside sign-in service, such as Google, Microsoft or Apple, declared in the 
 ## Realm
 
 The authority a set of data shares: its users, roles, sessions, API keys, organizations, email templates and secrets. A realm can be a whole application or several applications that share one sign-in. See [Getting started](../../getting-started/) and [Realm settings](../configuration/realm/).
+
+## Relying party
+
+The website a passkey is made for, named by `auth.passkeys.rp_id` (a domain such as `example.com`). A passkey works only on pages within it, and changing it loses every registered passkey. See [Passkeys](../auth/passkeys/#turning-them-on).
 
 ## Role
 
