@@ -63,6 +63,15 @@ func (a *authAPI) oauthRoutes(r chi.Router, json func(http.Handler) http.Handler
 // signInMethod is how a session records the first factor of a provider sign-in: the provider's
 // name, or, through an organization's connection, the connection itself, so that session is never
 // taken for one opened by the realm's own provider.
+// strategyMethodOf is the method a provider's sign-in starts a strategy with: the provider's name,
+// or sso for a connection of an organization.
+func strategyMethodOf(p *registry.Provider) string {
+	if p.Org != "" {
+		return registry.MethodSSO
+	}
+	return p.Name
+}
+
 func signInMethod(p *registry.Provider) string {
 	if p.Org != "" {
 		return auth.ConnectionMethod(p.Org, p.Name)
@@ -340,11 +349,11 @@ func (a *authAPI) startOAuth(w http.ResponseWriter, r *http.Request, in startInp
 		writeError(w, r, http.StatusBadRequest, codeInvalidRedirect, "redirect_to isn't within the realm's auth.sign_in.allowed_redirects (or email.allowed_redirects)")
 		return "", false
 	}
-	// A realm provider signs in with a strategy that starts with it; an organization's own
-	// connection is not a strategy, and linking signs nobody in.
+	// A sign-in with a provider follows a strategy that starts with it (an organization's connection:
+	// with sso); linking signs nobody in.
 	strategy := ""
-	if p.Org == "" && in.intent == auth.IntentSignIn {
-		st, err := svc.ChooseStrategy(in.strategy, signInMethod(p))
+	if in.intent == auth.IntentSignIn {
+		st, err := svc.ChooseStrategy(in.strategy, strategyMethodOf(p))
 		if err != nil {
 			authError(w, r, err)
 			return "", false

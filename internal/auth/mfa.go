@@ -190,25 +190,22 @@ func (s *Users) ChooseStrategy(name, first string) (registry.Strategy, error) {
 }
 
 // strategyMethod is the name a strategy gives to the first factor a session records: the magic
-// link is recorded as "link" and listed as magic_link.
+// link is recorded as "link" and listed as magic_link, and any organization connection
+// ("sso:<org>:<provider>") as sso.
 func strategyMethod(factor string) string {
 	if factor == MagicLinkLoginMethod {
 		return registry.MethodMagicLink
 	}
+	if strings.HasPrefix(factor, "sso:") {
+		return registry.MethodSSO
+	}
 	return factor
 }
-
-// isConnectionFactor says a sign-in came through an organization's own connection, which is
-// not a strategy (design/auth-strategies.md §8).
-func isConnectionFactor(factor string) bool { return strings.HasPrefix(factor, "sso:") }
 
 // afterFirstFactor decides what a proved first method leads to: a session, or a challenge for
 // the next step of the strategy. methods are recorded on the session; the first factor is
 // always the first of them.
 func (s *Users) afterFirstFactor(ctx context.Context, u User, factor string, h handover) (Redeemed, error) {
-	if isConnectionFactor(factor) {
-		return s.finishSignIn(ctx, u, []string{factor}, h)
-	}
 	st, err := s.Settings.StrategyFor(h.strategy, strategyMethod(factor))
 	if err != nil {
 		return Redeemed{}, err

@@ -306,7 +306,7 @@ auth:
 #   invitation_link: "https://app.example.com/join?token={token}&org={org}"   # within sign_in.allowed_redirects
 #   # Let organizations connect their own Google Workspace or Microsoft tenant (needs a role
 #   # with manage: sso, e.g. owner: { manage: [org, members, roles, teams, sso] }):
-#   sso: { providers: [google, microsoft] }
+#   sso: { providers: [google, microsoft] }   # also add a strategy that starts with sso, e.g. `sso: [sso]`
 
 # Roles that access rules can check. `users` lists emails that get the role
 # at startup (seed assignments): plain emails, or objects with an `email`.

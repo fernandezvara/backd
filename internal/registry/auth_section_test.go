@@ -177,3 +177,16 @@ func TestActiveRoles(t *testing.T) {
 		t.Errorf("a session with no strategy keeps every role: %v", active)
 	}
 }
+
+func TestSSOStrategyNeedsOrganizationSSO(t *testing.T) {
+	if got := authErrors(t, "auth:\n  strategies:\n    sso: [sso]\n"); !strings.Contains(got, "sso needs organizations.sso") {
+		t.Errorf("without organizations.sso: %q", got)
+	}
+	ok := "auth:\n  strategies:\n    password: [password]\n    sso: [sso]\n    sso_totp: [sso, totp]\norganizations:\n  sso: {}\n  roles:\n    owner: {manage: [org, members, roles, teams, sso]}\n    member: {}\n  default_roles: [member]\n"
+	if got := authErrors(t, ok); got != "" {
+		t.Errorf("with organizations.sso: %q", got)
+	}
+	if st := MethodSteps("sso"); !st.First || st.Later {
+		t.Errorf("sso is a first step only: %+v", st)
+	}
+}

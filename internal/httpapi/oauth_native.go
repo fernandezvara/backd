@@ -82,10 +82,10 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// A realm provider signs in with a strategy that starts with it; a connection is not one.
+	// A sign-in with a provider follows a strategy that starts with it (an organization's connection: with sso).
 	strategy := ""
-	if p.Org == "" && intent == auth.IntentSignIn {
-		st, err := svc.ChooseStrategy(str("strategy"), signInMethod(p))
+	if intent == auth.IntentSignIn {
+		st, err := svc.ChooseStrategy(str("strategy"), strategyMethodOf(p))
 		if err != nil {
 			authError(w, r, err)
 			return

@@ -40,7 +40,7 @@ Standing rules carried over: no session in a URL; challenges hash-only with a TT
 | Topic | Decision |
 |---|---|
 | Strategy | a name and an ordered list of **methods**; every method must succeed, in order; the session records the strategy it was made with |
-| Methods | `password`, `passkey`, `totp`, `magic_link` and the name of any configured provider (`google`, `microsoft`, `apple`; generic OIDC later). `recovery_code` is not listed: it stands in for `totp` wherever `totp` appears. |
+| Methods | `password`, `passkey`, `totp`, `magic_link`, `sso` (an organization's own connection, §8) and the name of any configured provider (`google`, `microsoft`, `apple`; generic OIDC later). `recovery_code` is not listed: it stands in for `totp` wherever `totp` appears. |
 | Order | the **first** method is any method and identifies the person; **later** methods are only `password`, `totp` or `passkey` (an email code or a provider as a second step was rejected in the MFA design) |
 | Who picks | the **client**, with a `strategy` field on the sign-in call; backd does not guess from the user agent |
 | Roles | a role may list `strategies`; it is **active in a session** only when the session's strategy is in that list; no list means every strategy |
@@ -210,7 +210,7 @@ sequenceDiagram
 
 ## 8. Organizations and other realms
 
-- In realms with organizations ([scoped-sessions.md](./scoped-sessions.md)) the org routes take `strategy` too; the strategy decides the steps and the organization the membership check, as the password sign-in does today. An organization's own **connection** (SSO) stays a separate way in and is not a strategy in this design; whether it should be is a follow-up.
+- In realms with organizations ([scoped-sessions.md](./scoped-sessions.md)) the org routes take `strategy` too; the strategy decides the steps and the organization the membership check, as the password sign-in does today. An organization's own **connection** (SSO) is a strategy method too (**decided 2026-11-13**): `sso` starts a strategy, as a provider's name does, so `sso: [sso]` and `sso_totp: [sso, totp]` give a connection sign-in the same steps, the same `strategy` field on the connection's start and ID-token routes, and the same role filter. The strategies are defined once in the realm; `sso` needs `organizations.sso`. Before this decision a connection sign-in asked for no second step and kept every role.
 - `auth: disabled` realms are untouched.
 
 ## 9. Limits and security considerations

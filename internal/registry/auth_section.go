@@ -20,6 +20,8 @@ const (
 	MethodPasskey   = "passkey"
 	MethodTOTP      = "totp"
 	MethodMagicLink = "magic_link"
+	// MethodSSO is the sign-in through an organization's own connection (organizations.sso).
+	MethodSSO = "sso"
 )
 
 // Steps says where a method may stand in a strategy.
@@ -32,10 +34,11 @@ var methodSteps = map[string]Steps{
 	MethodPasskey:   {First: true, Later: true},
 	MethodTOTP:      {First: false, Later: true},
 	MethodMagicLink: {First: true},
+	MethodSSO:       {First: true},
 }
 
 // AllMethods lists the Method constants.
-var AllMethods = []string{MethodPassword, MethodPasskey, MethodTOTP, MethodMagicLink}
+var AllMethods = []string{MethodPassword, MethodPasskey, MethodTOTP, MethodMagicLink, MethodSSO}
 
 // MethodSteps says where method may stand: a provider's name (anything not built in) can only
 // be first.
@@ -277,11 +280,15 @@ func (s RealmSettings) methodProblem(method string, pos int) string {
 		if !s.MagicLink.Enabled {
 			return "magic_link needs auth.magic_link.enabled: true (and the email section)"
 		}
+	case MethodSSO:
+		if s.Organizations == nil || s.Organizations.SSO == nil {
+			return "sso needs organizations.sso (the organizations' own sign-in connections)"
+		}
 	case "recovery_code":
 		return "recovery codes are not a method: they stand in for totp wherever a strategy lists totp"
 	default:
 		if _, ok := s.Providers[method]; !ok {
-			return fmt.Sprintf("%q is not a method (password, passkey, totp, magic_link) or a provider declared in auth.providers", method)
+			return fmt.Sprintf("%q is not a method (password, passkey, totp, magic_link, sso) or a provider declared in auth.providers", method)
 		}
 	}
 	if pos > 0 && !MethodSteps(method).Later {

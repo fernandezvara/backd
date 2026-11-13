@@ -172,7 +172,7 @@ func TestEverySignInEntryPointEndsInTheEngine(t *testing.T) {
 		// the entry points: password (sign-in, sign-up, verify email), magic link, providers, organizations
 		"s.afterFirstFactor": {"sessions.go": 2, "verify.go": 1, "orgsignin.go": 1, "magiclink.go": 1, "oauth.go": 2},
 		// the engine finishes the strategy; the consent step finishes what it paused
-		"s.finishSignIn": {"mfa.go": 2},
+		"s.finishSignIn": {"mfa.go": 1},
 		// a session is started in these places only
 		"s.startSessionWith": {"consents_signin.go": 2, "orgsignin.go": 1},
 	}
@@ -187,5 +187,37 @@ func TestEverySignInEntryPointEndsInTheEngine(t *testing.T) {
 				t.Errorf("%s in %s: %d calls, want %d (a sign-in that skips the engine skips the strategy's steps)", name, f, got[f], n)
 			}
 		}
+	}
+}
+
+// An organization's own connection is a first method (sso) like any other: the strategy that
+// starts with it decides the steps, and the session records the strategy.
+func TestAConnectionSignInFollowsAnSSOStrategy(t *testing.T) {
+	ctx := context.Background()
+	f := newMFAFixture(t)
+	f.svc.Settings.Strategies = []registry.Strategy{
+		{Name: "sso", Methods: []string{"sso"}},
+		{Name: "sso_totp", Methods: []string{"sso", "totp"}},
+	}
+	method := ConnectionMethod("org-1", "google")
+	if _, err := f.svc.StartProviderSessionFor(ctx, f.user, method, "", false, nil, "org-1"); !errors.Is(err, ErrStrategyRequired) {
+		t.Fatalf("two strategies start with sso and none is named: %v", err)
+	}
+	out, err := f.svc.StartProviderSessionFor(ctx, f.user, method, "sso", false, nil, "org-1")
+	if err != nil || out.Challenge != nil || out.Principal.Session.Strategy != "sso" || out.Principal.Session.Org != "org-1" {
+		t.Fatalf("sso: %+v %v", out, err)
+	}
+	out, err = f.svc.StartProviderSessionFor(ctx, f.user, method, "sso_totp", false, nil, "org-1")
+	if err != nil || out.Challenge == nil || out.Challenge.Strategy != "sso_totp" {
+		t.Fatalf("sso_totp: %+v %v", out, err)
+	}
+	v, err := f.svc.VerifyMFA(ctx, out.Challenge.Token, MethodTOTP, f.code(t, 0), "")
+	if err != nil || v.Principal.Session.Strategy != "sso_totp" || v.Principal.Session.Org != "org-1" || !v.Principal.Session.MFA {
+		t.Fatalf("verified: %+v %v", v.Principal.Session, err)
+	}
+	// A realm with no sso strategy offers no way in through a connection.
+	f.svc.Settings.Strategies = strategies()
+	if _, err := f.svc.StartProviderSessionFor(ctx, f.user, method, "", false, nil, "org-1"); !errors.Is(err, ErrUnknownStrategy) {
+		t.Errorf("no sso strategy: %v", err)
 	}
 }
