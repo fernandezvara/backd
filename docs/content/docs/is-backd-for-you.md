@@ -16,6 +16,7 @@ Read this before you invest an afternoon. `backd` is a config-driven REST backen
 - You **self-host**, on Docker, Kubernetes or a plain host, and you can run MongoDB (a replica set, even a single node).
 - You build **multi-tenant** or business-to-business products: [organizations](../build/organizations/), teams, and company sign-in with Google Workspace or Microsoft.
 - You need **server-side logic** you can write in TypeScript: [functions](../build/functions/), background jobs, cron, webhooks and triggers.
+- You want people to sign in **without a password**: [passkeys](../build/auth/passkeys/), magic links or Google, Microsoft and Apple, with a second factor where a role needs one.
 - You must answer **compliance** questions: an audit trail, user erasure, personal-data export, field encryption.
 - Your clients are in JavaScript, Dart/Flutter, Go or Python, or can use a generated [OpenAPI](../build/api/openapi/) client.
 
@@ -24,7 +25,7 @@ Read this before you invest an afternoon. `backd` is a config-driven REST backen
 - Your data is **relational** and you need SQL joins and transactions across everything. `backd` has [references](../build/api/references/) and one multi-document transaction per database ([`_batch`](../build/api/documents/)), not a relational engine.
 - You want a **hosted service** with nothing to run. `backd` is software you operate.
 - You need **GraphQL**, or **SAML** sign-in, today. Both are decided against (see below).
-- You need **SCIM provisioning**, **passkeys**, **geospatial queries** or **atomic update operators** now. They are not built (table below).
+- You need **SCIM provisioning**, **geospatial queries** or **atomic update operators** now. They are not built (table below).
 - You need your server logic in a **language other than TypeScript or JavaScript**. Functions run in Deno.
 - You want to run the server **natively on macOS or Windows**. `backd-server` runs on Linux; on other systems use the container image (the `backd` command line runs everywhere).
 - You build a **Flutter web** app. The Dart client needs a `dart:io` platform, so it covers mobile, desktop and standalone Dart; Flutter web is a follow-up.
@@ -50,7 +51,6 @@ One line each, so you can tell early. "Not built" means no code exists today; th
 | **Sign in with any OpenID Connect provider** (Okta, Keycloak, Auth0, …), for the realm and for organizations | Google, Microsoft and Apple work for the realm; Google and Microsoft for organizations | Planned: [#157](https://github.com/fernandezvara/backd/issues/157), [#599](https://github.com/fernandezvara/backd/issues/599) |
 | **Apple sign-in for organizations** | Use Google or Microsoft for the company's sign-in | Planned: [#598](https://github.com/fernandezvara/backd/issues/598) |
 | **SCIM provisioning** (users created and removed by a company's identity provider) | [Invitations](../build/organizations/) and company sign-in | Design only |
-| **Passkeys (WebAuthn)** | Password or magic link, plus an authenticator-app second factor | Not built |
 | **Atomic update operators** (increment, push, add to set) | `PATCH` is a JSON Merge Patch; use `If-Match` and retry, or a [function](../build/functions/) | Not built |
 | **Built-in request rate limiting** | Failed logins and function calls are limited; put a reverse proxy in front for the rest ([Operate](../operate/#rate-limiting-and-abuse)) | Delegated to the proxy |
 | **Acting on behalf of a user from a client library** | The server accepts `X-Backd-On-Behalf-Of`; call it with your own HTTP client | Planned: [#33](https://github.com/fernandezvara/backd/issues/33) |

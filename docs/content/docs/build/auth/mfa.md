@@ -6,7 +6,7 @@ weight: 537
 toc: true
 ---
 
-A realm asks for a **second factor** by listing `totp` after the first method in a [strategy](../#strategies), for example `admin_password: [password, totp]`. The first method is whatever the user used to say who they are: a password, a [provider](../providers/) or a [magic link](../magic-links/). The second is a one-time code from an authenticator app, or one of ten recovery codes.
+A realm asks for a **second factor** by listing `totp` after the first method in a [strategy](../#strategies), for example `admin_password: [password, totp]`. The first method is whatever the user used to say who they are: a password, a [provider](../providers/) or a [magic link](../magic-links/). The second is a one-time code from an authenticator app, or one of ten recovery codes. A [passkey](../passkeys/) is a stronger second step than a code, and counts as a second factor on its own.
 
 The second step is built **once** and shared by every first method, so the strategy `admin_google: [google, totp]` asks for a code like `admin_password` does.
 

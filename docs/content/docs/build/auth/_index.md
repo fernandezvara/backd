@@ -47,6 +47,7 @@ Whatever the first factor, a user with a second factor is still asked for it —
 | [Users and passwords](users/) | Creating and managing a realm's users with `backd user` or the admin API |
 | [Sign-up, login and sessions](sessions/) | The `/_auth` endpoints: sign up, log in, sessions, password reset, brute-force protection, sign-in methods, deleting the account |
 | [Magic links](magic-links/) | Signing in from an email alone: the link, the code, account claiming |
+| [Passkeys](passkeys/) | Signing in with a fingerprint, face, PIN or security key: how they work, `rp_id` and origins, native apps, a lost device |
 | [Re-authentication](reauth/) | A fresh proof of identity before sensitive actions |
 | [Multi-factor authentication](mfa/) | The TOTP second factor, recovery codes, roles that need it — applies to every first factor, remote providers included |
 | [Sign in with Google, Microsoft or Apple](providers/) | The redirect flow, native ID tokens, linking rules, `account.on_signup` |

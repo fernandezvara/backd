@@ -282,6 +282,8 @@ Each session says the organization it is scoped to (`org`, none for an operator'
 
 ## Passkeys
 
+This is the HTTP reference; [Passkeys](../passkeys/) explains them in plain words, with the configuration, native apps and what to keep for a lost device.
+
 A signed-in user can add **passkeys** to their account: a fingerprint, face or PIN on a device, a password manager or a security key. Each is a key pair made for the realm's domain (`auth.passkeys.rp_id`); backd keeps only the public key and a name. The realm turns them on with [`auth.passkeys`](../../configuration/realm/); until then the routes answer `403 passkey_disabled`.
 
 **Signing in** needs a [strategy](../strategies/) that starts with `passkey`, such as `users_passkey: [passkey]`:
