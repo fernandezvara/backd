@@ -610,3 +610,118 @@ async def test_a_strategy_goes_with_the_sign_in_and_a_longer_one_asks_again(mode
     done = await go(c.auth.verify_step("ch2", "totp", "654321"))
     assert isinstance(done, dict) and done["strategy"] == "deep" and done["roles_inactive"] == ["editor"]
     assert storage.get() == "bds_deep"
+
+
+# -- passkeys: the plain calls around the authenticator -------------------------------------------
+
+OPTIONS = {"publicKey": {"challenge": "AAEC", "rpId": "localhost"}}
+CREDENTIAL = {"id": "AQID", "rawId": "AQID", "type": "public-key", "response": {"clientDataJSON": "BAU"}}
+PASSKEY = {
+    "id": "p1",
+    "name": "Laptop",
+    "created_at": "t",
+    "last_used_at": None,
+    "transports": ["internal"],
+    "backup_eligible": True,
+    "backup_state": False,
+}
+
+
+async def test_passkeys_list_rename_remove(mode: str) -> None:
+    c, server, _ = setup(mode)
+    server.on("GET /_auth/passkeys", {"items": [PASSKEY]})
+    server.on("PATCH /_auth/passkeys/p1", {**PASSKEY, "name": "Work"})
+    server.on("DELETE /_auth/passkeys/p1", None, status=204)
+    c._proof = ("r1", 4102444800.0)
+    assert await go(c.auth.passkeys.list()) == [PASSKEY]
+    assert (await go(c.auth.passkeys.rename("p1", "Work")))["name"] == "Work"
+    assert server.calls[1].content == b'{"name":"Work"}'
+    await go(c.auth.passkeys.remove("p1"))
+    assert server.calls[2].method == "DELETE"
+    assert server.calls[2].headers["X-Backd-Reauth"] == "r1"
+
+
+async def test_passkeys_register_calls_carry_the_proof_and_the_credential(mode: str) -> None:
+    c, server, _ = setup(mode)
+    server.on("POST /_auth/passkeys/register/options", {"challenge_id": "c1", "options": OPTIONS})
+    server.on("POST /_auth/passkeys/register/verify", PASSKEY, status=201)
+    c._proof = ("r1", 4102444800.0)
+    started = await go(c.auth.passkeys.register_options())
+    assert started == {"challenge_id": "c1", "options": OPTIONS}
+    made = await go(c.auth.passkeys.register_verify("c1", CREDENTIAL, "Laptop"))
+    assert made["id"] == "p1"
+    import json
+
+    sent = json.loads(server.calls[1].content)
+    assert sent == {"challenge_id": "c1", "credential": CREDENTIAL, "name": "Laptop"}
+    assert all(call.headers["X-Backd-Reauth"] == "r1" for call in server.calls)
+
+
+async def test_passkey_sign_in_is_two_calls_and_stores_the_session(mode: str) -> None:
+    c, server, storage = setup(mode, strategy="passkey")
+    server.on("POST /_auth/passkey/login/options", {"challenge_id": "c1", "strategy": "passkey", "options": OPTIONS})
+    server.on("POST /_auth/passkey/login/verify", session("bds_pk"))
+    started = await go(c.auth.passkeys.sign_in_options())
+    assert started["challenge_id"] == "c1"
+    import json
+
+    assert json.loads(server.calls[0].content) == {"strategy": "passkey"}
+    done = await go(c.auth.passkeys.sign_in_verify("c1", CREDENTIAL))
+    assert done["token"] == "bds_pk"
+    assert storage.get() == "bds_pk"
+    assert "Authorization" not in server.calls[1].headers
+    assert json.loads(server.calls[1].content) == {"challenge_id": "c1", "credential": CREDENTIAL}
+
+
+async def test_passkey_sign_in_in_an_organization_uses_its_routes(mode: str) -> None:
+    c, server, _ = setup(mode)
+    server.on(
+        "POST /_auth/orgs/acme/passkey/login/options", {"challenge_id": "c1", "strategy": "s", "options": OPTIONS}
+    )
+    server.on(
+        "POST /_auth/orgs/acme/passkey/login/verify",
+        {"mfa_required": True, "challenge": "ch", "methods": ["totp"], "next": ["totp"], "strategy": "s"},
+    )
+    await go(c.auth.passkeys.sign_in_options(strategy="s", org="acme"))
+    step = await go(c.auth.passkeys.sign_in_verify("c1", CREDENTIAL, org="acme"))
+    assert isinstance(step, backd.MfaChallenge)
+    assert step.next == ["totp"]
+
+
+async def test_a_passkey_step_enrolment_and_reauth(mode: str) -> None:
+    import json
+
+    c, server, _ = setup(mode)
+    server.on("POST /_auth/mfa/passkey/options", {"options": OPTIONS})
+    server.on("POST /_auth/mfa/verify", session("bds_two"))
+    assert (await go(c.auth.passkeys.step_options("ch")))["options"] == OPTIONS
+    done = await go(c.auth.verify_step("ch", "passkey", credential=CREDENTIAL))
+    assert done["token"] == "bds_two"
+    assert json.loads(server.calls[1].content) == {"challenge": "ch", "method": "passkey", "credential": CREDENTIAL}
+
+    server.on("POST /_auth/mfa/passkey/register/options", {"challenge_id": "c9", "options": OPTIONS})
+    server.on(
+        "POST /_auth/mfa/passkey/register/verify",
+        {"mfa_enrollment_required": True, "challenge": "ch2", "next": ["passkey"], "strategy": "s"},
+    )
+    await go(c.auth.passkeys.enroll_options("ch"))
+    step = await go(c.auth.passkeys.enroll_verify("ch", CREDENTIAL, "Phone"))
+    assert isinstance(step, backd.EnrollmentChallenge)
+    assert step.next == ["passkey"]
+    assert json.loads(server.calls[3].content) == {"challenge": "ch", "credential": CREDENTIAL, "name": "Phone"}
+
+    server.on("POST /_auth/reauth/passkey/options", {"options": OPTIONS})
+    server.on("POST /_auth/reauth", {"reauth_token": "r1", "expires_at": "2030-01-01T00:00:00Z"})
+    await go(c.auth.passkeys.reauth_options())
+    proof = await go(c.auth.reauth({"method": "passkey", "credential": CREDENTIAL}))
+    assert proof["reauth_token"] == "r1"
+    assert json.loads(server.calls[-1].content) == {"method": "passkey", "credential": CREDENTIAL}
+
+
+async def test_a_code_step_is_unchanged(mode: str) -> None:
+    import json
+
+    c, server, _ = setup(mode)
+    server.on("POST /_auth/mfa/verify", session("bds_3"))
+    await go(c.auth.verify_step("ch", "totp", "123456"))
+    assert json.loads(server.calls[0].content) == {"challenge": "ch", "method": "totp", "code": "123456"}

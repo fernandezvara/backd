@@ -1,3 +1,7 @@
+## Unreleased
+
+- `client.auth.passkeys`: `list`, `rename`, `remove`, and the ceremonies around the platform's authenticator: `signInWithOptions`, `registerWithOptions`, `stepWithOptions`, `enrollWithOptions` and `reauthWithOptions` take a callback that receives the `options` JSON and returns the `credential` JSON (the `passkeys` package on iOS and Android), with the plain `…Options` / `…Verify` calls underneath. `verifyStep(…, 'passkey', null, credential: …)` and `reauth('passkey', credential: …)` take a passkey; `EnrollmentChallenge` carries `next`.
+
 ## 0.9.9
 
 No changes; released on the same version as the `backd` server.

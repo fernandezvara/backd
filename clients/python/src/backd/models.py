@@ -41,6 +41,7 @@ __all__ = [
     "OrgTemplate",
     "OrgTemplateText",
     "Page",
+    "Passkey",
     "PreparedUpload",
     "Profile",
     "ProviderSession",
@@ -53,7 +54,7 @@ __all__ = [
     "VersionState",
 ]
 
-ReauthMethod = Literal["totp", "recovery_code", "password", "email_code"]
+ReauthMethod = Literal["totp", "recovery_code", "password", "email_code", "passkey"]
 
 
 class ConsentRef(TypedDict):
@@ -142,6 +143,19 @@ class ProviderSession(Session, total=False):
     profile: Profile
 
 
+class Passkey(TypedDict):
+    """A registered passkey. Never the key material."""
+
+    id: str
+    name: str
+    created_at: str
+    last_used_at: str | None
+    transports: list[str]
+    #: The passkey syncs between the user's devices.
+    backup_eligible: bool
+    backup_state: bool
+
+
 class _SessionInfoRequired(TypedDict):
     id: str
     created_at: str
@@ -166,7 +180,7 @@ class MfaChallenge:
 
     challenge: str
     methods: list[str] = field(default_factory=list)
-    #: The method the strategy asks for now (``["totp"]``); a recovery code stands in for it.
+    #: The method the strategy asks for now (``["totp"]`` or ``["passkey"]``); a recovery code stands in for a code.
     next: list[str] = field(default_factory=list)
     #: The strategy the sign-in follows.
     strategy: str | None = None
@@ -175,10 +189,14 @@ class MfaChallenge:
 @dataclass(frozen=True)
 class EnrollmentChallenge:
     """A sign-in of a user whose role requires a second factor and who has none: set one up with
-    ``auth.mfa.setup(challenge=…)`` and ``auth.mfa.confirm(…)``, which gives the session."""
+    ``auth.mfa.setup(challenge=…)`` and ``auth.mfa.confirm(…)``, which gives the session. When ``next`` is
+    ``["passkey"]`` the strategy asks for a passkey: make one with the authenticator and send it with
+    ``auth.passkeys.enroll_options`` / ``enroll_verify``."""
 
     challenge: str
     strategy: str | None = None
+    #: The method to set up (``["passkey"]`` when the strategy asks for one).
+    next: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
