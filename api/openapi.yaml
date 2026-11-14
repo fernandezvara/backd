@@ -7518,6 +7518,7 @@ paths:
 
   /v1/{realm}/_realtime:
     parameters:
+      - { $ref: "#/components/parameters/schemaVersion" }
       - { $ref: "#/components/parameters/realm" }
     post:
       tags: [documents]
@@ -7590,6 +7591,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+        "426": { $ref: "#/components/responses/UpgradeRequired" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_consents:
@@ -8868,6 +8870,7 @@ paths:
 
   /v1/{realm}/{database}/_batch:
     parameters:
+      - { $ref: "#/components/parameters/schemaVersion" }
       - { $ref: "#/components/parameters/realm" }
       - { $ref: "#/components/parameters/database" }
     post:
@@ -8909,10 +8912,12 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         "412": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+        "426": { $ref: "#/components/responses/UpgradeRequired" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/{database}/{collection}:
     parameters:
+      - { $ref: "#/components/parameters/schemaVersion" }
       - { $ref: "#/components/parameters/realm" }
       - { $ref: "#/components/parameters/database" }
       - { $ref: "#/components/parameters/collection" }
@@ -9001,6 +9006,7 @@ paths:
             Retry-After: { $ref: "#/components/headers/RetryAfter" }
           content:
             application/json: { schema: { $ref: "#/components/schemas/Error" } }
+        "426": { $ref: "#/components/responses/UpgradeRequired" }
         default: { $ref: "#/components/responses/Error" }
     post:
       tags: [documents]
@@ -9048,6 +9054,7 @@ paths:
         "415": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+        "426": { $ref: "#/components/responses/UpgradeRequired" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/{database}/{collection}/_aggregate:
@@ -9149,6 +9156,7 @@ paths:
 
   /v1/{realm}/{database}/{collection}/{id}:
     parameters:
+      - { $ref: "#/components/parameters/schemaVersion" }
       - { $ref: "#/components/parameters/realm" }
       - { $ref: "#/components/parameters/database" }
       - { $ref: "#/components/parameters/collection" }
@@ -9170,6 +9178,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+        "426": { $ref: "#/components/responses/UpgradeRequired" }
         default: { $ref: "#/components/responses/Error" }
     put:
       tags: [documents]
@@ -9190,6 +9199,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "412": { $ref: "#/components/responses/VersionMismatch" }
+        "426": { $ref: "#/components/responses/UpgradeRequired" }
         default: { $ref: "#/components/responses/Error" }
     patch:
       tags: [documents]
@@ -9211,6 +9221,7 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         "412": { $ref: "#/components/responses/VersionMismatch" }
         "415": { $ref: "#/components/responses/Error" }
+        "426": { $ref: "#/components/responses/UpgradeRequired" }
         default: { $ref: "#/components/responses/Error" }
     delete:
       tags: [documents]
@@ -9242,6 +9253,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "412": { $ref: "#/components/responses/VersionMismatch" }
+        "426": { $ref: "#/components/responses/UpgradeRequired" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/{database}/{collection}/{id}/restore:
@@ -10677,6 +10689,23 @@ components:
         Never use it in browsers.
 
   parameters:
+    schemaVersion:
+      name: X-Backd-Schema-Version
+      in: header
+      required: false
+      description: |
+        The version of each collection's schema the app was built for, as
+        `<database>/<collection>=<n>`, several separated by commas (`main/assets=2, main/pins=3`).
+        Only collections with versioned schema files (`schema.v<N>.json`) are affected; an entry
+        for any other collection, or one the request doesn't touch, is ignored.
+        - A **write** is stamped with the declared version (`_meta.schema_version`), or with the
+          current one when the header is missing; it is validated against the current schema either way.
+        - A version **above the current one** is `400 schema_version_unknown` (deploy the server before the apps).
+        - A version **below the collection's `min_schema_version`** is `426 upgrade_required`, on reads and
+          writes alike (list, get, every write, `_batch`, `expand`, realtime subscriptions).
+        - A malformed header is `400 invalid_schema_version`.
+        Requests that declare nothing are never refused.
+      schema: { type: string, example: "main/assets=2" }
     org:
       name: org
       in: path
@@ -10928,6 +10957,13 @@ components:
       schema: { type: string }
 
   responses:
+    UpgradeRequired:
+      description: "`upgrade_required`: the app declared (`X-Backd-Schema-Version`) a schema version of the collection below its `min_schema_version`. The error names the `collection`, the `min` version and the one `declared`."
+      headers:
+        X-Request-ID: { $ref: "#/components/headers/RequestID" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
     Error:
       description: An error.
       headers:
@@ -11515,7 +11551,11 @@ components:
                 rules or build); for function calls also function_failed,
                 function_timeout, invalid_output, secret_missing,
                 idempotency_key_required, idempotency_key_reused and
-                request_in_progress. A function's own errors (`ctx.error`)
+                request_in_progress. For `X-Backd-Schema-Version`: invalid_schema_version
+                (400, a malformed header), schema_version_unknown (400, a version above the
+                collection's current one) and upgrade_required (426, a version below its
+                `min_schema_version`; the error also carries `collection`, `min` and
+                `declared`). A function's own errors (`ctx.error`)
                 carry the code it chose.
             message: { type: string }
             details:
@@ -11530,6 +11570,9 @@ components:
                   reason: { type: string }
                   code: { type: string, description: "Set when the problem has a code of its own, such as `field_encrypted`." }
             request_id: { type: string, minLength: 1 }
+            collection: { type: string, description: "With `upgrade_required`: the collection, as `<database>/<collection>`." }
+            min: { type: integer, minimum: 1, description: "With `upgrade_required`: the oldest schema version the collection accepts (`min_schema_version`)." }
+            declared: { type: integer, minimum: 1, description: "With `upgrade_required`: the version the app declared." }
 
     User:
       type: object

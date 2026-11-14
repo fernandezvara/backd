@@ -157,6 +157,9 @@ func (d *documents) realtime(w http.ResponseWriter, r *http.Request) {
 			bad("collection", "no such collection")
 			return
 		}
+		if !schemaGate(w, r, c) { // the app's declared schema version, on the request that opens the stream
+			return
+		}
 		if !c.Realtime {
 			writeError(w, r, http.StatusBadRequest, codeRealtimeNotEnabled, c.Database+"/"+c.Name+" does not declare realtime: true", Detail{Path: at + ".collection", Reason: "realtime is not enabled"})
 			return

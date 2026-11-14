@@ -163,3 +163,65 @@ func TestSchemaMigrationRoundTripsEncryptedFields(t *testing.T) {
 		t.Errorf("below 2 = %d after the write", n)
 	}
 }
+
+// A filter on _meta.schema_version reads a document without the stamp as version 1, so "below 2"
+// finds what nobody has stamped yet.
+func TestFilterOnTheSchemaStampReadsAMissingStampAsOne(t *testing.T) {
+	client := testClient(t)
+	realm := testRealm(t, client)
+	ctx := context.Background()
+	log, _ := testLogger()
+	reg := loadRegistryWith(t, realm, "", map[string]string{
+		"app/people/schema.v1.json": softSchema,
+		"app/people/schema.v2.json": softSchema,
+		"app/people/schema.v2.ts":   "export default (d: unknown) => d;",
+	})
+	if err := (&Provisioner{Client: client, Registry: reg, Log: log}).Apply(ctx); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := reg.Collection(realm, "app", "people")
+	repo := (&Store{Client: client}).Repository(c)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	for id, stamp := range map[string]any{"a": nil, "b": int64(1), "c": int64(2)} {
+		meta := map[string]any{"created_at": now, "updated_at": now, "version": int64(1)}
+		if stamp != nil {
+			meta["schema_version"] = stamp
+		}
+		if err := repo.Create(ctx, storage.Document{"id": id, "_meta": meta, "email": id + "@example.com"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ids := func(f storage.Filter) string {
+		page, err := repo.List(ctx, storage.Query{Filter: f, Limit: 10, Sort: []storage.SortField{{Field: "id"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, d := range page.Items {
+			out = append(out, d["id"].(string))
+		}
+		return fmt.Sprint(out)
+	}
+	cond := func(op storage.Operator, v any) storage.Filter {
+		return storage.Condition{Field: "_meta.schema_version", Op: op, Value: v}
+	}
+	for name, tc := range map[string]struct {
+		f    storage.Filter
+		want string
+	}{
+		"= 1":          {cond(storage.OpEq, int64(1)), "[a b]"},
+		"= 2":          {cond(storage.OpEq, int64(2)), "[c]"},
+		"< 2":          {cond(storage.OpLt, int64(2)), "[a b]"},
+		">= 2":         {cond(storage.OpGte, int64(2)), "[c]"},
+		"!= 1":         {cond(storage.OpNe, int64(1)), "[c]"},
+		"in [1, 2]":    {cond(storage.OpIn, []any{int64(1), int64(2)}), "[a b c]"},
+		"not in [1]":   {cond(storage.OpNin, []any{int64(1)}), "[c]"},
+		"between 1..1": {cond(storage.OpBetween, []any{int64(1), int64(1)}), "[a b]"},
+		"is null":      {cond(storage.OpIsNull, true), "[]"},
+		"is not null":  {cond(storage.OpIsNull, false), "[a b c]"},
+	} {
+		if got := ids(tc.f); got != tc.want {
+			t.Errorf("%s = %s, want %s", name, got, tc.want)
+		}
+	}
+}

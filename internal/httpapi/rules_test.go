@@ -146,7 +146,12 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 		"acme/app/revisions/schema.v1.json":  `{"type": "object", "properties": {"title": {"type": "string"}}, "additionalProperties": false}`,
 		"acme/app/revisions/schema.v2.json":  `{"type": "object", "properties": {"title": {"type": "string"}, "migrated": {"type": "boolean"}}, "additionalProperties": false}`,
 		"acme/app/revisions/schema.v2.ts":    "export default (doc: unknown) => doc;\n",
-		"acme/app/revisions/collection.yaml": rulesSection("read: user != nil\ncreate: user != nil\nupdate: user != nil\n"),
+		"acme/app/revisions/collection.yaml": "references:\n  gate: {field: title, collection: strict}\n" + rulesSection("read: user != nil\ncreate: user != nil\nupdate: user != nil\ndelete: user != nil\n"),
+		// Apps below version 2 are told to update (min_schema_version).
+		"acme/app/strict/schema.v1.json":  `{"type": "object", "properties": {"title": {"type": "string"}}}`,
+		"acme/app/strict/schema.v2.json":  `{"type": "object", "properties": {"title": {"type": "string"}}}`,
+		"acme/app/strict/schema.v2.ts":    "export default (doc: unknown) => doc;\n",
+		"acme/app/strict/collection.yaml": "min_schema_version: 2\nrealtime: true\n" + rulesSection("read: user != nil\ncreate: user != nil\nupdate: user != nil\ndelete: user != nil\n"),
 		// Functions (see functions_test.go).
 		fnDir + "echo/function.yaml":  "invoke: \"user != nil && user.email_verified\"\n",
 		fnDir + "echo/index.js":       "",
