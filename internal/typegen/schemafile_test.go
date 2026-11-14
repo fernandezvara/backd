@@ -566,3 +566,17 @@ def f(doc: MainAssets) -> str:
 		t.Errorf("reading a dropped field after the v3 guard type-checked:\n%s", res)
 	}
 }
+
+// The functions' backd.d.ts types ctx.db reads with the same union.
+func TestFunctionTypesUseTheVersionUnion(t *testing.T) {
+	reg := loadVersions(t, "testdata")
+	out, err := GenerateFunctions(reg, "versions", "main", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"export type MainAssets = MainAssetsV1 | MainAssetsV2 | MainAssetsV3;", "_meta: Meta & { schema_version: 3 }"} {
+		if !strings.Contains(out.Types, want) {
+			t.Errorf("backd.d.ts lacks %q", want)
+		}
+	}
+}

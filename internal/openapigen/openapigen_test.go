@@ -474,3 +474,57 @@ func TestStrategyNamesAreInTheDocument(t *testing.T) {
 		t.Error("GET /_auth/strategies is not in the document")
 	}
 }
+
+// A versioned collection's document is a oneOf of its kept versions, each fixed to its
+// _meta.schema_version; the header and the 426 are documented on its routes.
+func TestVersionedCollectionDocuments(t *testing.T) {
+	reg := load(t, map[string]string{
+		"app/realm.yaml":                 "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
+		"app/main/notes/schema.v1.json":  `{"type":"object","properties":{"title":{"type":"string"}},"required":["title"]}`,
+		"app/main/notes/schema.v2.json":  `{"type":"object","properties":{"title":{"type":"string"},"slug":{"type":"string"}},"required":["title","slug"],"$defs":{"x":{"type":"string"}}}`,
+		"app/main/notes/schema.v2.ts":    "export default (d: unknown) => d;\n",
+		"app/main/notes/collection.yaml": "rules:\n  read: 'true'\n  create: 'true'\n",
+	})
+	doc := generate(t, reg, "app")
+	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
+	notes, _ := schemas["MainNotes"].(map[string]any)
+	oneOf, _ := notes["oneOf"].([]any)
+	if len(oneOf) != 2 || oneOf[0].(map[string]any)["$ref"] != "#/components/schemas/MainNotesV1" || oneOf[1].(map[string]any)["$ref"] != "#/components/schemas/MainNotesV2" {
+		t.Fatalf("MainNotes = %v", notes)
+	}
+	for n, want := range map[string]float64{"MainNotesV1": 1, "MainNotesV2": 2} {
+		member, _ := schemas[n].(map[string]any)
+		props, _ := member["properties"].(map[string]any)
+		meta, _ := props["_meta"].(map[string]any)
+		all, _ := meta["allOf"].([]any)
+		if len(all) != 2 || props["id"] == nil || props["title"] == nil {
+			t.Fatalf("%s = %v", n, member)
+		}
+		fixed := all[1].(map[string]any)["properties"].(map[string]any)["schema_version"].(map[string]any)["const"]
+		if fixed != want {
+			t.Errorf("%s: schema_version const = %v, want %v", n, fixed, want)
+		}
+	}
+	// What a client writes is the current version only.
+	input, _ := schemas["MainNotesInput"].(map[string]any)
+	if iprops, _ := input["properties"].(map[string]any); iprops["slug"] == nil {
+		t.Errorf("MainNotesInput = %v", input)
+	}
+	// The header is a parameter of the collection's routes and 426 a documented answer.
+	item := doc["paths"].(map[string]any)["/v1/app/main/notes"].(map[string]any)
+	found := false
+	for _, p := range item["parameters"].([]any) {
+		if ref, _ := p.(map[string]any)["$ref"].(string); strings.HasSuffix(ref, "/schemaVersion") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the schemaVersion parameter is missing from %v", item["parameters"])
+	}
+	if _, ok := doc["components"].(map[string]any)["parameters"].(map[string]any)["schemaVersion"]; !ok {
+		t.Error("the schemaVersion parameter is not defined")
+	}
+	if responses := item["get"].(map[string]any)["responses"].(map[string]any); responses["426"] == nil {
+		t.Errorf("426 is not documented on the list: %v", responses)
+	}
+}
