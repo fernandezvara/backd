@@ -842,6 +842,28 @@ Moving documents between organizations or teams is an administrator's job: only 
 - **Deleting** an organization and **turning `require_mfa` on** ask for a fresh proof of identity: wrap them in [`backd.auth.withProof`](#sign-up-login-and-sessions), as other sensitive actions.
 - **A second factor.** `mfa_met` is false for a session without one in an organization that requires it; the organization's calls then throw `OrgRequiresMFAError`. Leaving is still allowed.
 
+## Schema versions
+
+A collection that keeps its [schema in versions](../../configuration/config-dir/#versioned-schemas) can hold documents of several versions while the migration job runs, and an app in the field may be older than the server. Tell the client which version of each collection the app was built for with `schemaVersions` (`schema_versions` in `realm.json`):
+
+```ts
+import info from "./backd/realm.json";
+import { upgrade } from "./backd/migrations";
+
+const client = createClient<Realm>({ url, realm: "shop", schemaVersions: info.schema_versions });
+```
+
+- It is sent on every request as `X-Backd-Schema-Version`: the server stamps your writes with it (the current version without it) and answers `426` when it is below the collection's `min_schema_version`. Leave it out and nothing is sent.
+- **Reading:** a list can mix versions, so a document is typed as the union of the versions still kept. `upgrade.mainAssets(doc)` (from `migrations.ts`, made by `backd types --lang ts`) takes a document of any of them to the current one with the server's own migration code.
+- **Writing a converted document:** send the whole new shape with `replace` and `ifMatch`:
+
+```ts
+const current = upgrade.mainAssets(asset);          // v1 → v2 → v3, or as it is if it is already v3
+await assets.replace(asset.id, { ...current, title: "New title" }, { ifMatch: asset._meta.version });
+```
+
+- **`UpgradeRequiredError`** (`426 upgrade_required`) carries `collection`, `min` and `declared`: show "please update" from it. It is never retried.
+
 ## Errors
 
 Every answer that isn't 2xx throws a `BackdError`, or one of its subclasses:
@@ -868,6 +890,7 @@ Every answer that isn't 2xx throws a `BackdError`, or one of its subclasses:
 | `IndexBuildingError` (a `RetryableError`) | 503 | `index_building`: the collection's text index is being rebuilt |
 | `LastOrgManagerError` (a `ConflictError`) | 409 | `last_org_manager`: the organization needs someone who can manage it |
 | `VersionMismatchError` | 412 | `version_mismatch` |
+| `UpgradeRequiredError` | 426 | `upgrade_required`: the app declared (`schemaVersions`) a schema version below the collection's `min_schema_version`; `collection`, `min` and `declared` say which. [Schema versions](#schema-versions) |
 | `ConsentRequiredError` | 400, 403 | `consent_required`; `consents` lists what to accept, as `{ name, version }` |
 | `RealtimeNotEnabledError`, `TooManySubscriptionsError`, `InvalidResumeTokenError` (`ValidationError`s) | 400 | `realtime_not_enabled`, `too_many_subscriptions`, `invalid_resume_token`: see [live lists](#live-lists) |
 | `SessionEndedError` (an `AuthenticationError`) | — | `session_ended`: the stream's session, user or key is gone |

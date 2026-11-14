@@ -97,3 +97,17 @@ def is_safe(method: str, headers: Mapping[str, str]) -> bool:
     """Safe to repeat: reads, writes conditional on a version, and requests the server deduplicates by key."""
     names = {k.lower() for k in headers}
     return method == "GET" or "if-match" in names or "idempotency-key" in names
+
+
+_SCHEMA_KEY = re.compile(r"^[a-z0-9]+(?:[-_][a-z0-9]+)*/[a-z0-9]+(?:[-_][a-z0-9]+)*$")
+
+
+def schema_version_header(versions: Mapping[str, int] | None) -> str | None:
+    """The value of ``X-Backd-Schema-Version`` for a map of ``<database>/<collection>`` to version, sorted so
+    it is the same on every call; ``None`` when there is none."""
+    if not versions:
+        return None
+    for key, n in versions.items():
+        if not _SCHEMA_KEY.match(key) or isinstance(n, bool) or not isinstance(n, int) or n < 1:
+            raise ValueError(f'schema_versions: {key!r} must be "<database>/<collection>" with a version of 1 or more')
+    return ", ".join(f"{k}={versions[k]}" for k in sorted(versions))

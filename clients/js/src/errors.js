@@ -32,6 +32,27 @@ export class BackdError extends Error {
   }
 }
 
+/**
+ * 426 `upgrade_required`: the app declared (`schemaVersions`) a schema version of the collection below its
+ * `min_schema_version`, so it would misread the documents. Show "please update" from this error. It is never
+ * retried; `collection` is `<database>/<collection>`, `min` the oldest version the server accepts and
+ * `declared` the one the app sent.
+ */
+export class UpgradeRequiredError extends BackdError {
+  /**
+   * @param {ConstructorParameters<typeof BackdError>[0] & { collection?: string, min?: number, declared?: number }} init
+   */
+  constructor(init) {
+    super(init)
+    /** @type {string} */
+    this.collection = init.collection ?? ''
+    /** @type {number} */
+    this.min = init.min ?? 0
+    /** @type {number} */
+    this.declared = init.declared ?? 0
+  }
+}
+
 /** 400: invalid body, query or header (`validation_error`, `invalid_json`, `invalid_query`, `invalid_header`). */
 export class ValidationError extends BackdError {}
 
@@ -269,6 +290,7 @@ const byStatus = {
   404: NotFoundError,
   409: ConflictError,
   412: VersionMismatchError,
+  426: UpgradeRequiredError,
   429: RetryableError,
   503: RetryableError,
 }
@@ -355,7 +377,7 @@ function typedClass(code, fallback) {
  * @returns {Promise<BackdError>}
  */
 export async function errorFromResponse(res) {
-  /** @type {{ error?: { code?: string, message?: string, details?: ErrorDetail[], request_id?: string } }} */
+  /** @type {{ error?: { code?: string, message?: string, details?: ErrorDetail[], request_id?: string, collection?: string, min?: number, declared?: number } }} */
   let body = {}
   try {
     body = await res.json()
@@ -373,6 +395,7 @@ export async function errorFromResponse(res) {
     message: e.message ?? res.statusText ?? 'request failed',
     details: e.details ?? [],
     requestId: e.request_id ?? res.headers.get('X-Request-ID') ?? undefined,
+    ...(Typed === UpgradeRequiredError ? { collection: e.collection, min: e.min, declared: e.declared } : {}),
     ...(Typed === RetryableError || Typed.prototype instanceof RetryableError ? { retryAfter } : {}),
   })
 }

@@ -228,3 +228,32 @@ test('soft delete: the trash, restore, purge and a unique value that is free aga
   await assert.rejects(bin(keyed).get(first.id, { deleted: 'include' }), NotFoundError)
   await bin(keyed).delete(second.id, { purge: true })
 })
+
+test('a client declares the schema version it was built for', { skip }, async () => {
+  const { UpgradeRequiredError } = await import('../../src/index.js')
+  const ada = await user('ada')
+  const current = client({ schemaVersions: { 'app/revisions': 2 } })
+  const old = client({ schemaVersions: { 'app/revisions': 1 } })
+  const future = client({ schemaVersions: { 'app/revisions': 9 } })
+  for (const c of [current, old, future]) await c.auth.login({ email: ada.email, password: 'dev-p4ssw0rd!' })
+  const revisions = (/** @type {import('../../src/index.js').Client} */ c) => c.db('app').collection('revisions')
+
+  // At the current version: served, and the write is stamped with it. Declaring nothing is stamped with it too.
+  const made = await revisions(current).create({ title: 'Hello' })
+  assert.equal(made._meta.schema_version, 2)
+  assert.equal((await revisions(ada.c).create({ title: 'Untyped' }))._meta.schema_version, 2)
+  assert.equal((await revisions(current).list({ where: { '_meta.schema_version': 2 }, orderBy: '-_meta.created_at' })).items.length >= 2, true)
+
+  // Below min_schema_version: told to update, on reads and writes, with what the server wants.
+  for (const call of [() => revisions(old).get(made.id), () => revisions(old).list(), () => revisions(old).create({ title: 'x' })]) {
+    await assert.rejects(call(), (e) => {
+      assert.ok(e instanceof UpgradeRequiredError)
+      assert.deepEqual([e.status, e.collection, e.min, e.declared], [426, 'app/revisions', 2, 1])
+      return true
+    })
+  }
+  // Above the current version: the server has not been deployed yet.
+  await assert.rejects(revisions(future).list(), (e) => e instanceof ValidationError && e.code === 'schema_version_unknown')
+  // A collection that is not versioned ignores the entry.
+  assert.ok((await client({ schemaVersions: { 'app/posts': 7 } }).db('app').collection('posts').list({ limit: 1 })).items)
+})

@@ -1112,6 +1112,14 @@ func (g *dartGen) realm(rl *registry.Realm, o Options) string {
 	out := "import 'package:backd/backd.dart';\n\n" + dartPreamble + "\n" + g.decls.String()
 
 	var tail strings.Builder
+	if versions := schemaVersionsOf(rl, o.Database); len(versions) > 0 {
+		name := lowerFirst(prefix) + "SchemaVersions"
+		fmt.Fprintf(&tail, "/// The schema versions of the realm's versioned collections this file was made\n/// for: pass them as `schemaVersions:` to the client so the server stamps your\n/// writes with them and can ask an old app to update.\nconst Map<String, int> %s = {\n", name)
+		for _, k := range slices.Sorted(keys(versions)) {
+			fmt.Fprintf(&tail, "  %s: %d,\n", dartLit(k), versions[k])
+		}
+		tail.WriteString("};\n\n")
+	}
 	// One wrapper per database, then the realm class and its accessor.
 	for _, dbName := range dbs {
 		db := rl.Databases[dbName]
@@ -1685,4 +1693,11 @@ func (g *dartGen) versionedDocClasses(db string, c *registry.Collection, base, e
 		conv := newDartConverter(docSchema, name, fmt.Sprintf("%s/%s %s ", db, c.Name, registry.SchemaVersionFile(n)), g.warn, g)
 		g.docClass(conv, name, expandedName, docSchema, db, c, &dartVersion{n: n, base: base})
 	}
+}
+
+func lowerFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToLower(s[:1]) + s[1:]
 }

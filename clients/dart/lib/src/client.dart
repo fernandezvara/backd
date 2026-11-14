@@ -185,6 +185,14 @@ class BackdClient<R> {
   ///   warns once. Leave it out in production: nothing is sent then.
   /// - [onStaleTypes] is called, once, when the server says the types are
   ///   stale; logs by default.
+  /// - [schemaVersions] is the schema version of each versioned collection
+  ///   the app was built for, `{'main/assets': 3}` (`schema_versions` in
+  ///   `realm.json`, made by `backd types`). It is sent on every request as
+  ///   `X-Backd-Schema-Version`: the server stamps the app's writes with it
+  ///   and answers `426` ([UpgradeRequiredError]) when it is below the
+  ///   collection's `min_schema_version`. Entries for collections a request
+  ///   doesn't touch are ignored by the server. Leave it out and nothing is
+  ///   sent: writes are stamped with the current version.
   BackdClient({
     required String url,
     required this.realm,
@@ -199,6 +207,7 @@ class BackdClient<R> {
     HttpClient? httpClient,
     this.types,
     this.onStaleTypes,
+    Map<String, int>? schemaVersions,
     this.oauthStorage,
     String? org,
     this.strategy,
@@ -207,6 +216,7 @@ class BackdClient<R> {
     Duration Function(int attempt, Duration? retryAfter, Duration maxDelay)
         backoff = _defaultBackoff,
   })  : url = url.replaceAll(RegExp('/+\$'), ''),
+        schemaVersionHeader = _schemaVersionHeader(schemaVersions),
         orgRef = normalizeOrgRef(org),
         _cacheOptions = cache,
         storage = storage ?? MemoryTokenStorage(),
@@ -289,6 +299,9 @@ class BackdClient<R> {
 
   /// The `X-Backd-Types` fingerprint sent in development, when set.
   final String? types;
+
+  /// The value of `X-Backd-Schema-Version`, or null when the app declares none.
+  final String? schemaVersionHeader;
 
   /// Called once when the server reports stale generated types.
   final void Function()? onStaleTypes;
@@ -450,6 +463,9 @@ class BackdClient<R> {
     };
     final types = this.types;
     if (types != null) headers['X-Backd-Types'] = types;
+    if (schemaVersionHeader != null) {
+      headers['X-Backd-Schema-Version'] = schemaVersionHeader!;
+    }
     var sentSession = false;
     if (apiKey != null) {
       headers['Authorization'] = 'Bearer $apiKey';
@@ -546,6 +562,9 @@ class BackdClient<R> {
     }
 
     if (types != null) sentHeaders['X-Backd-Types'] = types!;
+    if (schemaVersionHeader != null) {
+      sentHeaders['X-Backd-Schema-Version'] = schemaVersionHeader!;
+    }
     if (req.reauth &&
         proof != null &&
         proof!.expires.isAfter(DateTime.now())) {
@@ -726,3 +745,23 @@ Duration _defaultBackoff(int attempt, Duration? retryAfter, Duration max) {
 /// them (`session_unscoped`). Either way the person signs in again.
 bool _sessionGone(BackdException err) =>
     err.code == 'unauthenticated' || err.code == 'session_unscoped';
+
+final _schemaVersionKey =
+    RegExp(r'^[a-z0-9]+(?:[-_][a-z0-9]+)*/[a-z0-9]+(?:[-_][a-z0-9]+)*$');
+
+/// The value of `X-Backd-Schema-Version` for a map of `<database>/<collection>`
+/// to version, sorted so it is the same on every request; null when empty.
+String? _schemaVersionHeader(Map<String, int>? versions) {
+  if (versions == null || versions.isEmpty) return null;
+  final keys = versions.keys.toList()..sort();
+  for (final key in keys) {
+    if (!_schemaVersionKey.hasMatch(key) || versions[key]! < 1) {
+      throw ArgumentError.value(
+        key,
+        'schemaVersions',
+        'must be "<database>/<collection>" with a version of 1 or more',
+      );
+    }
+  }
+  return keys.map((k) => '$k=${versions[k]}').join(', ');
+}

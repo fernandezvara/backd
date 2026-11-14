@@ -590,6 +590,14 @@ func (g *pyGen) realm(rl *registry.Realm, o Options, header string) string {
 	g.roleConsts(prefix, rl)
 
 	var tail strings.Builder
+	if versions := schemaVersionsOf(rl, o.Database); len(versions) > 0 {
+		name := strings.ToUpper(pySnake(prefix)) + "_SCHEMA_VERSIONS"
+		fmt.Fprintf(&tail, "%s: dict[str, int] = {\n", name)
+		for _, k := range slices.Sorted(keys(versions)) {
+			fmt.Fprintf(&tail, "    %s: %d,\n", pyLit(k), versions[k])
+		}
+		fmt.Fprintf(&tail, "}\n\"\"\"The schema versions of the realm's versioned collections this file was made for: pass them as\n``schema_versions=`` to the client so the server stamps your writes with them and can ask an old program to update.\"\"\"\n\n\n")
+	}
 	for _, async := range []bool{false, true} {
 		g.wrappers(&tail, rl, dbs, prefix, async)
 	}

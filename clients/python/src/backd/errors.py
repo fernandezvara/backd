@@ -264,6 +264,19 @@ class VersionMismatchError(BackdError):
     """412: ``If-Match`` didn't match the current version."""
 
 
+class UpgradeRequiredError(BackdError):
+    """426 ``upgrade_required``: the program declared (``schema_versions``) a schema version of the collection
+    below its ``min_schema_version``, so it would misread the documents; ask the person to update. It is never
+    retried. ``collection`` is ``<database>/<collection>``, ``min`` the oldest version the server accepts and
+    ``declared`` the one the program sent."""
+
+    def __init__(self, message: str, *, collection: str = "", min: int = 0, declared: int = 0, **kw: Any) -> None:
+        super().__init__(message, **kw)
+        self.collection = collection
+        self.min = min
+        self.declared = declared
+
+
 class RetryableError(BackdError):
     """429 and 503: try again later; ``retry_after`` is in seconds when the server said."""
 
@@ -306,6 +319,7 @@ _BY_STATUS: dict[int, type[BackdError]] = {
 
 _BY_CODE: dict[str, type[BackdError]] = {
     "consent_required": ConsentRequiredError,
+    "upgrade_required": UpgradeRequiredError,
     "password_expired": PasswordExpiredError,
     "realtime_not_enabled": RealtimeNotEnabledError,
     "too_many_subscriptions": TooManySubscriptionsError,
@@ -376,6 +390,10 @@ def error_from_response(status: int, headers: dict[str, str], body: bytes) -> Ba
     }
     if issubclass(cls, RetryableError):
         kw["retry_after"] = parse_retry_after(headers.get("retry-after"))
+    if issubclass(cls, UpgradeRequiredError):
+        kw.update(
+            collection=err.get("collection") or "", min=int(err.get("min") or 0), declared=int(err.get("declared") or 0)
+        )
     return cls(message, **kw)
 
 

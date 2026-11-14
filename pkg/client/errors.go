@@ -79,6 +79,7 @@ var (
 	kVerification    = &kind{"verification required", kBackd}
 	kSecondStep      = &kind{"second step required", kBackd}
 	kConsentRequired = &kind{"consent required", kBackd}
+	kUpgradeRequired = &kind{"upgrade required", kBackd}
 )
 
 // The sentinels match with errors.Is. A sentinel of a class matches its subclasses too:
@@ -124,6 +125,7 @@ var (
 	ErrVerificationRequired  = &Error{kind: kVerification}
 	ErrSecondStepRequired    = &Error{kind: kSecondStep}
 	ErrConsentRequired       = &Error{kind: kConsentRequired}
+	ErrUpgradeRequired       = &Error{kind: kUpgradeRequired} // 426: the declared schema version is below the collection's minimum
 )
 
 // Error is what a failed call returns: the API's answer (or, for ErrNetwork, the lack of one).
@@ -202,6 +204,20 @@ type PasswordExpiredError struct {
 
 func (e *PasswordExpiredError) Unwrap() error { return e.baseError }
 
+// UpgradeRequiredError is the answer when the program declared ([Options.SchemaVersions]) a schema
+// version of a collection below its min_schema_version: it would misread the documents, so it
+// should tell the person to update. It is never retried.
+type UpgradeRequiredError struct {
+	*baseError
+	// Collection is "<database>/<collection>", Min the oldest version the server accepts and
+	// Declared the one the program sent.
+	Collection string
+	Min        int
+	Declared   int
+}
+
+func (e *UpgradeRequiredError) Unwrap() error { return e.baseError }
+
 // codeKinds maps the API's error codes to their class.
 var codeKinds = map[string]*kind{
 	"realtime_not_enabled": kRealtimeNotEnabled, "too_many_subscriptions": kTooManySubs,
@@ -220,6 +236,7 @@ var codeKinds = map[string]*kind{
 	"index_building": kIndexBuilding,
 	"invalid_expand": kInvalidExpand, "field_encrypted": kFieldEncrypted, "expand_too_large": kExpandTooLarge,
 	"password_expired": kPasswordExpired, "consent_required": kConsentRequired,
+	"upgrade_required": kUpgradeRequired,
 }
 
 var statusKinds = map[int]*kind{
@@ -242,6 +259,10 @@ func errorFromResponse(res *http.Response) error {
 			Message   string   `json:"message"`
 			Details   []Detail `json:"details"`
 			RequestID string   `json:"request_id"`
+			// With upgrade_required.
+			Collection string `json:"collection"`
+			Min        int    `json:"min"`
+			Declared   int    `json:"declared"`
 		} `json:"error"`
 	}
 	raw, _ := io.ReadAll(io.LimitReader(res.Body, maxErrorBody))
@@ -268,6 +289,8 @@ func errorFromResponse(res *http.Response) error {
 		err.RetryAfter = parseRetryAfter(res.Header.Get("Retry-After"), time.Now())
 	}
 	switch k {
+	case kUpgradeRequired:
+		return &UpgradeRequiredError{baseError: err, Collection: e.Collection, Min: e.Min, Declared: e.Declared}
 	case kConsentRequired:
 		typed := &ConsentRequiredError{baseError: err}
 		for _, d := range e.Details {

@@ -185,6 +185,66 @@ void main() {
     });
   });
 
+  group('schema versions', () {
+    test('X-Backd-Schema-Version is sent, sorted, when configured and never otherwise', () async {
+      final t = FakeTransport()
+        ..answer(respond(200, {}))
+        ..answer(respond(200, {}));
+      await testClient(
+        t,
+        apiKey: 'k',
+        schemaVersions: {'main/pins': 3, 'main/assets': 2},
+      ).request(const RequestInit(method: 'GET', path: ['main', 'assets']));
+      await testClient(t, apiKey: 'k').request(
+        const RequestInit(method: 'GET', path: ['main', 'assets']),
+      );
+      expect(
+        headerOf(t.requests[0], 'X-Backd-Schema-Version'),
+        'main/assets=2, main/pins=3',
+      );
+      expect(headerOf(t.requests[1], 'X-Backd-Schema-Version'), isNull);
+    });
+
+    test('a malformed map is refused when the client is made', () {
+      final t = FakeTransport();
+      expect(() => testClient(t, schemaVersions: {'assets': 1}), throwsArgumentError);
+      expect(() => testClient(t, schemaVersions: {'main/assets': 0}), throwsArgumentError);
+    });
+
+    test('a 426 is an UpgradeRequiredError and is not retried', () async {
+      final t = FakeTransport()
+        ..answer(respond(426, {
+          'error': {
+            'code': 'upgrade_required',
+            'message': 'update the app',
+            'collection': 'main/assets',
+            'min': 2,
+            'declared': 1,
+            'request_id': 'r1',
+          },
+        }))
+        ..answer(respond(200, {}));
+      final client = testClient(
+        t,
+        apiKey: 'k',
+        schemaVersions: {'main/assets': 1},
+        retry: const RetryOptions(attempts: 3),
+      );
+      await expectLater(
+        client.request(const RequestInit(method: 'GET', path: ['main', 'assets'])),
+        throwsA(
+          isA<UpgradeRequiredError>()
+              .having((e) => e.status, 'status', 426)
+              .having((e) => e.collection, 'collection', 'main/assets')
+              .having((e) => e.min, 'min', 2)
+              .having((e) => e.declared, 'declared', 1)
+              .having((e) => e.requestId, 'requestId', 'r1'),
+        ),
+      );
+      expect(t.requests, hasLength(1));
+    });
+  });
+
   group('types fingerprint', () {
     test('X-Backd-Types is sent when configured, never otherwise', () async {
       final t = FakeTransport()

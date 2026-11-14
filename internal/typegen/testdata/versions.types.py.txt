@@ -139,6 +139,13 @@ class VersionsStrategies:
     PASSWORD = "password"
 
 
+VERSIONS_SCHEMA_VERSIONS: dict[str, int] = {
+    "main/assets": 3,
+}
+"""The schema versions of the realm's versioned collections this file was made for: pass them as
+``schema_versions=`` to the client so the server stamps your writes with them and can ask an old program to update."""
+
+
 class VersionsMain:
     """The "main" database of "versions", typed."""
 

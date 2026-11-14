@@ -591,6 +591,13 @@ abstract final class VersionsStrategy {
   static const String password = 'password';
 }
 
+/// The schema versions of the realm's versioned collections this file was made
+/// for: pass them as `schemaVersions:` to the client so the server stamps your
+/// writes with them and can ask an old app to update.
+const Map<String, int> versionsSchemaVersions = {
+  'main/assets': 3,
+};
+
 /// The "main" database of "versions", typed.
 final class VersionsMain {
   VersionsMain(this._db);

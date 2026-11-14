@@ -197,6 +197,65 @@ async def test_stale_types_are_sent_and_reported_once(mode: str) -> None:
     assert "x-backd-types" not in seen[-1].headers
 
 
+async def test_schema_versions_are_sent_sorted_on_every_call(mode: str) -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(req)
+        return json_response(200, {})
+
+    c = make_client(mode, handler, schema_versions={"main/pins": 3, "main/assets": 2})
+    await go(c.request("GET", ["main", "assets"]))
+    await go(c.request("GET", ["main", "pins"]))
+    assert [r.headers["x-backd-schema-version"] for r in seen] == ["main/assets=2, main/pins=3"] * 2
+
+    quiet = make_client(mode, handler)  # declares nothing: nothing sent
+    await go(quiet.request("GET", ["main", "assets"]))
+    assert "x-backd-schema-version" not in seen[-1].headers
+
+
+@pytest.mark.parametrize("bad", [{"assets": 1}, {"main/assets": 0}, {"Main/assets": 1}, {"main/assets": True}])
+async def test_malformed_schema_versions_are_refused(mode: str, bad: dict[str, int]) -> None:
+    with pytest.raises(ValueError, match="schema_versions"):
+        make_client(mode, lambda req: json_response(200, {}), schema_versions=bad)
+
+
+async def test_upgrade_required_carries_the_versions_and_is_not_retried(mode: str) -> None:
+    n = 0
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        nonlocal n
+        n += 1
+        return json_response(
+            426,
+            {
+                "error": {
+                    "code": "upgrade_required",
+                    "message": "update the app",
+                    "collection": "main/assets",
+                    "min": 2,
+                    "declared": 1,
+                    "request_id": "r1",
+                }
+            },
+        )
+
+    c = make_client(mode, handler, schema_versions={"main/assets": 1}, retry=Retry(attempts=3))
+    with pytest.raises(backd.UpgradeRequiredError) as caught:
+        await go(c.request("GET", ["main", "assets"]))
+    e = caught.value
+    assert (e.status, e.code, e.collection, e.min, e.declared, e.request_id) == (
+        426,
+        "upgrade_required",
+        "main/assets",
+        2,
+        1,
+        "r1",
+    )
+    assert isinstance(e, backd.BackdError) and not isinstance(e, backd.RetryableError)
+    assert n == 1
+
+
 async def test_stale_types_warn_in_the_log_by_default(mode: str, caplog: pytest.LogCaptureFixture) -> None:
     c = make_client(mode, lambda r: json_response(200, {}, **{"X-Backd-Types-Stale": "true"}), types="abc")
     with caplog.at_level("WARNING", logger="backd"):

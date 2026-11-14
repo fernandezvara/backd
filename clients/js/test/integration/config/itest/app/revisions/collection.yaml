@@ -1,0 +1,6 @@
+# Two schema versions; apps below version 2 are told to update (the JS client's schema-versions test).
+min_schema_version: 2
+rules:
+  read: user != nil
+  create: user != nil
+  update: user != nil

@@ -183,6 +183,12 @@ const (
 	VersionsStrategyPassword = "password"
 )
 
+// VersionsSchemaVersions are the schema versions of the realm's versioned collections this file was made for: pass them as
+// client.Options.SchemaVersions so the server stamps your writes with them and can ask an old program to update.
+var VersionsSchemaVersions = map[string]int{
+	"main/assets": 3,
+}
+
 // VersionsRealm is the "versions" realm bound to a client: its databases, collections and functions, typed.
 type VersionsRealm struct{ Client *client.Client }
 
