@@ -6,6 +6,10 @@ Until a stable release is declared, a minor release may have breaking changes; t
 
 ## Unreleased
 
+### Added
+
+- **A collection can keep its schema as versioned files** (`schema.v1.json`, `schema.v2.json`, and `schema.v2.ts` for the migration, #944). The highest version is the current schema; a plain `schema.json` works as before. Every write to a versioned collection records `_meta.schema_version`, a document without it reads as version 1, and a collection with more than one version gets an index on it. `collection.yaml` accepts `min_schema_version` (checked at load, not enforced yet). Running the migrations and the version an app declares come in the next parts of the schema versioning milestone.
+
 ### Documentation
 
 - **The audit trail page lists every action backd records.** 27 actions were missing: passkey sign-ins and their failures, second-factor and recovery-code events, re-authentication, function secrets, team roles, organization email templates, consents, the app configuration and push devices. The page now says which sign-ins are recorded and which actors exist. `scripts/check-docs-audit.py`, run in CI, fails when an action has no row or a row has no action. The unused `user.mfa_locked` constant is removed: it was never recorded.

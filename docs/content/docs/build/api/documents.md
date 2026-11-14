@@ -45,6 +45,7 @@ Documents are returned as bare JSON objects:
   - `updated_at` is set on every write.
   - Both timestamps are RFC3339 in UTC with millisecond precision.
   - `version` is `1` on create and increases by one on every write.
+  - `schema_version` is the version of the collection's [schema](../../configuration/config-dir/#versioned-schemas) the document was written under. It is present only in collections with versioned schema files, set by the server on every create, `PUT`, `PATCH` and `_batch` write, and reads as `1` on a document stored before the field existed.
   - In realms with an `auth` section, three ownership fields are added:
     - `owner` is the id of the signed-in user who created the document (or the user an API key [acted for](../../auth/api-keys/#acting-on-behalf-of-a-user)), or `null` when an [API key](../../auth/api-keys/) created it on its own. It never changes.
     - `created_by` is who created it, and never changes: `user:<id>`, `key:<name>`, or `anonymous` when a [create rule](../../auth/rules/) lets callers without credentials write.

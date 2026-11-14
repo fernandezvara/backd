@@ -96,6 +96,30 @@ Example, `shop/orders/items/schema.json`:
 }
 ```
 
+### Versioned schemas
+
+A collection can keep the history of its schema as files in its folder. Instead of `schema.json`:
+
+```text
+shop/orders/items/
+  schema.v1.json
+  schema.v2.json     the current version: the highest number
+  schema.v2.ts       the migration from v1 to v2 (a TypeScript file)
+  schema.v3.json
+  schema.v3.ts
+```
+
+- **The current version** is the highest `schema.v<N>.json`. Only that file is compiled and checked like a `schema.json`; the older ones are kept for history and for the tools that come with the migrations. A collection with a plain `schema.json` is not versioned and works as always. To adopt versions, rename `schema.json` to `schema.v1.json` and change nothing else.
+- **Startup stops, naming the file,** when:
+  - a name starting with `schema.` is none of `schema.json`, `schema.v<N>.json`, `schema.v<N>.ts` (N a positive number without leading zeros) and the generated `schema.d.ts`;
+  - `schema.json` is next to a `schema.v<N>.json`;
+  - a `.ts` file has no JSON of the same version, or is `schema.v1.ts` (there is no version 0);
+  - a version above the lowest one kept has no `.ts` file: the chain of migrations must be continuous from the lowest kept version up to the current one. Old versions can be deleted from the bottom, `schema.v1.json` and `schema.v2.ts` together.
+- **Every document records its version** in `_meta.schema_version`, set by the server on every create, `PUT`, `PATCH` and [`_batch`](../../api/documents/#batch-writes) write; a client can't set it. A document without the field is at version 1. Collections with a plain `schema.json` record nothing.
+- **An index on `_meta.schema_version`** is created for a collection with more than one version file, so finding the documents still at an older version is not a scan. As for every index, it is created if it is missing and never dropped.
+
+Writing the migration files, running them over the stored documents, and the version an app declares are not available yet; this section lists what the server reads today. `min_schema_version` in [`collection.yaml`](#collectionyaml) is checked when loading (a whole number from 1 to the current version, only in a versioned collection) and does nothing yet.
+
 ### Dates
 
 By default a `format: date-time` property is text: MongoDB stores the string, and comparing or sorting it as time only works when every value has the same form. Add `x-backd-store` to store it as a **BSON Date** instead, so queries, sorting and index ranges compare instants:
@@ -122,7 +146,7 @@ This optional file declares the collection's MongoDB indexes:
 ]
 ```
 
-- `fields` lists one or more fields in `order_by` notation: a `-` prefix means descending. Each field must be declared in `schema.json` or be `id`, `_meta.created_at`, `_meta.updated_at`, `_meta.version`, `_meta.owner`, `_meta.created_by` or `_meta.updated_by`. An index on `_meta.owner` keeps "owner only" access rules fast.
+- `fields` lists one or more fields in `order_by` notation: a `-` prefix means descending. Each field must be declared in `schema.json` or be `id`, `_meta.created_at`, `_meta.updated_at`, `_meta.version`, `_meta.schema_version`, `_meta.owner`, `_meta.created_by` or `_meta.updated_by`. An index on `_meta.owner` keeps "owner only" access rules fast.
 - `unique` (default `false`) rejects documents that repeat a value. A write that violates it returns `409 conflict`.
 - Unknown keys, duplicate fields within an index, and two indexes with the same fields are all rejected.
 - An entry `{ "text": … }` declares a [full-text index](#a-text-index).
@@ -172,6 +196,7 @@ This optional file holds a collection's policy, in sections that can each be lef
 | `custom_id:` | Collections whose documents get the id the client chooses | [Custom ids](#custom-ids) |
 | `organization:` | Whether documents belong to an organization, and what happens to them when it is deleted | [Organizations](#organizations) |
 | `realtime:` | Whether the collection's changes may be streamed to clients | [Realtime](#realtime) |
+| `min_schema_version:` | The oldest schema version of an app that may still use the collection (a [versioned schema](#versioned-schemas) only; not enforced yet) | [Versioned schemas](#versioned-schemas) |
 | `triggers:` | Functions to run in the background when documents change | [Triggers](#triggers) |
 | `fields:` | Which fields are stored encrypted, and with which key | [Field keys](../field-keys/) |
 | `on_owner_delete:` | What an administrator's **erase** does to the collection when a user is erased (`backd user delete`) | below |
@@ -521,7 +546,7 @@ Any invalid config stops startup with a non-zero exit. Every error is reported a
 - a missing `CONFIG_DIR`;
 - a realm without `realm.yaml`, or an invalid `realm.yaml` (see [Realm settings](../realm/#validation));
 - an invalid name;
-- a collection directory without `schema.json`;
+- a collection directory without `schema.json` or a `schema.v<N>.json`, or with a [versioned schema](#versioned-schemas) that breaks its file rules;
 - invalid JSON or an invalid schema;
 - a schema that declares a system field;
 - an invalid `indexes.json`;

@@ -71,8 +71,15 @@ func (r *Registry) Fingerprint() (string, error) {
 		}
 		for _, db := range rl.Databases {
 			for _, c := range db.Collections {
-				for _, f := range []string{schemaFile, indexesFile, CollectionFile} {
+				for _, f := range []string{indexesFile, CollectionFile} {
 					add(filepath.Join(rl.Name, db.Name, c.Name, f))
+				}
+				// Every schema file counts: the versions and their migrations, not the generated types.
+				entries, _ := os.ReadDir(filepath.Join(r.Root, rl.Name, db.Name, c.Name))
+				for _, e := range entries {
+					if n := e.Name(); strings.HasPrefix(n, "schema.") && n != generatedTypesFile {
+						add(filepath.Join(rl.Name, db.Name, c.Name, n))
+					}
 				}
 			}
 			if db.Functions == nil {

@@ -357,12 +357,13 @@ func loadDatabase(rl *Realm, name, path string) (*Database, []error) {
 }
 
 func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Collection, error) {
-	path := filepath.Join(dir, schemaFile)
+	sf, err := findSchemaFiles(dir)
+	if err != nil {
+		return nil, err
+	}
+	path := sf.Current
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("%s: collection directory has no %s", dir, schemaFile)
-		}
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 
@@ -417,16 +418,22 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 	}
 
 	coll := &Collection{
-		Realm:         db.Realm,
-		Database:      db.Name,
-		MongoDatabase: db.MongoName,
-		Name:          name,
-		SchemaPath:    path,
-		RawSchema:     raw,
-		Schema:        compiled,
-		Fields:        fieldIndex(raw),
-		Files:         files,
-		configLeaf:    db.configLeaf(),
+		Realm:          db.Realm,
+		Database:       db.Name,
+		MongoDatabase:  db.MongoName,
+		Name:           name,
+		SchemaPath:     path,
+		SchemaVersion:  sf.Version,
+		Versioned:      sf.Versioned,
+		SchemaVersions: sf.Versions,
+		RawSchema:      raw,
+		Schema:         compiled,
+		Fields:         fieldIndex(raw),
+		Files:          files,
+		configLeaf:     db.configLeaf(),
+	}
+	if err := loadSchemaVersion(coll, collPath, collData); err != nil {
+		return nil, err
 	}
 	// The id and organization policies come first: indexes and rules may name `_meta.org`.
 	if err := loadCustomID(coll, settings, collPath, collData); err != nil {
@@ -482,6 +489,7 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 	coll.addSoftDeleteIndexes()
 	coll.addDefaultOrderIndex()
 	coll.addOrgIndex()
+	coll.addSchemaVersionIndex()
 	return coll, nil
 }
 
@@ -765,13 +773,10 @@ func legacyFolderError(path string) error {
 	if !ok {
 		return nil
 	}
-	legacy := false
-	if _, err := os.Stat(filepath.Join(path, schemaFile)); err == nil {
-		legacy = true
-	}
+	legacy := HasSchema(path)
 	subs, _ := subdirs(path)
 	for _, s := range subs {
-		if _, err := os.Stat(filepath.Join(path, s, schemaFile)); err != nil {
+		if !HasSchema(filepath.Join(path, s)) {
 			legacy = true
 		}
 	}
