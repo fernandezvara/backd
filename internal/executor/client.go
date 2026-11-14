@@ -71,3 +71,33 @@ func (c *Client) Health(ctx context.Context) error {
 	}
 	return nil
 }
+
+// Migrate runs a batch of documents through a collection's migrations on the executor. An error
+// means the executor couldn't be reached or refused the request; how the batch ended is in
+// MigrateResult.
+func (c *Client) Migrate(ctx context.Context, req MigrateRequest) (MigrateResult, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return MigrateResult{}, err
+	}
+	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.URL, "/")+"/migrate", bytes.NewReader(body))
+	if err != nil {
+		return MigrateResult{}, err
+	}
+	hreq.Header.Set("Content-Type", "application/json")
+	hreq.Header.Set("Authorization", "Bearer "+c.Token)
+	res, err := c.http().Do(hreq)
+	if err != nil {
+		return MigrateResult{}, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		msg, _ := io.ReadAll(io.LimitReader(res.Body, 512))
+		return MigrateResult{}, fmt.Errorf("executor answered %s: %s", res.Status, strings.TrimSpace(string(msg)))
+	}
+	var r MigrateResult
+	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
+		return MigrateResult{}, fmt.Errorf("executor answer: %w", err)
+	}
+	return r, nil
+}

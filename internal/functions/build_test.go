@@ -2,12 +2,16 @@ package functions
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/fernandezvara/backd/internal/executor"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -316,5 +320,53 @@ func TestBuildMigrations(t *testing.T) {
 	err = Build(ctx, load(), opts)
 	if err == nil || !strings.Contains(err.Error(), "schema.v3.ts:2:") || !strings.Contains(err.Error(), "import type") {
 		t.Fatalf("value import accepted: %v", err)
+	}
+}
+
+// The bundle the build writes is the one the executor's migrate mode runs: both steps, in order,
+// from the real TypeScript.
+func TestBuiltMigrationRunsInTheExecutor(t *testing.T) {
+	bin := deno(t)
+	root := t.TempDir()
+	coll := "shop/app/items/"
+	write(t, root, map[string]string{
+		"shop/realm.yaml":       "auth:\n  strategies:\n    password: [password]\n",
+		coll + "schema.v1.json": `{"type": "object"}`,
+		coll + "schema.v2.json": `{"type": "object"}`,
+		coll + "schema.v3.json": `{"type": "object"}`,
+		coll + "schema.d.ts":    "export interface V1 { name: string }\nexport interface V2 { name: string; label: string }\nexport interface V3 { name: string; label: string; slug: string }\nexport interface Meta { id: string }\n",
+		coll + "schema.v2.ts":   "import type { V1, V2, Meta } from \"./schema.d.ts\";\nexport default (doc: V1, meta: Meta): V2 => ({ ...doc, label: doc.name + \"-\" + meta.id });\n",
+		coll + "schema.v3.ts":   "import type { V2, V3 } from \"./schema.d.ts\";\nexport default (doc: V2): V3 => ({ ...doc, slug: doc.label.toLowerCase() });\n",
+	})
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Build(context.Background(), reg, Options{Deno: bin}); err != nil {
+		t.Fatal(err)
+	}
+	db := reg.Realms["shop"].Databases["app"]
+	m, err := registry.ReadMigrationManifest(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := db.MigrationBundlePath(m, "items")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, file) }))
+	defer srv.Close()
+	const token = "0123456789abcdef0123456789abcdef-executor"
+	ex, err := executor.New(executor.Config{Deno: bin, Dir: t.TempDir(), Token: token})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := ex.Migrate(context.Background(), executor.MigrateRequest{
+		Collection: "shop/app/items",
+		Bundle:     executor.Bundle{SHA256: m.Collections["items"].SHA256, URL: srv.URL},
+		Current:    3,
+		Docs:       []executor.Doc{{ID: "d1", Version: 1, SchemaVersion: 1, Meta: json.RawMessage(`{}`), Fields: json.RawMessage(`{"name":"Widget"}`)}},
+		TimeoutMS:  5000, MemoryBytes: 64 << 20, MaxOutput: 1 << 20,
+	})
+	if res.Status != executor.StatusOK || len(res.Outcomes) != 1 || res.Outcomes[0].Error != nil ||
+		string(res.Outcomes[0].Fields) != `{"name":"Widget","label":"Widget-d1","slug":"widget-d1"}` {
+		t.Fatalf("migrate: %+v", res)
 	}
 }

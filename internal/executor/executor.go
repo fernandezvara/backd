@@ -44,6 +44,9 @@ var runnerJS []byte
 //go:embed steps.js
 var stepsJS []byte
 
+//go:embed migrate.js
+var migrateJS []byte
+
 // Result statuses.
 const (
 	StatusOK            = "ok"
@@ -200,6 +203,11 @@ type Config struct {
 	Dir          string // writable working directory (runner, bundle cache)
 	Token        string // shared with backd: authenticates both directions
 	MaxProcesses int    // function processes at once; default 64
+	// MaxMigrations is how many migration batches run at once, apart from the function processes
+	// above: a backfill can't take their room. Default 4. At most MigrationsPerRealm of them
+	// (default 2) are for one realm.
+	MaxMigrations      int
+	MigrationsPerRealm int
 	// Proxy is backd-server egress's base URL (e.g. http://backd-egress:3128), set
 	// as HTTP(S)_PROXY for function processes with a per-invocation token
 	// (EgressKey) embedded as its credentials, scoped to that call's
@@ -215,12 +223,16 @@ type Config struct {
 
 // Executor runs invocations.
 type Executor struct {
-	cfg     Config
-	runner  string // path of runner.js
-	bundles string // cache directory
-	denoDir string
-	slots   chan struct{}
-	fetchMu sync.Mutex
+	cfg      Config
+	runner   string // path of runner.js
+	migrate  string // path of migrate.js
+	migSlots chan struct{}
+	migMu    sync.Mutex
+	migRealm map[string]int // migration batches running, by realm
+	bundles  string         // cache directory
+	denoDir  string
+	slots    chan struct{}
+	fetchMu  sync.Mutex
 }
 
 // ErrUnsupportedPlatform means this system can't enforce a function's limits.
@@ -250,7 +262,13 @@ func New(cfg Config) (*Executor, error) {
 	if cfg.Proxy != "" && len(cfg.EgressKey) < 32 {
 		return nil, errors.New("the egress key must be at least 32 bytes when a proxy is set")
 	}
-	e := &Executor{cfg: cfg, slots: make(chan struct{}, cfg.MaxProcesses)}
+	if cfg.MaxMigrations <= 0 {
+		cfg.MaxMigrations = 4
+	}
+	if cfg.MigrationsPerRealm <= 0 {
+		cfg.MigrationsPerRealm = 2
+	}
+	e := &Executor{cfg: cfg, slots: make(chan struct{}, cfg.MaxProcesses), migSlots: make(chan struct{}, cfg.MaxMigrations), migRealm: map[string]int{}}
 	e.bundles = filepath.Join(cfg.Dir, "bundles")
 	e.denoDir = filepath.Join(cfg.Dir, "deno")
 	for _, d := range []string{e.bundles, e.denoDir} {
@@ -271,6 +289,10 @@ func New(cfg Config) (*Executor, error) {
 		return nil, err
 	}
 	if err := os.WriteFile(filepath.Join(runtime, "steps.js"), stepsJS, 0o444); err != nil {
+		return nil, err
+	}
+	e.migrate = filepath.Join(runtime, "migrate.js")
+	if err := os.WriteFile(e.migrate, migrateJS, 0o444); err != nil {
 		return nil, err
 	}
 	err = fs.WalkDir(jsclient.Sources, "src", func(path string, d fs.DirEntry, err error) error {
@@ -307,6 +329,20 @@ func (e *Executor) Handler() http.Handler {
 			return
 		}
 		res := e.Invoke(r.Context(), req)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(res)
+	})
+	mux.HandleFunc("POST /migrate", func(w http.ResponseWriter, r *http.Request) {
+		if !e.authorized(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		var req MigrateRequest
+		if err := json.NewDecoder(io.LimitReader(r.Body, maxRequestBytes)).Decode(&req); err != nil {
+			http.Error(w, "invalid migration: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		res := e.Migrate(r.Context(), req)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(res)
 	})
@@ -448,14 +484,19 @@ func (e *Executor) run(ctx context.Context, bundle string, req InvokeRequest, ti
 	if len(allow) > 0 {
 		args = append(args, "--allow-net="+strings.Join(allow, ","))
 	}
-	args = append(args, e.runner, bundle)
+	script := e.runner
+	migrating := req.Envelope.Mode == ModeMigrate
+	if migrating {
+		script = e.migrate // no network at all: allow is empty, and no proxy is set below
+	}
+	args = append(args, script, bundle)
 	cmd := exec.Command(e.cfg.Deno, args...)
 	cmd.Dir = filepath.Dir(e.runner)
 	cmd.Env = []string{"DENO_DIR=" + e.denoDir, "NO_COLOR=1", "DENO_NO_UPDATE_CHECK=1"}
 	if v := os.Getenv("LD_LIBRARY_PATH"); v != "" {
 		cmd.Env = append(cmd.Env, "LD_LIBRARY_PATH="+v)
 	}
-	if e.cfg.Proxy != "" {
+	if e.cfg.Proxy != "" && !migrating {
 		proxyURL, err := e.proxyURL(allow, timeout)
 		if err != nil {
 			return Result{Status: StatusError, Message: "egress credentials: " + err.Error()}
