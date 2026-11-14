@@ -26,7 +26,9 @@ type pyGen struct {
 	decls    strings.Builder
 	emitted  map[string]bool
 	// needs say which names of typing the file uses.
-	needCast, needLiteral bool
+	needCast, needLiteral, needUnion bool
+	// unions are the document types that are a Union of versions (a versioned collection).
+	unions map[string]bool
 	// collTypes remembers each collection's emitted doc/input/create names.
 	collTypes map[string][3]string
 	// fnTypes remembers each function's input and output Python types.
@@ -36,7 +38,7 @@ type pyGen struct {
 }
 
 func newPyGen() *pyGen {
-	return &pyGen{used: map[string]string{}, emitted: map[string]bool{}, collTypes: map[string][3]string{}, fnTypes: map[string][2]string{}}
+	return &pyGen{used: map[string]string{}, emitted: map[string]bool{}, collTypes: map[string][3]string{}, fnTypes: map[string][2]string{}, unions: map[string]bool{}}
 }
 
 func (g *pyGen) warn(format string, args ...any) {
@@ -599,6 +601,9 @@ func (g *pyGen) realm(rl *registry.Realm, o Options, header string) string {
 	if g.needLiteral {
 		imports = append(imports, "Literal")
 	}
+	if g.needUnion {
+		imports = append(imports, "TypeGuard", "Union")
+	}
 	imports = append(imports, "TypedDict")
 	slices.Sort(imports)
 	src := header + "from __future__ import annotations\n\nfrom typing import " + strings.Join(imports, ", ") + "\n\nimport backd\n\n\n" + strings.TrimRight(g.decls.String(), "\n") + "\n\n\n" + strings.TrimRight(tail.String(), "\n") + "\n"
@@ -632,6 +637,12 @@ func (g *pyGen) wrappers(w *strings.Builder, rl *registry.Realm, dbs []string, p
 		for _, c := range database.SortedCollections() {
 			docT := g.collTypes[dbName+"/"+c.Name][0]
 			m := member(c.Name)
+			if g.unions[docT] {
+				// A union is not a class the client can take: it only tells the type checker what reads return.
+				g.needCast = true
+				fmt.Fprintf(w, "\n    @property\n    def %s(self) -> %s[%s]:\n        \"\"\"The %s collection: documents read as %s, in any version of its schema that is still kept.\"\"\"\n        return cast(\"%s[%s]\", self.db.collection(%s))\n", m, coll, docT, pyLit(c.Name), docT, coll, docT, pyLit(c.Name))
+				continue
+			}
 			fmt.Fprintf(w, "\n    @property\n    def %s(self) -> %s[%s]:\n        \"\"\"The %s collection: documents read as %s.\"\"\"\n        return self.db.collection(%s, %s)\n", m, coll, docT, pyLit(c.Name), docT, pyLit(c.Name), docT)
 		}
 		if database.Functions != nil {
@@ -697,7 +708,11 @@ func (g *pyGen) collection(db string, c *registry.Collection, prefix string) {
 	createName := ""
 	g.collTypes[db+"/"+c.Name] = [3]string{docName, inName, createName}
 
-	g.classOrDict(conv, docName, docSchema, "backd.Doc", fmt.Sprintf("A %s/%s document.", db, c.Name))
+	if c.Versioned && len(c.SchemaVersions) > 1 {
+		g.versionedDocs(db, c, docName)
+	} else {
+		g.classOrDict(conv, docName, docSchema, "backd.Doc", fmt.Sprintf("A %s/%s document.", db, c.Name))
+	}
 	g.classOrDict(inConv, inName, inputSchema, "", fmt.Sprintf("What a %s/%s write accepts.", db, c.Name))
 	if c.CustomID != nil {
 		createName = g.claim(prefix+"Create", "create "+db+"/"+c.Name)
@@ -880,4 +895,33 @@ func (g *pyGen) roleConsts(prefix string, rl *registry.Realm) {
 	if rl.Push != nil {
 		consts("PushKinds", "push kinds", rl.Push.Kinds())
 	}
+}
+
+// versionedDocs emits a versioned collection's documents: a TypedDict per kept version
+// (MainAssetsV1…) and the Union of them, with a version() function and a TypeGuard per version to
+// tell them apart, since a type checker can't narrow a document by a key of its _meta.
+func (g *pyGen) versionedDocs(db string, c *registry.Collection, name string) {
+	g.needUnion = true
+	g.unions[name] = true
+	var members []string
+	for _, n := range c.SchemaVersions {
+		raw, err := c.VersionSchema(n)
+		if err != nil {
+			g.warn("%s/%s: %v", db, c.Name, err)
+			continue
+		}
+		docSchema, _ := fileAwareSchema(c, raw)
+		vn := fmt.Sprintf("%sV%d", name, n)
+		conv := newPyConverter(docSchema, vn, fmt.Sprintf("%s/%s %s ", db, c.Name, registry.SchemaVersionFile(n)), g)
+		g.classOrDict(conv, vn, docSchema, "backd.Doc", fmt.Sprintf("A %s/%s document as stored in version %d of its schema.", db, c.Name, n))
+		members = append(members, vn)
+	}
+	snake := pySnake(name)
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s = Union[%s]\n\"\"\"A %s/%s document in any version of its schema that is still kept. Tell them apart with %s_version() or the is_%s_v<N> guards.\"\"\"\n\n\n", name, strings.Join(members, ", "), db, c.Name, snake, snake)
+	fmt.Fprintf(&b, "def %s_version(doc: %s) -> int:\n    \"\"\"The schema version the document was written under (absent: 1).\"\"\"\n    return int(doc[\"_meta\"].get(\"schema_version\") or 1)\n", snake, name)
+	for _, n := range c.SchemaVersions {
+		fmt.Fprintf(&b, "\n\ndef is_%s_v%d(doc: %s) -> TypeGuard[%sV%d]:\n    \"\"\"Whether the document is in version %d.\"\"\"\n    return %s_version(doc) == %d\n", snake, n, name, name, n, n, snake, n)
+	}
+	g.emit(b.String())
 }

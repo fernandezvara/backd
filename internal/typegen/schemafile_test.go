@@ -447,3 +447,122 @@ func TestDecode(t *testing.T) {
 		}
 	}
 }
+
+func pythonVersionsOutput(t *testing.T) *Output {
+	t.Helper()
+	reg := loadVersions(t, "testdata")
+	out, err := Generate(reg, Options{Realm: "versions", Lang: "python"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func TestGoldenVersionedPython(t *testing.T) {
+	out := pythonVersionsOutput(t)
+	golden := filepath.Join("testdata", "versions.types.py.txt")
+	if *update {
+		if err := os.WriteFile(golden, []byte(out.Types), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(want) != out.Types {
+		t.Errorf("generated types differ from %s (run go test -update):\n%s", golden, out.Types)
+	}
+	for _, want := range []string{"MainAssets = Union[MainAssetsV1, MainAssetsV2, MainAssetsV3]", "def main_assets_version(doc: MainAssets) -> int:", "def is_main_assets_v3(doc: MainAssets) -> TypeGuard[MainAssetsV3]:"} {
+		if !strings.Contains(out.Types, want) {
+			t.Errorf("types.py lacks %q", want)
+		}
+	}
+	compilesPython(t, out.Types)
+	mypyChecks(t, out.Types)
+}
+
+// The guards pick the member by the stamp at run time, and the type checker follows them.
+func TestVersionedPythonGuards(t *testing.T) {
+	out := pythonVersionsOutput(t)
+	py := python(t)
+	dir := t.TempDir()
+	clientSrc, err := filepath.Abs(filepath.Join("..", "..", "clients", "python", "src"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, content string) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	write("generated_types.py", out.Types)
+	// A stand-in for the client at run time (the real one needs httpx); mypy below uses the real one.
+	stub := filepath.Join(dir, "stub", "backd")
+	if err := os.MkdirAll(stub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stub, "__init__.py"), []byte("from typing import Any, TypedDict\n\n\nclass Doc(TypedDict, total=False):\n    id: str\n    _meta: Any\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	use := write("use.py", `from __future__ import annotations
+
+from generated_types import MainAssets, is_main_assets_v1, is_main_assets_v3, main_assets_version
+
+
+def describe(doc: MainAssets) -> str:
+    if is_main_assets_v1(doc):
+        return "v1 body=" + str(doc.get("body"))
+    if is_main_assets_v3(doc):
+        return "v3 visibility=" + doc["visibility"]
+    return "v2"
+
+
+def make(version: int | None) -> MainAssets:
+    meta: dict[str, object] = {"created_at": "2026-01-01T00:00:00.000Z", "updated_at": "2026-01-01T00:00:00.000Z"}
+    if version is not None:
+        meta["schema_version"] = version
+    doc: dict[str, object] = {"id": "x", "_meta": meta, "title": "t", "visibility": "private", "body": "old"}
+    return doc  # type: ignore[return-value]
+
+
+if __name__ == "__main__":
+    print(describe(make(None)), describe(make(2)), describe(make(3)), main_assets_version(make(None)))
+`)
+	cmd := exec.Command(py, use)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "PYTHONPATH="+filepath.Join(dir, "stub"))
+	res, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("running use.py: %v\n%s", err, res)
+	}
+	if got := strings.TrimSpace(string(res)); got != "v1 body=old v2 v3 visibility=private 1" {
+		t.Errorf("output = %q", got)
+	}
+	if mypy, err := exec.Command(py, "-m", "mypy", "--version").CombinedOutput(); err != nil {
+		t.Skipf("mypy not installed: %s", mypy)
+	}
+	typecheck := exec.Command(py, "-m", "mypy", "--strict", "--python-version", "3.10", "--cache-dir", filepath.Join(dir, ".mypy"), use)
+	typecheck.Dir = dir
+	typecheck.Env = append(os.Environ(), "MYPYPATH="+clientSrc)
+	if res, err := typecheck.CombinedOutput(); err != nil {
+		t.Errorf("mypy on use.py: %v\n%s", err, res)
+	}
+	// A guard narrows to the version's own fields: `body` is not a field of version 3.
+	bad := write("bad.py", `from generated_types import MainAssets, is_main_assets_v3
+
+
+def f(doc: MainAssets) -> str:
+    if is_main_assets_v3(doc):
+        return str(doc["body"])
+    return ""
+`)
+	typecheck = exec.Command(py, "-m", "mypy", "--strict", "--python-version", "3.10", "--cache-dir", filepath.Join(dir, ".mypy"), bad)
+	typecheck.Dir = dir
+	typecheck.Env = append(os.Environ(), "MYPYPATH="+clientSrc)
+	if res, err := typecheck.CombinedOutput(); err == nil || !strings.Contains(string(res), "body") {
+		t.Errorf("reading a dropped field after the v3 guard type-checked:\n%s", res)
+	}
+}

@@ -226,6 +226,9 @@ class Meta(_MetaRequired, total=False):
 
     #: Increases on every write; missing only on very old documents.
     version: int
+    #: The version of the collection's schema the document was written under (collections with
+    #: versioned schema files); missing means 1.
+    schema_version: int
     #: Id of the user who created it (realms with auth enabled).
     owner: str | None
     #: ``user:<id>``, ``key:<name>`` or ``anonymous``.
