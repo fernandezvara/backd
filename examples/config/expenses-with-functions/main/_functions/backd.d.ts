@@ -35,6 +35,8 @@ export interface Meta {
   created_at: DateTimeString;
   updated_at: DateTimeString;
   version?: number;
+  /** The version of the collection's schema the document was written under (collections with versioned schema files; absent: 1). */
+  schema_version?: number;
   owner?: string | null;
   created_by?: string;
   updated_by?: string;
