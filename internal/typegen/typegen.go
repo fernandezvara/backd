@@ -40,6 +40,9 @@ type Output struct {
 type Info struct {
 	Generator string `json:"generator"`
 	Realm     string `json:"realm"`
+	// SchemaVersions are the current schema versions of the realm's versioned collections
+	// ("main/assets": 3), which the clients send as X-Backd-Schema-Version.
+	SchemaVersions map[string]int `json:"schema_versions,omitempty"`
 	// Fingerprint identifies the generated types (a hash of types.d.ts without its header):
 	// what the JavaScript client sends to know whether its types are stale.
 	Fingerprint string `json:"fingerprint"`
@@ -105,7 +108,7 @@ func Generate(reg *registry.Registry, o Options) (*Output, error) {
 	return &Output{
 		Types:    types,
 		Warnings: g.warnings,
-		Info:     Info{Generator: Version, Realm: o.Realm, Fingerprint: fp, Config: o.Config, Entries: g.entries},
+		Info:     Info{Generator: Version, Realm: o.Realm, Fingerprint: fp, Config: o.Config, Entries: g.entries, SchemaVersions: schemaVersionsOf(rl, o.Database)},
 	}, nil
 }
 
@@ -199,6 +202,9 @@ func (g *gen) realm(rl *registry.Realm, o Options) string {
 		cols := db.SortedCollections()
 		for _, c := range cols {
 			g.entries["collection "+dbName+"/"+c.Name] = ""
+			if c.Versioned {
+				g.entries["schema_version "+dbName+"/"+c.Name] = fmt.Sprint(c.SchemaVersion)
+			}
 			doc, input, create, where, order := g.collection(&types, dbName, c)
 			fmt.Fprintf(&tree, "        %s: { doc: %s; input: %s; create: %s; where: %s; order_by: %s; expand: %s; aggregate: %s; trigger: %s };\n", member(c.Name), doc, input, create, where, order, expandRefs(c), aggregateShape(c), g.triggerInput(&types, c, doc))
 		}
@@ -594,4 +600,24 @@ func strategyNames(rl *registry.Realm) []string {
 	}
 	slices.Sort(names)
 	return names
+}
+
+// schemaVersionsOf lists the current version of each versioned collection of the realm (or of
+// database db), keyed <database>/<collection>; nil when there is none.
+func schemaVersionsOf(rl *registry.Realm, db string) map[string]int {
+	var out map[string]int
+	for dbName, d := range rl.Databases {
+		if db != "" && dbName != db {
+			continue
+		}
+		for _, c := range d.Collections {
+			if c.Versioned {
+				if out == nil {
+					out = map[string]int{}
+				}
+				out[dbName+"/"+c.Name] = c.SchemaVersion
+			}
+		}
+	}
+	return out
 }

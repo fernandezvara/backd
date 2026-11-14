@@ -23,6 +23,7 @@ import (
 	"github.com/fernandezvara/backd/internal/httpapi"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/settings"
+	"github.com/fernandezvara/backd/internal/typegen"
 )
 
 // Run runs a server role (serve, worker or provision) with its flags. Outside dev mode, or
@@ -181,6 +182,7 @@ func devLoad(ctx context.Context, cfg settings.Settings, log *slog.Logger, build
 	for _, w := range reg.AggregateWarnings() {
 		log.Warn(w)
 	}
+	writeDevSchemaFiles(reg, log)
 	fp, err := checkLoaded(reg, cfg, log)
 	if err != nil {
 		return nil, "", err
@@ -243,4 +245,21 @@ func (b *problemBoard) get() []devreport.Problem {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return slices.Clone(b.problems)
+}
+
+// writeDevSchemaFiles keeps the schema.d.ts of every versioned collection up to date while the
+// dev server runs, so the migrations' types follow the schema files (a read-only config is left alone).
+func writeDevSchemaFiles(reg *registry.Registry, log *slog.Logger) {
+	for _, realm := range reg.SortedRealms() {
+		written, warnings, err := typegen.WriteSchemaFiles(reg, realm.Name, "")
+		for _, w := range warnings {
+			log.Warn(w)
+		}
+		if err != nil {
+			log.Warn("dev mode: schema.d.ts could not be written", "realm", realm.Name, "error", err)
+		}
+		for _, p := range written {
+			log.Info("dev mode: schema types written", "file", p)
+		}
+	}
 }

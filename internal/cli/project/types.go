@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/fernandezvara/backd/internal/cli/clicore"
 
@@ -70,7 +71,14 @@ func TypesCommand(c *kli.CommandContext) error {
 		typesFile = typegen.PythonTypesFile
 	}
 	typesPath, infoPath := filepath.Join(out, typesFile), filepath.Join(out, typegen.InfoFile)
+	// The migrations' own types: schema.d.ts next to the schema.vN.json files (TypeScript, from the local config).
+	schemaFiles := lang == "ts" && cmdutil.Str(c, "from") == ""
 	if !check && !diff {
+		if schemaFiles {
+			if err := writeSchemaFiles(c, realm, db); err != nil {
+				return err
+			}
+		}
 		if err := os.MkdirAll(out, 0o755); err != nil {
 			return err
 		}
@@ -88,6 +96,11 @@ func TypesCommand(c *kli.CommandContext) error {
 		return nil
 	}
 
+	if check && schemaFiles {
+		if err := checkSchemaFiles(c, realm, db); err != nil {
+			return err
+		}
+	}
 	existing, err := os.ReadFile(typesPath)
 	missing := errors.Is(err, os.ErrNotExist)
 	if err != nil && !missing {
@@ -228,6 +241,55 @@ func functionTypesCommand(c *kli.CommandContext, realm string, check bool) error
 	}
 	for _, p := range changed {
 		fmt.Fprintf(c.Stdout(), "wrote %s\n", p)
+	}
+	return nil
+}
+
+// writeSchemaFiles writes the schema.d.ts of the realm's versioned collections.
+func writeSchemaFiles(c *kli.CommandContext, realm, db string) error {
+	dir, err := cmdutil.ConfigDir(c)
+	if err != nil {
+		return err
+	}
+	reg, err := registry.Load(dir)
+	if err != nil {
+		return fmt.Errorf("invalid config:\n%w", err)
+	}
+	written, warnings, err := typegen.WriteSchemaFiles(reg, realm, db)
+	for _, w := range warnings {
+		fmt.Fprintf(c.Stderr(), "warning: %s\n", w)
+	}
+	for _, p := range written {
+		fmt.Fprintf(c.Stdout(), "wrote %s\n", p)
+	}
+	return err
+}
+
+// checkSchemaFiles fails when a versioned collection's schema.d.ts is missing or stale.
+func checkSchemaFiles(c *kli.CommandContext, realm, db string) error {
+	dir, err := cmdutil.ConfigDir(c)
+	if err != nil {
+		return err
+	}
+	reg, err := registry.Load(dir)
+	if err != nil {
+		return fmt.Errorf("invalid config:\n%w", err)
+	}
+	states, err := typegen.CheckSchemaFiles(reg, realm, db)
+	if err != nil {
+		return err
+	}
+	var problems []string
+	for _, st := range states {
+		switch {
+		case st.Missing:
+			problems = append(problems, fmt.Sprintf("%s doesn't exist", st.Path))
+		case st.Stale:
+			problems = append(problems, fmt.Sprintf("%s is stale", st.Path))
+		}
+	}
+	if len(problems) > 0 {
+		return fmt.Errorf("%s: run `backd types --realm %s --out DIR` and commit the result", strings.Join(problems, "; "), realm)
 	}
 	return nil
 }

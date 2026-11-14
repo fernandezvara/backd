@@ -63,6 +63,8 @@ func describe(key string) string {
 			return fmt.Sprintf("function %s %s", name, part)
 		}
 		return "function " + rest
+	case "schema_version":
+		return "schema version of " + rest
 	case "field":
 		coll, path, _ := strings.Cut(rest, " ")
 		return fmt.Sprintf("field %s of %s", path, coll)

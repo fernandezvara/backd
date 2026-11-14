@@ -33,7 +33,8 @@ The fingerprint is the same for every language: they describe the same realm.
 | `types.dart` (`--lang dart`) | The same types for Dart: classes with `fromJson`/`toJson`, plus a `ShopRealm` accessor and an extension on `BackdClient<ShopRealm>` for the [Dart client](../dart/) |
 | `types.py` (`--lang python`) | The same types for Python: a `TypedDict` per document, write input and function input or output, `Literal` types for enums, classes of constants for the fields of `where` and `order_by`, plus a `ShopRealm` (and an `AsyncShopRealm`) over the [Python client](../python/) with typed collections and function calls |
 | `types.go` (`--lang go`) | The same types for Go: structs with JSON tags, string types with constants for enums, constants for the fields of `where` and `order_by`, plus a `ShopRealm` over the [Go client](../go/) with typed collections and function calls. `--package` names the package (`backdtypes` by default) |
-| `realm.json` | The fingerprint, the generator version, the config fingerprint and one entry per field, function, setting, template and role: what `--diff` compares |
+| `realm.json` | The fingerprint, the generator version, the config fingerprint, `schema_versions` (the current version of each [versioned collection](../../configuration/config-dir/#versioned-schemas), which the clients send as `X-Backd-Schema-Version`) and one entry per field, function, setting, template and role: what `--diff` compares |
+| `schema.d.ts` (`--lang ts`, beside each collection's `schema.vN.json`) | For a [versioned collection](../../configuration/config-dir/#versioned-schemas): `V1…VN`, the fields of each kept version, `Meta` (what a migration may read of a document) and `Current`. The migrations import from it. It is written into the config folder, so it is committed with the schema files; `--check` says when it is missing or stale |
 
 Everything hangs off one `Realm` interface, addressed by path, so no naming rules are needed:
 

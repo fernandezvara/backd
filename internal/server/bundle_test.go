@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/fernandezvara/backd/internal/cmdtest"
@@ -111,5 +112,38 @@ func TestStaleMigrations(t *testing.T) {
 	}
 	if got, _ := staleFunctions(reg); !slices.Equal(got, []string{"app/main migrations", "app/other migrations"}) {
 		t.Errorf("stale after an edit = %v", got)
+	}
+}
+
+// The dev server keeps each versioned collection's schema.d.ts current.
+func TestDevWritesSchemaFiles(t *testing.T) {
+	root := cmdtest.Write(t, map[string]string{
+		"app/realm.yaml":                "auth:\n  strategies:\n    password: [password]\n",
+		"app/main/items/schema.v1.json": `{"type":"object","properties":{"title":{"type":"string"}}}`,
+		"app/main/items/schema.v2.json": `{"type":"object","properties":{"title":{"type":"string"},"slug":{"type":"string"}}}`,
+		"app/main/items/schema.v2.ts":   "export default (d: unknown) => d;\n",
+		"app/main/plain/schema.json":    `{}`,
+	})
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	writeDevSchemaFiles(reg, log)
+	data, err := os.ReadFile(filepath.Join(root, "app/main/items/schema.d.ts"))
+	if err != nil || !strings.Contains(string(data), "export type Current = V2;") {
+		t.Fatalf("schema.d.ts: %v\n%s", err, data)
+	}
+	if _, err := os.Stat(filepath.Join(root, "app/main/plain/schema.d.ts")); err == nil {
+		t.Error("an unversioned collection got a schema.d.ts")
+	}
+	// Editing a version updates it on the next load.
+	if err := os.WriteFile(filepath.Join(root, "app/main/items/schema.v2.json"), []byte(`{"type":"object","properties":{"title":{"type":"string"},"rank":{"type":"integer"}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reg, _ = registry.Load(root)
+	writeDevSchemaFiles(reg, log)
+	if data, _ := os.ReadFile(filepath.Join(root, "app/main/items/schema.d.ts")); !strings.Contains(string(data), "rank?: number") {
+		t.Errorf("schema.d.ts after an edit:\n%s", data)
 	}
 }

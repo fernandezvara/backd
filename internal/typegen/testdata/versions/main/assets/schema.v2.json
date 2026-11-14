@@ -1,0 +1,13 @@
+{
+  "type": "object",
+  "properties": {
+    "title": { "type": "string" },
+    "body": { "type": "string" },
+    "description": { "type": "string" },
+    "visibility": { "enum": ["public", "team"] },
+    "published_at": { "type": "string", "format": "date-time", "x-backd-store": "date" },
+    "tags": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["title"],
+  "additionalProperties": false
+}
