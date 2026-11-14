@@ -77,6 +77,8 @@ Every error uses the same JSON envelope. Success responses are never wrapped.
 | 400 | `aggregate_not_enabled` | An aggregate request to a collection that declares no [`aggregate:`](../configuration/config-dir/#aggregations) |
 | 400 | `search_not_enabled` | A `$search` in a collection that declares no [text index](../configuration/config-dir/#a-text-index) |
 | 400 | `invalid_query` | Bad `where`, `order_by`, `limit`, `skip` or `count`, or unknown query parameter |
+| 400 | `invalid_schema_version` | A malformed [`X-Backd-Schema-Version`](documents/#the-schema-version-an-app-declares) header |
+| 400 | `schema_version_unknown` | The header declares a version of a versioned collection above its current one: deploy the server before the apps |
 | 400 | `idempotency_key_required` | A [function](../functions/calling/#idempotency) with `idempotency: required` was called with no `Idempotency-Key` |
 | 401 | `unauthenticated` | Missing, unknown, expired or revoked session token or API key, where credentials are required (see [API keys](../auth/api-keys/#who-can-access-data)) |
 | 401 | `invalid_credentials` | Wrong email or password |
@@ -90,6 +92,7 @@ Every error uses the same JSON envelope. Success responses are never wrapped.
 | 409 | `write_conflict` | A PUT, PATCH or conditional DELETE lost the race against concurrent writes 3 times |
 | 409 | `email_taken` | Sign-up with an email that is already registered |
 | 409 | `request_in_progress` | A [function](../functions/calling/#idempotency) call with this `Idempotency-Key` is still running |
+| 426 | `upgrade_required` | The header declares a version below the collection's [`min_schema_version`](../configuration/config-dir/#versioned-schemas); the error also carries `collection`, `min` and `declared` |
 | 412 | `version_mismatch` | `If-Match` doesn't match the current version |
 | 403 | `invalid_file_link` | A [file link](../files/transfers/#links-for-apps) that was changed, has expired or whose key was rotated |
 | 404 | `file_missing` | The document holds a [file](../files/transfers/#downloading) the storage no longer has |

@@ -80,6 +80,11 @@ type errorPayload struct {
 	Message   string   `json:"message"`
 	Details   []Detail `json:"details,omitempty"`
 	RequestID string   `json:"request_id"`
+	// Collection, Min and Declared come with upgrade_required: the collection (<database>/<collection>),
+	// the oldest schema version it accepts and the one the app declared.
+	Collection string `json:"collection,omitempty"`
+	Min        int    `json:"min,omitempty"`
+	Declared   int    `json:"declared,omitempty"`
 }
 
 // writeError writes the standard error envelope.

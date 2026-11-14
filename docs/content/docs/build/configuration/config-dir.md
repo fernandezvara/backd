@@ -128,7 +128,7 @@ shop/orders/items/
   - at most 1,000 documents a second, and the job survives a worker that dies: another goes on from where it was.
 - **On demand:** `backd data migrate --realm R --database D --collection C` queues it (`--dry-run` runs the migrations and validates without writing, `--wait` follows it and exits 1 when some documents did not migrate), and `backd data migrations` shows the state. Needs the executor and a realm with `auth` enabled: a collection with `schema.v<N>.ts` files in a realm with `auth: disabled` does not load, because the job queue lives in realms with auth.
 
-The version an app declares and `min_schema_version` (checked when loading: a whole number from 1 to the current version, only in a versioned collection) are not enforced yet.
+The version an app declares (`X-Backd-Schema-Version`) stamps its writes, and `min_schema_version` in [`collection.yaml`](#collectionyaml) (a whole number from 1 to the current version, only in a versioned collection) makes the server answer `426 upgrade_required` to apps below it: see [the schema version an app declares](../../api/documents/#the-schema-version-an-app-declares).
 
 ### Dates
 
@@ -206,7 +206,7 @@ This optional file holds a collection's policy, in sections that can each be lef
 | `custom_id:` | Collections whose documents get the id the client chooses | [Custom ids](#custom-ids) |
 | `organization:` | Whether documents belong to an organization, and what happens to them when it is deleted | [Organizations](#organizations) |
 | `realtime:` | Whether the collection's changes may be streamed to clients | [Realtime](#realtime) |
-| `min_schema_version:` | The oldest schema version of an app that may still use the collection (a [versioned schema](#versioned-schemas) only; not enforced yet) | [Versioned schemas](#versioned-schemas) |
+| `min_schema_version:` | The oldest schema version of an app that may still use the collection (a [versioned schema](#versioned-schemas) only) | [Versioned schemas](#versioned-schemas) |
 | `triggers:` | Functions to run in the background when documents change | [Triggers](#triggers) |
 | `fields:` | Which fields are stored encrypted, and with which key | [Field keys](../field-keys/) |
 | `on_owner_delete:` | What an administrator's **erase** does to the collection when a user is erased (`backd user delete`) | below |

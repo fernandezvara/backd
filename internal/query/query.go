@@ -69,11 +69,13 @@ var systemFields = map[string]field{
 	"_meta.created_at": {kind: kindDate},
 	"_meta.updated_at": {kind: kindDate},
 	"_meta.version":    {Field: registry.Field{Types: []string{"integer"}}},
-	"_meta.owner":      {Field: registry.Field{Types: []string{"string", "null"}}},
-	"_meta.org":        {Field: registry.Field{Types: []string{"string"}}}, // only collections with organizations
-	"_meta.team":       {Field: registry.Field{Types: []string{"string"}}}, // only collections with teams
-	"_meta.created_by": {Field: registry.Field{Types: []string{"string"}}},
-	"_meta.updated_by": {Field: registry.Field{Types: []string{"string"}}},
+	// The schema version the document was written under (collections with schema.v<N>.json files).
+	"_meta.schema_version": {Field: registry.Field{Types: []string{"integer"}}},
+	"_meta.owner":          {Field: registry.Field{Types: []string{"string", "null"}}},
+	"_meta.org":            {Field: registry.Field{Types: []string{"string"}}}, // only collections with organizations
+	"_meta.team":           {Field: registry.Field{Types: []string{"string"}}}, // only collections with teams
+	"_meta.created_by":     {Field: registry.Field{Types: []string{"string"}}},
+	"_meta.updated_by":     {Field: registry.Field{Types: []string{"string"}}},
 	// Only soft-deleted documents have these (soft_delete in collection.yaml).
 	"_meta.deleted_at": {kind: kindDate},
 	"_meta.deleted_by": {Field: registry.Field{Types: []string{"string"}}},

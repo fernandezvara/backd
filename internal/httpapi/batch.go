@@ -221,6 +221,9 @@ func (d *documents) parseBatchOp(w http.ResponseWriter, r *http.Request, realm, 
 		writeError(w, r, http.StatusNotFound, codeNotFound, fmt.Sprintf("operation %d: no such collection: %s", index, collName), Detail{Path: idx + ".collection", Reason: "no such collection"})
 		return batchOp{}, false
 	}
+	if !schemaGate(w, r, c) {
+		return batchOp{}, false
+	}
 	op := batchOp{index: index, kind: kind, collection: c}
 
 	if kind == "create" {
@@ -333,7 +336,7 @@ func (d *documents) applyBatchOp(ctx context.Context, r *http.Request, a access,
 		}
 		meta := map[string]any{"created_at": now, "updated_at": now, "version": int64(1)}
 		stampCreate(r, meta)
-		op.collection.StampSchemaVersion(meta)
+		op.collection.StampSchemaVersionAs(meta, writtenSchemaVersion(r, op.collection))
 		maps.Copy(meta, scopeMeta(op.org, op.team))
 		doc["_meta"] = meta
 		if err := repo.Create(ctx, doc); err != nil {
@@ -372,7 +375,7 @@ func (d *documents) applyBatchOp(ctx context.Context, r *http.Request, a access,
 		stored, _ := current["_meta"].(map[string]any)
 		meta := map[string]any{"created_at": stored["created_at"], "updated_at": d.timestamp(), "version": read + 1}
 		stampUpdate(r, stored, meta)
-		op.collection.StampSchemaVersion(meta)
+		op.collection.StampSchemaVersionAs(meta, writtenSchemaVersion(r, op.collection))
 		fields["id"] = current["id"]
 		fields["_meta"] = meta
 		if err := repo.Replace(ctx, fields, read); err != nil {
@@ -392,7 +395,7 @@ func (d *documents) applyBatchOp(ctx context.Context, r *http.Request, a access,
 		stored, _ := current["_meta"].(map[string]any)
 		meta := map[string]any{"created_at": stored["created_at"], "updated_at": d.timestamp(), "version": read + 1}
 		stampUpdate(r, stored, meta)
-		op.collection.StampSchemaVersion(meta)
+		op.collection.StampSchemaVersionAs(meta, writtenSchemaVersion(r, op.collection))
 		fields["id"] = current["id"]
 		fields["_meta"] = meta
 		if err := repo.Replace(ctx, fields, read); err != nil {

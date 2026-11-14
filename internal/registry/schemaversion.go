@@ -164,8 +164,14 @@ func HasSchema(dir string) bool {
 // has versioned schema files (an unversioned collection stamps nothing). Writes call it for the
 // content they store: create, PUT, PATCH and the batch operations.
 func (c *Collection) StampSchemaVersion(meta map[string]any) {
+	c.StampSchemaVersionAs(meta, c.SchemaVersion)
+}
+
+// StampSchemaVersionAs is StampSchemaVersion with the version the app declared for the write
+// (design §9.2): a v1 app editing a document stores it as v1, and the migration job moves it up again.
+func (c *Collection) StampSchemaVersionAs(meta map[string]any, version int) {
 	if c.Versioned {
-		meta["schema_version"] = int64(c.SchemaVersion)
+		meta["schema_version"] = int64(version)
 	}
 }
 

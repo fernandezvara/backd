@@ -57,6 +57,16 @@ Documents are returned as bare JSON objects:
 - Documents written before versioning existed have no `version`. They get `version: 1` on their next write.
 - `_id` and `_meta` in request bodies are always ignored, and so is `id` on `PUT` and `PATCH`. On a create, `id` is [the client's choice](#custom-ids) in a collection that declares `custom_id`, and refused in one that doesn't.
 
+## The schema version an app declares
+
+When a collection keeps its [schema in versions](../../configuration/config-dir/#versioned-schemas), an app says which version of each collection it was built for with `X-Backd-Schema-Version: <database>/<collection>=<n>` (several, separated by commas: `main/assets=2, main/pins=3`). The generated clients send it for you.
+
+- **Writes are stamped with it.** The document records the declared version in `_meta.schema_version`, or the current one when the request declares nothing (scripts, functions, untyped clients). The write is checked against the **current** schema either way. A version 1 app editing a document that was already moved to version 2 stores it as version 1; the next migration job moves it up again, so the data an old app wrote is never left behind.
+- **A version above the current one** is `400 schema_version_unknown`: deploy the server before the apps.
+- **A version below the collection's `min_schema_version`** is `426 upgrade_required`, on reads as well (an old app would misread the new shape), with `{"collection": "main/assets", "min": 2, "declared": 1}` in the error. It applies to a list, a get, every write, `_batch`, the collections an `expand` reads and a realtime subscription. An app shows "please update" from this one error. It is a compatibility signal, not a security control: any client can declare anything.
+- **A malformed header** is `400 invalid_schema_version`. Entries for collections the request doesn't touch, and for collections without versioned schema files, are ignored. Requests that declare nothing are never refused.
+- **To find what is still old,** filter or sort on `_meta.schema_version` (`where={"_meta.schema_version": {"$lt": 2}}`): a document without the field is version 1.
+
 ## Create
 
 ```http

@@ -120,6 +120,9 @@ func buildTree(f storage.Filter) (bson.D, error) {
 }
 
 func clause(c storage.Condition) (bson.D, error) {
+	if c.Field == "_meta.schema_version" {
+		return schemaStampClause(c)
+	}
 	f := mongoField(c.Field)
 	with := func(op string, v any) bson.D {
 		return bson.D{{Key: f, Value: bson.D{{Key: op, Value: v}}}}
@@ -203,4 +206,37 @@ func buildSort(fields []storage.SortField) bson.D {
 		out[i] = bson.E{Key: mongoField(f.Field), Value: dir}
 	}
 	return out
+}
+
+// schemaStampClause translates a condition on _meta.schema_version, where a document without the
+// stamp is version 1: it compares the stamp with a missing one read as 1, so "below 2" finds the
+// documents nobody stamped yet. (It reads every candidate: the job's own count uses the index.)
+func schemaStampClause(c storage.Condition) (bson.D, error) {
+	stamp := bson.D{{Key: "$ifNull", Value: bson.A{"$_meta.schema_version", int64(1)}}}
+	expr := func(op string, v any) bson.D {
+		return bson.D{{Key: "$expr", Value: bson.D{{Key: op, Value: bson.A{stamp, toBSONValue(v)}}}}}
+	}
+	if op, ok := comparisonOps[c.Op]; ok {
+		switch c.Op {
+		case storage.OpIn:
+			return expr("$in", c.Value), nil
+		case storage.OpNin:
+			return bson.D{{Key: "$nor", Value: bson.A{expr("$in", c.Value)}}}, nil
+		}
+		return expr(op, c.Value), nil
+	}
+	switch c.Op {
+	case storage.OpBetween:
+		bounds, ok := c.Value.([]any)
+		if !ok || len(bounds) != 2 {
+			return nil, fmt.Errorf("$between on %s: want [min, max]", c.Field)
+		}
+		return bson.D{{Key: "$and", Value: bson.A{expr("$gte", bounds[0]), expr("$lte", bounds[1])}}}, nil
+	case storage.OpIsNull:
+		if isNull, _ := c.Value.(bool); isNull {
+			return buildTree(storage.Const(false)) // every document has a version
+		}
+		return bson.D{}, nil
+	}
+	return nil, fmt.Errorf("unsupported operator %s on %s", c.Op, c.Field)
 }

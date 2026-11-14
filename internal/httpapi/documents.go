@@ -140,6 +140,9 @@ func (d *documents) resolveCollection(next http.Handler) http.Handler {
 			notFound(w, r)
 			return
 		}
+		if !schemaGate(w, r, c) { // the schema version the app declares (X-Backd-Schema-Version)
+			return
+		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), collectionKey{}, c)))
 	})
 }
@@ -218,7 +221,7 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 	}
 	meta := map[string]any{"created_at": now, "updated_at": now, "version": int64(1)}
 	stampCreate(r, meta)
-	c.StampSchemaVersion(meta)
+	c.StampSchemaVersionAs(meta, writtenSchemaVersion(r, c))
 	maps.Copy(meta, scopeMeta(org, team))
 	doc["_meta"] = meta
 	if pending != nil && !pending.claim(w, r, doc["id"].(string)) {
@@ -602,7 +605,7 @@ func (d *documents) write(w http.ResponseWriter, r *http.Request, c *registry.Co
 		stored, _ := current["_meta"].(map[string]any)
 		meta := map[string]any{"created_at": stored["created_at"], "updated_at": d.timestamp(), "version": read + 1}
 		stampUpdate(r, stored, meta)
-		c.StampSchemaVersion(meta)
+		c.StampSchemaVersionAs(meta, writtenSchemaVersion(r, c))
 		fields["id"] = current["id"]
 		fields["_meta"] = meta
 
@@ -1234,7 +1237,20 @@ func (d *documents) expandPlanOf(w http.ResponseWriter, r *http.Request, c *regi
 		writeError(w, r, http.StatusBadRequest, codeInvalidExpand, "invalid expand: "+details[0].Reason, details...)
 		return nil, false
 	}
+	if plan != nil && !gateExpansion(w, r, plan.nodes) { // the schema versions of the expanded collections
+		return nil, false
+	}
 	return plan, true
+}
+
+// gateExpansion applies schemaGate to every collection an expansion reads.
+func gateExpansion(w http.ResponseWriter, r *http.Request, nodes []*expandNode) bool {
+	for _, n := range nodes {
+		if !schemaGate(w, r, n.target) || !gateExpansion(w, r, n.children) {
+			return false
+		}
+	}
+	return true
 }
 
 // expandInto expands docs into out and sets the cost headers; false when it answered an error.

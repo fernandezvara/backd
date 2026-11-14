@@ -2189,6 +2189,23 @@ func TestContract(t *testing.T) {
 	req("GET", checks, "", key, 200) // with a report
 	req("GET", checks+"/app/notes", "", nil, 401)
 	req("GET", checks+"/app/notes", "", ada, 403)
+	// Apps below a collection's min_schema_version are told to update; the other declared-version refusals.
+	{
+		const strict = "/v1/acme/app/strict"
+		old := with(ada, schemaVersionHeader, "app/strict=1")
+		sid := req("POST", strict, `{"title": "t"}`, ada, 201)["id"].(string)
+		req("GET", strict, "", old, 426)
+		req("POST", strict, `{"title": "x"}`, old, 426)
+		req("GET", strict+"/"+sid, "", old, 426)
+		req("PUT", strict+"/"+sid, `{"title": "x"}`, old, 426)
+		req("PATCH", strict+"/"+sid, `{"title": "x"}`, old, 426)
+		req("DELETE", strict+"/"+sid, "", old, 426)
+		req("POST", "/v1/acme/app/_batch", `{"operations": [{"op": "create", "collection": "strict", "document": {"title": "x"}}]}`, old, 426)
+		req("POST", "/v1/acme/_realtime", `{"subscriptions":[{"id":"a","db":"app","collection":"strict"}]}`, old, 426)
+		req("GET", strict, "", with(ada, schemaVersionHeader, "app/strict=9"), 400)
+		req("GET", strict, "", with(ada, schemaVersionHeader, "app/strict=x"), 400)
+		req("GET", strict+"/"+sid, "", with(ada, schemaVersionHeader, "app/strict=2"), 200)
+	}
 	// Schema migrations.
 	migs := ad + "/data-migrations"
 	req("GET", migs, "", key, 200)
