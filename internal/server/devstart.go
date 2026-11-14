@@ -183,6 +183,7 @@ func devLoad(ctx context.Context, cfg settings.Settings, log *slog.Logger, build
 		log.Warn(w)
 	}
 	writeDevSchemaFiles(reg, log)
+	logCompatibility(reg, log)
 	fp, err := checkLoaded(reg, cfg, log)
 	if err != nil {
 		return nil, "", err
@@ -261,5 +262,18 @@ func writeDevSchemaFiles(reg *registry.Registry, log *slog.Logger) {
 		for _, p := range written {
 			log.Info("dev mode: schema types written", "file", p)
 		}
+	}
+}
+
+// logCompatibility warns about what each versioned schema breaks for the version below it, at
+// every load of the dev server (a build that was fresh does not run the check itself).
+func logCompatibility(reg *registry.Registry, log *slog.Logger) {
+	findings, err := reg.CompatibilityFindings()
+	if err != nil {
+		log.Warn("dev mode: the schema compatibility check could not run", "error", err)
+		return
+	}
+	for _, f := range findings {
+		log.Warn(f.String())
 	}
 }

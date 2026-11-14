@@ -506,3 +506,32 @@ console.log(Date.now() >= before ? "restored" : "broken");
 		t.Errorf("the clock after upgrade: %v\n%s", err, b)
 	}
 }
+
+// The build says what a schema change breaks for the apps on the version below, and never fails
+// because of it.
+func TestBuildWarnsAboutIncompatibleSchemaChanges(t *testing.T) {
+	bin := deno(t)
+	root := t.TempDir()
+	coll := "shop/app/items/"
+	write(t, root, map[string]string{
+		"shop/realm.yaml":       "auth:\n  strategies:\n    password: [password]\n",
+		coll + "schema.v1.json": `{"type": "object", "properties": {"name": {"type": "string"}, "body": {"type": "string"}}}`,
+		coll + "schema.v2.json": `{"type": "object", "properties": {"name": {"type": "string"}, "slug": {"type": "string"}}, "required": ["slug"]}`,
+		coll + "schema.d.ts":    "export type V1 = { name?: string; body?: string };\nexport type V2 = { name?: string; slug: string };\nexport interface Meta { id: string }\n",
+		coll + "schema.v2.ts":   "import type { V1, V2 } from \"./schema.d.ts\";\nexport default (doc: V1): V2 => ({ name: doc.name, slug: doc.name ?? \"\" });\n",
+	})
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var warned []string
+	if err := Build(context.Background(), reg, Options{Deno: bin, Warn: func(l string) { warned = append(warned, l) }}); err != nil {
+		t.Fatalf("a compatibility warning must not fail the build: %v", err)
+	}
+	joined := strings.Join(warned, "\n")
+	for _, want := range []string{`warning: app/items schema.v1.json → schema.v2.json: slug: "slug" is required now`, `body: "body" is no longer declared`} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("no warning containing %q in:\n%s", want, joined)
+		}
+	}
+}

@@ -27,6 +27,9 @@ type Options struct {
 	Check bool   // type-check TypeScript while bundling
 	// Log receives one line per bundled function.
 	Log func(format string, args ...any)
+	// Warn receives the compatibility findings of the versioned schemas (design/schema-versioning.md
+	// §6.2): what a schema change breaks for the apps still on the version below. They never fail the build.
+	Warn func(line string)
 }
 
 var versionPattern = regexp.MustCompile(`(?m)^deno (\d+\.\d+\.\d+)`)
@@ -51,6 +54,15 @@ func Build(ctx context.Context, reg *registry.Registry, opts Options) error {
 	}
 	if opts.Log == nil {
 		opts.Log = func(string, ...any) {}
+	}
+	if opts.Warn != nil {
+		if findings, err := reg.CompatibilityFindings(); err != nil {
+			opts.Warn("warning: the schema compatibility check could not run: " + err.Error())
+		} else {
+			for _, f := range findings {
+				opts.Warn(f.String())
+			}
+		}
 	}
 	var projects []*registry.Database
 	for _, db := range reg.Databases() {
