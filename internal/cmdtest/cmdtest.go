@@ -113,3 +113,33 @@ func (s *Script) Read(p []byte) (int, error) {
 	s.next++
 	return copy(p, out), nil
 }
+
+// WriteMigrationManifests writes a fake build of the schema migrations of every database of reg
+// that has any, as `backd-server functions build` would.
+func WriteMigrationManifests(t testing.TB, reg *registry.Registry) {
+	t.Helper()
+	for _, db := range reg.Databases() {
+		colls := db.MigratingCollections()
+		if len(colls) == 0 {
+			continue
+		}
+		m := registry.MigrationManifest{Deno: registry.DenoVersion, Collections: map[string]registry.ManifestBundle{}}
+		if err := os.MkdirAll(db.MigrationsBuildDir(), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range colls {
+			data := []byte("export const steps = []; // " + c.Name + "\n")
+			sum := sha256.Sum256(data)
+			file := c.Name + ".js"
+			if err := os.WriteFile(filepath.Join(db.MigrationsBuildDir(), file), data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			m.Collections[c.Name] = registry.ManifestBundle{Bundle: file, SHA256: hex.EncodeToString(sum[:])}
+		}
+		m.Source, _ = registry.MigrationSourceHash(db)
+		out, _ := json.Marshal(m)
+		if err := os.WriteFile(filepath.Join(db.MigrationsBuildDir(), registry.ManifestFile), out, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

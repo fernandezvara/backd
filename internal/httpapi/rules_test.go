@@ -18,6 +18,7 @@ import (
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/auth/authtest"
+	"github.com/fernandezvara/backd/internal/cmdtest"
 	"github.com/fernandezvara/backd/internal/email"
 	"github.com/fernandezvara/backd/internal/registry"
 )
@@ -141,6 +142,11 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 		// A collection whose changes may be streamed (see realtime_test.go).
 		"acme/app/live/schema.json":     postsSchema,
 		"acme/app/live/collection.yaml": "realtime: true\n" + rulesSection("read: user != nil\ncreate: user != nil\n"),
+		// A collection with schema versions and a migration (see worker_schemamigrate_test.go).
+		"acme/app/revisions/schema.v1.json":  `{"type": "object", "properties": {"title": {"type": "string"}}, "additionalProperties": false}`,
+		"acme/app/revisions/schema.v2.json":  `{"type": "object", "properties": {"title": {"type": "string"}, "migrated": {"type": "boolean"}}, "additionalProperties": false}`,
+		"acme/app/revisions/schema.v2.ts":    "export default (doc: unknown) => doc;\n",
+		"acme/app/revisions/collection.yaml": rulesSection("read: user != nil\ncreate: user != nil\nupdate: user != nil\n"),
 		// Functions (see functions_test.go).
 		fnDir + "echo/function.yaml":  "invoke: \"user != nil && user.email_verified\"\n",
 		fnDir + "echo/index.js":       "",
@@ -257,6 +263,7 @@ func newRulesFixture(t *testing.T, opts ...func(*Config)) *rulesFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	cmdtest.WriteMigrationManifests(t, reg)
 	svc := &auth.Users{
 		Store:    authtest.NewMemStore(),
 		Hasher:   auth.NewHasher(2, auth.Argon2Params{Memory: 64, Time: 1, Threads: 1}),

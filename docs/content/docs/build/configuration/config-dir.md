@@ -119,7 +119,16 @@ shop/orders/items/
 - **An index on `_meta.schema_version`** is created for a collection with more than one version file, so finding the documents still at an older version is not a scan. As for every index, it is created if it is missing and never dropped.
 - **Migrations are built with the functions.** `backd-server functions build` bundles the `schema.v<N>.ts` files of each collection into one file per collection, in `<database>/_migrations/.build/` (a build output, gitignored like the functions' `.build/`; a database without functions gets it too). Migrations are always type-checked, whatever `--check` says. A migration may only `import type { ... } from "./schema.d.ts"`: any other import is refused, naming the file and the line. Startup refuses a collection whose bundle is missing or stale, as it does for functions, and dev mode (`BACKD_DEV=true`) rebuilds them on every change.
 
-Running the migrations over the stored documents, and the version an app declares, are not available yet; this section lists what the server does today. `min_schema_version` in [`collection.yaml`](#collectionyaml) is checked when loading (a whole number from 1 to the current version, only in a versioned collection) and does nothing yet.
+- **Documents are migrated in the background.** At every start, a worker counts the documents below the current version (one query on the index) and, when there are any, queues a job that reads them in id order, sends them in batches to the executor (no network, no clock, no randomness) and writes each result back:
+  - the result is validated against the current schema and written only if the document is still the one that was read (if an app wrote it meanwhile, it is read and migrated again);
+  - the document's `_meta.version` goes up and `_meta.schema_version` is set, while `updated_at` and `updated_by` stay: it is not a person's edit;
+  - [triggers and realtime](../../../operate/change-feed/) are not told, so a subscriber may hold the old shape until the document changes again;
+  - encrypted fields are opened for the migration and sealed again on write;
+  - a document whose migration throws, times out, returns something invalid, changes a [file field](../../files/file-fields/) or breaks a unique index **stays at its version** and is reported by id, step and reason, never a value; it is tried again at the next start;
+  - at most 1,000 documents a second, and the job survives a worker that dies: another goes on from where it was.
+- **On demand:** `backd data migrate --realm R --database D --collection C` queues it (`--dry-run` runs the migrations and validates without writing, `--wait` follows it and exits 1 when some documents did not migrate), and `backd data migrations` shows the state. Needs the executor and a realm with `auth` enabled: a collection with `schema.v<N>.ts` files in a realm with `auth: disabled` does not load, because the job queue lives in realms with auth.
+
+The version an app declares and `min_schema_version` (checked when loading: a whole number from 1 to the current version, only in a versioned collection) are not enforced yet.
 
 ### Dates
 

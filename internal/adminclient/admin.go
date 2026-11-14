@@ -23,29 +23,30 @@ import (
 type Admin struct {
 	c *client.Client
 
-	AppConfig  *AppConfig
-	APIKeys    *APIKeys
-	Audit      *Audit
-	Compliance *Compliance
-	Consents   *Consents
-	DataChecks *DataChecks
-	Data       *Data
-	Encryption *Encryption
-	Export     *Export
-	Files      *Files
-	Functions  *Functions
-	Import     *Import
-	Jobs       *Jobs
-	MFA        *MFA
-	Orgs       *Orgs
-	Passwords  *Passwords
-	Push       *Push
-	Secrets    *Secrets
-	Sessions   *Sessions
-	Storage    *Storage
-	Triggers   *Triggers
-	Types      *Types
-	Users      *Users
+	AppConfig      *AppConfig
+	APIKeys        *APIKeys
+	Audit          *Audit
+	Compliance     *Compliance
+	Consents       *Consents
+	DataChecks     *DataChecks
+	DataMigrations *DataMigrations
+	Data           *Data
+	Encryption     *Encryption
+	Export         *Export
+	Files          *Files
+	Functions      *Functions
+	Import         *Import
+	Jobs           *Jobs
+	MFA            *MFA
+	Orgs           *Orgs
+	Passwords      *Passwords
+	Push           *Push
+	Secrets        *Secrets
+	Sessions       *Sessions
+	Storage        *Storage
+	Triggers       *Triggers
+	Types          *Types
+	Users          *Users
 }
 
 // New returns the admin API of a configured client. It opens no connection of its own.
@@ -57,6 +58,7 @@ func New(c *client.Client) *Admin {
 	a.Functions, a.Import, a.Jobs, a.MFA, a.Orgs = &Functions{base}, &Import{base}, &Jobs{base}, &MFA{base}, &Orgs{base}
 	a.Passwords, a.Push, a.Secrets, a.Sessions, a.Storage = &Passwords{base}, &Push{base}, &Secrets{base}, &Sessions{base}, &Storage{base}
 	a.Triggers, a.Types, a.Users = &Triggers{base}, &Types{base}, &Users{base}
+	a.DataMigrations = &DataMigrations{base}
 	return a
 }
 

@@ -76,7 +76,7 @@ func TestBuildStaleFunctionsSkipsFreshBundles(t *testing.T) {
 // or an old one, is listed, and one built from the current sources is not.
 func TestStaleMigrations(t *testing.T) {
 	root := cmdtest.Write(t, map[string]string{
-		"app/realm.yaml":                 "auth: disabled\n",
+		"app/realm.yaml":                 "auth:\n  strategies:\n    password: [password]\n",
 		"app/main/items/schema.v1.json":  `{}`,
 		"app/main/items/schema.v2.json":  `{}`,
 		"app/main/items/schema.v2.ts":    "export default (d: unknown) => d;\n",

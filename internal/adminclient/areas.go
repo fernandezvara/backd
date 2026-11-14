@@ -95,6 +95,28 @@ func (x *DataChecks) List(ctx context.Context, out any, opts ...Opt) error {
 	return err
 }
 
+// DataMigrations migrate the documents of versioned collections to their current schema version
+// (_admin/data-migrations).
+type DataMigrations struct{ base }
+
+// Start queues the migration of a collection (body: database, collection, dry_run).
+func (x *DataMigrations) Start(ctx context.Context, body, out any, opts ...Opt) error {
+	_, err := x.call(ctx, "POST", s("data-migrations"), nil, body, out, opts)
+	return err
+}
+
+// Get reads the latest finished migration of a collection, in full.
+func (x *DataMigrations) Get(ctx context.Context, database, name string, out any, opts ...Opt) error {
+	_, err := x.call(ctx, "GET", s("data-migrations", database, name), nil, nil, out, opts)
+	return err
+}
+
+// List reads the migrations running and the state of every collection with migrations.
+func (x *DataMigrations) List(ctx context.Context, out any, opts ...Opt) error {
+	_, err := x.call(ctx, "GET", s("data-migrations"), nil, nil, out, opts)
+	return err
+}
+
 // Data acts on documents regardless of their rules (_admin/data).
 type Data struct{ base }
 

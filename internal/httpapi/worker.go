@@ -31,9 +31,11 @@ const workerPollInterval = 250 * time.Millisecond
 // callback construction and invocation recording sync calls use.
 type Worker struct {
 	oauth *oauth.Service // reaches the identity providers (to revoke Apple tokens)
-	id    string
-	fns   *functions
-	reg   *registry.Registry
+	// migrateDocsPerSecond overrides the rate of schema migrations (zero: auth.SchemaMigrateRate); tests only.
+	migrateDocsPerSecond int
+	id                   string
+	fns                  *functions
+	reg                  *registry.Registry
 	// backdURL is backd's public address, for the links in emails.
 	backdURL string
 	log      *slog.Logger
@@ -101,6 +103,7 @@ func (w *Worker) Run(ctx context.Context, concurrency int) {
 	if concurrency < 1 {
 		concurrency = 1
 	}
+	w.QueueSchemaMigrations(ctx) // documents below the current schema version, at every start
 	done := make(chan struct{}, concurrency+1)
 	go func() {
 		w.scheduleLoop(ctx)
@@ -320,6 +323,10 @@ func (w *Worker) runJob(ctx context.Context, realm string, svc *auth.Users, job 
 		w.runEncrypt(ctx, log, realm, svc, job) // not a function: a worker rewrites how values are stored
 		return
 	}
+	if job.SchemaMigrate != nil {
+		w.runSchemaMigrate(ctx, log, realm, svc, job) // not a function: a worker migrates documents to the current schema
+		return
+	}
 	if job.Export != nil {
 		w.runExport(ctx, log, realm, svc, job) // not a function: a worker gathers a user's data itself
 		return
@@ -533,6 +540,9 @@ func jobKind(j auth.Job) string {
 	}
 	if j.Export != nil {
 		return "export"
+	}
+	if j.SchemaMigrate != nil {
+		return "schema_migrate"
 	}
 	return metrics.JobKind(j.Email != nil, j.Erase != nil, j.Check != nil, j.Image != nil, j.Assign != nil || j.OrgDelete != nil, j.Scheduled)
 }

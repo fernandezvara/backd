@@ -2,89 +2,72 @@ package httpapi
 
 import (
 	"net/http"
-	"os"
-	"path/filepath"
 	"testing"
-
-	"github.com/fernandezvara/backd/internal/registry"
 )
-
-// versionedFixture has shop/orders/items with schema.v1.json and schema.v2.json (and v2's migration).
-func versionedFixture(t *testing.T) *fixture {
-	t.Helper()
-	root := t.TempDir()
-	dir := filepath.Join(root, "shop", "orders", "items")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for name, content := range map[string]string{
-		"schema.v1.json": itemSchema,
-		"schema.v2.json": itemSchema,
-		"schema.v2.ts":   "export default (doc: unknown) => doc;",
-	} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(root, "shop", registry.RealmFile), []byte("auth: disabled\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	reg, err := registry.Load(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return newFixtureWith(t, reg, &memStore{})
-}
 
 func schemaVersionOf(body map[string]any) any {
 	meta, _ := body["_meta"].(map[string]any)
 	return meta["schema_version"]
 }
 
+// The schema version of the collection is recorded by every kind of write that stores content.
 func TestSchemaVersionStamp(t *testing.T) {
-	f := versionedFixture(t)
+	f := newRulesFixture(t) // acme/app/revisions has schema.v1.json, schema.v2.json and schema.v2.ts
+	const revisions = "/v1/acme/app/revisions"
+	stored := func(id string) map[string]any {
+		f.store.mu.Lock()
+		defer f.store.mu.Unlock()
+		return f.store.docs[revisionsKey][id]["_meta"].(map[string]any)
+	}
+	as := map[string]string{"Authorization": "Bearer " + f.ada, "Content-Type": "application/json"}
+	patch := map[string]string{"Authorization": "Bearer " + f.ada, "Content-Type": "application/merge-patch+json"}
 
 	// A create is stamped with the current version, whatever the client says.
-	rec, body := f.do(t, "POST", items, `{"name": "Widget", "_meta": {"schema_version": 1}}`)
+	rec, body := f.doH(t, "POST", revisions, `{"title": "Widget", "_meta": {"schema_version": 1}}`, as)
 	if rec.Code != http.StatusCreated || schemaVersionOf(body) != float64(2) {
 		t.Fatalf("create = %d %s, want schema_version 2", rec.Code, rec.Body)
 	}
 	id := body["id"].(string)
 
 	// A document stored without a stamp reads as version 1...
-	delete(f.store.docs["shop__orders.items"][id]["_meta"].(map[string]any), "schema_version")
-	rec, body = f.do(t, "GET", items+"/"+id, "")
+	delete(stored(id), "schema_version")
+	rec, body = f.doH(t, "GET", revisions+"/"+id, "", as)
 	if rec.Code != http.StatusOK || schemaVersionOf(body) != float64(1) {
 		t.Fatalf("get = %d %s, want schema_version 1", rec.Code, rec.Body)
 	}
 
 	// ...and each kind of write moves it to the current one.
+	batch := func(op string) int {
+		rec, _ := f.doH(t, "POST", "/v1/acme/app/_batch", `{"operations": [`+op+`]}`, as)
+		return rec.Code
+	}
 	for name, do := range map[string]func() int{
 		"PUT": func() int {
-			rec, _ := f.do(t, "PUT", items+"/"+id, `{"name": "Put", "_meta": {"schema_version": 1}}`)
+			rec, _ := f.doH(t, "PUT", revisions+"/"+id, `{"title": "Put", "_meta": {"schema_version": 1}}`, as)
 			return rec.Code
 		},
-		"PATCH": func() int { rec, _ := f.do(t, "PATCH", items+"/"+id, `{"name": "Patched"}`); return rec.Code },
-		"batch replace": func() int {
-			rec, _ := f.do(t, "POST", "/v1/shop/orders/_batch", `{"operations": [{"op": "replace", "collection": "items", "id": "`+id+`", "document": {"name": "Batch put"}}]}`)
+		"PATCH": func() int {
+			rec, _ := f.doH(t, "PATCH", revisions+"/"+id, `{"title": "Patched"}`, patch)
 			return rec.Code
+		},
+		"batch replace": func() int {
+			return batch(`{"op": "replace", "collection": "revisions", "id": "` + id + `", "document": {"title": "Batch replace"}}`)
 		},
 		"batch patch": func() int {
-			rec, _ := f.do(t, "POST", "/v1/shop/orders/_batch", `{"operations": [{"op": "patch", "collection": "items", "id": "`+id+`", "patch": {"name": "Batch patch"}}]}`)
-			return rec.Code
+			return batch(`{"op": "patch", "collection": "revisions", "id": "` + id + `", "patch": {"title": "Batch patch"}}`)
 		},
 	} {
-		delete(f.store.docs["shop__orders.items"][id]["_meta"].(map[string]any), "schema_version")
+		delete(stored(id), "schema_version")
 		if code := do(); code != http.StatusOK {
 			t.Fatalf("%s = %d", name, code)
 		}
-		if got := f.store.docs["shop__orders.items"][id]["_meta"].(map[string]any)["schema_version"]; got != int64(2) {
+		if got := stored(id)["schema_version"]; got != int64(2) {
 			t.Errorf("after %s the stored stamp = %v, want 2", name, got)
 		}
 	}
 
 	// A batch create is stamped too.
-	rec, out := f.do(t, "POST", "/v1/shop/orders/_batch", `{"operations": [{"op": "create", "collection": "items", "document": {"name": "B"}}]}`)
+	rec, out := f.doH(t, "POST", "/v1/acme/app/_batch", `{"operations": [{"op": "create", "collection": "revisions", "document": {"title": "B"}}]}`, as)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("batch create = %d %s", rec.Code, rec.Body)
 	}

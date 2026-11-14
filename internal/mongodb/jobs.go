@@ -96,6 +96,7 @@ type jobDoc struct {
 	Check          *checkJobDoc       `bson:"check,omitempty"`
 	PasswordNotice *passwordNoticeDoc `bson:"password_notice,omitempty"`
 	Encrypt        *encryptJobDoc     `bson:"encrypt,omitempty"`
+	SchemaMigrate  *schemaMigrateDoc  `bson:"schema_migrate,omitempty"`
 	Export         *exportJobDoc      `bson:"export,omitempty"`
 	Image          *imageJobDoc       `bson:"image,omitempty"`
 	Assign         *assignJobDoc      `bson:"assign,omitempty"`
@@ -451,7 +452,7 @@ func jobFromDoc(d jobDoc) auth.Job {
 	j := auth.Job{
 		ID: d.ID, Database: d.Database, Function: d.Function, Input: encodeJSONAny(d.Input),
 		CallerActor: d.CallerActor, CallerUserID: d.CallerUserID, CallerOrg: d.CallerOrg, CallerKeyHash: d.CallerKeyHash, Scheduled: d.Scheduled,
-		ActsAsFunction: d.ActsAsFunction, Email: emailJobFromDoc(d.Email), Erase: eraseFromDoc(d.Erase), Revoke: revokeFromDoc(d.Revoke), Push: pushFromDoc(d.Push), Check: checkFromDoc(d.Check), PasswordNotice: passwordNoticeFromDoc(d.PasswordNotice), Encrypt: encryptFromDoc(d.Encrypt), Export: exportFromDoc(d.Export), Image: imageFromDoc(d.Image), Assign: assignFromDoc(d.Assign), OrgDelete: orgDeleteFromDoc(d.OrgDelete), Exclusive: d.Exclusive, Origin: d.Origin, ParentID: d.ParentID, RerunOf: d.RerunOf, Depth: int(d.Depth),
+		ActsAsFunction: d.ActsAsFunction, Email: emailJobFromDoc(d.Email), Erase: eraseFromDoc(d.Erase), Revoke: revokeFromDoc(d.Revoke), Push: pushFromDoc(d.Push), Check: checkFromDoc(d.Check), PasswordNotice: passwordNoticeFromDoc(d.PasswordNotice), Encrypt: encryptFromDoc(d.Encrypt), SchemaMigrate: schemaMigrateFromDoc(d.SchemaMigrate), Export: exportFromDoc(d.Export), Image: imageFromDoc(d.Image), Assign: assignFromDoc(d.Assign), OrgDelete: orgDeleteFromDoc(d.OrgDelete), Exclusive: d.Exclusive, Origin: d.Origin, ParentID: d.ParentID, RerunOf: d.RerunOf, Depth: int(d.Depth),
 		EventID: d.EventID, ChainRoot: d.ChainRoot, ChainDepth: int(d.ChainDepth),
 		SerialKey: d.SerialKey, SerialOrder: d.SerialOrder,
 		TimeoutMS: d.TimeoutMS, RequestID: d.RequestID,
@@ -485,7 +486,7 @@ func jobToDoc(j auth.Job) (jobDoc, error) {
 	return jobDoc{
 		ID: j.ID, Database: j.Database, Function: j.Function, Input: input,
 		CallerActor: j.CallerActor, CallerUserID: j.CallerUserID, CallerOrg: j.CallerOrg, CallerKeyHash: j.CallerKeyHash, Scheduled: j.Scheduled, Status: j.Status,
-		ActsAsFunction: j.ActsAsFunction, Email: emailJobToDoc(j.Email), Erase: eraseToDoc(j.Erase), Revoke: revokeToDoc(j.Revoke), Push: pushToDoc(j.Push), Check: checkToDoc(j.Check), PasswordNotice: passwordNoticeToDoc(j.PasswordNotice), Encrypt: encryptToDoc(j.Encrypt), Export: exportToDoc(j.Export), Image: imageToDoc(j.Image), Assign: assignToDoc(j.Assign), OrgDelete: orgDeleteToDoc(j.OrgDelete), Exclusive: j.Exclusive, Origin: j.Origin, ParentID: j.ParentID, RerunOf: j.RerunOf, Depth: int32(j.Depth),
+		ActsAsFunction: j.ActsAsFunction, Email: emailJobToDoc(j.Email), Erase: eraseToDoc(j.Erase), Revoke: revokeToDoc(j.Revoke), Push: pushToDoc(j.Push), Check: checkToDoc(j.Check), PasswordNotice: passwordNoticeToDoc(j.PasswordNotice), Encrypt: encryptToDoc(j.Encrypt), SchemaMigrate: schemaMigrateToDoc(j.SchemaMigrate), Export: exportToDoc(j.Export), Image: imageToDoc(j.Image), Assign: assignToDoc(j.Assign), OrgDelete: orgDeleteToDoc(j.OrgDelete), Exclusive: j.Exclusive, Origin: j.Origin, ParentID: j.ParentID, RerunOf: j.RerunOf, Depth: int32(j.Depth),
 		EventID: j.EventID, ChainRoot: j.ChainRoot, ChainDepth: int32(j.ChainDepth),
 		SerialKey: j.SerialKey, SerialOrder: j.SerialOrder,
 		Attempts: 0, TimeoutMS: j.TimeoutMS, RequestID: j.RequestID,
@@ -964,4 +965,61 @@ func (s *AuthStore) EraseNeedsAttention(ctx context.Context) (int64, error) {
 		{Key: "status", Value: auth.JobDone},
 		{Key: "result.status", Value: bson.D{{Key: "$ne", Value: "ok"}}},
 	})
+}
+
+type schemaMigrateDoc struct {
+	Database   string                    `bson:"database"`
+	Collection string                    `bson:"collection"`
+	Target     int32                     `bson:"target"`
+	DryRun     bool                      `bson:"dry_run,omitempty"`
+	After      string                    `bson:"after,omitempty"`
+	Scanned    int64                     `bson:"scanned"`
+	Migrated   int64                     `bson:"migrated"`
+	Skipped    int64                     `bson:"skipped"`
+	Failed     int64                     `bson:"failed"`
+	Failures   []schemaMigrateFailureDoc `bson:"failures,omitempty"`
+	Ending     string                    `bson:"ending,omitempty"`
+}
+
+type schemaMigrateFailureDoc struct {
+	ID      string `bson:"id"`
+	Step    string `bson:"step,omitempty"`
+	Kind    string `bson:"kind"`
+	Path    string `bson:"path,omitempty"`
+	Keyword string `bson:"keyword,omitempty"`
+}
+
+func schemaMigrateToDoc(m *auth.SchemaMigrateJob) *schemaMigrateDoc {
+	if m == nil {
+		return nil
+	}
+	d := &schemaMigrateDoc{Database: m.Database, Collection: m.Collection, Target: int32(m.Target), DryRun: m.DryRun, After: m.After,
+		Scanned: m.Scanned, Migrated: m.Migrated, Skipped: m.Skipped, Failed: m.Failed, Ending: m.Ending}
+	for _, f := range m.Failures {
+		d.Failures = append(d.Failures, schemaMigrateFailureDoc{ID: f.ID, Step: f.Step, Kind: f.Kind, Path: f.Path, Keyword: f.Keyword})
+	}
+	return d
+}
+
+func schemaMigrateFromDoc(d *schemaMigrateDoc) *auth.SchemaMigrateJob {
+	if d == nil {
+		return nil
+	}
+	m := &auth.SchemaMigrateJob{Database: d.Database, Collection: d.Collection, Target: int(d.Target), DryRun: d.DryRun, After: d.After,
+		SchemaMigrateCounts: auth.SchemaMigrateCounts{Scanned: d.Scanned, Migrated: d.Migrated, Skipped: d.Skipped, Failed: d.Failed}, Ending: d.Ending}
+	for _, f := range d.Failures {
+		m.Failures = append(m.Failures, auth.SchemaMigrateFailure{ID: f.ID, Step: f.Step, Kind: f.Kind, Path: f.Path, Keyword: f.Keyword})
+	}
+	return m
+}
+
+// SetSchemaMigrateProgress implements auth.Store.
+func (s *AuthStore) SetSchemaMigrateProgress(ctx context.Context, jobID string, m auth.SchemaMigrateJob) error {
+	d := schemaMigrateToDoc(&m)
+	_, err := s.jobs().UpdateByID(ctx, jobID, bson.D{{Key: "$set", Value: bson.D{
+		{Key: "schema_migrate.after", Value: d.After}, {Key: "schema_migrate.scanned", Value: d.Scanned}, {Key: "schema_migrate.migrated", Value: d.Migrated},
+		{Key: "schema_migrate.skipped", Value: d.Skipped}, {Key: "schema_migrate.failed", Value: d.Failed},
+		{Key: "schema_migrate.failures", Value: d.Failures}, {Key: "schema_migrate.ending", Value: d.Ending},
+	}}})
+	return err
 }

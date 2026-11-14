@@ -437,3 +437,70 @@ func TestRealtimeWatchSetFollowsAppConfigWithoutCollections(t *testing.T) {
 		t.Fatal("the set must not be empty: the feed would stay closed")
 	}
 }
+
+func TestIsSchemaMigration(t *testing.T) {
+	at := time.Date(2026, 11, 14, 10, 0, 0, 0, time.UTC)
+	doc := func(updated time.Time, stamp any) map[string]any {
+		meta := map[string]any{"updated_at": updated, "version": int64(3)}
+		if stamp != nil {
+			meta["schema_version"] = stamp
+		}
+		return map[string]any{"id": "a", "_meta": meta}
+	}
+	for name, tc := range map[string]struct {
+		c    changefeed.Change
+		want bool
+	}{
+		"the job's write (no stamp to 2)":   {changefeed.Change{Op: changefeed.Updated, Before: doc(at, nil), After: doc(at, int64(2))}, true},
+		"the job's write (2 to 3)":          {changefeed.Change{Op: changefeed.Updated, Before: doc(at, int64(2)), After: doc(at, int64(3))}, true},
+		"an edit that also moves the stamp": {changefeed.Change{Op: changefeed.Updated, Before: doc(at, nil), After: doc(at.Add(time.Second), int64(2))}, false},
+		"an edit":                           {changefeed.Change{Op: changefeed.Updated, Before: doc(at, int64(2)), After: doc(at.Add(time.Second), int64(2))}, false},
+		"same stamp":                        {changefeed.Change{Op: changefeed.Updated, Before: doc(at, int64(2)), After: doc(at, int64(2))}, false},
+		"no pre-image":                      {changefeed.Change{Op: changefeed.Updated, After: doc(at, int64(2))}, false},
+		"a create":                          {changefeed.Change{Op: changefeed.Created, After: doc(at, int64(2))}, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := isSchemaMigration(tc.c); got != tc.want {
+				t.Errorf("isSchemaMigration = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// The migration job's write is not an event: a replace that only moves the document to a newer
+// schema version and keeps updated_at is not delivered, while an ordinary edit right after it is.
+func TestFeedIsSilentOnSchemaMigrationWrites(t *testing.T) {
+	f := newFeedFixture(t)
+	ctx := context.Background()
+	st, err := f.src.Open(ctx, f.set, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	at := time.Date(2026, 11, 14, 10, 0, 0, 0, time.UTC)
+	meta := func(version, stamp int64, updated time.Time) bson.D {
+		m := bson.D{{Key: "version", Value: version}, {Key: "updated_at", Value: updated}}
+		if stamp > 0 {
+			m = append(m, bson.E{Key: "schema_version", Value: stamp})
+		}
+		return m
+	}
+	if _, err := f.items.InsertOne(ctx, bson.D{{Key: "_id", Value: "m1"}, {Key: "_meta", Value: meta(1, 0, at)}, {Key: "name", Value: "a"}}); err != nil {
+		t.Fatal(err)
+	}
+	if c := next(t, ctx, st); c.Op != changefeed.Created {
+		t.Fatalf("created = %+v", c)
+	}
+	// The job's write: version up, stamp set, updated_at kept, content changed.
+	if _, err := f.items.ReplaceOne(ctx, bson.D{{Key: "_id", Value: "m1"}}, bson.D{{Key: "_id", Value: "m1"}, {Key: "_meta", Value: meta(2, 2, at)}, {Key: "name", Value: "migrated"}}); err != nil {
+		t.Fatal(err)
+	}
+	// A person's edit after it.
+	if _, err := f.items.ReplaceOne(ctx, bson.D{{Key: "_id", Value: "m1"}}, bson.D{{Key: "_id", Value: "m1"}, {Key: "_meta", Value: meta(3, 2, at.Add(time.Minute))}, {Key: "name", Value: "edited"}}); err != nil {
+		t.Fatal(err)
+	}
+	c := next(t, ctx, st)
+	if c.Op != changefeed.Updated || c.After["name"] != "edited" || c.Version != 3 {
+		t.Fatalf("the first event after the migration write should be the edit: %+v", c)
+	}
+}
