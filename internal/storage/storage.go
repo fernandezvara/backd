@@ -435,3 +435,16 @@ func RawEncrypted(ctx context.Context) bool {
 	v, _ := ctx.Value(rawEncryptedKey{}).(bool)
 	return v
 }
+
+// SchemaMigrator is what the schema migration job needs of a collection's storage
+// (design/schema-versioning.md §7, §8): the documents written under a schema version below the
+// current one. A document without _meta.schema_version is at version 1. Soft-deleted documents
+// are included, and encrypted values come back opened (a write seals them again).
+type SchemaMigrator interface {
+	// CountBelow counts the documents below version current, through the index on
+	// _meta.schema_version.
+	CountBelow(ctx context.Context, current int) (int64, error)
+	// ScanBelow returns up to limit of them whose id sorts after afterID ("" starts from the
+	// first), ordered by id.
+	ScanBelow(ctx context.Context, current int, afterID string, limit int) ([]Document, error)
+}

@@ -94,6 +94,9 @@ type Job struct {
 	Encrypt *EncryptJob
 	// Export is set on the job that builds a user's personal data export (origin ExportOrigin).
 	Export *ExportJob
+	// SchemaMigrate is set on the job that migrates a collection's documents to its current
+	// schema version (origin SchemaMigrateOrigin).
+	SchemaMigrate *SchemaMigrateJob
 	// Exclusive, when set, lets only one job of that name be unfinished at a
 	// time: enqueuing another fails with ErrJobExclusive.
 	Exclusive     string
@@ -310,7 +313,7 @@ func (s *Users) RerunJob(ctx context.Context, id string, timeoutMS int64) (Job, 
 	if !found {
 		return Job{}, ErrNotFound
 	}
-	if j.Email != nil || j.Erase != nil || j.Check != nil || j.Image != nil || j.Assign != nil || j.OrgDelete != nil || j.Revoke != nil || j.Push != nil || j.PasswordNotice != nil || j.Encrypt != nil || j.Export != nil {
+	if j.Email != nil || j.Erase != nil || j.Check != nil || j.Image != nil || j.Assign != nil || j.OrgDelete != nil || j.Revoke != nil || j.Push != nil || j.PasswordNotice != nil || j.Encrypt != nil || j.Export != nil || j.SchemaMigrate != nil {
 		return Job{}, ErrJobNotFunction
 	}
 	if j.Status != JobDone {

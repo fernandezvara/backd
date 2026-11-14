@@ -181,6 +181,9 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		r.With(a.need(registry.RightData), json).Post("/encryption/migrate", a.migrateEncryption)
 		r.With(a.needRead(registry.RightData)).Post("/data-checks", a.startDataCheck)
 		r.With(a.needRead(registry.RightData)).Get("/data-checks/{database}/{collection}", a.getDataCheck)
+		r.With(a.needRead(registry.RightData)).Get("/data-migrations", a.listDataMigrations)
+		r.With(a.need(registry.RightData)).Post("/data-migrations", a.startDataMigration)
+		r.With(a.needRead(registry.RightData)).Get("/data-migrations/{database}/{collection}", a.getDataMigration)
 		r.With(fns).Post("/jobs/{id}/rerun", a.rerunJob)
 		r.With(fns).Get("/schedules", a.listSchedules)
 		r.With(fns).Post("/functions/{database}/{name}/pause", a.pauseSchedule(true))
@@ -1467,6 +1470,11 @@ func (a *adminAPI) cancelJob(w http.ResponseWriter, r *http.Request) {
 			rightRefused(w, r, fmt.Sprintf("cancelling the export of a user's data needs the %q admin right to change; your roles open: %s", registry.RightUsers, have))
 			return
 		}
+	} else if ok && found.SchemaMigrate != nil {
+		if !have.CanWrite(registry.RightData) {
+			rightRefused(w, r, fmt.Sprintf("cancelling a schema migration needs the %q admin right to change; your roles open: %s", registry.RightData, have))
+			return
+		}
 	} else if ok && found.Encrypt != nil {
 		if !have.CanWrite(registry.RightData) {
 			rightRefused(w, r, fmt.Sprintf("cancelling an encryption migration needs the %q admin right to change; your roles open: %s", registry.RightData, have))
@@ -1543,6 +1551,9 @@ func jobSummaryJSON(j auth.Job) map[string]any {
 	}
 	if j.Export != nil {
 		function = "export:" + j.Export.UserID
+	}
+	if j.SchemaMigrate != nil {
+		function = "schema-migrate:" + j.SchemaMigrate.Database + "/" + j.SchemaMigrate.Collection
 	}
 	out := map[string]any{
 		"id":              j.ID,

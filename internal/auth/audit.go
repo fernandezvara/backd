@@ -94,6 +94,11 @@ const (
 	// A schema check started by an administrator; the target is the scope
 	// (<database>/<collection>, <database> or the realm), details: collections, limit.
 	AuditDataCheck = "data.check"
+	// A schema migration started by an administrator (the target is data:<database>/<collection>,
+	// details: dry_run, job_id), and a migration job that ended, by whoever started it (details:
+	// database, collection, from, to, migrated, failed, complete; never a value).
+	AuditDataMigrate  = "data.migrate"
+	AuditDataMigrated = "data.migrated"
 	// A job cancelled or re-run by an administrator; the target is job:<id>,
 	// details: function (and, for a re-run, the new job's id).
 	AuditJobCancel = "job.cancel"

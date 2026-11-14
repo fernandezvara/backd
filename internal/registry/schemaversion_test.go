@@ -158,3 +158,23 @@ func TestSchemaVersionIndexAndStamp(t *testing.T) {
 		t.Errorf("unversioned: index=%v meta=%v", has(c), meta)
 	}
 }
+
+// Migrations run as jobs, and jobs exist only in realms with auth.
+func TestMigrationsNeedAuth(t *testing.T) {
+	tree := map[string]string{
+		"shop/realm.yaml":                "auth: disabled\n",
+		"shop/main/items/schema.v1.json": versionSchema,
+		"shop/main/items/schema.v2.json": versionSchema,
+		"shop/main/items/schema.v2.ts":   "export default (d: unknown) => d;",
+	}
+	_, err := Load(writeTree(t, tree))
+	if err == nil || !strings.Contains(err.Error(), "schema.v2.ts") || !strings.Contains(err.Error(), "auth") {
+		t.Fatalf("err = %v, want the .ts file named and auth blamed", err)
+	}
+	// Versions without migrations still load in such a realm.
+	delete(tree, "shop/main/items/schema.v2.ts")
+	delete(tree, "shop/main/items/schema.v2.json")
+	if _, err := Load(writeTree(t, tree)); err != nil {
+		t.Errorf("one version in a realm without auth: %v", err)
+	}
+}

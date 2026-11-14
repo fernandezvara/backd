@@ -227,6 +227,8 @@ type Store interface {
 	SetPasswordNoticeProgress(ctx context.Context, jobID, after string, c PasswordNoticeCounts) error
 	// SetEncryptProgress keeps an encryption migration's place and counts.
 	SetEncryptProgress(ctx context.Context, jobID, after string, c EncryptCounts) error
+	// SetSchemaMigrateProgress keeps a schema migration's place, counts and failures.
+	SetSchemaMigrateProgress(ctx context.Context, jobID string, m SchemaMigrateJob) error
 	// PutIdentity creates the identity, or, when one with the same provider
 	// and subject exists, updates its credentials and UpdatedAt (keeping its
 	// ID and CreatedAt). ErrIdentityExists when the user already has another

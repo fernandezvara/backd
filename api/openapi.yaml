@@ -8151,6 +8151,149 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_admin/data-migrations:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+    get:
+      tags: [admin]
+      summary: The schema migrations running now and the state of every versioned collection
+      description: |
+        `running` lists the schema migration jobs queued or running now (with the step each is
+        at in `progress`). `items` lists every collection with schema migrations (`schema.v<N>.ts`
+        files): its current version, how many documents are still below it
+        (`documents_below_current`, from the index on `_meta.schema_version`; null when the storage
+        can't say), and the summary of its latest finished migration or null. Needs the `data`
+        area (read is enough).
+      operationId: adminListDataMigrations
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The running migrations and the state of each collection.
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [running, items]
+                properties:
+                  running:
+                    type: array
+                    items: { $ref: "#/components/schemas/JobSummary" }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [database, collection, current_version, documents_below_current, report]
+                      properties:
+                        database: { type: string }
+                        collection: { type: string }
+                        current_version: { type: integer, minimum: 1 }
+                        documents_below_current: { type: [integer, "null"] }
+                        report:
+                          oneOf:
+                            - type: "null"
+                            - { $ref: "#/components/schemas/SchemaMigrationReport" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [admin]
+      summary: Migrate a collection's documents to its current schema version
+      description: |
+        Queues the migration of the documents of `collection` still below its current schema
+        version, which a worker runs in the background through the executor (a worker and an
+        executor must be running, and the migrations built). Workers start it by themselves at
+        every start; this is for doing it on demand or with `dry_run`, which runs the
+        migrations, validates the results against the current schema and writes nothing,
+        reporting what would fail. Follow it with `GET /jobs/{id}`, cancel it with `POST
+        /jobs/{id}/cancel`. A migration for the same version that is already queued or running is
+        returned (`already_running`); one for another version answers `409 migration_running`.
+        `409 migration_unavailable`: no executor, or the migrations are not built. `422` when the
+        collection has no migrations. Audited as `data.migrate` when it started a job. Needs the
+        `data` area, with write access.
+      operationId: adminStartDataMigration
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [database, collection]
+              properties:
+                database: { type: string }
+                collection: { type: string }
+                dry_run: { type: boolean, description: "Run the migrations and validate; write nothing." }
+      responses:
+        "202":
+          description: The migration, queued.
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
+            Location: { schema: { type: string }, description: "`/v1/{realm}/_admin/jobs/{id}`." }
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [id, status, database, collection, target, dry_run, already_running, documents_below_current, created_at]
+                properties:
+                  id: { type: string, description: The job's id. }
+                  status: { type: string }
+                  database: { type: string }
+                  collection: { type: string }
+                  target: { type: integer, description: The schema version it migrates to. }
+                  dry_run: { type: boolean }
+                  already_running: { type: boolean, description: "True when the job was already queued or running for this version (nothing new was started)." }
+                  documents_below_current: { type: [integer, "null"], description: "About how many documents it will read; null when the storage can't say." }
+                  created_at: { $ref: "#/components/schemas/Timestamp" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: "`migration_running`: a migration to another version is queued or running (its job id is in `details[0].reason`); `migration_unavailable`: no executor, or the migrations are not built."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/data-migrations/{database}/{collection}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/database" }
+      - { name: collection, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [admin]
+      summary: The latest schema migration report of a collection
+      description: |
+        The latest finished migration job of the collection (a dry run included, as long as
+        the jobs are kept): its counts and the documents that did not migrate and stay at their
+        version, up to 1,000, each with its id, the step (`2 → 3`), the reason (`kind`) and, for
+        a result that does not match the schema, the path and the rule. Never a value. Needs the
+        `data` area (read is enough).
+      operationId: adminGetDataMigration
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The report.
+          headers:
+            X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" }
+            Cache-Control: { $ref: "#/components/headers/NoStore" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SchemaMigrationReport" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_admin/jobs/{id}/cancel:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -11876,6 +12019,44 @@ components:
         limit: { type: integer }
         schema_hash: { type: string, description: Identifies the schema the documents were checked against. }
 
+    SchemaMigrationReport:
+      type: object
+      required: [job_id, database, collection, target, dry_run, status, ending, created_at, finished_at, scanned, migrated, skipped, failed]
+      properties:
+        job_id: { type: string }
+        database: { type: string }
+        collection: { type: string }
+        target: { type: integer, description: The schema version the job migrated to. }
+        dry_run: { type: boolean, description: "True when nothing was written." }
+        status: { type: string, description: "The job's status: queued, running or done." }
+        ending:
+          type: [string, "null"]
+          enum: [complete, partial, cancelled, failed, null]
+          description: "How it ended: `complete` (every document migrated), `partial` (some failed and stay at their version), `cancelled`, `failed` (the job itself gave up); null while it runs."
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        finished_at:
+          oneOf:
+            - type: "null"
+            - { $ref: "#/components/schemas/Timestamp" }
+        scanned: { type: integer }
+        migrated: { type: integer, description: "Documents moved to the target version (in a dry run, that would be)." }
+        skipped: { type: integer, description: "Documents already at the target version when the job got to them." }
+        failed: { type: integer }
+        failures:
+          type: array
+          description: "Only in the full report: up to 1,000, never a value."
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, step, kind, path, keyword]
+            properties:
+              id: { type: string }
+              step: { type: string, description: "The migration step it stopped at, such as `2 → 3`." }
+              kind: { type: string, enum: [threw, async, not_json, no_step, timeout, memory, invalid, file_field, conflict, write, executor], description: "Why: the migration threw or returned a promise or something that is not JSON, there is no step for its version, it ran out of time or memory, the result does not match the schema (`invalid`), it changed a file field, it breaks a unique index (`conflict`), or the write or the executor failed." }
+              path: { type: string, description: "The JSON path, for `invalid` and `file_field`." }
+              keyword: { type: string, description: "The rule that failed, for `invalid`." }
+        failures_omitted: { type: integer, description: "Failures past the 1,000 kept." }
+
     CheckReport:
       description: A collection's latest schema check report, with the invalid documents.
       type: object
@@ -12011,7 +12192,7 @@ components:
       additionalProperties: false
       required: [id, function, status, scheduled, origin, email_kind, rerun_of, attempts, next_attempt_at, created_at, completed_at, result, progress]
       properties:
-        origin: { type: string, description: "Where the job came from: `http`, `function` (a `ctx.call`), `cron`, `admin`, `on_complete:<database>/<name>` (the notification a function's `on_complete` queues when its job ends), `backd:email.<kind>` (an email backd sends itself), `backd:schema.check` (a schema check) or `function:<database>/<name>` (an email that function sent with `ctx.email.send`)." }
+        origin: { type: string, description: "Where the job came from: `http`, `function` (a `ctx.call`), `cron`, `admin`, `on_complete:<database>/<name>` (the notification a function's `on_complete` queues when its job ends), `backd:email.<kind>` (an email backd sends itself), `backd:schema.check` (a schema check), `backd:schema.migrate` (a schema migration) or `function:<database>/<name>` (an email that function sent with `ctx.email.send`)." }
         email_kind: { type: [string, "null"], description: "The kind of an email job (never its recipients or text); null for other jobs." }
         rerun_of: { type: [string, "null"], description: "The finished job an administrator re-ran to make this one; null otherwise." }
         steps:

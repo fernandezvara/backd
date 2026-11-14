@@ -56,6 +56,36 @@ type fakeRunner struct {
 	mu     sync.Mutex
 	reqs   []executor.InvokeRequest
 	handle func(executor.InvokeRequest) (executor.Result, error)
+	// migrations are the batches sent to Migrate; migrate, when set, answers them (by default every
+	// document moves up with "migrated": true added to its fields).
+	migrations []executor.MigrateRequest
+	migrate    func(executor.MigrateRequest) (executor.MigrateResult, error)
+}
+
+// Migrate makes fakeRunner a MigrationRunner.
+func (f *fakeRunner) Migrate(_ context.Context, req executor.MigrateRequest) (executor.MigrateResult, error) {
+	f.mu.Lock()
+	f.migrations = append(f.migrations, req)
+	handle := f.migrate
+	f.mu.Unlock()
+	if handle != nil {
+		return handle(req)
+	}
+	res := executor.MigrateResult{Status: executor.StatusOK}
+	for _, d := range req.Docs {
+		var fields map[string]any
+		_ = json.Unmarshal(d.Fields, &fields)
+		fields["migrated"] = true
+		raw, _ := json.Marshal(fields)
+		res.Outcomes = append(res.Outcomes, executor.MigrateOutcome{ID: d.ID, Fields: raw})
+	}
+	return res, nil
+}
+
+func (f *fakeRunner) migrationBatches() []executor.MigrateRequest {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]executor.MigrateRequest(nil), f.migrations...)
 }
 
 func (f *fakeRunner) Invoke(_ context.Context, req executor.InvokeRequest) (executor.Result, error) {

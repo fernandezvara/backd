@@ -607,6 +607,21 @@ func registerRemote(cfg *kli.Config) {
 	data.SubCommand("checks").ShortHelp("print the latest schema check reports").
 		LongHelp("Lists every collection of the realm with its latest schema check (documents read,\ninvalid, whether it was complete, when it finished), and notes a check running now. With\n--database and --collection prints that collection's report in full. " + clicore.AdminAPINote).
 		Func(cmdutil.Act("backd data checks", admin.DataChecks)).Config(checkFlags)
+	data.SubCommand("migrate").ShortHelp("migrate a collection's documents to its current schema version").
+		LongHelp("Queues the migration of the documents of a versioned collection (schema.v<N>.json with schema.v<N>.ts) that are still below its current schema version. Workers do this by themselves at every start; this is for doing it on demand. A worker runs it in the background through the executor, in batches, and never stops for a document that fails: it stays at its version and is reported (id, step, reason and, for a result that does not match the schema, the path and the rule; never a value). --dry-run runs the migrations, validates the results and writes nothing. --wait follows the job and exits 0 when every document migrated and 1 when some did not. Needs the data area with write access. Audited as data.migrate. " + clicore.AdminAPINote).
+		Func(cmdutil.Act("backd data migrate", admin.DataMigrate)).Config(func(cc *kli.CommandConfig) {
+		cmdutil.Required(cc, "realm", "the realm")
+		cmdutil.Required(cc, "database", "the database")
+		cmdutil.Required(cc, "collection", "the collection")
+		cmdutil.Optional(cc, "url", "the server (default: BACKD_URL, else the last one logged in to)")
+		cmdutil.Boolean(cc, "dry-run", "run the migrations and validate the results, write nothing")
+		cmdutil.Boolean(cc, "wait", "follow the job and exit 0 when complete, 1 when some documents did not migrate")
+		cmdutil.Boolean(cc, "json", "with --wait, the report as one JSON object")
+		cc.Define("interval").String().Flag("interval").Default("2s").Description("how often to ask the server for progress")
+	})
+	data.SubCommand("migrations").ShortHelp("print the state of the schema migrations").
+		LongHelp("Lists every collection with schema migrations: its current version, how many documents are still below it and its latest finished migration, and notes the migrations running now. With --database and --collection prints that collection's latest report in full, with the documents that did not migrate. " + clicore.AdminAPINote).
+		Func(cmdutil.Act("backd data migrations", admin.DataMigrations)).Config(checkFlags)
 	docFlags := func(cc *kli.CommandConfig) {
 		cmdutil.Required(cc, "realm", "the realm")
 		cmdutil.Required(cc, "database", "the database")

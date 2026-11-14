@@ -289,6 +289,11 @@ func (s *changeStream) Next(ctx context.Context) (changefeed.Event, error) {
 					ok = false
 				}
 			}
+			// A schema migration moves a document to the current schema version and keeps its
+			// updated_at: it is not an edit, so triggers and realtime are not told.
+			if ok && !c.System && isSchemaMigration(c) {
+				ok = false
+			}
 			pos := bytesCopy(s.cs.ResumeToken())
 			s.last = pos
 			if !ok {
@@ -393,4 +398,31 @@ func idString(v any) string {
 		return s
 	}
 	return fmt.Sprint(v)
+}
+
+// isSchemaMigration reports whether an update is the schema migration job's write: the document
+// reads the same stamp-wise newer and with the same updated_at, which no client write has (every
+// write sets updated_at to now). It needs both images, which collections with triggers or
+// realtime have (they keep pre-images).
+func isSchemaMigration(c changefeed.Change) bool {
+	if c.Op != changefeed.Updated || c.Before == nil || c.After == nil {
+		return false
+	}
+	before, _ := c.Before["_meta"].(map[string]any)
+	after, _ := c.After["_meta"].(map[string]any)
+	if before == nil || after == nil || schemaStamp(after) <= schemaStamp(before) {
+		return false
+	}
+	return reflect.DeepEqual(before["updated_at"], after["updated_at"])
+}
+
+// schemaStamp is a stored _meta.schema_version, 1 when missing.
+func schemaStamp(meta map[string]any) int64 {
+	switch v := meta["schema_version"].(type) {
+	case int64:
+		return v
+	case int32:
+		return int64(v)
+	}
+	return 1
 }

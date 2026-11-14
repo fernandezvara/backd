@@ -42,6 +42,8 @@ type domain struct {
 	rtEvents, rtResets, rtRefused, rtChecks                      *prometheus.CounterVec
 	trigEvents, trigEnqueued, trigDeduped, trigGaps, trigDropped *prometheus.CounterVec
 	trigBacklog                                                  *prometheus.GaugeVec
+	schemaDocs                                                   *prometheus.CounterVec
+	schemaBelow                                                  *prometheus.GaugeVec
 	trigHandoffs                                                 prometheus.Counter
 	trigLag, trigWatermark, trigLease, trigEpoch                 prometheus.Gauge
 }
@@ -85,6 +87,8 @@ func newDomain() domain {
 		execRuns:        counter("executor_runs_total", "Function runs the executor handled, by the status they ended with (busy: refused at its process limit).", "status"),
 		execTime:        prometheus.NewHistogram(prometheus.HistogramOpts{Namespace: Namespace, Name: "executor_run_duration_seconds", Help: "How long function runs took in the executor.", Buckets: DurationBuckets}),
 		execRunning:     prometheus.NewGauge(prometheus.GaugeOpts{Namespace: Namespace, Name: "executor_running", Help: "Function processes running now."}),
+		schemaDocs:      counter("schema_migration_documents_total", "Documents a schema migration job handled, by realm, collection and result: migrated, skipped (already at the current version) or failed.", "realm", "collection", "result"),
+		schemaBelow:     gauge("schema_documents_below_current", "Documents of a versioned collection written under a schema version below the current one, as the start-up count and the migration job last found them.", "realm", "collection"),
 		jobsRetried:     counter("jobs_retried_total", "Failed attempts queued again, by realm and kind.", "realm", "kind"),
 		jobsExpired:     counter("jobs_expired_leases_total", "Jobs claimed again because the worker holding them stopped answering, by realm and kind.", "realm", "kind"),
 		refreshErrors:   prometheus.NewCounter(prometheus.CounterOpts{Namespace: Namespace, Name: "metrics_refresh_errors_total", Help: "Times refreshing the job gauges failed (the last values stay)."}),
@@ -119,7 +123,7 @@ func newDomain() domain {
 }
 
 func (d domain) collectors() []prometheus.Collector {
-	return []prometheus.Collector{newJobsCollector(d.jobs), d.jobsDone, d.jobsRetried, d.jobsExpired, d.refreshErrors, d.egress, d.execRuns, d.execTime, d.execRunning, d.sessionsStarted, d.passkeys, d.sessionsEnded, d.rateLimited, d.idConflicts, d.aggregations, d.aggregateTime, d.fnCalls, d.fnTime, d.fnRefusals, d.fnReplays, d.execErrors, d.pushUsers, d.pushDeliveries, d.pushPruned, d.rtStreams, d.rtEvents, d.rtResets, d.rtRefused, d.rtChecks, d.feedOpen, d.feedWatched, d.feedLag, d.feedReopened, d.feedEvents, d.trigEvents, d.trigEnqueued, d.trigDeduped, d.trigGaps, d.trigDropped, d.trigBacklog, d.trigHandoffs, d.trigLag, d.trigWatermark, d.trigLease, d.trigEpoch}
+	return []prometheus.Collector{newJobsCollector(d.jobs), d.jobsDone, d.jobsRetried, d.jobsExpired, d.refreshErrors, d.egress, d.execRuns, d.execTime, d.execRunning, d.sessionsStarted, d.passkeys, d.sessionsEnded, d.rateLimited, d.idConflicts, d.aggregations, d.aggregateTime, d.fnCalls, d.fnTime, d.fnRefusals, d.fnReplays, d.execErrors, d.pushUsers, d.pushDeliveries, d.pushPruned, d.rtStreams, d.rtEvents, d.rtResets, d.rtRefused, d.rtChecks, d.feedOpen, d.feedWatched, d.feedLag, d.feedReopened, d.feedEvents, d.trigEvents, d.trigEnqueued, d.trigDeduped, d.trigGaps, d.trigDropped, d.trigBacklog, d.schemaDocs, d.schemaBelow, d.trigHandoffs, d.trigLag, d.trigWatermark, d.trigLease, d.trigEpoch}
 }
 
 // PushUsers counts n users by what planning a push did with them.
@@ -415,5 +419,19 @@ func (o *RealtimeObserver) Refused(realm, reason string) {
 func (o *RealtimeObserver) Checks(realm, kind string, n int) {
 	if o != nil && n > 0 {
 		o.m.rtChecks.WithLabelValues(realm, kind).Add(float64(n))
+	}
+}
+
+// SchemaMigrated counts documents a schema migration job handled, by result.
+func (m *Metrics) SchemaMigrated(realm, collection, result string, n int64) {
+	if m != nil && n > 0 {
+		m.schemaDocs.WithLabelValues(realm, collection, result).Add(float64(n))
+	}
+}
+
+// SchemaBelowCurrent sets how many documents of the collection are below its current schema version.
+func (m *Metrics) SchemaBelowCurrent(realm, collection string, n int64) {
+	if m != nil {
+		m.schemaBelow.WithLabelValues(realm, collection).Set(float64(n))
 	}
 }

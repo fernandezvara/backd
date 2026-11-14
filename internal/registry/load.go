@@ -361,6 +361,9 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 	if err != nil {
 		return nil, err
 	}
+	if len(sf.Migrations) > 0 && !settings.AuthEnabled {
+		return nil, fmt.Errorf("%s: schema migrations run as background jobs, and jobs exist only in realms with auth enabled: this realm has `auth: disabled` (realm.yaml), so enable auth or delete %s", filepath.Join(dir, SchemaMigrationFile(sf.Migrations[0])), SchemaMigrationFile(sf.Migrations[0]))
+	}
 	path := sf.Current
 	data, err := os.ReadFile(path)
 	if err != nil {

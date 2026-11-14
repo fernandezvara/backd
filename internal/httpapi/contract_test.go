@@ -2189,6 +2189,40 @@ func TestContract(t *testing.T) {
 	req("GET", checks, "", key, 200) // with a report
 	req("GET", checks+"/app/notes", "", nil, 401)
 	req("GET", checks+"/app/notes", "", ada, 403)
+	// Schema migrations.
+	migs := ad + "/data-migrations"
+	req("GET", migs, "", key, 200)
+	req("GET", migs, "", nil, 401)
+	req("GET", migs, "", ada, 403)
+	req("POST", migs, `{"database": "app"}`, key, 400)
+	req("POST", migs, `{"database": "app", "collection": "ghost"}`, key, 404)
+	req("POST", migs, `{"database": "app", "collection": "notes"}`, key, 422) // no migrations
+	req("POST", migs, `{"database": "app", "collection": "revisions"}`, nil, 401)
+	req("POST", migs, `{"database": "app", "collection": "revisions"}`, ada, 403)
+	req("GET", migs+"/app/revisions", "", key, 404) // nothing finished yet
+	migID := req("POST", migs, `{"database": "app", "collection": "revisions", "dry_run": true}`, key, 202)["id"].(string)
+	if again := req("POST", migs, `{"database": "app", "collection": "revisions", "dry_run": true}`, key, 202); again["already_running"] != true || again["id"] != migID {
+		t.Errorf("a second start should return the running job: %v", again)
+	}
+	realID := req("POST", migs, `{"database": "app", "collection": "revisions"}`, key, 202)["id"].(string) // replaces the dry run
+	if realID == migID {
+		t.Error("a real migration should replace a dry run")
+	}
+	req("POST", migs, `{"database": "app", "collection": "revisions", "dry_run": true}`, key, 409) // a dry run never replaces a real one
+	if running := req("GET", migs, "", key, 200); len(running["running"].([]any)) != 1 {
+		t.Errorf("running: %v", running["running"])
+	}
+	req("POST", ad+"/jobs/"+realID+"/cancel", ``, ada, 403)
+	req("POST", ad+"/jobs/"+realID+"/cancel", ``, key, 200)
+	if err := f.svc.Store.SetSchemaMigrateProgress(context.Background(), realID, auth.SchemaMigrateJob{Database: "app", Collection: "revisions", Target: 2,
+		SchemaMigrateCounts: auth.SchemaMigrateCounts{Scanned: 4, Migrated: 3, Failed: 1}, Ending: auth.MigratePartial,
+		Failures: []auth.SchemaMigrateFailure{{ID: "r1", Step: "1 \u2192 2", Kind: auth.FailInvalid, Path: "title", Keyword: "is required"}}}); err != nil {
+		t.Fatal(err)
+	}
+	req("GET", migs+"/app/revisions", "", key, 200) // the cancelled job is the latest finished
+	req("GET", migs+"/app/revisions", "", nil, 401)
+	req("GET", migs+"/app/revisions", "", ada, 403)
+	req("GET", migs, "", key, 200) // with a report
 	// Cancelling and re-running jobs.
 	jobs := ad + "/jobs/"
 	req("GET", jobs+jobID, "", key, 200)

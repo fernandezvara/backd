@@ -591,3 +591,99 @@ func TestStorageCheck(t *testing.T) {
 	fake.Bucket = "other"
 	c.expect(1, "doesn't exist", "", "storage", "check", "--realm", "acme", "--url", srv.URL)
 }
+
+// migrationRunner is the executor of a CLI test: it runs migrations by adding a field.
+type migrationRunner struct{ fakeFuncRunner }
+
+func (m *migrationRunner) Migrate(_ context.Context, req executor.MigrateRequest) (executor.MigrateResult, error) {
+	return executor.MigrateResult{Status: executor.StatusOK}, nil
+}
+
+func TestDataMigrate(t *testing.T) {
+	root := writeConfig(t, map[string]string{
+		"acme/realm.yaml":               "auth:\n  strategies:\n    password: [password]\nroles:\n  ops:\n    admin: true\n",
+		"acme/app/notes/schema.json":    `{"type": "object"}`,
+		"acme/app/items/schema.v1.json": `{"type": "object"}`,
+		"acme/app/items/schema.v2.json": `{"type": "object"}`,
+		"acme/app/items/schema.v2.ts":   "export default (d: unknown) => d;\n",
+	})
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmdtest.WriteMigrationManifests(t, reg)
+	ctx := context.Background()
+	svc := &auth.Users{
+		Store:    authtest.NewMemStore(),
+		Hasher:   auth.NewHasher(2, auth.Argon2Params{Memory: 64, Time: 1, Threads: 1}),
+		Settings: reg.Realms["acme"].Settings,
+	}
+	_, apiKey, err := svc.CreateAPIKey(ctx, "cli", auth.KeyOptions{Role: auth.KeyRoleAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(httpapi.NewHandler(httpapi.Config{
+		Log:           slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		Registry:      reg,
+		Ready:         func(context.Context) error { return nil },
+		Functions:     &migrationRunner{},
+		ExecutorToken: "test-executor-token-0123456789ab",
+		Users: func(realm string) *auth.Users {
+			if realm == "acme" {
+				return svc
+			}
+			return nil
+		},
+	}))
+	defer srv.Close()
+	c := &cliEnv{t: t, env: map[string]string{
+		"BACKD_CREDENTIALS": filepath.Join(t.TempDir(), "backd", "credentials"),
+		"BACKD_API_KEY":     apiKey,
+	}}
+	plain := []string{"--realm", "acme", "--url", srv.URL}
+	target := append(append([]string{}, plain...), "--database", "app", "--collection", "items", "--interval", "10ms")
+
+	// Without --wait it queues the migration and prints the job id; a second start finds it.
+	id := strings.TrimSpace(c.expect(0, "", "", append([]string{"data", "migrate"}, target...)...))
+	if len(id) < 10 {
+		t.Fatalf("the job id: %q", id)
+	}
+	c.expect(0, "was already running", "", append([]string{"data", "migrate"}, target...)...)
+	c.expect(1, "already running", "", append([]string{"data", "migrate", "--dry-run"}, target...)...)
+	c.expect(0, "a schema migration is queued (job "+id+", app/items)", "", append([]string{"data", "migrations"}, plain...)...)
+	c.expect(1, "has no schema migrations", "", append([]string{"data", "migrate", "--database", "app", "--collection", "notes"}, plain...)...)
+
+	// With --wait it follows the job: a worker (here, the test) finishes it with a partial report.
+	done := make(chan struct{})
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		for {
+			select {
+			case <-done:
+				return
+			case <-time.After(20 * time.Millisecond):
+			}
+			job, found, _ := svc.GetJob(ctx, id)
+			if !found || job.Status == auth.JobDone {
+				continue
+			}
+			_ = svc.SetSchemaMigrateProgress(ctx, id, auth.SchemaMigrateJob{Database: "app", Collection: "items", Target: 2,
+				SchemaMigrateCounts: auth.SchemaMigrateCounts{Scanned: 5, Migrated: 4, Failed: 1}, Ending: auth.MigratePartial,
+				Failures: []auth.SchemaMigrateFailure{{ID: "i3", Step: "1 \u2192 2", Kind: auth.FailInvalid, Path: "title", Keyword: "is required"}}})
+			_ = svc.CompleteJob(ctx, id, auth.JobResult{Status: "ok"})
+		}
+	}()
+	out := c.expect(1, "1 documents did not migrate and stay at their version", "", append([]string{"data", "migrate", "--wait"}, target...)...)
+	close(done)
+	<-finished
+	for _, want := range []string{"app/items to version 2: partial (read 5, migrated 4, already current 0, failed 1)", "i3", "1 \u2192 2", "invalid at title: is required"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the report lacks %q:\n%s", want, out)
+		}
+	}
+	// The latest report, in the table and in full.
+	c.expect(0, "partial (migrated 4, failed 1)", "", append([]string{"data", "migrations"}, plain...)...)
+	c.expect(0, "i3", "", append([]string{"data", "migrations", "--database", "app", "--collection", "items"}, plain...)...)
+	c.expect(1, "no finished schema migration kept", "", append([]string{"data", "migrations", "--database", "app", "--collection", "ghost"}, plain...)...)
+}

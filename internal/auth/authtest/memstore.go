@@ -515,6 +515,19 @@ func (m *MemStore) SetEncryptProgress(_ context.Context, jobID, after string, c 
 	return nil
 }
 
+func (m *MemStore) SetSchemaMigrateProgress(_ context.Context, jobID string, sm auth.SchemaMigrateJob) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	j, ok := m.jobs[jobID]
+	if !ok || j.SchemaMigrate == nil {
+		return auth.ErrNotFound
+	}
+	cp := sm
+	j.SchemaMigrate = &cp
+	m.jobs[jobID] = j
+	return nil
+}
+
 func (m *MemStore) CountPasswordIdentities(context.Context) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

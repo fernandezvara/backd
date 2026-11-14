@@ -210,7 +210,11 @@ The job ends `complete` (all migrated), `partial` (some failed) or `cancelled`. 
 - **Audit:** `data.migrate` when a job is started by hand (`collections`, `dry_run`, `job_id`), and `data.migrated` when any job ends (`collection`, `from`, `to`, `migrated`, `failed`, `complete`; never values). Both get rows on the audit page; `scripts/check-docs-audit.py` makes sure of it.
 - **Metrics:** `backd_schema_migration_documents_total{realm,collection,result}` and `backd_schema_documents_below_current{realm,collection}`, which is set by the start-up count and the job.
 
-### 8.7 When there is no executor
+### 8.7 Where migrations can run
+
+Jobs exist only in realms with `auth` enabled (the worker claims them there), so a collection with `schema.vN.ts` files in a realm with `auth: disabled` is a **load error** naming the file. Versions without migration files still load. A job queue for realms without auth is not part of this milestone.
+
+### 8.8 When there is no executor
 
 A realm with a versioned collection but no executor configured (`BACKD_EXECUTOR_URL` unset) still starts. The start-up count logs a warning when documents are below the current version ("12 documents won't be migrated: no executor"), the gauge shows them, and requests are unaffected. If the executor is down, the job waits and retries like any job. The alternative, refusing to start, would force an executor on realms that keep old migrations only for history.
 
@@ -471,7 +475,7 @@ Order: #944 → #945 → #946 → #947 gives a working background migration; #94
 - **Where the bundles go:** `<database>/_migrations/.build/` (§6.1).
 - **No setting** to turn the automatic job start off (§8.1).
 - **Batch size, the executor concurrency limit,** and the single-document retry after a timeout (§8.2).
-- **The no-executor case:** a warning, not a refusal (§8.7).
+- **The no-executor case:** a warning, not a refusal (§8.8).
 - **The rules of §5.1 item 7:** a migration may not change file fields or anything backd owns.
 - **`where` and `order_by` on `_meta.schema_version`** (§9.1).
 - **New names:** the audit actions `data.migrate` and `data.migrated`, the metrics, and the error codes `schema_version_unknown`, `invalid_schema_version` and `upgrade_required`.

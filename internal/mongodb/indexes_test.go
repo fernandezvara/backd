@@ -247,8 +247,8 @@ func TestProvisionSchemaVersionIndex(t *testing.T) {
 
 	// Only the schema files differ from a plain collection; the registry keys are the folder's
 	// contents, so one version has no index and two have it.
-	one := loadRegistryWith(t, realm, "auth: disabled\n", map[string]string{"app/people/schema.v1.json": softSchema})
-	two := loadRegistryWith(t, realm, "auth: disabled\n", map[string]string{
+	one := loadRegistryWith(t, realm, "", map[string]string{"app/people/schema.v1.json": softSchema})
+	two := loadRegistryWith(t, realm, "", map[string]string{
 		"app/people/schema.v1.json": softSchema,
 		"app/people/schema.v2.json": softSchema,
 		"app/people/schema.v2.ts":   "export default (d: unknown) => d;",
