@@ -301,19 +301,14 @@ min_schema_version: 2
 ```ts
 import { upgrade, type MainAssets, type MainAssetsV3 } from "./backd";
 
-function current(asset: MainAssets): MainAssetsV3 {
-  switch (asset._meta.schema_version) {
-    case 1:
-    case 2:
-      return upgrade.mainAssets(asset);   // the server's own migrations: v1 → v2 → v3
-    case 3:
-      return asset;
-  }
-}
+// Any kept version in, the current one out; a v3 document comes back as it is.
+const current: MainAssetsV3 = upgrade.mainAssets(asset);
 
-const edited = { ...current(asset), title: "New title" };
+const edited = { ...current, title: "New title" };
 await assets.replace(asset.id, edited, { ifMatch: asset._meta.version });
 ```
+
+TypeScript cannot narrow a union by a property of `_meta` (a property of a property), so a `switch` on `asset._meta.schema_version` would not narrow `asset`; `upgrade` takes the whole union instead.
 
 - **TypeScript and JavaScript** get `upgrade` from `backd types --lang ts`, which writes a runtime module next to the types (`migrations.ts`), bundled from the migration files. It is the same code the server runs, so app and server can't disagree. `meta` comes from the document's `_meta`. The determinism rules (§5.2) hold there too: the module wraps the call the same way.
 - **Dart, Go and Python** get the per-version types and write the conversion by hand, the same `switch`. The docs show it in each language.

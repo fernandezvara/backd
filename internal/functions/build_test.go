@@ -13,6 +13,7 @@ import (
 
 	"github.com/fernandezvara/backd/internal/executor"
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/internal/typegen"
 )
 
 // deno returns the deno binary to test with, skipping the test when there
@@ -368,5 +369,140 @@ func TestBuiltMigrationRunsInTheExecutor(t *testing.T) {
 	if res.Status != executor.StatusOK || len(res.Outcomes) != 1 || res.Outcomes[0].Error != nil ||
 		string(res.Outcomes[0].Fields) != `{"name":"Widget","label":"Widget-d1","slug":"widget-d1"}` {
 		t.Fatalf("migrate: %+v", res)
+	}
+}
+
+// The module `backd types` writes for apps (migrations.ts) type-checks, and gives the same
+// documents as the server's executor running the built bundle: one code, two places.
+func TestMigrationsModuleMatchesTheExecutor(t *testing.T) {
+	bin := deno(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	src := filepath.Join("..", "typegen", "testdata", "versions")
+	for _, rel := range []string{"realm.yaml", "main/assets/schema.v1.json", "main/assets/schema.v2.json", "main/assets/schema.v3.json", "main/assets/schema.v2.ts", "main/assets/schema.v3.ts"} {
+		data, err := os.ReadFile(filepath.Join(src, rel))
+		if err != nil {
+			t.Fatal(err)
+		}
+		write(t, root, map[string]string{"versions/" + rel: string(data)})
+	}
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := typegen.WriteSchemaFiles(reg, "versions", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := Build(ctx, reg, Options{Deno: bin}); err != nil {
+		t.Fatal(err)
+	}
+	db := reg.Realms["versions"].Databases["main"]
+	m, err := registry.ReadMigrationManifest(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := db.MigrationBundlePath(m, "assets")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, file) }))
+	defer srv.Close()
+	ex, err := executor.New(executor.Config{Deno: bin, Dir: t.TempDir(), Token: "0123456789abcdef0123456789abcdef-executor"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := typegen.Generate(reg, typegen.Options{Realm: "versions"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	module, ok, err := typegen.Migrations(reg, "versions")
+	if err != nil || !ok {
+		t.Fatalf("Migrations: %v %v", ok, err)
+	}
+	app := t.TempDir()
+	// Deno wants the extension a bundler would add.
+	write(t, app, map[string]string{
+		"types.d.ts":    out.Types,
+		"migrations.ts": strings.Replace(module, `from "./types";`, `from "./types.d.ts";`, 1),
+		"run.ts": `import { upgrade } from "./migrations.ts";
+const doc = JSON.parse(Deno.args[0]);
+console.log(JSON.stringify(upgrade.mainAssets(doc)));
+`,
+	})
+	denoRun := func(args ...string) ([]byte, error) {
+		cmd := exec.Command(bin, args...)
+		cmd.Dir = app
+		return cmd.CombinedOutput()
+	}
+	if b, err := denoRun("check", "--no-lock", "--no-config", "migrations.ts"); err != nil {
+		t.Fatalf("migrations.ts doesn't type-check:\n%s", b)
+	}
+
+	docs := []string{
+		`{"id":"a","_meta":{"created_at":"2026-01-01T00:00:00.000Z","updated_at":"2026-01-01T00:00:00.000Z","version":3,"org":"o1"},"title":"A","body":"hello","tags":["x"]}`,
+		`{"id":"b","_meta":{"created_at":"2026-01-01T00:00:00.000Z","updated_at":"2026-01-01T00:00:00.000Z","version":1,"schema_version":1},"title":"B","published_at":"2026-02-02T00:00:00.000Z"}`,
+		`{"id":"c","_meta":{"created_at":"2026-01-01T00:00:00.000Z","updated_at":"2026-01-01T00:00:00.000Z","version":2,"schema_version":2},"title":"C","description":"d","visibility":"team","body":"gone"}`,
+		`{"id":"d","_meta":{"created_at":"2026-01-01T00:00:00.000Z","updated_at":"2026-01-01T00:00:00.000Z","version":2,"schema_version":3},"title":"D","visibility":"private"}`,
+	}
+	var batch []executor.Doc
+	for _, d := range docs {
+		var doc map[string]any
+		if err := json.Unmarshal([]byte(d), &doc); err != nil {
+			t.Fatal(err)
+		}
+		meta := doc["_meta"].(map[string]any)
+		fields := map[string]any{}
+		for k, v := range doc {
+			if k != "id" && k != "_meta" {
+				fields[k] = v
+			}
+		}
+		raw, _ := json.Marshal(fields)
+		sv, _ := meta["schema_version"].(float64)
+		mraw, _ := json.Marshal(map[string]any{"created_at": meta["created_at"], "updated_at": meta["updated_at"], "org": meta["org"]})
+		batch = append(batch, executor.Doc{ID: doc["id"].(string), Version: int64(meta["version"].(float64)), SchemaVersion: int(sv), Meta: mraw, Fields: raw})
+	}
+	res := ex.Migrate(ctx, executor.MigrateRequest{
+		Collection: "versions/main/assets", Bundle: executor.Bundle{SHA256: m.Collections["assets"].SHA256, URL: srv.URL}, Current: 3, Docs: batch,
+		TimeoutMS: 5000, MemoryBytes: 64 << 20, MaxOutput: 1 << 20,
+	})
+	if res.Status != executor.StatusOK || len(res.Outcomes) != len(docs) {
+		t.Fatalf("executor: %+v", res)
+	}
+	for i, d := range docs {
+		b, err := denoRun("run", "--no-check", "--no-lock", "--no-config", "run.ts", d)
+		if err != nil {
+			t.Fatalf("running migrations.ts on %s:\n%s", d, b)
+		}
+		var viaModule map[string]any
+		if err := json.Unmarshal(b, &viaModule); err != nil {
+			t.Fatalf("%s: %v", b, err)
+		}
+		meta := viaModule["_meta"].(map[string]any)
+		if meta["schema_version"] != float64(3) {
+			t.Errorf("%s: _meta.schema_version = %v, want 3", batch[i].ID, meta["schema_version"])
+		}
+		delete(viaModule, "id")
+		delete(viaModule, "_meta")
+		o := res.Outcomes[i]
+		if o.Skipped { // already current: the module returns it as it is, the executor doesn't touch it
+			continue
+		}
+		var viaExecutor map[string]any
+		if err := json.Unmarshal(o.Fields, &viaExecutor); err != nil {
+			t.Fatal(err)
+		}
+		a, _ := json.Marshal(viaModule)
+		e, _ := json.Marshal(viaExecutor)
+		if string(a) != string(e) {
+			t.Errorf("%s: migrations.ts gave %s, the executor %s", batch[i].ID, a, e)
+		}
+	}
+	// The determinism rules hold in the module too.
+	write(t, app, map[string]string{"clock.ts": `import { upgrade } from "./migrations.ts";
+const before = Date.now();
+upgrade.mainAssets({ id: "x", _meta: { created_at: "", updated_at: "", version: 1 }, title: "t" } as any);
+console.log(Date.now() >= before ? "restored" : "broken");
+`})
+	if b, err := denoRun("run", "--no-check", "--no-lock", "--no-config", "clock.ts"); err != nil || !strings.Contains(string(b), "restored") {
+		t.Errorf("the clock after upgrade: %v\n%s", err, b)
 	}
 }

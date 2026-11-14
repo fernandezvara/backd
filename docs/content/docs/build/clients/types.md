@@ -34,6 +34,7 @@ The fingerprint is the same for every language: they describe the same realm.
 | `types.py` (`--lang python`) | The same types for Python: a `TypedDict` per document, write input and function input or output, `Literal` types for enums, classes of constants for the fields of `where` and `order_by`, plus a `ShopRealm` (and an `AsyncShopRealm`) over the [Python client](../python/) with typed collections and function calls |
 | `types.go` (`--lang go`) | The same types for Go: structs with JSON tags, string types with constants for enums, constants for the fields of `where` and `order_by`, plus a `ShopRealm` over the [Go client](../go/) with typed collections and function calls. `--package` names the package (`backdtypes` by default) |
 | `realm.json` | The fingerprint, the generator version, the config fingerprint, `schema_versions` (the current version of each [versioned collection](../../configuration/config-dir/#versioned-schemas), which the clients send as `X-Backd-Schema-Version`) and one entry per field, function, setting, template and role: what `--diff` compares |
+| `migrations.ts` (`--lang ts`) | Only for a realm with [schema migrations](../../configuration/config-dir/#versioned-schemas): `upgrade.<collection>(doc)`, which takes a document of any kept version to the current one with the server's own migration code (see [Converting old documents](#converting-old-documents)). It imports the types from `./types` |
 | `schema.d.ts` (`--lang ts`, beside each collection's `schema.vN.json`) | For a [versioned collection](../../configuration/config-dir/#versioned-schemas): `V1…VN`, the fields of each kept version, `Meta` (what a migration may read of a document) and `Current`. The migrations import from it. It is written into the config folder, so it is committed with the schema files; `--check` says when it is missing or stale |
 
 Everything hangs off one `Realm` interface, addressed by path, so no naming rules are needed:
@@ -205,3 +206,24 @@ When it fails, run the commands without `--check` and commit the result; the fai
 {{< /hint >}}
 
 The [JavaScript client](../js/#typed-client) takes the `Realm` interface as `createClient<Realm>()`; the [Dart client](../dart/#typed-client) takes `ShelfRealm` as `BackdClient<ShelfRealm>()` and `client.typed`. For functions, `--functions` writes each functions project's `backd.d.ts` instead, with `defineFunction` ([Typed functions](../../functions/writing/#typed-functions)). The same types are available from a running instance at `GET /v1/{realm}/_admin/types` (`?lang=dart` for Dart, `?lang=go&package=name` for Go, `?lang=python` for Python; [API reference](../../api/)), and the realm's [OpenAPI document](../../api/openapi/) is the way to type clients in other languages.
+
+## Converting old documents
+
+While the migration job runs, and for apps that haven't been updated, a list can hold documents of several versions of a [versioned collection](../../configuration/config-dir/#versioned-schemas). TypeScript and JavaScript apps convert them with `upgrade`, from `migrations.ts` (`backd types --lang ts`):
+
+```ts
+import { upgrade } from "./backd/migrations";
+import type { MainAssets, MainAssetsV3 } from "./backd/types";
+
+function current(asset: MainAssets): MainAssetsV3 {
+  return upgrade.mainAssets(asset); // v1 → v2 → v3; a v3 document comes back as it is
+}
+
+const edited = { ...current(asset), title: "New title" };
+await assets.replace(asset.id, edited, { ifMatch: asset._meta.version });
+```
+
+- `upgrade` is the same code the server runs: the migration files are inlined, so the app and the server cannot disagree. It is pure and synchronous, and the clock and randomness throw while it runs, as they do in the server.
+- It does not write anything: send the converted document with `PUT` and `If-Match`, so the server stores it at the version your app declares.
+- TypeScript cannot narrow a document by `_meta.schema_version` (a property of a property), so use `upgrade` rather than a `switch`; compare `asset._meta.schema_version` only for logic that is about the version itself.
+- `--check` also reports `migrations.ts` and each collection's `schema.d.ts` as missing or stale; `--db` leaves `migrations.ts` out, because it is made for the whole realm's types.

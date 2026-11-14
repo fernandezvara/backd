@@ -75,7 +75,7 @@ func TypesCommand(c *kli.CommandContext) error {
 	schemaFiles := lang == "ts" && cmdutil.Str(c, "from") == ""
 	if !check && !diff {
 		if schemaFiles {
-			if err := writeSchemaFiles(c, realm, db); err != nil {
+			if err := writeSchemaFiles(c, realm, db, out); err != nil {
 				return err
 			}
 		}
@@ -97,7 +97,7 @@ func TypesCommand(c *kli.CommandContext) error {
 	}
 
 	if check && schemaFiles {
-		if err := checkSchemaFiles(c, realm, db); err != nil {
+		if err := checkSchemaFiles(c, realm, db, out); err != nil {
 			return err
 		}
 	}
@@ -246,7 +246,7 @@ func functionTypesCommand(c *kli.CommandContext, realm string, check bool) error
 }
 
 // writeSchemaFiles writes the schema.d.ts of the realm's versioned collections.
-func writeSchemaFiles(c *kli.CommandContext, realm, db string) error {
+func writeSchemaFiles(c *kli.CommandContext, realm, db, out string) error {
 	dir, err := cmdutil.ConfigDir(c)
 	if err != nil {
 		return err
@@ -262,11 +262,26 @@ func writeSchemaFiles(c *kli.CommandContext, realm, db string) error {
 	for _, p := range written {
 		fmt.Fprintf(c.Stdout(), "wrote %s\n", p)
 	}
-	return err
+	if err != nil || db != "" { // migrations.ts goes with the types of the whole realm
+		return err
+	}
+	module, ok, err := typegen.Migrations(reg, realm)
+	if err != nil || !ok {
+		return err
+	}
+	path := filepath.Join(out, typegen.MigrationsFile)
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, []byte(module), 0o644); err != nil {
+		return err
+	}
+	fmt.Fprintf(c.Stdout(), "wrote %s\n", path)
+	return nil
 }
 
 // checkSchemaFiles fails when a versioned collection's schema.d.ts is missing or stale.
-func checkSchemaFiles(c *kli.CommandContext, realm, db string) error {
+func checkSchemaFiles(c *kli.CommandContext, realm, db, out string) error {
 	dir, err := cmdutil.ConfigDir(c)
 	if err != nil {
 		return err
@@ -288,8 +303,21 @@ func checkSchemaFiles(c *kli.CommandContext, realm, db string) error {
 			problems = append(problems, fmt.Sprintf("%s is stale", st.Path))
 		}
 	}
+	if module, ok, err := typegen.Migrations(reg, realm); err != nil {
+		return err
+	} else if ok && db == "" {
+		path := filepath.Join(out, typegen.MigrationsFile)
+		switch have, err := os.ReadFile(path); {
+		case errors.Is(err, os.ErrNotExist):
+			problems = append(problems, fmt.Sprintf("%s doesn't exist", path))
+		case err != nil:
+			return err
+		case string(have) != module:
+			problems = append(problems, fmt.Sprintf("%s is stale", path))
+		}
+	}
 	if len(problems) > 0 {
-		return fmt.Errorf("%s: run `backd types --realm %s --out DIR` and commit the result", strings.Join(problems, "; "), realm)
+		return fmt.Errorf("%s: run `backd types --realm %s --out %s` and commit the result", strings.Join(problems, "; "), realm, out)
 	}
 	return nil
 }

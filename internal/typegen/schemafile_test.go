@@ -245,3 +245,27 @@ export const x: MainAssets = { id: "x", _meta: { created_at: "" as any, updated_
 		}
 	}
 }
+
+func TestMigrationsModule(t *testing.T) {
+	reg := loadVersions(t, "testdata")
+	got, ok, err := Migrations(reg, "versions")
+	if err != nil || !ok {
+		t.Fatalf("Migrations: ok=%v err=%v", ok, err)
+	}
+	golden := filepath.Join("testdata", "versions.migrations.ts")
+	if *update {
+		if err := os.WriteFile(golden, []byte(got), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(want) != got {
+		t.Errorf("migrations.ts differs from %s (run go test -update):\n%s", golden, got)
+	}
+	if _, ok, _ := Migrations(reg, "shop"); ok {
+		t.Error("a realm without migrations got a migrations.ts")
+	}
+}
