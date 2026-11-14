@@ -26,19 +26,21 @@ type checkedDocDoc struct {
 }
 
 type checkReportDoc struct {
-	ID         string          `bson:"_id"` // <database>/<collection>
-	Database   string          `bson:"database"`
-	Collection string          `bson:"collection"`
-	JobID      string          `bson:"job_id"`
-	StartedAt  time.Time       `bson:"started_at"`
-	FinishedAt time.Time       `bson:"finished_at"`
-	Scanned    int64           `bson:"scanned"`
-	Invalid    int64           `bson:"invalid"`
-	Complete   bool            `bson:"complete"`
-	StoppedBy  string          `bson:"stopped_by,omitempty"`
-	Limit      int32           `bson:"limit"`
-	SchemaHash string          `bson:"schema_hash"`
-	Documents  []checkedDocDoc `bson:"documents"`
+	ID         string           `bson:"_id"` // <database>/<collection>
+	Database   string           `bson:"database"`
+	Collection string           `bson:"collection"`
+	JobID      string           `bson:"job_id"`
+	StartedAt  time.Time        `bson:"started_at"`
+	FinishedAt time.Time        `bson:"finished_at"`
+	Scanned    int64            `bson:"scanned"`
+	Invalid    int64            `bson:"invalid"`
+	Waiting    int64            `bson:"waiting,omitempty"`
+	ByVersion  map[string]int64 `bson:"by_version,omitempty"`
+	Complete   bool             `bson:"complete"`
+	StoppedBy  string           `bson:"stopped_by,omitempty"`
+	Limit      int32            `bson:"limit"`
+	SchemaHash string           `bson:"schema_hash"`
+	Documents  []checkedDocDoc  `bson:"documents"`
 }
 
 func (s *AuthStore) checkReports() *mongo.Collection { return s.db.Collection(SchemaChecksCollection) }
@@ -46,7 +48,7 @@ func (s *AuthStore) checkReports() *mongo.Collection { return s.db.Collection(Sc
 func (d checkReportDoc) report() auth.CheckReport {
 	r := auth.CheckReport{
 		Database: d.Database, Collection: d.Collection, JobID: d.JobID, StartedAt: d.StartedAt.UTC(), FinishedAt: d.FinishedAt.UTC(),
-		Scanned: d.Scanned, Invalid: d.Invalid, Complete: d.Complete, StoppedBy: d.StoppedBy, Limit: int(d.Limit), SchemaHash: d.SchemaHash,
+		Scanned: d.Scanned, Invalid: d.Invalid, Waiting: d.Waiting, ByVersion: d.ByVersion, Complete: d.Complete, StoppedBy: d.StoppedBy, Limit: int(d.Limit), SchemaHash: d.SchemaHash,
 	}
 	for _, dd := range d.Documents {
 		doc := auth.CheckedDocument{ID: dd.ID, Deleted: dd.Deleted, MoreProblems: int(dd.MoreProblems)}
@@ -62,7 +64,7 @@ func (d checkReportDoc) report() auth.CheckReport {
 func (s *AuthStore) SetCheckReport(ctx context.Context, r auth.CheckReport) error {
 	d := checkReportDoc{
 		ID: r.Database + "/" + r.Collection, Database: r.Database, Collection: r.Collection, JobID: r.JobID,
-		StartedAt: r.StartedAt, FinishedAt: r.FinishedAt, Scanned: r.Scanned, Invalid: r.Invalid, Complete: r.Complete,
+		StartedAt: r.StartedAt, FinishedAt: r.FinishedAt, Scanned: r.Scanned, Invalid: r.Invalid, Waiting: r.Waiting, ByVersion: r.ByVersion, Complete: r.Complete,
 		StoppedBy: r.StoppedBy, Limit: int32(r.Limit), SchemaHash: r.SchemaHash, Documents: []checkedDocDoc{},
 	}
 	for _, rd := range r.Documents {

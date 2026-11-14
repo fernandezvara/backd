@@ -724,6 +724,30 @@
     "ms": "{n} ms",
     "loadFailed": "The invocation history could not be loaded."
   },
+  "schemaVersions": {
+    "panel": "Schema versions",
+    "current": "Current version: {n}",
+    "below": "Documents still below the current version: {n}",
+    "unknown": "Not counted yet",
+    "perVersion": "Last schema check, per version",
+    "migrate": "Migrate now",
+    "dryRun": "Check what a migration would do",
+    "confirmTitle": "Migrate {scope}",
+    "confirmBody": "The documents below version {n} are moved to it in the background, in batches. A document that fails stays as it was and is reported. Workers also do this by themselves at every start.",
+    "confirmDry": "Run the migrations and validate the results without writing anything.",
+    "started": "Migration started.",
+    "alreadyRunning": "A migration of this collection is already running.",
+    "running": "A migration is running.",
+    "latest": "Latest migration",
+    "never": "No finished migration is kept for this collection.",
+    "dryRunTag": "dry run",
+    "ending": {"complete": "complete", "partial": "partial: some documents did not migrate", "cancelled": "cancelled", "failed": "failed"},
+    "counts": "Read {scanned}, migrated {migrated}, already current {skipped}, failed {failed}",
+    "failures": "Documents that did not migrate",
+    "failure": "{id}: {step}, {why}",
+    "loadFailed": "The migrations could not be loaded.",
+    "startFailed": "The migration could not be started."
+  },
   "checks": {
     "show": "Show the schema check",
     "hide": "Hide the schema check",
@@ -1002,6 +1026,7 @@
       "rawToggle": "Write the query as JSON"
     },
     "doc": {
+      "schemaVersion": "Schema version",
       "org": "Organization",
       "noOrg": "None",
       "orgHelp": "The organization the document belongs to. It is set now and moved only by an administrator.",

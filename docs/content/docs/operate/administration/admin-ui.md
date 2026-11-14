@@ -172,6 +172,10 @@ The **Data** area browses and fixes documents through the [admin data route](../
 
 A read-only level browses only when the realm's `admin.read_access.data` allows it, and then every form is read-only with no button that changes anything: the files can be downloaded, not changed. Creating a document here can't attach files, so a collection whose file field is **required** is created through the API (a [pending upload](../../../build/files/transfers/#creating-a-document-with-its-files)) and its files managed here.
 
+### Schema versions
+
+A document of a [versioned collection](../../../build/configuration/config-dir/#versioned-schemas) shows its schema version next to its write version. The collection's page has a **Schema versions** panel (only for collections with migrations): its current version, how many documents are still below it, the documents per version from the last schema check, and the latest migration with the documents that did not migrate (id, step and reason, never a value). With write access to the data area, **Migrate now** starts the migration job after a confirmation, and **Check what a migration would do** runs it without writing anything.
+
 ## Push notifications
 
 The **Push** page (for realms with [`push:`](../../../build/push/); the `functions` area) shows how push is configured (the platforms and their provider, the limits and retention) and an alert naming any realm **secret the providers need that is not set**, which is why pushes would answer `503`. Below it, the realm's **sends**, newest first, filterable by template kind and function; opening one shows its batches and units, who it reached (queued, limited, without a device) and what the devices answered (sent, removed as dead, failed). A record holds counts only: never a title, a body, data or a token. With the `users` area, **Send a test** pushes one user, through the same limits as any push (it counts toward theirs) and audited. The CLI equivalents are `backd push sends` and `backd push test`: see [Records, test send and metrics](../../../build/push/records/).

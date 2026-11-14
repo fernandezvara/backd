@@ -45,7 +45,7 @@ func (v Values) env() map[string]any {
 	}
 	env := map[string]any{
 		"user":     v.User,
-		"document": v.Document,
+		"document": stampedDocument(v.Document),
 		"before":   before,
 		"data":     v.Data,
 		"now":      v.Now,
@@ -328,4 +328,28 @@ func (v Values) orgsMap() map[string]*UserOrg {
 		return map[string]*UserOrg{}
 	}
 	return v.Orgs
+}
+
+// stampedDocument reads a document without _meta.schema_version as version 1 (the stamp is only
+// written by collections with versioned schema files), so a rule can compare it with a number.
+// The stored document is not changed.
+func stampedDocument(doc map[string]any) map[string]any {
+	meta, ok := doc["_meta"].(map[string]any)
+	if !ok {
+		return doc
+	}
+	if _, has := meta["schema_version"]; has {
+		return doc
+	}
+	copied := make(map[string]any, len(doc))
+	for k, v := range doc {
+		copied[k] = v
+	}
+	m := make(map[string]any, len(meta)+1)
+	for k, v := range meta {
+		m[k] = v
+	}
+	m["schema_version"] = int64(1)
+	copied["_meta"] = m
+	return copied
 }

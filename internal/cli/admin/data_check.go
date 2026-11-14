@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -31,18 +32,20 @@ type checkedDoc struct {
 }
 
 type checkReport struct {
-	Database   string       `json:"database"`
-	Collection string       `json:"collection"`
-	JobID      string       `json:"job_id"`
-	StartedAt  string       `json:"started_at"`
-	FinishedAt string       `json:"finished_at"`
-	Scanned    int64        `json:"scanned"`
-	Invalid    int64        `json:"invalid"`
-	Complete   bool         `json:"complete"`
-	StoppedBy  *string      `json:"stopped_by"`
-	Limit      int          `json:"limit"`
-	SchemaHash string       `json:"schema_hash"`
-	Documents  []checkedDoc `json:"documents"`
+	Database   string           `json:"database"`
+	Collection string           `json:"collection"`
+	JobID      string           `json:"job_id"`
+	StartedAt  string           `json:"started_at"`
+	FinishedAt string           `json:"finished_at"`
+	Scanned    int64            `json:"scanned"`
+	Invalid    int64            `json:"invalid"`
+	Waiting    int64            `json:"waiting_for_migration"`
+	ByVersion  map[string]int64 `json:"by_version"`
+	Complete   bool             `json:"complete"`
+	StoppedBy  *string          `json:"stopped_by"`
+	Limit      int              `json:"limit"`
+	SchemaHash string           `json:"schema_hash"`
+	Documents  []checkedDoc     `json:"documents"`
 }
 
 // dataCheck handles `backd data check`: it starts a schema check, follows its
@@ -159,6 +162,21 @@ func printCheckReport(w io.Writer, r checkReport) {
 		state = "incomplete: " + why
 	}
 	fmt.Fprintf(w, "%s/%s: scanned %d, invalid %d (%s), finished %s, schema %s\n", r.Database, r.Collection, r.Scanned, r.Invalid, state, r.FinishedAt, r.SchemaHash)
+	if len(r.ByVersion) > 0 {
+		versions := make([]string, 0, len(r.ByVersion))
+		for v := range r.ByVersion {
+			versions = append(versions, v)
+		}
+		slices.SortFunc(versions, func(a, b string) int { return len(a) - len(b) + strings.Compare(a, b) })
+		var parts []string
+		for _, v := range versions {
+			parts = append(parts, fmt.Sprintf("v%s: %d", v, r.ByVersion[v]))
+		}
+		fmt.Fprintf(w, "  by schema version: %s\n", strings.Join(parts, ", "))
+	}
+	if r.Waiting > 0 {
+		fmt.Fprintf(w, "  %d documents below the current version don't match it yet: they wait for the migration, they are not drift\n", r.Waiting)
+	}
 	if len(r.Documents) == 0 {
 		return
 	}

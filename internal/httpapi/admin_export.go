@@ -362,6 +362,9 @@ func (a *adminAPI) exportPlan(w http.ResponseWriter, r *http.Request, realm stri
 			}
 			c := rl.Databases[dbName].Collections[name]
 			col := exportpkg.Collection{Name: name, Part: exportpkg.CollectionPart(dbName, name)}
+			if cc, ok := a.reg.Collection(rl.Name, dbName, name); ok && cc.Versioned {
+				col.SchemaVersion = cc.SchemaVersion
+			}
 			exported = append(exported, dbName+"/"+name)
 			entries, err := a.encryptedEntries(r.Context(), usersOf(r), c)
 			if err != nil {

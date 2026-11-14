@@ -409,3 +409,31 @@ type onlyInvoke struct{ r *fakeRunner }
 func (o onlyInvoke) Invoke(ctx context.Context, req executor.InvokeRequest) (executor.Result, error) {
 	return o.r.Invoke(ctx, req)
 }
+
+// data check counts documents per version, and an old document that doesn't match the current
+// schema is waiting for the migration, not drift.
+func TestCheckCountsVersionsAndWaitsForMigration(t *testing.T) {
+	f := newRulesFixture(t)
+	f.svc.Realm = "acme"
+	w := newTestWorker(t, f)
+	ctx := context.Background()
+	seedRevisions(f, 4, map[int]int{4: 2})
+	f.store.mu.Lock()
+	f.store.docs[revisionsKey]["r00002"]["old_field"] = "nope" // v2 forbids extra fields: invalid, but at v1
+	f.store.docs[revisionsKey]["r00004"]["old_field"] = "nope" // at v2: real drift
+	f.store.mu.Unlock()
+	if _, err := f.svc.StartSchemaCheck(ctx, auth.CheckJob{Collections: []string{"app/revisions"}, Database: "app", Collection: "revisions"}, "key:ops", "r"); err != nil {
+		t.Fatal(err)
+	}
+	w.RunOnce(ctx)
+	rep, err := f.svc.CheckReport(ctx, "app", "revisions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Scanned != 4 || rep.Invalid != 1 || rep.Waiting != 1 || rep.ByVersion["1"] != 3 || rep.ByVersion["2"] != 1 {
+		t.Fatalf("report: %+v", rep)
+	}
+	if len(rep.Documents) != 1 || rep.Documents[0].ID != "r00004" {
+		t.Errorf("only the real drift is listed: %+v", rep.Documents)
+	}
+}

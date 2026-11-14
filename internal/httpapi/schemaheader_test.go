@@ -218,3 +218,15 @@ func TestOldAppWriteIsMigratedAgain(t *testing.T) {
 		t.Errorf("after the job: %+v", d)
 	}
 }
+
+// An imported document may carry the schema version it was written under.
+func TestImportedMetaMayCarryTheSchemaVersion(t *testing.T) {
+	if p := checkImportedMeta(map[string]any{"version": int64(1), "schema_version": int64(2)}); len(p) != 0 {
+		t.Errorf("problems = %v", p)
+	}
+	for _, bad := range []any{int64(0), "2", 1.5} {
+		if p := checkImportedMeta(map[string]any{"schema_version": bad}); len(p) != 1 || p[0].Path != "_meta.schema_version" {
+			t.Errorf("%v: problems = %v", bad, p)
+		}
+	}
+}

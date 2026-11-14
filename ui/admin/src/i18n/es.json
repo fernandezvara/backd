@@ -724,6 +724,30 @@
     "ms": "{n} ms",
     "loadFailed": "No se ha podido cargar el historial de invocaciones."
   },
+  "schemaVersions": {
+    "panel": "Versiones del esquema",
+    "current": "Versión actual: {n}",
+    "below": "Documentos aún por debajo de la versión actual: {n}",
+    "unknown": "Sin contar todavía",
+    "perVersion": "Última comprobación del esquema, por versión",
+    "migrate": "Migrar ahora",
+    "dryRun": "Ver qué haría una migración",
+    "confirmTitle": "Migrar {scope}",
+    "confirmBody": "Los documentos por debajo de la versión {n} se llevan a ella en segundo plano, por lotes. Un documento que falla se queda como estaba y se informa. Los workers también lo hacen solos en cada arranque.",
+    "confirmDry": "Ejecuta las migraciones y valida los resultados sin escribir nada.",
+    "started": "Migración iniciada.",
+    "alreadyRunning": "Ya hay una migración de esta colección en marcha.",
+    "running": "Hay una migración en marcha.",
+    "latest": "Última migración",
+    "never": "No se conserva ninguna migración terminada de esta colección.",
+    "dryRunTag": "simulacro",
+    "ending": {"complete": "completa", "partial": "parcial: algunos documentos no se migraron", "cancelled": "cancelada", "failed": "fallida"},
+    "counts": "Leídos {scanned}, migrados {migrated}, ya actuales {skipped}, fallidos {failed}",
+    "failures": "Documentos que no se migraron",
+    "failure": "{id}: {step}, {why}",
+    "loadFailed": "No se pudieron cargar las migraciones.",
+    "startFailed": "No se pudo iniciar la migración."
+  },
   "checks": {
     "show": "Mostrar la comprobación de esquema",
     "hide": "Ocultar la comprobación de esquema",
@@ -1002,6 +1026,7 @@
       "rawToggle": "Escribir la consulta como JSON"
     },
     "doc": {
+      "schemaVersion": "Versión del esquema",
       "org": "Organización",
       "noOrg": "Ninguna",
       "orgHelp": "La organización a la que pertenece el documento. Se fija ahora y solo la cambia un administrador.",

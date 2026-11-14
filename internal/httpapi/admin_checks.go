@@ -150,6 +150,10 @@ func reportJSON(rep auth.CheckReport, documents bool) map[string]any {
 		"started_at": formatTime(rep.StartedAt), "finished_at": formatTime(rep.FinishedAt),
 		"scanned": rep.Scanned, "invalid": rep.Invalid, "complete": rep.Complete, "stopped_by": nil,
 		"limit": rep.Limit, "schema_hash": rep.SchemaHash,
+		"waiting_for_migration": rep.Waiting, "by_version": rep.ByVersion,
+	}
+	if rep.ByVersion == nil {
+		out["by_version"] = map[string]int64{}
 	}
 	if rep.StoppedBy != "" {
 		out["stopped_by"] = rep.StoppedBy

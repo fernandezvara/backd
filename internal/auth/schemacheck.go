@@ -73,6 +73,11 @@ type CheckReport struct {
 	FinishedAt           time.Time
 	Scanned              int64
 	Invalid              int64
+	// Waiting counts the documents below the collection's current schema version that don't match
+	// it: not drift, they wait for the migration job. ByVersion counts the documents scanned per
+	// schema version (a missing stamp is 1); only collections with versioned schema files have it.
+	Waiting   int64
+	ByVersion map[string]int64
 	// Complete is false when the scan stopped before the end: StoppedBy says why
 	// ("limit" when Limit invalid documents were found, "time" for CheckMaxDuration).
 	Complete  bool
