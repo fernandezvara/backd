@@ -85,6 +85,10 @@ services:
 
 After changing schemas, rules or `realm.yaml`, restart `backd` (`docker compose up -d --build backd`). After changing a function (or a schema migration, `schema.v<N>.ts`), run `backd-server functions build` first: `backd` refuses stale bundles — or run `backd` locally (not in the container) with `BACKD_DEV=true` to reload the config and rebuild functions on save, and `backd functions invoke` to call one directly; see [Dev mode](../../build/functions/testing/#dev-mode).
 
+### Evolving a schema
+
+When a collection keeps its schema in [versions](../../build/configuration/evolving-a-schema/), deploy in this order: **the server first**, with the new `schema.v<N>.json` and its migration (run `backd types` and `backd-server functions build` in CI; the build refuses a migration that does not type-check), **then the apps** built for the new version, and **the contract step last** (a version that stops declaring a field, and a raised `min_schema_version`), once the apps that need the old fields are gone. A worker migrates the stored documents at its next start; `backd data migrations` shows how far it is.
+
 Before pushing, run the same checks CI will run:
 
 ```sh

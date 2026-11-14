@@ -535,3 +535,74 @@ func TestBuildWarnsAboutIncompatibleSchemaChanges(t *testing.T) {
 		}
 	}
 }
+
+// The three versions of "Evolving a schema" (examples/config/evolve) build, type-check, migrate
+// the way the page says, and the compatibility check is silent for the expand step and a note
+// for the contract step that min_schema_version acknowledges.
+func TestEvolvingASchemaExample(t *testing.T) {
+	bin := deno(t)
+	root := t.TempDir()
+	src := filepath.Join("..", "..", "examples", "config", "evolve")
+	err := filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, _ := filepath.Rel(src, path)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		write(t, root, map[string]string{"evolve/" + filepath.ToSlash(rel): string(data)})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := typegen.WriteSchemaFiles(reg, "evolve", ""); err != nil {
+		t.Fatal(err)
+	}
+	var warned []string
+	if err := Build(context.Background(), reg, Options{Deno: bin, Warn: func(l string) { warned = append(warned, l) }}); err != nil {
+		t.Fatal(err)
+	}
+	if len(warned) != 1 || !strings.HasPrefix(warned[0], "note: main/assets schema.v2.json → schema.v3.json: body:") {
+		t.Errorf("compatibility findings = %q, want one note about body", warned)
+	}
+	db := reg.Realms["evolve"].Databases["main"]
+	m, err := registry.ReadMigrationManifest(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := db.MigrationBundlePath(m, "assets")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.ServeFile(w, r, file) }))
+	defer srv.Close()
+	ex, err := executor.New(executor.Config{Deno: bin, Dir: t.TempDir(), Token: "0123456789abcdef0123456789abcdef-executor"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := func(id string, version int, fields string) executor.Doc {
+		return executor.Doc{ID: id, Version: 1, SchemaVersion: version, Meta: json.RawMessage(`{}`), Fields: json.RawMessage(fields)}
+	}
+	res := ex.Migrate(context.Background(), executor.MigrateRequest{
+		Collection: "evolve/main/assets", Bundle: executor.Bundle{SHA256: m.Collections["assets"].SHA256, URL: srv.URL}, Current: 3,
+		Docs: []executor.Doc{
+			doc("a", 1, `{"title":"A","kind":"note","body":"hello"}`),
+			doc("b", 2, `{"title":"B","kind":"note","body":"old","description":"new text","visibility":"team"}`),
+		},
+		TimeoutMS: 5000, MemoryBytes: 64 << 20, MaxOutput: 1 << 20,
+	})
+	if res.Status != executor.StatusOK || len(res.Outcomes) != 2 {
+		t.Fatalf("migrate: %+v", res)
+	}
+	// v1 → v3: body becomes description; v2 → v3: body goes, description and visibility stay.
+	if got := string(res.Outcomes[0].Fields); got != `{"title":"A","kind":"note","description":"hello","visibility":"public"}` {
+		t.Errorf("v1 document became %s", got)
+	}
+	if got := string(res.Outcomes[1].Fields); got != `{"title":"B","kind":"note","description":"new text","visibility":"team"}` {
+		t.Errorf("v2 document became %s", got)
+	}
+}

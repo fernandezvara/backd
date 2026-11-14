@@ -17,6 +17,7 @@ Read this before you invest an afternoon. `backd` is a config-driven REST backen
 - You build **multi-tenant** or business-to-business products: [organizations](../build/organizations/), teams, and company sign-in with Google Workspace or Microsoft.
 - You need **server-side logic** you can write in TypeScript: [functions](../build/functions/), background jobs, cron, webhooks and triggers.
 - You want people to sign in **without a password**: [passkeys](../build/auth/passkeys/), magic links or Google, Microsoft and Apple, with a second factor where a role needs one.
+- Your schema **will change** while apps you can't update are in the field: a collection can keep its [schema in versions](../build/configuration/evolving-a-schema/), with migrations the server runs in the background and a minimum version that tells old apps to update.
 - You must answer **compliance** questions: an audit trail, user erasure, personal-data export, field encryption.
 - Your clients are in JavaScript, Dart/Flutter, Go or Python, or can use a generated [OpenAPI](../build/api/openapi/) client.
 

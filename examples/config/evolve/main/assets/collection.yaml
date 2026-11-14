@@ -1,0 +1,6 @@
+# v1 apps are turned away (426) once v3 is out: they read body, which v3 no longer declares.
+min_schema_version: 2
+rules:
+  read: user != nil
+  create: user != nil
+  update: user != nil && document._meta.owner == user.id

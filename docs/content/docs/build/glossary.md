@@ -56,6 +56,10 @@ The part of every document that the server owns: timestamps, `version`, and in a
 
 One step of a [strategy](#strategy): `password`, `magic_link`, `sso`, a [provider](#provider)'s name, or `totp` after another method. The first method says who is signing in. See [Authentication strategies](../auth/strategies/).
 
+## Migration
+
+A TypeScript function (`schema.v<N>.ts`) that turns a document of version N−1 into version N. A worker runs the migrations in the background at every start, so old documents move up without a maintenance window. See [Evolving a schema](../configuration/evolving-a-schema/).
+
 ## Organization
 
 A group of users that documents can belong to and rules can ask about: a company, a workspace, a club. Not the same as a [realm](#realm), which is the whole application. See [Organizations](../organizations/).
@@ -83,6 +87,10 @@ A name a user holds across the whole realm (`admin`, `curator`), listed in `real
 ## Rule
 
 An expression in a collection's `rules:` that decides, per document, whether a read or write is allowed. See [Access rules](../auth/rules/).
+
+## Schema version
+
+The number of the `schema.v<N>.json` a document was written under, kept in its `_meta.schema_version` (a document without it is version 1). The highest is the collection's current version. See [Evolving a schema](../configuration/evolving-a-schema/).
 
 ## Scope
 
