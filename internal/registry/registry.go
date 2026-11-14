@@ -83,24 +83,32 @@ type Collection struct {
 	Database      string
 	MongoDatabase string // <realm>__<database>
 	Name          string
-	SchemaPath    string                // path of schema.json, for error messages
-	RawSchema     map[string]any        // decoded schema.json (numbers as json.Number)
-	Schema        *jsonschema.Schema    // compiled draft 2020-12 schema
-	Fields        map[string]Field      // dot path → field info, for query checks
-	Indexes       []Index               // declared in indexes.json
-	IndexPath     string                // path of indexes.json, when present
-	Rules         *rules.Set            // from collection.yaml's rules:; nil allows nothing
-	Erasure       *ErasurePolicy        // from collection.yaml; nil: an erase leaves the collection alone
-	ErasurePath   string                // path of collection.yaml, for error messages
-	SoftDelete    *SoftDelete           // from collection.yaml; nil: DELETE removes the document
-	PersonalData  *PersonalData         // from collection.yaml's personal_data:; nil: owned documents, whole
-	Cache         *CachePolicy          // from collection.yaml's cache:; nil: responses are private, no-cache
-	CustomID      *CustomID             // from collection.yaml's custom_id:; nil: the server generates the ids
-	References    map[string]*Reference // from collection.yaml's references:, by name; nil: none
-	Aggregate     *Aggregate            // from collection.yaml's aggregate:; nil: not aggregatable
-	Text          *TextIndex            // from indexes.json's text entry; nil: no full-text search
-	Realtime      bool                  // from collection.yaml's realtime:; its changes may be streamed to clients
-	Triggers      []*Trigger            // from collection.yaml's triggers:, by name; nil: none
+	SchemaPath    string // path of the current schema file, for error messages
+	// SchemaVersion is the current version: the highest schema.vN.json, 1 for a plain schema.json.
+	// Versioned is true with schema.vN.json files: only then are documents stamped with
+	// _meta.schema_version (a missing stamp reads as 1). MinSchemaVersion is collection.yaml's
+	// min_schema_version, 0 when unset. SchemaVersions lists the kept versions.
+	SchemaVersion    int
+	Versioned        bool
+	MinSchemaVersion int
+	SchemaVersions   []int
+	RawSchema        map[string]any        // decoded schema.json (numbers as json.Number)
+	Schema           *jsonschema.Schema    // compiled draft 2020-12 schema
+	Fields           map[string]Field      // dot path → field info, for query checks
+	Indexes          []Index               // declared in indexes.json
+	IndexPath        string                // path of indexes.json, when present
+	Rules            *rules.Set            // from collection.yaml's rules:; nil allows nothing
+	Erasure          *ErasurePolicy        // from collection.yaml; nil: an erase leaves the collection alone
+	ErasurePath      string                // path of collection.yaml, for error messages
+	SoftDelete       *SoftDelete           // from collection.yaml; nil: DELETE removes the document
+	PersonalData     *PersonalData         // from collection.yaml's personal_data:; nil: owned documents, whole
+	Cache            *CachePolicy          // from collection.yaml's cache:; nil: responses are private, no-cache
+	CustomID         *CustomID             // from collection.yaml's custom_id:; nil: the server generates the ids
+	References       map[string]*Reference // from collection.yaml's references:, by name; nil: none
+	Aggregate        *Aggregate            // from collection.yaml's aggregate:; nil: not aggregatable
+	Text             *TextIndex            // from indexes.json's text entry; nil: no full-text search
+	Realtime         bool                  // from collection.yaml's realtime:; its changes may be streamed to clients
+	Triggers         []*Trigger            // from collection.yaml's triggers:, by name; nil: none
 	// Organization is collection.yaml's organization: OrgRequired, OrgOptional or OrgNone (also ""
 	// for collections loaded without the section). OnOrgDelete is OrgDelete or OrgKeep, and
 	// OwnerDeleteInOrg InOrgKeep or InOrgApply, both only with an organization.
@@ -148,7 +156,7 @@ func (ix Index) String() string {
 
 // SystemFields are the server-owned fields that can be queried, sorted
 // and indexed in addition to the schema's fields.
-var SystemFields = []string{"id", "_meta.created_at", "_meta.updated_at", "_meta.version", "_meta.owner", "_meta.created_by", "_meta.updated_by", MetaDeletedAt, MetaDeletedBy, MetaPurgeAt}
+var SystemFields = []string{"id", "_meta.created_at", "_meta.updated_at", "_meta.version", MetaSchemaVersion, "_meta.owner", "_meta.created_by", "_meta.updated_by", MetaDeletedAt, MetaDeletedBy, MetaPurgeAt}
 
 // DateField reports whether path is stored as a BSON Date.
 func (c *Collection) DateField(path string) bool {

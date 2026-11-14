@@ -333,6 +333,7 @@ func (d *documents) applyBatchOp(ctx context.Context, r *http.Request, a access,
 		}
 		meta := map[string]any{"created_at": now, "updated_at": now, "version": int64(1)}
 		stampCreate(r, meta)
+		op.collection.StampSchemaVersion(meta)
 		maps.Copy(meta, scopeMeta(op.org, op.team))
 		doc["_meta"] = meta
 		if err := repo.Create(ctx, doc); err != nil {
@@ -371,6 +372,7 @@ func (d *documents) applyBatchOp(ctx context.Context, r *http.Request, a access,
 		stored, _ := current["_meta"].(map[string]any)
 		meta := map[string]any{"created_at": stored["created_at"], "updated_at": d.timestamp(), "version": read + 1}
 		stampUpdate(r, stored, meta)
+		op.collection.StampSchemaVersion(meta)
 		fields["id"] = current["id"]
 		fields["_meta"] = meta
 		if err := repo.Replace(ctx, fields, read); err != nil {
@@ -390,6 +392,7 @@ func (d *documents) applyBatchOp(ctx context.Context, r *http.Request, a access,
 		stored, _ := current["_meta"].(map[string]any)
 		meta := map[string]any{"created_at": stored["created_at"], "updated_at": d.timestamp(), "version": read + 1}
 		stampUpdate(r, stored, meta)
+		op.collection.StampSchemaVersion(meta)
 		fields["id"] = current["id"]
 		fields["_meta"] = meta
 		if err := repo.Replace(ctx, fields, read); err != nil {

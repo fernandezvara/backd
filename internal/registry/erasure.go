@@ -91,6 +91,8 @@ type erasureDoc struct {
 	PersonalData *personalDataDoc `yaml:"personal_data"`
 	// Realtime is read by loadRealtime, which checks it; here it is only allowed.
 	Realtime any `yaml:"realtime"`
+	// MinSchemaVersion is read by loadSchemaVersion, which checks it; here it is only allowed.
+	MinSchemaVersion any `yaml:"min_schema_version"`
 	// Triggers is read by loadTriggers, which checks it; here its keys are only checked (a typo
 	// inside a trigger is a YAML error naming the file).
 	Triggers map[string]*triggerDoc `yaml:"triggers"`

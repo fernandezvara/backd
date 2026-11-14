@@ -236,3 +236,64 @@ func TestProvisionSoftDeleteIndexes(t *testing.T) {
 		t.Errorf("a second live document with the same email: %v, want a conflict", err)
 	}
 }
+
+// A collection with more than one schema version file gets an index on _meta.schema_version,
+// created idempotently; Verify reports it missing when it is not there.
+func TestProvisionSchemaVersionIndex(t *testing.T) {
+	client := testClient(t)
+	realm := testRealm(t, client)
+	ctx := context.Background()
+	log, _ := testLogger()
+
+	// Only the schema files differ from a plain collection; the registry keys are the folder's
+	// contents, so one version has no index and two have it.
+	one := loadRegistryWith(t, realm, "auth: disabled\n", map[string]string{"app/people/schema.v1.json": softSchema})
+	two := loadRegistryWith(t, realm, "auth: disabled\n", map[string]string{
+		"app/people/schema.v1.json": softSchema,
+		"app/people/schema.v2.json": softSchema,
+		"app/people/schema.v2.ts":   "export default (d: unknown) => d;",
+	})
+	has := func() bool {
+		existing, err := listIndexes(ctx, client.Database(realm+"__app").Collection("people"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range existing {
+			if e.keys == "_meta.schema_version:1" {
+				return true
+			}
+		}
+		return false
+	}
+
+	p := &Provisioner{Client: client, Registry: one, Log: log}
+	if err := p.Apply(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if has() {
+		t.Error("one version file: the index exists, want none")
+	}
+	p.Registry = two
+	if err := p.Verify(ctx); err == nil || !strings.Contains(err.Error(), "_meta.schema_version") {
+		t.Errorf("Verify before the index exists = %v, want it reported missing", err)
+	}
+	for range 2 { // the second Apply finds it and changes nothing
+		if err := p.Apply(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !has() {
+		t.Error("two version files: the index on _meta.schema_version is missing")
+	}
+	if err := p.Verify(ctx); err != nil {
+		t.Errorf("Verify after Apply: %v", err)
+	}
+	// Going back to one version file never drops it.
+	p.Registry = one
+	if err := p.Apply(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !has() {
+		t.Error("the index was dropped")
+	}
+}

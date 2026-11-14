@@ -94,7 +94,16 @@ func (d *documents) publicURL(c *registry.Collection, key string) string {
 // computed here, on every read, from the key the file records and the public storage's url
 // (never stored), so moving the CDN touches no document.
 func (d *documents) renderIn(c *registry.Collection, doc map[string]any) map[string]any {
-	return render(d.withPublicURLs(c, doc))
+	out := render(d.withPublicURLs(c, doc))
+	if c.Versioned {
+		// A document stored before the collection was versioned (or before its stamp existed) is version 1.
+		if meta, ok := out["_meta"].(map[string]any); ok {
+			if _, has := meta["schema_version"]; !has {
+				meta["schema_version"] = int64(1)
+			}
+		}
+	}
+	return out
 }
 
 // withPublicURLs returns doc with `url` in its public files (and their ready versions); doc

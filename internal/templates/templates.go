@@ -300,7 +300,7 @@ func CollectionPolicy(configDir, realm, database, collection string) ([]File, er
 		return nil, err
 	}
 	dir := realm + "/" + database + "/" + collection
-	if _, err := os.Stat(filepath.Join(configDir, dir, registry.SchemaFile)); err != nil {
+	if !registry.HasSchema(filepath.Join(configDir, dir)) {
 		return nil, fmt.Errorf("collection %s doesn't exist in %s (it needs a %s)", dir, configDir, registry.SchemaFile)
 	}
 	return write(configDir, dir+"/"+registry.CollectionFile, "files/collection/collection.yaml")

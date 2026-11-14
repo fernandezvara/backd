@@ -218,6 +218,7 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 	}
 	meta := map[string]any{"created_at": now, "updated_at": now, "version": int64(1)}
 	stampCreate(r, meta)
+	c.StampSchemaVersion(meta)
 	maps.Copy(meta, scopeMeta(org, team))
 	doc["_meta"] = meta
 	if pending != nil && !pending.claim(w, r, doc["id"].(string)) {
@@ -601,6 +602,7 @@ func (d *documents) write(w http.ResponseWriter, r *http.Request, c *registry.Co
 		stored, _ := current["_meta"].(map[string]any)
 		meta := map[string]any{"created_at": stored["created_at"], "updated_at": d.timestamp(), "version": read + 1}
 		stampUpdate(r, stored, meta)
+		c.StampSchemaVersion(meta)
 		fields["id"] = current["id"]
 		fields["_meta"] = meta
 

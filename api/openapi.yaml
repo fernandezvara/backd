@@ -12432,6 +12432,7 @@ components:
         created_at: { $ref: "#/components/schemas/Timestamp" }
         updated_at: { $ref: "#/components/schemas/Timestamp" }
         version: { type: integer, minimum: 1 }
+        schema_version: { type: integer, minimum: 1, description: "The version of the collection's schema the document was written under. Only in collections with versioned schema files (`schema.v<N>.json`); a document stored before the stamp existed reads as 1. Set by the server on every create, PUT, PATCH and `_batch` write; a client can't set it." }
         owner: { type: [string, "null"] }
         created_by: { type: string }
         updated_by: { type: string }
