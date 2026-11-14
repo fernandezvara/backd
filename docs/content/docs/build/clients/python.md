@@ -348,12 +348,36 @@ shelf.main.assets.create(new)
 
 `types=` (the fingerprint in `realm.json`) is for development builds: the client sends it as `X-Backd-Types`, and when the config has moved on the server answers `X-Backd-Types-Stale` and the client logs one warning.
 
+## Schema versions
+
+A collection that keeps its [schema in versions](../../configuration/config-dir/#versioned-schemas) can hold documents of several versions while the migration job runs, and a program in the field may be older than the server. Tell the client which version of each collection the program was built for with `schema_versions` (the generated `<REALM>_SCHEMA_VERSIONS` constant has them):
+
+```python
+from shelf_api.types import SHELF_SCHEMA_VERSIONS
+
+client = Client(url=url, realm="shelf", api_key=key, schema_versions=SHELF_SCHEMA_VERSIONS)
+```
+
+- It is sent on every call as `X-Backd-Schema-Version`: the server stamps your writes with it (the current version without it) and answers `426` when it is below the collection's `min_schema_version`. Leave it out and nothing is sent.
+- **Reading:** a versioned collection's document is a `Union` of one `TypedDict` per version, with `main_assets_version(doc)` and an `is_main_assets_v<N>(doc)` guard per version that the type checker follows:
+
+```python
+if is_main_assets_v1(doc):
+    ...  # convert by hand: doc["body"] is a field here
+elif is_main_assets_v2(doc):
+    ...
+```
+
+- **Writing a converted document:** send the whole new shape with `replace(id, doc, if_match=doc["_meta"]["version"])`.
+- **`UpgradeRequiredError`** (`426 upgrade_required`) has `collection`, `min` and `declared`: show "please update" from it. It is never retried.
+
 ## Errors
 
 Every failure is a `BackdError` with `status`, `code`, `message`, `details`, `request_id` and `path`. The subclasses follow the server's error `code`s with the names `backd-js` uses, and a class matches its parents: `except ConflictError` also catches `IdTakenError`, and `except ValidationError` catches `InvalidIdError`.
 
 | Class | When |
 |---|---|
+| `UpgradeRequiredError` | 426 | `upgrade_required`: the program declared (`schema_versions`) a schema version below the collection's `min_schema_version`; `collection`, `min` and `declared` say which. [Schema versions](#schema-versions) |
 | `ValidationError` (400), `AuthenticationError` (401), `ForbiddenError` (403), `NotFoundError` (404), `ConflictError` (409), `VersionMismatchError` (412), `RetryableError` (429, 503) | The status, when the code has no class of its own. |
 | `IdTakenError`, `InvalidIdError`, `TeamError`, `InvalidExpandError`, `FieldEncryptedError`, `OrgRequiresMFAError`, `NotOrgMemberError`, `SsoRequiredError`, … | One class for each of the server's [error codes](../../api/#errors). |
 | `NetworkError` | The call got no answer: `code` is `network_error` or `timeout`, `status` is `0`, and `__cause__` has the reason. |

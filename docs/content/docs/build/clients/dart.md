@@ -770,6 +770,28 @@ await requests.create({'title': 'Leave'});
 - **Deleting** an organization and **turning `require_mfa` on** ask for a fresh proof of identity: wrap them in [`backd.auth.withProof`](#sign-up-login-and-sessions), as other sensitive actions.
 - **A second factor.** `mfa_met` is false for a session without one in an organization that requires it; the organization's calls then throw `OrgRequiresMFAError`. Leaving is still allowed.
 
+## Schema versions
+
+A collection that keeps its [schema in versions](../../configuration/config-dir/#versioned-schemas) can hold documents of several versions while the migration job runs, and an app in the field may be older than the server. Tell the client which version of each collection the app was built for with `schemaVersions` (the generated `<realm>SchemaVersions` constant has them):
+
+```dart
+final client = BackdClient<ShopRealm>(url: url, realm: 'shop', schemaVersions: shopSchemaVersions);
+```
+
+- It is sent on every request as `X-Backd-Schema-Version`: the server stamps your writes with it (the current version without it) and answers `426` when it is below the collection's `min_schema_version`. Leave it out and nothing is sent.
+- **Reading:** a versioned collection's document is a sealed class (`MainAssets`, with `MainAssetsV1`, `MainAssetsV2`… as its members), so a `switch` has to name every version, and a version you stop keeping becomes a compile error:
+
+```dart
+MainAssetsV3 current(MainAssets asset) => switch (asset) {
+      MainAssetsV1() => MainAssetsV3(/* convert by hand */),
+      MainAssetsV2() => MainAssetsV3(/* convert by hand */),
+      MainAssetsV3() => asset,
+    };
+```
+
+- **Writing a converted document:** send the whole new shape with `replace` and `ifMatch: asset.meta.version`.
+- **`UpgradeRequiredError`** (`426 upgrade_required`) has `collection`, `min` and `declared`: show "please update" from it. It is never retried.
+
 ## Errors
 
 Every answer that isn't 2xx throws a `BackdException`, or one of its subclasses:
@@ -783,6 +805,7 @@ Every answer that isn't 2xx throws a `BackdException`, or one of its subclasses:
 | `ForbiddenError` | 403 | `forbidden` |
 | `NotFoundError` | 404 | `not_found` |
 | `ConflictError` | 409 | `email_taken`, `conflict`, `write_conflict` |
+| `UpgradeRequiredError` | 426 | `upgrade_required`: the app declared (`schemaVersions`) a schema version below the collection's `min_schema_version`; `collection`, `min` and `declared` say which. [Schema versions](#schema-versions) |
 | `IdTakenError` (a `ConflictError`) | 409 | `id_taken`: a document with that [custom id](#custom-ids) exists, and nothing was overwritten |
 | `NotOrgMemberError`, `OrgRequiresMFAError`, `OrgRoleRequiresMFAError` (`ForbiddenError`s) | 403 | `not_org_member` (also for an unknown organization), `org_requires_mfa`, `org_role_requires_mfa` (`details` names the role) |
 | `SsoSessionError` (a `ForbiddenError`) | 403 | `sso_session`: a session opened through an organization's connection can't change the account's credentials or delete or export it |

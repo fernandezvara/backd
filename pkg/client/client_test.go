@@ -300,3 +300,56 @@ func TestMapErrorAndErrorPath(t *testing.T) {
 		t.Errorf("%#v", err)
 	}
 }
+
+func TestSchemaVersionsAreSentSortedOnEveryCall(t *testing.T) {
+	var sent []string
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		sent = append(sent, r.Header.Get("X-Backd-Schema-Version"))
+	}, func(o *Options) { o.SchemaVersions = map[string]int{"main/pins": 3, "main/assets": 2} })
+	c.Do(bg, "GET", []string{"main", "assets"}, nil, nil)
+	c.Do(bg, "GET", []string{"main", "pins"}, nil, nil)
+	if len(sent) != 2 || sent[0] != "main/assets=2, main/pins=3" || sent[1] != sent[0] {
+		t.Errorf("sent %q", sent)
+	}
+}
+
+func TestNoSchemaVersionHeaderWithoutSchemaVersions(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := r.Header["X-Backd-Schema-Version"]; ok {
+			t.Error("X-Backd-Schema-Version sent")
+		}
+	})
+	c.Do(bg, "GET", []string{"a"}, nil, nil)
+}
+
+func TestMalformedSchemaVersionsAreRefusedByNew(t *testing.T) {
+	for _, v := range []map[string]int{{"assets": 1}, {"main/assets": 0}, {"Main/assets": 1}, {"main/assets/x": 1}} {
+		if _, err := New(Options{URL: "http://x", Realm: "r", SchemaVersions: v}); err == nil || !strings.Contains(err.Error(), "SchemaVersions") {
+			t.Errorf("%v: err = %v", v, err)
+		}
+	}
+}
+
+func TestUpgradeRequiredCarriesTheVersionsAndIsNotRetried(t *testing.T) {
+	calls := 0
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUpgradeRequired)
+		io.WriteString(w, `{"error":{"code":"upgrade_required","message":"update the app","collection":"main/assets","min":2,"declared":1,"request_id":"r1"}}`)
+	}, func(o *Options) { o.Retry = Retry{Attempts: 3} })
+	_, err := c.Do(bg, "GET", []string{"main", "assets"}, nil, nil)
+	var up *UpgradeRequiredError
+	if !errors.As(err, &up) {
+		t.Fatalf("err = %T %v, want *UpgradeRequiredError", err, err)
+	}
+	if up.Status != 426 || up.Code != "upgrade_required" || up.Collection != "main/assets" || up.Min != 2 || up.Declared != 1 || up.RequestID != "r1" {
+		t.Errorf("error = %+v", up)
+	}
+	if !errors.Is(err, ErrUpgradeRequired) || !errors.Is(err, ErrBackd) || errors.Is(err, ErrRetryable) {
+		t.Errorf("classes: %v", err)
+	}
+	if calls != 1 {
+		t.Errorf("%d calls, a 426 must not be retried", calls)
+	}
+}

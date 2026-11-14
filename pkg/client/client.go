@@ -3,8 +3,12 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -57,6 +61,13 @@ type Options struct {
 	// the server's config has moved on it answers X-Backd-Types-Stale and OnStaleTypes is called, once.
 	// Leave it out in production: nothing is sent then.
 	Types string
+	// SchemaVersions is the schema version of each versioned collection the program was built for,
+	// keyed "<database>/<collection>" (the schema_versions field of realm.json, made by `backd
+	// types`). It is sent on every call as X-Backd-Schema-Version: the server stamps the program's
+	// writes with it, and answers 426 ([ErrUpgradeRequired]) when it is below the collection's
+	// min_schema_version. Entries for collections a call doesn't touch are ignored by the server.
+	// Leave it out and nothing is sent: writes are stamped with the current version.
+	SchemaVersions map[string]int
 	// MapError, when set, is given every error [Client.Do] and the calls built on it return, and
 	// returns what the caller sees: to add a hint, to turn it into the error type of a larger program.
 	// What it returns should still wrap the original ([errors.Is] and [errors.As] keep working).
@@ -95,8 +106,10 @@ type Client struct {
 	oauth         OAuthStorage
 	credHooks     []func()
 	staleReported atomic.Bool
-	skewReported  atomic.Bool
-	proof         atomic.Pointer[reauthProof]
+	// schemaHeader is the value of X-Backd-Schema-Version, "" when the program declares none.
+	schemaHeader string
+	skewReported atomic.Bool
+	proof        atomic.Pointer[reauthProof]
 	// expired is called when the server refuses the session token; auth sets it.
 	expired func(context.Context)
 
@@ -125,16 +138,21 @@ func newClient(opts Options, root *Client) (*Client, error) {
 	if _, err := url.ParseRequestURI(opts.URL); err != nil {
 		return nil, errors.New("client.New: URL is not a valid address: " + err.Error())
 	}
+	schemaHeader, err := schemaVersionHeader(opts.SchemaVersions)
+	if err != nil {
+		return nil, errors.New("client.New: " + err.Error())
+	}
 	c := &Client{
-		opts:   opts,
-		url:    strings.TrimRight(opts.URL, "/"),
-		realm:  opts.Realm,
-		apiKey: opts.APIKey,
-		org:    NormalizeOrg(opts.Org),
-		doer:   opts.Doer,
-		retry:  opts.Retry,
-		store:  opts.Storage,
-		root:   root,
+		schemaHeader: schemaHeader,
+		opts:         opts,
+		url:          strings.TrimRight(opts.URL, "/"),
+		realm:        opts.Realm,
+		apiKey:       opts.APIKey,
+		org:          NormalizeOrg(opts.Org),
+		doer:         opts.Doer,
+		retry:        opts.Retry,
+		store:        opts.Storage,
+		root:         root,
 	}
 	if c.doer == nil {
 		c.doer = &http.Client{}
@@ -284,4 +302,27 @@ func (c *Client) Close() error {
 		h.CloseIdleConnections()
 	}
 	return nil
+}
+
+var schemaVersionKey = regexp.MustCompile(`^[a-z0-9]+(?:[-_][a-z0-9]+)*/[a-z0-9]+(?:[-_][a-z0-9]+)*$`)
+
+// schemaVersionHeader renders SchemaVersions as the value of X-Backd-Schema-Version, sorted so it
+// is the same on every call; "" for none.
+func schemaVersionHeader(versions map[string]int) (string, error) {
+	if len(versions) == 0 {
+		return "", nil
+	}
+	keys := make([]string, 0, len(versions))
+	for k, n := range versions {
+		if !schemaVersionKey.MatchString(k) || n < 1 {
+			return "", fmt.Errorf("SchemaVersions: %q must be \"<database>/<collection>\" with a version of 1 or more", k)
+		}
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, len(keys))
+	for i, k := range keys {
+		parts[i] = k + "=" + strconv.Itoa(versions[k])
+	}
+	return strings.Join(parts, ", "), nil
 }

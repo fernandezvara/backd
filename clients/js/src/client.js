@@ -57,6 +57,11 @@ import { COOKIE_SESSION, memoryStorage } from './storage.js'
  *   server's config has moved on it answers `X-Backd-Types-Stale` and the client warns once. Leave it out in production:
  *   nothing is sent then.
  * @property {() => void} [onStaleTypes]  Called, once, when the server says the types are stale; logs a warning by default.
+ * @property {Record<string, number>} [schemaVersions] The schema version of each versioned collection the app was built
+ *   for, as `{ 'main/assets': 3 }` (`schema_versions` in `realm.json`, made by `backd types`). It is sent on every
+ *   request as `X-Backd-Schema-Version`: the server stamps the app's writes with it, and answers `426` (an
+ *   `UpgradeRequiredError`) when it is below the collection's `min_schema_version`. Entries for collections a request
+ *   doesn't touch are ignored by the server. Leave it out and nothing is sent: writes are stamped with the current version.
  */
 
 /**
@@ -179,6 +184,8 @@ export class Client {
     this.headers = options.headers ?? {}
     /** @internal */
     this.types = options.types
+    /** @internal */
+    this.schemaVersionHeader = schemaVersionHeader(options.schemaVersions)
     /** @internal */
     this.onStaleTypes = options.onStaleTypes
     /** @internal */
@@ -312,6 +319,7 @@ export class Client {
     /** @type {Record<string, string>} */
     const headers = { Accept: 'text/event-stream', 'Content-Type': 'application/json', ...this.headers }
     if (this.types) headers['X-Backd-Types'] = this.types
+    if (this.schemaVersionHeader) headers['X-Backd-Schema-Version'] = this.schemaVersionHeader
     let sentSession = false
     if (this.apiKey) headers.Authorization = 'Bearer ' + this.apiKey
     else {
@@ -362,6 +370,7 @@ export class Client {
     else if (req.body !== undefined) headers['Content-Type'] = req.contentType ?? 'application/json'
 
     if (this.types) headers['X-Backd-Types'] = this.types
+    if (this.schemaVersionHeader) headers['X-Backd-Schema-Version'] = this.schemaVersionHeader
     if (req.reauth && this.proof && this.proof.expires > Date.now()) headers['X-Backd-Reauth'] = this.proof.token
     let sentSession = false
     /** The signed-in caller as the cache knows it: entries read as another caller are never reused. */
@@ -497,4 +506,21 @@ function sleep(ms, signal) {
  */
 function isSessionGone(err) {
   return err.code === 'unauthenticated' || err.code === 'session_unscoped'
+}
+
+/**
+ * The value of `X-Backd-Schema-Version` for a map of `<database>/<collection>` to version, or
+ * `undefined` when there is none. Sorted, so the header is the same on every request.
+ * @param {Record<string, number> | undefined} versions
+ * @returns {string | undefined}
+ */
+export function schemaVersionHeader(versions) {
+  if (!versions) return undefined
+  const entries = Object.entries(versions).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+  for (const [key, n] of entries) {
+    if (!/^[a-z0-9]+(?:[-_][a-z0-9]+)*\/[a-z0-9]+(?:[-_][a-z0-9]+)*$/.test(key) || !Number.isInteger(n) || n < 1) {
+      throw new TypeError(`schemaVersions: ${JSON.stringify(key)} must be "<database>/<collection>" with a version of 1 or more`)
+    }
+  }
+  return entries.length ? entries.map(([k, n]) => `${k}=${n}`).join(', ') : undefined
 }

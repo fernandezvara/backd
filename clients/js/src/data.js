@@ -13,6 +13,7 @@ import { Job } from './functions.js'
  * @property {string} created_at   RFC3339 timestamp.
  * @property {string} updated_at   RFC3339 timestamp.
  * @property {number} [version]    Increases on every write; missing only on very old documents.
+ * @property {number} [schema_version] The version of the collection's schema the document was written under (collections with versioned schema files; missing means 1).
  * @property {string | null} [owner]  Id of the user who created it (realms with auth enabled).
  * @property {string} [created_by] `user:<id>`, `key:<name>` or `anonymous`.
  * @property {string} [updated_by] `user:<id>`, `key:<name>` or `anonymous`.

@@ -203,6 +203,9 @@ func (c *Client) do(ctx context.Context, r *request) (*Response, error) {
 	if c.opts.Types != "" {
 		headers.Set("X-Backd-Types", c.opts.Types)
 	}
+	if c.schemaHeader != "" {
+		headers.Set("X-Backd-Schema-Version", c.schemaHeader)
+	}
 	if c.opts.UserAgent != "" {
 		headers.Set("User-Agent", c.opts.UserAgent)
 	}

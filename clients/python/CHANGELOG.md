@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `schema_versions=` sends `X-Backd-Schema-Version` on every call (from `schema_versions` in `realm.json`; the generated file carries the map as a constant): the server stamps the program's writes with it and answers `426` when it is below a collection's `min_schema_version`, an `UpgradeRequiredError` (`collection`, `min`, `declared`) that is never retried. `Meta` gets `schema_version`; a versioned collection's generated document is a `Union` with guards.
+
 ## 0.9.10
 
 - `strategy` on sign-in (per call, or once as a client option) and `strategies()`; `MfaChallenge` and `EnrollmentChallenge` carry `next` and `strategy`; sessions record their `strategy` and `roles_inactive`. See the server's [upgrade notes](https://fernandezvara.github.io/backd/docs/operate/#upgrading-to-the-strategy-release).

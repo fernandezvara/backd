@@ -104,6 +104,7 @@ BackdClient<Object?> testClient(
   Map<String, String>? headers,
   String? types,
   void Function()? onStaleTypes,
+  Map<String, int>? schemaVersions,
   FakeStreamTransport? streamTransport,
   String? org,
 }) {
@@ -120,6 +121,7 @@ BackdClient<Object?> testClient(
     streamTransport: streamTransport?.call,
     types: types,
     onStaleTypes: onStaleTypes,
+    schemaVersions: schemaVersions,
     org: org,
     backoff: (attempt, retryAfter, maxDelay) => Duration.zero,
   );

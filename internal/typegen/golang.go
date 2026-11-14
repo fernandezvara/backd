@@ -449,6 +449,14 @@ func (g *goGen) realm(rl *registry.Realm, o Options, header string) string {
 
 	var tail strings.Builder
 	realmName := g.claim(prefix+"Realm", "realm "+rl.Name)
+	if versions := schemaVersionsOf(rl, o.Database); len(versions) > 0 {
+		name := g.claim(prefix+"SchemaVersions", "schema versions "+rl.Name)
+		fmt.Fprintf(&tail, "// %s are the schema versions of the realm's versioned collections this file was made for: pass them as\n// client.Options.SchemaVersions so the server stamps your writes with them and can ask an old program to update.\nvar %s = map[string]int{\n", name, name)
+		for _, k := range slices.Sorted(keys(versions)) {
+			fmt.Fprintf(&tail, "\t%q: %d,\n", k, versions[k])
+		}
+		tail.WriteString("}\n\n")
+	}
 	fmt.Fprintf(&tail, "// %s is the %q realm bound to a client: its databases, collections and functions, typed.\ntype %s struct{ Client *client.Client }\n\n", realmName, rl.Name, realmName)
 	fmt.Fprintf(&tail, "// New%s binds the realm's types to a client made for the realm.\nfunc New%s(c *client.Client) *%s { return &%s{Client: c} }\n", realmName, realmName, realmName, realmName)
 	dbTypes := map[string]string{}

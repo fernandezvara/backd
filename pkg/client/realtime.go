@@ -617,6 +617,9 @@ func (c *Client) openStream(ctx context.Context, path []string, body any) (*http
 	if c.opts.Types != "" {
 		req.Header.Set("X-Backd-Types", c.opts.Types)
 	}
+	if c.schemaHeader != "" {
+		req.Header.Set("X-Backd-Schema-Version", c.schemaHeader)
+	}
 	if c.opts.UserAgent != "" {
 		req.Header.Set("User-Agent", c.opts.UserAgent)
 	}

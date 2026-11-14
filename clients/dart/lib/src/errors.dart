@@ -501,6 +501,29 @@ final class LastOrgManagerError extends ConflictError {
   });
 }
 
+/// 426 `upgrade_required`: the app declared (`schemaVersions`) a schema version of
+/// the collection below its `min_schema_version`, so it would misread the
+/// documents. Show "please update" from this error. It is never retried.
+/// [collection] is `<database>/<collection>`, [min] the oldest version the
+/// server accepts and [declared] the one the app sent.
+final class UpgradeRequiredError extends BackdException {
+  const UpgradeRequiredError({
+    required super.status,
+    required super.code,
+    required super.message,
+    this.collection = '',
+    this.min = 0,
+    this.declared = 0,
+    super.details,
+    super.requestId,
+    super.cause,
+  });
+
+  final String collection;
+  final int min;
+  final int declared;
+}
+
 /// 412: `If-Match` didn't match the current version.
 final class VersionMismatchError extends BackdException {
   const VersionMismatchError({
@@ -592,6 +615,18 @@ BackdException errorFromResponse(TransportResponse response) {
   final requestId =
       error['request_id'] as String? ?? response.header('x-request-id');
   final retryAfter = parseRetryAfter(response.header('retry-after'));
+  if (status == 426 && code == 'upgrade_required') {
+    return UpgradeRequiredError(
+      status: status,
+      code: code,
+      message: message,
+      collection: error['collection'] as String? ?? '',
+      min: (error['min'] as num?)?.toInt() ?? 0,
+      declared: (error['declared'] as num?)?.toInt() ?? 0,
+      details: details,
+      requestId: requestId,
+    );
+  }
   return errorForStatus(
     status,
     code: code,

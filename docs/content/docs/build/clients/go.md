@@ -360,6 +360,7 @@ if errors.As(err, &e) { log.Printf("%s: %s (request %s)", e.Code, e.Message, e.R
 | `ErrNetwork` | There was no answer, or the context ended first (`Code` is `network_error` or `aborted`) |
 | `ErrVerificationRequired`, `ErrSecondStepRequired` | A sign-in that needs more (`*client.SecondStepRequiredError` carries the challenge) |
 | `*client.ConsentRequiredError`, `*client.PasswordExpiredError` | Typed errors with the consents to accept, or whether a reset email was queued |
+| `ErrUpgradeRequired` (`*client.UpgradeRequiredError`, 426) | The program declared (`Options.SchemaVersions`) a schema version below the collection's `min_schema_version`; `Collection`, `Min` and `Declared` say which. [Schema versions](#schema-versions) |
 
 ## Generated types
 
@@ -372,6 +373,31 @@ page, err := shelf.Main().Assets().List(ctx, client.Query{
     OrderBy: []string{shelfapi.MainAssetsFieldPublishedAtDesc},
 })
 ```
+
+## Schema versions
+
+A collection that keeps its [schema in versions](../../configuration/config-dir/#versioned-schemas) can hold documents of several versions while the migration job runs, and a program in the field may be older than the server. Tell the client which version of each collection the program was built for with `Options.SchemaVersions` (the generated `<Realm>SchemaVersions` variable has them):
+
+```go
+c, err := client.New(client.Options{URL: url, Realm: "shelf", SchemaVersions: shelfapi.ShelfSchemaVersions})
+```
+
+- It is sent on every call as `X-Backd-Schema-Version`: the server stamps your writes with it (the current version without it) and answers `426` when it is below the collection's `min_schema_version`. Leave it out and nothing is sent.
+- **Reading:** a versioned collection's document type (`MainAssets`) holds exactly one of `V1`, `V2`… picked when it is decoded; switch on `Version()`:
+
+```go
+switch doc.Version() {
+case 1:
+    // convert doc.V1 by hand
+case 2:
+    // convert doc.V2 by hand
+case 3:
+    current = doc.V3
+}
+```
+
+- **Writing a converted document:** send the whole new shape with `Replace` and `client.WithIfMatch(doc.V3.Meta.Version)`.
+- **`*client.UpgradeRequiredError`** (`errors.Is(err, client.ErrUpgradeRequired)`, `426 upgrade_required`) has `Collection`, `Min` and `Declared`: show "please update" from it. It is never retried.
 
 ## Building on the client
 

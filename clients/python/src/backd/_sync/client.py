@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from .._sio import sleep
-from .._core import Request, Response, endpoint, is_safe, normalize_org, session_gone
+from .._core import Request, Response, endpoint, is_safe, normalize_org, schema_version_header, session_gone
 from .._retry import Retry, backoff
 from ..cache import CacheOptions, CacheStats, Entry, RevalidationCache, cacheable, no_store
 from ..config_storage import ConfigStorage
@@ -61,6 +61,12 @@ class Client:
         moved on it answers ``X-Backd-Types-Stale`` and ``on_stale_types`` is called, once. Leave it out in
         production: nothing is sent then.
     :param on_stale_types: called once when the types are stale; a warning is logged by default.
+    :param schema_versions: the schema version of each versioned collection the program was built for, as
+        ``{"main/assets": 3}`` (``schema_versions`` in ``realm.json``, made by ``backd types``). It is sent on
+        every call as ``X-Backd-Schema-Version``: the server stamps the program's writes with it, and answers
+        ``426`` (:class:`UpgradeRequiredError`) when it is below the collection's ``min_schema_version``.
+        Entries for collections a call doesn't touch are ignored by the server. Leave it out and nothing is
+        sent: writes are stamped with the current version.
     """
 
     def __init__(
@@ -81,6 +87,7 @@ class Client:
         timeout: float | None = 30.0,
         types: str | None = None,
         on_stale_types: Callable[[], None] | None = None,
+        schema_versions: Mapping[str, int] | None = None,
         _root: Client | None = None,
     ) -> None:
         if not url:
@@ -103,6 +110,7 @@ class Client:
             "timeout": timeout,
             "types": types,
             "on_stale_types": on_stale_types,
+            "schema_versions": schema_versions,
         }
         self.url = url.rstrip("/")
         self.realm = realm
@@ -115,6 +123,7 @@ class Client:
         self._retry = retry or Retry()
         self._headers = dict(headers or {})
         self._types = types
+        self._schema_header = schema_version_header(schema_versions)
         self._on_stale_types = on_stale_types
         self._stale_reported = False
         #: Called when the server refuses the session token.
@@ -190,6 +199,8 @@ class Client:
         headers: dict[str, str] = {"Accept": "text/event-stream", "Content-Type": "application/json", **self._headers}
         if self._types:
             headers["X-Backd-Types"] = self._types
+        if self._schema_header:
+            headers["X-Backd-Schema-Version"] = self._schema_header
         value, sent_session, _ = self._credentials()
         if value:
             headers["Authorization"] = value
@@ -376,6 +387,8 @@ class Client:
             headers["Content-Type"] = req.content_type or "application/json"
         if self._types:
             headers["X-Backd-Types"] = self._types
+        if self._schema_header:
+            headers["X-Backd-Schema-Version"] = self._schema_header
         if req.reauth and self._proof is not None and self._proof[1] > time.time():
             headers["X-Backd-Reauth"] = self._proof[0]
         sent_session = False
