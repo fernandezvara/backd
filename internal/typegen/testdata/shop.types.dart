@@ -11,6 +11,7 @@ final class Meta {
     required this.createdAt,
     required this.updatedAt,
     this.version,
+    this.schemaVersion,
     this.owner,
     this.createdBy,
     this.updatedBy,
@@ -28,6 +29,7 @@ final class Meta {
         createdAt: DateTimeString(json['created_at'] as String),
         updatedAt: DateTimeString(json['updated_at'] as String),
         version: (json['version'] as num?)?.toInt(),
+        schemaVersion: (json['schema_version'] as num?)?.toInt(),
         owner: json['owner'] as String?,
         createdBy: json['created_by'] as String?,
         updatedBy: json['updated_by'] as String?,
@@ -50,6 +52,10 @@ final class Meta {
   final DateTimeString createdAt;
   final DateTimeString updatedAt;
   final int? version;
+
+  /// The version of the collection's schema the document was written under
+  /// (collections with versioned schema files; null: 1).
+  final int? schemaVersion;
   final String? owner;
   final String? createdBy;
   final String? updatedBy;

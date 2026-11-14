@@ -269,3 +269,102 @@ func TestMigrationsModule(t *testing.T) {
 		t.Error("a realm without migrations got a migrations.ts")
 	}
 }
+
+func dartVersionsOutput(t *testing.T) *Output {
+	t.Helper()
+	reg := loadVersions(t, "testdata")
+	out, err := Generate(reg, Options{Realm: "versions", Lang: "dart"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func TestGoldenVersionedDart(t *testing.T) {
+	out := dartVersionsOutput(t)
+	golden := filepath.Join("testdata", "versions.types.dart")
+	if *update {
+		if err := os.WriteFile(golden, []byte(out.Types), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(want) != out.Types {
+		t.Errorf("generated types differ from %s (run go test -update):\n%s", golden, out.Types)
+	}
+	for _, want := range []string{"sealed class MainAssets {", "final class MainAssetsV1 extends MainAssets {", "final class MainAssetsV3 extends MainAssets {", "case 2:\n        return MainAssetsV2.fromJson(json);"} {
+		if !strings.Contains(out.Types, want) {
+			t.Errorf("types.dart lacks %q", want)
+		}
+	}
+}
+
+// The sealed class analyzes, picks the member by _meta.schema_version when decoding, and a
+// switch over it must name every version.
+func TestVersionedDartDecodesByTheStamp(t *testing.T) {
+	dart, err := exec.LookPath("dart")
+	if err != nil {
+		t.Skip("dart SDK not installed")
+	}
+	out := dartVersionsOutput(t)
+	pkg := filepath.Join("..", "..", "clients", "dart")
+	generated := filepath.Join(pkg, "lib", "src", "generated_test_versions.dart")
+	script := filepath.Join(pkg, "lib", "src", "generated_test_versions_main.dart")
+	if err := os.WriteFile(generated, []byte(out.Types), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(generated)
+	main := `import 'generated_test_versions.dart';
+
+String describe(MainAssets a) => switch (a) {
+      MainAssetsV1() => 'v1 body=${a.body}',
+      MainAssetsV2() => 'v2 description=${a.description}',
+      MainAssetsV3() => 'v3 visibility=${a.visibility}',
+    };
+
+void main() {
+  final meta = {'created_at': '2026-01-01T00:00:00.000Z', 'updated_at': '2026-01-01T00:00:00.000Z'};
+  print(describe(MainAssets.fromJson({'id': 'a', '_meta': {...meta}, 'title': 't', 'body': 'old'})));
+  print(describe(MainAssets.fromJson({'id': 'b', '_meta': {...meta, 'schema_version': 2}, 'title': 't', 'description': 'd'})));
+  print(describe(MainAssets.fromJson({'id': 'c', '_meta': {...meta, 'schema_version': 3}, 'title': 't', 'visibility': 'private'})));
+  try {
+    MainAssets.fromJson({'id': 'd', '_meta': {...meta, 'schema_version': 9}, 'title': 't'});
+  } on FormatException catch (e) {
+    print('unknown: ${e.message}');
+  }
+}
+`
+	if err := os.WriteFile(script, []byte(main), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(script)
+	run := func(args ...string) (string, error) {
+		cmd := exec.Command(dart, args...)
+		cmd.Dir = pkg
+		b, err := cmd.CombinedOutput()
+		return string(b), err
+	}
+	if b, err := run("analyze", "--fatal-warnings", generated, script); err != nil {
+		t.Fatalf("dart analyze:\n%s", b)
+	}
+	b, err := run("run", script)
+	if err != nil {
+		t.Fatalf("dart run:\n%s", b)
+	}
+	for _, want := range []string{"v1 body=old", "v2 description=d", "v3 visibility=MainAssetsV3Visibility.private", "unknown: main/assets: unknown schema version 9"} {
+		if !strings.Contains(b, want) {
+			t.Errorf("output lacks %q:\n%s", want, b)
+		}
+	}
+	// A switch that leaves a version out does not compile.
+	bad := strings.Replace(main, "      MainAssetsV3() => 'v3 visibility=${a.visibility}',\n", "", 1)
+	if err := os.WriteFile(script, []byte(bad), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := run("analyze", "--fatal-warnings", script); err == nil {
+		t.Errorf("a switch missing a version analyzed clean:\n%s", b)
+	}
+}
