@@ -221,3 +221,100 @@ func TestBuildDefineFunction(t *testing.T) {
 		})
 	}
 }
+
+// Migrations are bundled per collection, always type-checked, in a database without functions,
+// and refused when they import anything but the types.
+func TestBuildMigrations(t *testing.T) {
+	bin := deno(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	coll := "shop/app/items/"
+	const types = "export interface V1 { name: string }\nexport interface V2 { name: string; label: string }\nexport interface V3 { name: string; label: string; slug: string }\nexport interface Meta { id: string; created_at: string }\n"
+	write(t, root, map[string]string{
+		"shop/realm.yaml":       "auth:\n  strategies:\n    password: [password]\n",
+		coll + "schema.v1.json": `{"type": "object", "properties": {"name": {"type": "string"}}}`,
+		coll + "schema.v2.json": `{"type": "object", "properties": {"name": {"type": "string"}, "label": {"type": "string"}}}`,
+		coll + "schema.v3.json": `{"type": "object", "properties": {"name": {"type": "string"}, "label": {"type": "string"}, "slug": {"type": "string"}}}`,
+		coll + "schema.d.ts":    types,
+		coll + "schema.v2.ts":   "import type { V1, V2, Meta } from \"./schema.d.ts\";\nexport default function (doc: V1, meta: Meta): V2 {\n  return { ...doc, label: doc.name + meta.id };\n}\n",
+		coll + "schema.v3.ts":   "import type { V2, V3 } from \"./schema.d.ts\";\nexport default (doc: V2): V3 => ({ ...doc, slug: doc.label.toLowerCase() });\n",
+	})
+	load := func() *registry.Registry {
+		t.Helper()
+		reg, err := registry.Load(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return reg
+	}
+	var logged []string
+	// Check is off: migrations are type-checked anyway.
+	opts := Options{Deno: bin, Log: func(f string, a ...any) { logged = append(logged, f) }}
+	if err := Build(ctx, load(), opts); err != nil {
+		t.Fatal(err)
+	}
+	reg := load()
+	if err := reg.CheckBundles(); err != nil {
+		t.Fatalf("fresh build refused: %v", err)
+	}
+	if len(logged) != 1 {
+		t.Errorf("logged %d bundles, want one for the collection", len(logged))
+	}
+	db := reg.Realms["shop"].Databases["app"]
+	m, err := registry.ReadMigrationManifest(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(db.MigrationBundlePath(m, "items"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// One self-contained file with both steps, in order; the types are gone.
+	if !strings.Contains(string(b), "toLowerCase") || !strings.Contains(string(b), "steps") || strings.Contains(string(b), "interface") || strings.Contains(string(b), "import ") {
+		t.Errorf("bundle is not the two steps as JavaScript:\n%s", b)
+	}
+	if _, err := os.Stat(filepath.Join(db.MigrationsBuildDir(), "entry-items.ts")); !os.IsNotExist(err) {
+		t.Errorf("the generated entry was left in the build folder: %v", err)
+	}
+
+	// Rebuilding gives the same bundle (reproducible).
+	if err := Build(ctx, reg, opts); err != nil {
+		t.Fatal(err)
+	}
+	if after, _ := registry.ReadMigrationManifest(db); after.Collections["items"] != m.Collections["items"] {
+		t.Errorf("rebuild changed the bundle: %+v → %+v", m.Collections["items"], after.Collections["items"])
+	}
+
+	// Editing a step makes the build stale; rebuilding fixes it and removes the old bundle.
+	write(t, root, map[string]string{coll + "schema.v3.ts": "import type { V2, V3 } from \"./schema.d.ts\";\nexport default (doc: V2): V3 => ({ ...doc, slug: doc.label.toUpperCase() });\n"})
+	if err := load().CheckBundles(); err == nil || !strings.Contains(err.Error(), "stale") {
+		t.Fatalf("stale build accepted: %v", err)
+	}
+	if err := Build(ctx, load(), opts); err != nil {
+		t.Fatal(err)
+	}
+	if err := load().CheckBundles(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(db.MigrationBundlePath(m, "items")); !os.IsNotExist(err) {
+		t.Errorf("old bundle not removed: %v", err)
+	}
+	good, _ := registry.ReadMigrationManifest(db)
+
+	// A type error fails the build, with Check off too, and keeps the last good manifest.
+	write(t, root, map[string]string{coll + "schema.v3.ts": "import type { V2, V3 } from \"./schema.d.ts\";\nexport default (doc: V2): V3 => ({ ...doc });\n"})
+	err = Build(ctx, load(), opts)
+	if err == nil || !strings.Contains(err.Error(), "items") || !strings.Contains(err.Error(), "slug") {
+		t.Fatalf("type error accepted: %v", err)
+	}
+	if now, _ := registry.ReadMigrationManifest(db); now.Collections["items"] != good.Collections["items"] {
+		t.Errorf("a failed build changed the manifest: %+v", now)
+	}
+
+	// A value import is refused, naming the file and the line.
+	write(t, root, map[string]string{coll + "schema.v3.ts": "import type { V2, V3 } from \"./schema.d.ts\";\nimport { x } from \"./helper.ts\";\nexport default (doc: V2): V3 => ({ ...doc, slug: x });\n"})
+	err = Build(ctx, load(), opts)
+	if err == nil || !strings.Contains(err.Error(), "schema.v3.ts:2:") || !strings.Contains(err.Error(), "import type") {
+		t.Fatalf("value import accepted: %v", err)
+	}
+}

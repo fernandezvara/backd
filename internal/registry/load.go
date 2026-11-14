@@ -323,7 +323,7 @@ func loadDatabase(rl *Realm, name, path string) (*Database, []error) {
 	if len(mongoName) >= maxMongoDBNameLen {
 		return nil, []error{fmt.Errorf("%s: MongoDB database name %q must be shorter than %d characters", path, mongoName, maxMongoDBNameLen)}
 	}
-	db := &Database{Realm: realm, Name: name, MongoName: mongoName, Collections: map[string]*Collection{}, appConfig: rl.AppConfig}
+	db := &Database{Realm: realm, Name: name, MongoName: mongoName, Dir: path, Collections: map[string]*Collection{}, appConfig: rl.AppConfig}
 
 	collDirs, err := subdirs(path)
 	if err != nil {
@@ -331,8 +331,8 @@ func loadDatabase(rl *Realm, name, path string) (*Database, []error) {
 	}
 	var errs []error
 	for _, collName := range collDirs {
-		if collName == FunctionsDir {
-			continue
+		if collName == FunctionsDir || collName == MigrationsDir {
+			continue // build outputs, not collections (_migrations only holds .build/)
 		}
 		collPath := filepath.Join(path, collName)
 		if strings.HasPrefix(collName, "_") {
@@ -426,6 +426,8 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 		SchemaVersion:  sf.Version,
 		Versioned:      sf.Versioned,
 		SchemaVersions: sf.Versions,
+		Migrations:     sf.Migrations,
+		Dir:            dir,
 		RawSchema:      raw,
 		Schema:         compiled,
 		Fields:         fieldIndex(raw),

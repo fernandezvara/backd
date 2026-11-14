@@ -9,12 +9,21 @@ import (
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
-// staleFunctions lists, as realm/database, the databases whose functions project has no
+// staleFunctions lists, as realm/database (and "migrations" for the migration bundles), what has no
 // built bundles or bundles older than its source (the manifest's source hash against the
-// project's). Databases without functions are never stale.
+// project's). Databases without functions or migrations are never stale.
 func staleFunctions(reg *registry.Registry) ([]string, error) {
 	var stale []string
 	for _, db := range reg.Databases() {
+		if len(db.MigratingCollections()) > 0 {
+			src, err := registry.MigrationSourceHash(db)
+			if err != nil {
+				return nil, err
+			}
+			if m, err := registry.ReadMigrationManifest(db); err != nil || m.Source != src {
+				stale = append(stale, db.Realm+"/"+db.Name+" migrations")
+			}
+		}
 		if db.Functions == nil || len(db.Functions.Functions) == 0 {
 			continue
 		}

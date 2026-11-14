@@ -71,3 +71,45 @@ func TestBuildStaleFunctionsSkipsFreshBundles(t *testing.T) {
 		t.Error("a stale bundle was not built (the missing Deno should have failed the build)")
 	}
 }
+
+// The dev reloader rebuilds migration bundles too: a database whose migrations have no build,
+// or an old one, is listed, and one built from the current sources is not.
+func TestStaleMigrations(t *testing.T) {
+	root := cmdtest.Write(t, map[string]string{
+		"app/realm.yaml":                 "auth: disabled\n",
+		"app/main/items/schema.v1.json":  `{}`,
+		"app/main/items/schema.v2.json":  `{}`,
+		"app/main/items/schema.v2.ts":    "export default (d: unknown) => d;\n",
+		"app/other/notes/schema.v1.json": `{}`,
+		"app/other/notes/schema.v2.json": `{}`,
+		"app/other/notes/schema.v2.ts":   "export default (d: unknown) => d;\n",
+		"app/plain/notes/schema.json":    `{}`,
+	})
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := staleFunctions(reg); !slices.Equal(got, []string{"app/main migrations", "app/other migrations"}) {
+		t.Fatalf("stale without a build = %v", got)
+	}
+	// A manifest of the current sources makes main fresh.
+	db := reg.Realms["app"].Databases["main"]
+	src, _ := registry.MigrationSourceHash(db)
+	if err := os.MkdirAll(db.MigrationsBuildDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{"deno": "` + registry.DenoVersion + `", "source": "` + src + `", "collections": {}}`
+	if err := os.WriteFile(filepath.Join(db.MigrationsBuildDir(), registry.ManifestFile), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := staleFunctions(reg); !slices.Equal(got, []string{"app/other migrations"}) {
+		t.Errorf("stale with main built = %v", got)
+	}
+	// An edit after the build makes it stale again.
+	if err := os.WriteFile(filepath.Join(root, "app/main/items/schema.v2.ts"), []byte("export default (d: unknown) => ({ ...(d as object) });\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := staleFunctions(reg); !slices.Equal(got, []string{"app/main migrations", "app/other migrations"}) {
+		t.Errorf("stale after an edit = %v", got)
+	}
+}

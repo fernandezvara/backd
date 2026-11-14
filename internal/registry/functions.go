@@ -861,6 +861,7 @@ func (f *Functions) BundlePath(m Manifest, fn string) string {
 func (r *Registry) CheckBundles() error {
 	var errs []error
 	for _, db := range r.Databases() {
+		errs = append(errs, checkMigrationBundles(db)...)
 		fns := db.Functions
 		if fns == nil {
 			continue

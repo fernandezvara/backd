@@ -158,11 +158,12 @@ func devAddrError(addr string) error {
 	return fmt.Errorf("BACKD_DEV=true requires HTTP_ADDR bound to localhost (e.g. 127.0.0.1:8080), got %q: dev mode must never be reachable off the machine (a container whose ports are published on 127.0.0.1 only can set BACKD_DEV_ANY_ADDR=true)", addr)
 }
 
-// hasFunctionDirs tells whether CONFIG_DIR holds any function, without loading it (it may
+// hasFunctionDirs tells whether CONFIG_DIR holds any function or migration, without loading it (it may
 // not load).
 func hasFunctionDirs(dir string) bool {
 	m, _ := filepath.Glob(filepath.Join(dir, "*", "*", "_functions", "*", "function.yaml"))
-	return len(m) > 0
+	t, _ := filepath.Glob(filepath.Join(dir, "*", "*", "*", "schema.v*.ts")) // a collection's migrations are built with Deno too
+	return len(m)+len(t) > 0
 }
 
 // devLoad loads and checks the config as startup does, building stale bundles first when
