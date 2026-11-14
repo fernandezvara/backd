@@ -28,6 +28,7 @@ func functionsBuild(c *kli.CommandContext) error {
 			built++
 			fmt.Fprintf(c.Stdout(), format+"\n", a...)
 		},
+		Warn: func(line string) { fmt.Fprintln(c.Stderr(), line) },
 	})
 	if err != nil {
 		return err

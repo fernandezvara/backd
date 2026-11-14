@@ -128,6 +128,12 @@ shop/orders/items/
   - at most 1,000 documents a second, and the job survives a worker that dies: another goes on from where it was.
 - **On demand:** `backd data migrate --realm R --database D --collection C` queues it (`--dry-run` runs the migrations and validates without writing, `--wait` follows it and exits 1 when some documents did not migrate), and `backd data migrations` shows the state. Needs the executor and a realm with `auth` enabled: a collection with `schema.v<N>.ts` files in a realm with `auth: disabled` does not load, because the job queue lives in realms with auth.
 
+- **The build tells you what a change breaks.** `backd-server functions build` (and the dev server, on every load) compares each kept `schema.v<N>.json` with the one below it and **warns, never fails**:
+  - a write the lower version allowed is refused: a new `required` field; a narrower `type`, `enum`, `maxLength`, `minLength`, `maximum`, `minimum`, `maxItems` or `minItems`; a `pattern`, `format` or `multipleOf` that appears; `additionalProperties: false` newly set;
+  - a field the lower version declared is no longer declared (apps on the lower version read documents without it);
+  - a field's `type` changed.
+  Each warning names the collection, the two files, the path and the rule. It becomes a **note** when `min_schema_version` already turns the affected apps away (`min_schema_version` at or above the new version for a refusal; at or above the lower version for a dropped or retyped field). `oneOf`, `anyOf`, `if`/`then`, a `pattern` that changed, a `$ref` that can't be followed and the other keywords that cannot be compared soundly are reported as "can't tell, check by hand" rather than guessed.
+
 The version an app declares (`X-Backd-Schema-Version`) stamps its writes, and `min_schema_version` in [`collection.yaml`](#collectionyaml) (a whole number from 1 to the current version, only in a versioned collection) makes the server answer `426 upgrade_required` to apps below it: see [the schema version an app declares](../../api/documents/#the-schema-version-an-app-declares).
 
 ### Dates
