@@ -91,6 +91,9 @@ type Collection struct {
 	Name      string `json:"name"`
 	Documents int64  `json:"documents"`
 	Part      string `json:"part"`
+	// SchemaVersion is the collection's current schema version when it was exported (collections
+	// with versioned schema files); each document's own is its _meta.schema_version.
+	SchemaVersion int `json:"schema_version,omitempty"`
 }
 
 // EncryptedField records an encrypted field and whether the package holds it as ciphertext or

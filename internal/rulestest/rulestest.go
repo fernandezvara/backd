@@ -249,7 +249,7 @@ func (r *runner) load(f File) {
 	}
 }
 
-var metaKeys = []string{"owner", "org", "team", "created_by", "updated_by", "version", "created_at", "updated_at", "deleted_at", "deleted_by", "purge_at"}
+var metaKeys = []string{"owner", "org", "team", "created_by", "updated_by", "version", "schema_version", "created_at", "updated_at", "deleted_at", "deleted_by", "purge_at"}
 
 // stored builds a stored document: the user fields (checked against the
 // schema, as the server does when it writes them) and the system fields.
@@ -292,6 +292,12 @@ func (r *runner) stored(name string, def map[string]any) (map[string]any, error)
 			n, ok := v.(int)
 			if !ok {
 				return nil, errors.New("_meta.version must be an integer")
+			}
+			v = int64(n)
+		case "schema_version":
+			n, ok := v.(int)
+			if !ok || n < 1 {
+				return nil, errors.New("_meta.schema_version must be a whole number from 1")
 			}
 			v = int64(n)
 		case "owner":

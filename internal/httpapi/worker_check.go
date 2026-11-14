@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -205,8 +206,20 @@ scan:
 		for i, doc := range docs {
 			report.Scanned++
 			after, _ = doc["id"].(string)
+			meta, _ := doc["_meta"].(map[string]any)
+			stamp := storedSchemaVersion(meta)
+			if c.Versioned {
+				if report.ByVersion == nil {
+					report.ByVersion = map[string]int64{}
+				}
+				report.ByVersion[strconv.Itoa(stamp)]++
+			}
 			problems, more := checkDocument(c, doc)
 			if len(problems) == 0 {
+				continue
+			}
+			if c.Versioned && stamp < c.SchemaVersion {
+				report.Waiting++ // not drift: the migration job will bring it up (or report why it can't)
 				continue
 			}
 			report.Invalid++

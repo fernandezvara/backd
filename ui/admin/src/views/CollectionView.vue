@@ -9,6 +9,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import FormDialog from '@/components/FormDialog.vue'
 import JsonView from '@/components/JsonView.vue'
 import SchemaCheckPanel from '@/components/SchemaCheckPanel.vue'
+import SchemaVersionsPanel from '@/components/SchemaVersionsPanel.vue'
 import { useAdmin } from '@/lib/admin'
 import { errorText, formatDate } from '@/lib/format'
 import { buildWhere, operatorsFor, orderBy, queryFields, QueryError, type Condition } from '@/lib/query'
@@ -229,6 +230,7 @@ const showStatus = computed(() => (total.value !== undefined ? t('data.collectio
     <RouterLink v-if="canWrite" :to="{ name: 'data-new', params: { realm, database, collection } }" class="rounded-md bg-brand-700 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-800">{{ t('data.collection.new') }}</RouterLink>
   </PageHeader>
 
+  <SchemaVersionsPanel :realm="realm" :database="database" :collection="collection" />
   <SchemaCheckPanel v-if="showCheck" :realm="realm" :database="database" :collection="collection" :total="conditions.length || view === 'trash' ? undefined : total" />
 
   <form class="mt-4 space-y-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900" role="search" :aria-label="t('data.collection.where')" @submit.prevent="apply">

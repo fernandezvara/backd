@@ -782,6 +782,12 @@ func checkImportedMeta(meta map[string]any) []Detail {
 		switch k {
 		case "version", "created_at", "updated_at":
 			// checked by the caller
+		case "schema_version":
+			// The version the document was written under: imported as it is, and a document below the
+			// target's current version is migrated by the next start's job.
+			if n, ok := v.(int64); !ok || n < 1 {
+				problems = append(problems, Detail{Path: "_meta.schema_version", Reason: "must be a whole number from 1"})
+			}
 		case "owner", "created_by", "updated_by", "org", "team", "deleted_by":
 			if _, ok := v.(string); !ok && v != nil {
 				problems = append(problems, Detail{Path: "_meta." + k, Reason: "must be text"})

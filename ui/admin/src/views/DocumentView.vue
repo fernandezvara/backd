@@ -245,6 +245,10 @@ const actor = (v?: string | null) => v || '—'
       <dd class="font-mono text-xs">{{ doc!.id }}</dd>
       <dt class="text-slate-600 dark:text-slate-400">{{ t('data.doc.version') }}</dt>
       <dd data-testid="doc-version">{{ meta.version ?? '—' }}</dd>
+      <template v-if="meta.schema_version !== undefined">
+        <dt class="text-slate-600 dark:text-slate-400">{{ t('data.doc.schemaVersion') }}</dt>
+        <dd data-testid="doc-schema-version">{{ meta.schema_version }}</dd>
+      </template>
       <dt class="text-slate-600 dark:text-slate-400">{{ t('data.doc.created') }}</dt>
       <dd>{{ formatDate(meta.created_at) }} · <span class="font-mono text-xs">{{ actor(meta.created_by) }}</span></dd>
       <dt class="text-slate-600 dark:text-slate-400">{{ t('data.doc.updated') }}</dt>

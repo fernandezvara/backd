@@ -12048,7 +12048,7 @@ components:
       description: What a schema check found in one collection, without the documents.
       type: object
       additionalProperties: false
-      required: [database, collection, job_id, started_at, finished_at, scanned, invalid, complete, stopped_by, limit, schema_hash]
+      required: [database, collection, job_id, started_at, finished_at, scanned, invalid, complete, stopped_by, limit, schema_hash, waiting_for_migration, by_version]
       properties:
         database: { type: string }
         collection: { type: string }
@@ -12057,6 +12057,8 @@ components:
         finished_at: { $ref: "#/components/schemas/Timestamp" }
         scanned: { type: integer, format: int64, description: How many documents it read. }
         invalid: { type: integer, format: int64, description: How many did not match the schema (up to `limit`). }
+        waiting_for_migration: { type: integer, format: int64, description: "Documents below the collection's current schema version that don't match it: not drift, they wait for the migration job. Not counted in `invalid`." }
+        by_version: { type: object, additionalProperties: { type: integer, format: int64 }, description: "Documents read per schema version (a missing stamp is 1). Empty for a collection without versioned schema files." }
         complete: { type: boolean, description: "False when the scan stopped before the end." }
         stopped_by: { type: [string, "null"], enum: [limit, time, null], description: "Why it stopped early: `limit` (it found `limit` invalid documents) or `time` (the 6-hour limit of an attempt)." }
         limit: { type: integer }
@@ -12104,7 +12106,7 @@ components:
       description: A collection's latest schema check report, with the invalid documents.
       type: object
       additionalProperties: false
-      required: [database, collection, job_id, started_at, finished_at, scanned, invalid, complete, stopped_by, limit, schema_hash, documents]
+      required: [database, collection, job_id, started_at, finished_at, scanned, invalid, complete, stopped_by, limit, schema_hash, documents, waiting_for_migration, by_version]
       properties:
         database: { type: string }
         collection: { type: string }
@@ -12113,6 +12115,8 @@ components:
         finished_at: { $ref: "#/components/schemas/Timestamp" }
         scanned: { type: integer, format: int64, description: How many documents it read. }
         invalid: { type: integer, format: int64, description: How many did not match the schema (up to `limit`). }
+        waiting_for_migration: { type: integer, format: int64, description: "Documents below the collection's current schema version that don't match it: not drift, they wait for the migration job. Not counted in `invalid`." }
+        by_version: { type: object, additionalProperties: { type: integer, format: int64 }, description: "Documents read per schema version (a missing stamp is 1). Empty for a collection without versioned schema files." }
         complete: { type: boolean, description: "False when the scan stopped before the end." }
         stopped_by: { type: [string, "null"], enum: [limit, time, null], description: "Why it stopped early: `limit` (it found `limit` invalid documents) or `time` (the 6-hour limit of an attempt)." }
         limit: { type: integer }

@@ -62,6 +62,10 @@ clinic-2026-10-09/
 | `auth`, `auth_key_fingerprint` | The authentication data parts, and the fingerprint of the one-time export key their sealed fields are sealed under |
 | `checksums` | The SHA-256 of **every** other file, as `sha256:<hex>` |
 
+### Schema versions
+
+For a collection with [versioned schema files](../../../../build/configuration/config-dir/#versioned-schemas) the manifest records the collection's current `schema_version`, and every document keeps its own `_meta.schema_version`. An import stores each document with the version it carries and validates it against the target's **current** schema as always: a document that is below the target's current version and valid is migrated by the next start's job, and one that isn't valid is reported as `invalid`.
+
 ### Documents
 
 One document per line, in the API representation: `id`, the fields and `_meta`, soft-deleted documents included. Typed values use MongoDB's relaxed Extended JSON, so nothing is lost:

@@ -452,3 +452,30 @@ tests:
 		t.Errorf("an undeclared strategy: %v", problems)
 	}
 }
+
+// A rule reads document._meta.schema_version, a missing stamp as 1, and a fixture can set it.
+func TestRunReadsTheSchemaVersion(t *testing.T) {
+	c := collection(t, "read: user != nil && document._meta.schema_version >= 2\ncreate: user != nil\n")
+	checks, problems := Run(c, roles, []byte(`
+users:
+  ada: { id: u1, email: ada@example.com }
+documents:
+  unstamped: { title: A }
+  v1:        { title: B, _meta: { schema_version: 1 } }
+  v2:        { title: C, _meta: { schema_version: 2 } }
+tests:
+  - as: ada
+    read: { allow: [v2], deny: [unstamped, v1] }
+`))
+	if len(problems) > 0 {
+		t.Fatal(problems)
+	}
+	for _, ch := range checks {
+		if !ch.Pass {
+			t.Errorf("%s: %s", ch.What, ch.Detail)
+		}
+	}
+	if _, problems := Run(c, roles, []byte("documents:\n  x: { title: A, _meta: { schema_version: 0 } }\ntests:\n  - as: anonymous\n    read: { deny: [x] }\n")); len(problems) == 0 {
+		t.Error("schema_version 0 accepted")
+	}
+}

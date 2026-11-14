@@ -325,11 +325,62 @@ import { connectionBody } from './orgs.js'
  * @property {'limit' | 'time' | null} stopped_by
  * @property {number} limit
  * @property {string} schema_hash     Identifies the schema the documents were checked against.
+ * @property {number} waiting_for_migration  Documents below the current schema version that don't match it yet: not drift.
+ * @property {Record<string, number>} by_version  Documents read per schema version (a missing stamp is 1); empty for an unversioned collection.
  */
 
 /**
  * A collection's latest schema check report, with the documents that failed.
  * @typedef {CheckReportSummary & { documents: { id: string, deleted: boolean, problems: { path: string, reason: string }[], more_problems: number }[] }} CheckReport
+ */
+
+/**
+ * One document of a schema migration that did not migrate and stays at its version. Never a value.
+ * @typedef {object} SchemaMigrationFailure
+ * @property {string} id
+ * @property {string} step      Where it stopped, such as `2 → 3`.
+ * @property {string} kind      Why: `threw`, `async`, `not_json`, `no_step`, `timeout`, `memory`, `invalid`, `file_field`, `conflict`, `write` or `executor`.
+ * @property {string} path      The JSON path, for `invalid` and `file_field`.
+ * @property {string} keyword   The rule that failed, for `invalid`.
+ */
+
+/**
+ * The latest finished schema migration of a collection.
+ * @typedef {object} SchemaMigrationReport
+ * @property {string} job_id
+ * @property {string} database
+ * @property {string} collection
+ * @property {number} target                 The schema version it migrated to.
+ * @property {boolean} dry_run               True when nothing was written.
+ * @property {string} status
+ * @property {'complete' | 'partial' | 'cancelled' | 'failed' | null} ending
+ * @property {string} created_at
+ * @property {string | null} finished_at
+ * @property {number} scanned
+ * @property {number} migrated
+ * @property {number} skipped
+ * @property {number} failed
+ * @property {SchemaMigrationFailure[]} [failures]   Only in the full report.
+ * @property {number} [failures_omitted]
+ */
+
+/**
+ * @typedef {object} DataMigrationsList
+ * @property {JobSummary[]} running   The migrations queued or running now.
+ * @property {{ database: string, collection: string, current_version: number, documents_below_current: number | null, report: SchemaMigrationReport | null }[]} items   Every collection with migrations.
+ */
+
+/**
+ * @typedef {object} DataMigrationStarted
+ * @property {string} id
+ * @property {string} status
+ * @property {string} database
+ * @property {string} collection
+ * @property {number} target
+ * @property {boolean} dry_run
+ * @property {boolean} already_running   True when the job for this version was already queued or running.
+ * @property {number | null} documents_below_current
+ * @property {string} created_at
  */
 
 /**
@@ -451,6 +502,8 @@ export class Admin {
     this.storage = new AdminStorage(this)
     /** Schema checks: which stored documents no longer match their collection's schema. */
     this.dataChecks = new AdminDataChecks(this)
+    /** Schema migrations: moving a versioned collection's documents to its current schema version. */
+    this.dataMigrations = new AdminDataMigrations(this)
     /** The realm's schedules: list them, pause and resume them. */
     this.schedules = new AdminSchedules(this)
     /** Function secrets: set and delete their values, list their metadata. */
@@ -1375,6 +1428,47 @@ class AdminStorage {
   async regenerateVersions({ database, collection, field, version, missingOnly, rate, ...opts }) {
     const body = { database, collection, field, version, missing_only: missingOnly, rate }
     return (await this.admin._request({ method: 'POST', path: ['files', 'versions', 'regenerate'], body, ...opts })).data
+  }
+}
+
+class AdminDataMigrations {
+  /** @param {Admin} admin */
+  constructor(admin) {
+    /** @internal */
+    this.admin = admin
+  }
+
+  /**
+   * Queues the migration of a versioned collection's documents to its current schema version (workers
+   * also do it at every start). `dryRun` runs the migrations and validates the results and writes
+   * nothing. Rejects with a `ConflictError` (`migration_running`, `migration_unavailable`).
+   * @param {{ database: string, collection: string, dryRun?: boolean }} params
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<DataMigrationStarted>}
+   */
+  async start({ database, collection, dryRun }, opts) {
+    return (await this.admin._request({ method: 'POST', path: ['data-migrations'], body: { database, collection, dry_run: dryRun }, ...opts })).data
+  }
+
+  /**
+   * The migrations running now and every collection with migrations: its current version, how many
+   * documents are still below it and its latest finished migration.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<DataMigrationsList>}
+   */
+  async list(opts) {
+    return (await this.admin._request({ method: 'GET', path: ['data-migrations'], ...opts })).data
+  }
+
+  /**
+   * A collection's latest finished migration in full. Rejects with a `NotFoundError` when none is kept.
+   * @param {string} database
+   * @param {string} collection
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<SchemaMigrationReport>}
+   */
+  async get(database, collection, opts) {
+    return (await this.admin._request({ method: 'GET', path: ['data-migrations', database, collection], ...opts })).data
   }
 }
 

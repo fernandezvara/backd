@@ -87,6 +87,10 @@ YAML reads a value starting with `'`, `!`, `[` or `{` specially, so quote such r
 
 Rules have no access to the request itself (headers, address). They see the document they are about, and the one document a declared [reference](../../api/references/) points to, with [`parent()`](#rules-that-follow-a-reference). For shared documents, store member ids in an array and check `user.id in document.members`; for documents that belong to a shared one (the items of a list), follow the reference.
 
+### The schema version of a document
+
+In a collection with [versioned schema files](../../configuration/config-dir/#versioned-schemas), `document._meta.schema_version` is the version a document was written under, and a document without the stamp is version `1`. A rule can treat versions differently during a transition (`document._meta.schema_version >= 2 || hasRole(user, 'staff')`). `data`, the incoming write, always has the current shape. In `rules.test.yaml` a document sets it under `_meta`.
+
 ### Paths on `document` and `data`
 
 A rule names a field with a dot path whose parts are literal names declared in `schema.json`: `document.title`, `data.address.city`, `document._meta.owner` (`document['title']` with a string literal is the same). That is what lets `backd` check every field at startup. These are refused, with the error `use dot paths with literal names on data, e.g. data.title`:

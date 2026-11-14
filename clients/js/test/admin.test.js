@@ -460,6 +460,29 @@ test('dataChecks start, list, get and wait', async () => {
   await assert.rejects(a.dataChecks.get('app', 'labels'), NotFoundError)
 })
 
+test('dataMigrations start, list and get', async () => {
+  const report = { job_id: 'j2', database: 'app', collection: 'items', target: 2, dry_run: false, status: 'done', ending: 'partial', created_at: '2026-11-14T09:00:00.000Z', finished_at: '2026-11-14T09:01:00.000Z', scanned: 5, migrated: 4, skipped: 0, failed: 1, failures: [{ id: 'i3', step: '1 → 2', kind: 'invalid', path: 'title', keyword: 'is required' }], failures_omitted: 0 }
+  const started = { id: 'j2', status: 'queued', database: 'app', collection: 'items', target: 2, dry_run: true, already_running: false, documents_below_current: 5, created_at: '2026-11-14T09:00:00.000Z' }
+  const m = mockFetch([
+    { status: 202, body: started },
+    { status: 409, body: { error: { code: 'migration_running', message: 'a migration is already running', details: [{ path: 'job_id', reason: 'j2' }], request_id: 'r' } } },
+    { body: { running: [], items: [{ database: 'app', collection: 'items', current_version: 2, documents_below_current: 1, report }] } },
+    { body: report },
+    { status: 404, body: errorBody('not_found', 'no finished schema migration kept') },
+  ])
+  const a = adminOf(m)
+  const got = await a.dataMigrations.start({ database: 'app', collection: 'items', dryRun: true })
+  assert.equal(got.documents_below_current, 5)
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/data-migrations')
+  assert.deepEqual(m.calls[0].body, { database: 'app', collection: 'items', dry_run: true })
+  await assert.rejects(a.dataMigrations.start({ database: 'app', collection: 'items' }), (/** @type {any} */ e) => e instanceof ConflictError && e.code === 'migration_running')
+  const list = await a.dataMigrations.list()
+  assert.equal(list.items[0].documents_below_current, 1)
+  assert.equal((await a.dataMigrations.get('app', 'items')).failures?.[0].kind, 'invalid')
+  assert.equal(m.calls[3].url.pathname, '/v1/acme/_admin/data-migrations/app/items')
+  await assert.rejects(a.dataMigrations.get('app', 'none'), NotFoundError)
+})
+
 test('storage.check posts to the storage check route', async () => {
   const report = { ok: true, provider: 'minio', endpoint: 'http://minio:9000', public_endpoint: null, bucket: 'files', prefix: 'dev', steps: [{ name: 'bucket', level: 'ok', detail: 'files exists' }], checksum_sha256: 'verified', encryption: 'unknown', cors: [], link_host: 'minio:9000' }
   const m = mockFetch([{ body: report }, { status: 404, body: errorBody('not_found', 'this realm has no storage configured') }])
