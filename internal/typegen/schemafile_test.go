@@ -368,3 +368,82 @@ void main() {
 		t.Errorf("a switch missing a version analyzed clean:\n%s", b)
 	}
 }
+
+func goVersionsOutput(t *testing.T) *Output {
+	t.Helper()
+	reg := loadVersions(t, "testdata")
+	out, err := Generate(reg, Options{Realm: "versions", Lang: "go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func TestGoldenVersionedGo(t *testing.T) {
+	out := goVersionsOutput(t)
+	golden := filepath.Join("testdata", "versions.types.go.txt")
+	if *update {
+		if err := os.WriteFile(golden, []byte(out.Types), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(want) != out.Types {
+		t.Errorf("generated types differ from %s (run go test -update):\n%s", golden, out.Types)
+	}
+}
+
+// The generated Go compiles, a document decodes into the member its stamp names (absent: 1),
+// and one of a version no longer kept is an error.
+func TestVersionedGoDecodesByTheStamp(t *testing.T) {
+	out := goVersionsOutput(t)
+	dir, err := os.MkdirTemp(".", "gocheck")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	if err := os.WriteFile(filepath.Join(dir, "types.go"), []byte(out.Types), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	use := `package backdtypes
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
+
+func TestDecode(t *testing.T) {
+	meta := ` + "`" + `"created_at":"2026-01-01T00:00:00.000Z","updated_at":"2026-01-01T00:00:00.000Z"` + "`" + `
+	var a, b, c MainAssets
+	if err := json.Unmarshal([]byte(` + "`" + `{"id":"a","_meta":{` + "`" + `+meta+` + "`" + `},"title":"t","body":"old"}` + "`" + `), &a); err != nil || a.V1 == nil || a.Version() != 1 || a.V1.Body == nil || *a.V1.Body != "old" || a.V1.ID != "a" {
+		t.Fatalf("v1: %+v %v", a, err)
+	}
+	if err := json.Unmarshal([]byte(` + "`" + `{"id":"b","_meta":{` + "`" + `+meta+` + "`" + `,"schema_version":2},"title":"t","description":"d"}` + "`" + `), &b); err != nil || b.V2 == nil || b.Version() != 2 || b.V2.Description == nil || *b.V2.Description != "d" || b.V2.Meta.SchemaVersion != 2 {
+		t.Fatalf("v2: %+v %v", b, err)
+	}
+	if err := json.Unmarshal([]byte(` + "`" + `{"id":"c","_meta":{` + "`" + `+meta+` + "`" + `,"schema_version":3},"title":"t","visibility":"private"}` + "`" + `), &c); err != nil || c.V3 == nil || c.Version() != 3 || c.V3.Visibility != MainAssetsV3VisibilityPrivate {
+		t.Fatalf("v3: %+v %v", c, err)
+	}
+	raw, err := json.Marshal(c)
+	if err != nil || !strings.Contains(string(raw), ` + "`" + `"visibility":"private"` + "`" + `) {
+		t.Fatalf("marshal: %s %v", raw, err)
+	}
+	var bad MainAssets
+	if err := json.Unmarshal([]byte(` + "`" + `{"id":"d","_meta":{` + "`" + `+meta+` + "`" + `,"schema_version":9},"title":"t"}` + "`" + `), &bad); err == nil || !strings.Contains(err.Error(), "unknown schema version 9") {
+		t.Fatalf("unknown version: %v", err)
+	}
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "use_test.go"), []byte(use), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"vet", "./" + dir}, {"test", "-count=1", "./" + dir}} {
+		if res, err := exec.Command("go", args...).CombinedOutput(); err != nil {
+			t.Fatalf("go %s: %v\n%s\n%s", strings.Join(args, " "), err, res, out.Types)
+		}
+	}
+}

@@ -17,6 +17,9 @@ type Meta struct {
 	UpdatedAt string `json:"updated_at"`
 	// Version increases on every write; use it with [WithIfMatch].
 	Version int64 `json:"version,omitempty"`
+	// SchemaVersion is the version of the collection's schema the document was written under
+	// (collections with versioned schema files; zero: 1).
+	SchemaVersion int64 `json:"schema_version,omitempty"`
 	// Owner is the id of the user who created it (realms with auth enabled).
 	Owner     string `json:"owner,omitempty"`
 	CreatedBy string `json:"created_by,omitempty"`
