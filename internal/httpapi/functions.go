@@ -132,6 +132,20 @@ func (f *functions) reindex() {
 			hashes[db.Realm+"/"+db.Name+"/"+name] = b.SHA256
 		}
 	}
+	// The migration bundles are served to the executor the same way, by hash.
+	for _, db := range f.docs.reg.Databases() {
+		if len(db.MigratingCollections()) == 0 {
+			continue
+		}
+		m, err := registry.ReadMigrationManifest(db)
+		if err != nil {
+			continue
+		}
+		for name, b := range m.Collections {
+			bundles[b.SHA256] = db.MigrationBundlePath(m, name)
+			hashes[db.Realm+"/"+db.Name+"/"+name+"@migrations"] = b.SHA256
+		}
+	}
 	f.mu.Lock()
 	f.bundles, f.hashes = bundles, hashes
 	f.mu.Unlock()
