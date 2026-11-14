@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "properties": {
+    "title": { "type": "string" },
+    "description": { "type": "string" },
+    "visibility": { "enum": ["public", "team", "private"] },
+    "published_at": { "type": "string", "format": "date-time", "x-backd-store": "date" },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "owner_note": { "$ref": "#/$defs/Note" }
+  },
+  "required": ["title", "visibility"],
+  "$defs": { "Note": { "type": "object", "properties": { "text": { "type": "string" } }, "required": ["text"] } },
+  "additionalProperties": false
+}

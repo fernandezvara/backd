@@ -28,7 +28,7 @@ type goGen struct {
 	decls    strings.Builder
 	emitted  map[string]bool
 	// needs say which imports the file uses.
-	needTime, needJSON, needCtx bool
+	needTime, needJSON, needCtx, needFmt bool
 	// collTypes remembers each collection's emitted doc/input/create names.
 	collTypes map[string][3]string
 	// fnTypes remembers each function's input and output Go types.
@@ -498,6 +498,9 @@ func (g *goGen) realm(rl *registry.Realm, o Options, header string) string {
 	if g.needJSON {
 		imports = append(imports, `"encoding/json"`)
 	}
+	if g.needFmt {
+		imports = append(imports, `"fmt"`)
+	}
 	if g.needTime {
 		imports = append(imports, `"time"`)
 	}
@@ -530,7 +533,11 @@ func (g *goGen) collection(db string, c *registry.Collection, prefix string) {
 	createName := ""
 	g.collTypes[db+"/"+c.Name] = [3]string{docName, inName, createName}
 
-	g.structOrMap(conv, docName, docSchema, "doc", fmt.Sprintf("%s is a %s/%s document.", docName, db, c.Name))
+	if c.Versioned && len(c.SchemaVersions) > 1 {
+		g.versionedDocs(db, c, docName)
+	} else {
+		g.structOrMap(conv, docName, docSchema, "doc", fmt.Sprintf("%s is a %s/%s document.", docName, db, c.Name))
+	}
 	g.structOrMap(inConv, inName, inputSchema, "", fmt.Sprintf("%s is what a %s/%s write accepts.", inName, db, c.Name))
 	if c.CustomID != nil {
 		createName = g.claim(prefix+"Create", "create "+db+"/"+c.Name)
@@ -578,6 +585,9 @@ func (g *goGen) queryConsts(db string, c *registry.Collection, prefix string) {
 	}
 	if c.SoftDelete != nil {
 		fields = append(fields, softDeleteQueryFields...)
+	}
+	if c.Versioned {
+		fields = append(fields, schemaVersionQueryFields...)
 	}
 	for _, p := range slices.Sorted(keys(c.Fields)) {
 		fields = append(fields, fieldOf(p, c.Fields[p], schemaFor(c.RawSchema, p)))
@@ -732,4 +742,50 @@ func (g *goGen) roleConsts(prefix string, rl *registry.Realm) {
 	if rl.Push != nil {
 		consts("PushKind", "push kinds", rl.Push.Kinds())
 	}
+}
+
+// versionedDocs emits a versioned collection's documents: a struct per kept version (MainAssetsV1…)
+// and the type the collection returns, which holds exactly one of them, picked when decoding by
+// _meta.schema_version (absent: 1). Go has no sum types, so the caller switches on Version() or
+// tests the field.
+func (g *goGen) versionedDocs(db string, c *registry.Collection, name string) {
+	g.needJSON = true
+	for _, n := range c.SchemaVersions {
+		raw, err := c.VersionSchema(n)
+		if err != nil {
+			g.warn("%s/%s: %v", db, c.Name, err)
+			continue
+		}
+		docSchema, _ := fileAwareSchema(c, raw)
+		vn := fmt.Sprintf("%sV%d", name, n)
+		conv := newGoConverter(docSchema, vn, fmt.Sprintf("%s/%s %s ", db, c.Name, registry.SchemaVersionFile(n)), g)
+		g.structOrMap(conv, vn, docSchema, "doc", fmt.Sprintf("%s is a %s/%s document as stored in version %d of its schema.", vn, db, c.Name, n))
+	}
+	var b strings.Builder
+	b.WriteString(goDoc("", fmt.Sprintf("%s is a %s/%s document in any version of its schema that is still kept: exactly one of its fields is set, the one for the document's _meta.schema_version. Switch on Version().", name, db, c.Name)))
+	fmt.Fprintf(&b, "type %s struct {\n", name)
+	for _, n := range c.SchemaVersions {
+		fmt.Fprintf(&b, "\tV%d *%sV%d\n", n, name, n)
+	}
+	b.WriteString("}\n\n")
+	fmt.Fprintf(&b, "// Version is the schema version of the document held, or 0 for none.\nfunc (d %s) Version() int {\n\tswitch {\n", name)
+	for _, n := range c.SchemaVersions {
+		fmt.Fprintf(&b, "\tcase d.V%d != nil:\n\t\treturn %d\n", n, n)
+	}
+	b.WriteString("\t}\n\treturn 0\n}\n\n")
+	fmt.Fprintf(&b, "// UnmarshalJSON picks the version by _meta.schema_version (absent: 1); a version no longer kept is an error.\nfunc (d *%s) UnmarshalJSON(data []byte) error {\n", name)
+	b.WriteString("\tvar probe struct {\n\t\tMeta struct {\n\t\t\tSchemaVersion int `json:\"schema_version\"`\n\t\t} `json:\"_meta\"`\n\t}\n")
+	b.WriteString("\tif err := json.Unmarshal(data, &probe); err != nil {\n\t\treturn err\n\t}\n")
+	fmt.Fprintf(&b, "\t*d = %s{}\n\tversion := probe.Meta.SchemaVersion\n\tif version == 0 {\n\t\tversion = 1\n\t}\n\tswitch version {\n", name)
+	for _, n := range c.SchemaVersions {
+		fmt.Fprintf(&b, "\tcase %d:\n\t\td.V%d = new(%sV%d)\n\t\treturn json.Unmarshal(data, d.V%d)\n", n, n, name, n, n)
+	}
+	fmt.Fprintf(&b, "\t}\n\treturn fmt.Errorf(\"%s: unknown schema version %%d\", version)\n}\n\n", db+"/"+c.Name)
+	fmt.Fprintf(&b, "// MarshalJSON writes the document held.\nfunc (d %s) MarshalJSON() ([]byte, error) {\n\tswitch {\n", name)
+	for _, n := range c.SchemaVersions {
+		fmt.Fprintf(&b, "\tcase d.V%d != nil:\n\t\treturn json.Marshal(d.V%d)\n", n, n)
+	}
+	b.WriteString("\t}\n\treturn []byte(\"null\"), nil\n}\n")
+	g.needFmt = true
+	g.emit(b.String())
 }

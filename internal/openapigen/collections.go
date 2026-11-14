@@ -158,6 +158,9 @@ func (b *builder) collectionAt(db string, c *registry.Collection, admin bool) {
 		doc["type"] = "object"
 	}
 	b.extra[alias] = doc
+	if c.Versioned && len(c.SchemaVersions) > 1 {
+		b.versionedDocSchemas(alias, c, doc)
+	}
 	b.extra[alias+"Input"] = input
 	// A collection with custom ids takes the id in a create's body, required.
 	createBody := alias + "Input"
@@ -471,4 +474,62 @@ func aggregateParams(op map[string]any, id string, c *registry.Collection) {
 func anySlice(v any) []any {
 	s, _ := v.([]any)
 	return s
+}
+
+// versionedDocSchemas turns the collection's document schema into a oneOf of its kept versions
+// (<alias>V1…), each with _meta.schema_version fixed to its number: a read returns every document
+// as stored, so a list can mix versions. current is the current version's document, already built;
+// the write input stays the current version only.
+func (b *builder) versionedDocSchemas(alias string, c *registry.Collection, current map[string]any) {
+	var refs []any
+	for _, n := range c.SchemaVersions {
+		name := fmt.Sprintf("%sV%d", alias, n)
+		var member map[string]any
+		if n == c.SchemaVersion {
+			member = current
+		} else {
+			raw, err := c.VersionSchema(n)
+			if err != nil {
+				continue
+			}
+			b.toSchemas(name, raw)
+			member, _ = b.extra[name].(map[string]any)
+			if member == nil {
+				continue
+			}
+			props, _ := member["properties"].(map[string]any)
+			if props == nil {
+				props = map[string]any{}
+				member["properties"] = props
+			}
+			for fileField, f := range c.Files {
+				if f == nil {
+					continue
+				}
+				ref := map[string]any{"$ref": "#/components/schemas/FileDetails"}
+				if f.Multiple {
+					props[fileField] = map[string]any{"type": "array", "items": ref}
+				} else {
+					props[fileField] = ref
+				}
+			}
+			props["id"] = map[string]any{"type": "string"}
+			req, _ := member["required"].([]any)
+			member["required"] = append(req, "id", "_meta")
+			if _, ok := member["type"]; !ok {
+				member["type"] = "object"
+			}
+		}
+		props, _ := member["properties"].(map[string]any)
+		props["_meta"] = map[string]any{"allOf": []any{
+			map[string]any{"$ref": "#/components/schemas/Meta"},
+			map[string]any{"type": "object", "properties": map[string]any{"schema_version": map[string]any{"const": n}}, "required": []any{"schema_version"}},
+		}}
+		b.extra[name] = member
+		refs = append(refs, map[string]any{"$ref": "#/components/schemas/" + name})
+	}
+	b.extra[alias] = map[string]any{
+		"description": fmt.Sprintf("A %s/%s document in any version of its schema that is still kept, told apart by `_meta.schema_version`.", c.Database, c.Name),
+		"oneOf":       refs,
+	}
 }

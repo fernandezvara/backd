@@ -799,6 +799,7 @@ final class Meta {
     required this.createdAt,
     required this.updatedAt,
     this.version,
+    this.schemaVersion,
     this.owner,
     this.createdBy,
     this.updatedBy,
@@ -816,6 +817,7 @@ final class Meta {
         createdAt: DateTimeString(json['created_at'] as String),
         updatedAt: DateTimeString(json['updated_at'] as String),
         version: (json['version'] as num?)?.toInt(),
+        schemaVersion: (json['schema_version'] as num?)?.toInt(),
         owner: json['owner'] as String?,
         createdBy: json['created_by'] as String?,
         updatedBy: json['updated_by'] as String?,
@@ -838,6 +840,10 @@ final class Meta {
   final DateTimeString createdAt;
   final DateTimeString updatedAt;
   final int? version;
+
+  /// The version of the collection's schema the document was written under
+  /// (collections with versioned schema files; null: 1).
+  final int? schemaVersion;
   final String? owner;
   final String? createdBy;
   final String? updatedBy;
@@ -1193,7 +1199,11 @@ func (g *dartGen) collection(db string, c *registry.Collection, referenced bool)
 	}
 
 	g.inputClass(inConv, inName, inputSchema, db, c)
-	g.docClass(conv, docName, expandedName, docSchema, db, c)
+	if c.Versioned && len(c.SchemaVersions) > 1 {
+		g.versionedDocClasses(db, c, prefix, expandedName)
+	} else {
+		g.docClass(conv, docName, expandedName, docSchema, db, c, nil)
+	}
 	if c.CustomID != nil {
 		g.createClass(inConv, createName, inputSchema, db, c)
 	}
@@ -1223,7 +1233,7 @@ func (g *dartGen) inputClass(conv *dartConverter, name string, schema map[string
 
 // docClass emits the read-side type: id, _meta, the document's fields (files
 // as their details) and _expanded when the collection declares references.
-func (g *dartGen) docClass(conv *dartConverter, name, expandedName string, schema map[string]any, db string, c *registry.Collection) {
+func (g *dartGen) docClass(conv *dartConverter, name, expandedName string, schema map[string]any, db string, c *registry.Collection, v *dartVersion) {
 	if !isObject(schema) {
 		g.emit(fmt.Sprintf("/// A %s/%s document.\ntypedef %s = Map<String, Object?>;\n", db, c.Name, name))
 		return
@@ -1232,7 +1242,11 @@ func (g *dartGen) docClass(conv *dartConverter, name, expandedName string, schem
 	props, required := propsOf(schema)
 	fields := slices.Sorted(keys(props))
 	var b strings.Builder
-	fmt.Fprintf(&b, "/// A %s/%s document.\nfinal class %s {\n", db, c.Name, name)
+	if v != nil {
+		fmt.Fprintf(&b, "/// A %s/%s document as stored in version %d of its schema.\nfinal class %s extends %s {\n", db, c.Name, v.n, name, v.base)
+	} else {
+		fmt.Fprintf(&b, "/// A %s/%s document.\nfinal class %s {\n", db, c.Name, name)
+	}
 	params := []string{"required this.id", "required this.meta"}
 	if expandedName != "" {
 		params = append(params, "this.expanded")
@@ -1252,7 +1266,12 @@ func (g *dartGen) docClass(conv *dartConverter, name, expandedName string, schem
 	for _, n := range fields {
 		fmt.Fprintf(&b, "        %s: %s,\n", camel(n), conv.decode(props[n], "/properties/"+n, "json["+dartLit(n)+"]", required[n], name+strutil.Pascal(n)))
 	}
-	b.WriteString("      );\n\n  final String id;\n  final Meta meta;\n")
+	if v != nil {
+		b.WriteString("      );\n\n  @override\n  final String id;\n  @override\n  final Meta meta;\n")
+		fmt.Fprintf(&b, "\n  @override\n  int get schemaVersion => %d;\n", v.n)
+	} else {
+		b.WriteString("      );\n\n  final String id;\n  final Meta meta;\n")
+	}
 	if expandedName != "" {
 		fmt.Fprintf(&b, "\n  /// The references `expand` asked for; null when the request didn't.\n  final %s? expanded;\n", expandedName)
 	}
@@ -1264,7 +1283,12 @@ func (g *dartGen) docClass(conv *dartConverter, name, expandedName string, schem
 		}
 		fmt.Fprintf(&b, "  final %s %s;\n", t, camel(n))
 	}
-	b.WriteString("\n  Map<String, Object?> toJson() => {\n")
+	if v != nil {
+		b.WriteString("\n  @override\n")
+	} else {
+		b.WriteString("\n")
+	}
+	b.WriteString("  Map<String, Object?> toJson() => {\n")
 	for _, n := range fields {
 		fmt.Fprintf(&b, "        %s: %s,\n", dartLit(n), conv.encode(props[n], "/properties/"+n, camel(n), required[n], name+strutil.Pascal(n)))
 	}
@@ -1412,6 +1436,9 @@ func (g *dartGen) queryTypes(db string, c *registry.Collection, prefix string) {
 	}
 	if c.SoftDelete != nil {
 		fields = append(fields, softDeleteQueryFields...)
+	}
+	if c.Versioned {
+		fields = append(fields, schemaVersionQueryFields...)
 	}
 	for _, p := range slices.Sorted(keys(c.Fields)) {
 		fields = append(fields, fieldOf(p, c.Fields[p], schemaFor(c.RawSchema, p)))
@@ -1622,5 +1649,40 @@ func (g *dartGen) roleConsts(prefix string, rl *registry.Realm) {
 	}
 	if rl.Push != nil {
 		consts(prefix+"PushKind", "push kinds", rl.Push.Kinds())
+	}
+}
+
+// dartVersion says a document class is one member of a versioned collection's sealed class.
+type dartVersion struct {
+	n    int    // the schema version
+	base string // the sealed class it extends
+}
+
+// versionedDocClasses emits a versioned collection's documents: a sealed class named like the
+// collection, whose fromJson picks the member by _meta.schema_version, and one final class per
+// kept version with that version's fields. A document of a version no longer kept is an error.
+func (g *dartGen) versionedDocClasses(db string, c *registry.Collection, base, expandedName string) {
+	g.classes[base] = true
+	var b strings.Builder
+	fmt.Fprintf(&b, "/// A %s/%s document, in any version of its schema that is still kept: `switch` on it.\n", db, c.Name)
+	fmt.Fprintf(&b, "sealed class %s {\n  const %s();\n\n", base, base)
+	fmt.Fprintf(&b, "  /// Picks the version by `_meta.schema_version` (absent: 1).\n  factory %s.fromJson(Map<String, Object?> json) {\n", base)
+	b.WriteString("    final meta = json['_meta'];\n    final version = (meta is Map ? (meta['schema_version'] as num?)?.toInt() : null) ?? 1;\n    switch (version) {\n")
+	for _, n := range c.SchemaVersions {
+		fmt.Fprintf(&b, "      case %d:\n        return %sV%d.fromJson(json);\n", n, base, n)
+	}
+	fmt.Fprintf(&b, "      default:\n        throw FormatException('%s: unknown schema version $version');\n    }\n  }\n\n", db+"/"+c.Name)
+	b.WriteString("  String get id;\n  Meta get meta;\n\n  /// The version of the schema the document was written under.\n  int get schemaVersion;\n\n  Map<String, Object?> toJson();\n}\n")
+	g.emit(b.String())
+	for _, n := range c.SchemaVersions {
+		raw, err := c.VersionSchema(n)
+		if err != nil {
+			g.warn("%s/%s: %v", db, c.Name, err)
+			continue
+		}
+		docSchema, _ := fileAwareSchema(c, raw)
+		name := fmt.Sprintf("%sV%d", base, n)
+		conv := newDartConverter(docSchema, name, fmt.Sprintf("%s/%s %s ", db, c.Name, registry.SchemaVersionFile(n)), g.warn, g)
+		g.docClass(conv, name, expandedName, docSchema, db, c, &dartVersion{n: n, base: base})
 	}
 }

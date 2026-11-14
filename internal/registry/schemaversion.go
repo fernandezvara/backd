@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,6 +9,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 // schemaVersionPattern names the version files of a collection: schema.v<N>.json (the schema)
@@ -189,4 +192,30 @@ func (c *Collection) addSchemaVersionIndex() {
 	if !slices.ContainsFunc(c.Indexes, func(have Index) bool { return have.String() == ix.String() && !have.Unique }) {
 		c.Indexes = append(c.Indexes, ix)
 	}
+}
+
+// VersionSchema reads the schema of one kept version as the author wrote it (numbers as json.Number).
+// It is for the tools that look at old versions (backd types and the compatibility check): the
+// server compiles and keeps only the current schema.
+func (c *Collection) VersionSchema(n int) (map[string]any, error) {
+	if !c.Versioned {
+		if n != 1 {
+			return nil, fmt.Errorf("%s/%s has no version %d", c.Database, c.Name, n)
+		}
+		return c.RawSchema, nil
+	}
+	path := filepath.Join(c.Dir, SchemaVersionFile(n))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("%s: invalid JSON: %w", path, err)
+	}
+	raw, ok := doc.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("%s: schema must be a JSON object", path)
+	}
+	return raw, nil
 }

@@ -210,3 +210,87 @@ func TestOpenAPIAdminCommand(t *testing.T) {
 		t.Error("the admin document has client routes")
 	}
 }
+
+// A versioned collection gets its schema.d.ts next to its schema files; --check says when it is
+// missing or stale, and the realm.json lists the current versions for the clients.
+func TestTypesWritesAndChecksSchemaFiles(t *testing.T) {
+	dir := writeConfig(t, map[string]string{
+		"app/realm.yaml":                 "auth:\n  strategies:\n    password: [password]\n",
+		"app/main/assets/schema.v1.json": `{"type":"object","properties":{"title":{"type":"string"}}}`,
+		"app/main/assets/schema.v2.json": `{"type":"object","properties":{"title":{"type":"string"},"slug":{"type":"string"}}}`,
+		"app/main/assets/schema.v2.ts":   "import type { V1, V2 } from \"./schema.d.ts\";\nexport default (doc: V1): V2 => ({ ...doc, slug: doc.title ?? \"\" });\n",
+		"app/main/notes/schema.json":     `{"type":"object","properties":{"title":{"type":"string"}}}`,
+	})
+	out := filepath.Join(t.TempDir(), "gen")
+	c := &cliEnv{t: t, env: map[string]string{"CONFIG_DIR": dir}}
+	schemaFile := filepath.Join(dir, "app/main/assets/schema.d.ts")
+
+	if code, _, stderr := c.run("", "types", "--realm", "app", "--out", out, "--check"); code == 0 || !strings.Contains(stderr, "doesn't exist") {
+		t.Fatalf("--check before anything is written: %d %s", code, stderr)
+	}
+	code, stdout, stderr := c.run("", "types", "--realm", "app", "--out", out)
+	if code != 0 || !strings.Contains(stdout, schemaFile) {
+		t.Fatalf("types: %d %s %s", code, stdout, stderr)
+	}
+	body, err := os.ReadFile(schemaFile)
+	if err != nil || !strings.Contains(string(body), "export type V2 = ") || !strings.Contains(string(body), "export type Current = V2;") {
+		t.Fatalf("schema.d.ts: %v\n%s", err, body)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "app/main/notes/schema.d.ts")); err == nil {
+		t.Error("an unversioned collection got a schema.d.ts")
+	}
+	module, err := os.ReadFile(filepath.Join(out, "migrations.ts"))
+	if err != nil || !strings.Contains(string(module), "export const upgrade = {") || !strings.Contains(string(module), "mainAssets(doc: MainAssets): MainAssetsV2") {
+		t.Fatalf("migrations.ts: %v\n%s", err, module)
+	}
+	info, _ := os.ReadFile(filepath.Join(out, "realm.json"))
+	if !strings.Contains(string(info), `"schema_versions"`) || !strings.Contains(string(info), `"main/assets": 2`) {
+		t.Errorf("realm.json:\n%s", info)
+	}
+	if code, stdout, _ := c.run("", "types", "--realm", "app", "--out", out, "--check"); code != 0 || !strings.Contains(stdout, "up to date") {
+		t.Errorf("--check on fresh files: %d %s", code, stdout)
+	}
+
+	// A change to a schema file makes schema.d.ts stale (and --check writes nothing); a delete makes it missing.
+	if err := os.WriteFile(filepath.Join(dir, "app/main/assets/schema.v2.json"), []byte(`{"type":"object","properties":{"title":{"type":"string"},"slug":{"type":"string"},"rank":{"type":"integer"}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, stderr := c.run("", "types", "--realm", "app", "--out", out, "--check"); code == 0 || !strings.Contains(stderr, "schema.d.ts is stale") {
+		t.Errorf("--check with a stale schema.d.ts: %d %s", code, stderr)
+	}
+	if after, _ := os.ReadFile(schemaFile); string(after) != string(body) {
+		t.Error("--check rewrote schema.d.ts")
+	}
+	_ = os.Remove(schemaFile)
+	if code, _, stderr := c.run("", "types", "--realm", "app", "--out", out, "--check"); code == 0 || !strings.Contains(stderr, "schema.d.ts doesn't exist") {
+		t.Errorf("--check with a missing schema.d.ts: %d %s", code, stderr)
+	}
+	if code, _, _ := c.run("", "types", "--realm", "app", "--out", out); code != 0 {
+		t.Fatal("regenerating failed")
+	}
+	if code, _, stderr := c.run("", "types", "--realm", "app", "--out", out, "--check"); code != 0 {
+		t.Errorf("--check after regenerating: %d %s", code, stderr)
+	}
+	// migrations.ts is checked too, and a database filter leaves it out.
+	if err := os.WriteFile(filepath.Join(out, "migrations.ts"), []byte("stale\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, stderr := c.run("", "types", "--realm", "app", "--out", out, "--check"); code == 0 || !strings.Contains(stderr, "migrations.ts is stale") {
+		t.Errorf("--check with a stale migrations.ts: %d %s", code, stderr)
+	}
+	_ = os.Remove(filepath.Join(out, "migrations.ts"))
+	if code, _, stderr := c.run("", "types", "--realm", "app", "--out", out, "--check"); code == 0 || !strings.Contains(stderr, "migrations.ts doesn't exist") {
+		t.Errorf("--check with a missing migrations.ts: %d %s", code, stderr)
+	}
+	if code, _, _ := c.run("", "types", "--realm", "app", "--out", out); code != 0 {
+		t.Fatal("regenerating failed")
+	}
+	// Other languages leave the schema files alone.
+	_ = os.Remove(schemaFile)
+	if code, _, _ := c.run("", "types", "--realm", "app", "--out", out, "--lang", "go"); code != 0 {
+		t.Fatal("go types failed")
+	}
+	if _, err := os.Stat(schemaFile); err == nil {
+		t.Error("--lang go wrote schema.d.ts")
+	}
+}
