@@ -1,0 +1,13 @@
+{
+  "type": "object",
+  "properties": {
+    "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "kind": { "enum": ["link", "note", "file"] },
+    "url": { "type": "string", "format": "uri" },
+    "body": { "type": "string" },
+    "tags": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 40 }, "maxItems": 12 },
+    "published_at": { "type": ["string", "null"], "format": "date-time", "x-backd-store": "date" },
+    "downloads": { "type": "integer", "minimum": 0 }
+  },
+  "required": ["title", "kind"]
+}

@@ -55,6 +55,11 @@ enableGitInfo = true
     includeFiles = ["**.yaml", "**.json"]
     excludeFiles = ["**/.build/**"]
   [[module.mounts]]
+    source = "../examples/config/evolve"
+    target = "assets/examples/evolve"
+    includeFiles = ["**.ts", "**.yaml", "**.json"]
+    excludeFiles = ["**/.build/**"]
+  [[module.mounts]]
     source = "../examples/config/shelf"
     target = "assets/examples/shelf"
     includeFiles = ["**.ts", "**.yaml", "**.json", "**.html", "**.txt", "**.lock"]

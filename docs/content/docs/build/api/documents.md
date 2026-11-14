@@ -370,8 +370,10 @@ Two operations exist only there, for [organizations](#organizations):
 
 ## Schema changes
 
-After `schema.json` changes, existing documents are returned as they are, even if they no longer match. Every write must produce a document that is valid against the **current** schema.
+After the schema changes, existing documents are returned as they are, even if they no longer match. Every write must produce a document that is valid against the **current** schema.
+
+A collection can keep its schema in versions, with a migration between them that the server runs in the background: then old documents are moved up by themselves, a read can return several versions for a while, and apps that can't be updated are served by [expanding, then contracting](../../configuration/evolving-a-schema/). Read that page before a breaking change.
 
 {{< hint note >}}
-Changing a schema never rewrites stored documents, so an old document that no longer matches can still be read but cannot be saved again until it is fixed. After a breaking schema change, migrate the data before relying on writes to it.
+Without versions, changing a schema never rewrites stored documents: an old document that no longer matches can still be read but cannot be saved again until it is fixed. Prefer adding optional fields, and [version the schema](../../configuration/evolving-a-schema/) before a breaking change.
 {{< /hint >}}

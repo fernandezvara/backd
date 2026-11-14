@@ -1,0 +1,6 @@
+# A realm for "Evolving a schema" (docs/build/configuration/evolving-a-schema): main/assets in three
+# versions. Migrations need a realm with auth, because they run as background jobs.
+auth:
+  strategies:
+    password: [password]
+  signup: open
