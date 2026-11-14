@@ -51,7 +51,8 @@ Friendly aliases are generated too, for every collection: `MainOrders` (the docu
 | Part | Type |
 |---|---|
 | `db.<database>.collections.<name>.doc` | The stored document: `id`, `_meta` and the fields of `schema.json`. [File fields](../../files/file-fields/) are typed as `FileDetails` |
-| `…​.input` | What a client sends: the same without `id`, `_meta` and file fields (only uploads write files) |
+| `…​.doc` of a [versioned collection](../../configuration/config-dir/#versioned-schemas) | The union of the versions still kept (`MainAssetsV1 \| MainAssetsV2 \| MainAssetsV3`), because a list can mix versions while the [migration job](../../configuration/config-dir/#versioned-schemas) runs. Each member has its own fields and `_meta.schema_version` as its literal. Once only one version is kept, it is the single type again |
+| `…​.input` | What a client sends: the same without `id`, `_meta` and file fields (only uploads write files). For a versioned collection, the **current** version only |
 | `…​.create` | What a client sends to create: `input`, plus the required `id` in a collection with [`custom_id`](../../configuration/config-dir/#custom-ids) (`MainInvoicesCreate`). The same as `input` elsewhere |
 | `…​.where` | Every queryable field with the operators its type allows: `$eq`, `$ne`, `$in`, `$nin`, `$isNull` and `$notNull` for all; `$gt`, `$gte`, `$lt`, `$lte` and `$between` for strings, numbers and dates; the text operators for strings; and `$or` and `$and` of the same type |
 | `…​.order_by` | A field, `-field`, or a comma separated list of them |

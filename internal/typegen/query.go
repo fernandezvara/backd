@@ -47,6 +47,11 @@ var teamQueryFields = []queryField{
 	{path: registry.MetaTeam, kind: kindString, value: "string"},
 }
 
+// A document of a collection with versioned schema files records its version (a missing stamp is 1).
+var schemaVersionQueryFields = []queryField{
+	{path: registry.MetaSchemaVersion, kind: kindNumber, value: "number"},
+}
+
 var softDeleteQueryFields = []queryField{
 	{path: registry.MetaDeletedAt, kind: kindDate, value: "DateTimeString"},
 	{path: registry.MetaDeletedBy, kind: kindString, value: "string"},
@@ -118,6 +123,9 @@ func (g *gen) query(c *registry.Collection) (where, order string) {
 	}
 	if c.SoftDelete != nil {
 		fields = append(fields, softDeleteQueryFields...)
+	}
+	if c.Versioned {
+		fields = append(fields, schemaVersionQueryFields...)
 	}
 	for _, p := range slices.Sorted(keys(c.Fields)) {
 		fields = append(fields, fieldOf(p, c.Fields[p], schemaFor(c.RawSchema, p)))

@@ -160,6 +160,8 @@ export interface Meta {
   created_at: DateTimeString;
   updated_at: DateTimeString;
   version?: number;
+  /** The version of the collection's schema the document was written under (collections with versioned schema files; absent: 1). */
+  schema_version?: number;
   owner?: string | null;
   created_by?: string;
   updated_by?: string;
@@ -345,8 +347,12 @@ func (g *gen) collection(w *strings.Builder, db string, c *registry.Collection) 
 	for _, name := range slices.Sorted(keys(conv.defs)) {
 		fmt.Fprintf(w, "export type %s = %s;\n", name, conv.defs[name])
 	}
+	docBody := "{ id: string; _meta: Meta } & " + wrap(docT)
+	if c.Versioned && len(c.SchemaVersions) > 1 {
+		docBody = g.versionedDoc(w, db, c, prefix)
+	}
 	pieces := []struct{ suffix, body string }{
-		{"", "{ id: string; _meta: Meta } & " + wrap(docT)},
+		{"", docBody},
 		{"Input", inT},
 	}
 	names := make([]string, 0, 4)
@@ -407,13 +413,18 @@ func (g *gen) collection(w *strings.Builder, db string, c *registry.Collection) 
 // fileAware returns the collection's schema twice: with file fields typed as their details
 // (what reads return), and without them (what a client may write: only uploads write files).
 func fileAware(c *registry.Collection) (doc, input map[string]any) {
-	props, _ := c.RawSchema["properties"].(map[string]any)
+	return fileAwareSchema(c, c.RawSchema)
+}
+
+// fileAwareSchema is fileAware for the given version of the collection's schema.
+func fileAwareSchema(c *registry.Collection, raw map[string]any) (doc, input map[string]any) {
+	props, _ := raw["properties"].(map[string]any)
 	if len(c.Files) == 0 || props == nil {
-		return c.RawSchema, c.RawSchema
+		return raw, raw
 	}
 	d := map[string]any{}
 	in := map[string]any{}
-	for k, v := range c.RawSchema {
+	for k, v := range raw {
 		d[k], in[k] = v, v
 	}
 	dp := map[string]any{}
@@ -431,7 +442,7 @@ func fileAware(c *registry.Collection) (doc, input map[string]any) {
 	}
 	d["properties"] = dp
 	in["properties"] = ip
-	if req, ok := c.RawSchema["required"].([]any); ok {
+	if req, ok := raw["required"].([]any); ok {
 		var kept []any
 		for _, r := range req {
 			if n, ok := r.(string); ok {
@@ -620,4 +631,29 @@ func schemaVersionsOf(rl *registry.Realm, db string) map[string]int {
 		}
 	}
 	return out
+}
+
+// versionedDoc writes a type per kept version of a versioned collection (MainAssetsV1…VN, each
+// with _meta.schema_version as its literal) and returns the union of them, which is the
+// collection's document: reads return every document as stored, so the version tells them apart.
+// The write input is the current version only.
+func (g *gen) versionedDoc(w *strings.Builder, db string, c *registry.Collection, prefix string) string {
+	var names []string
+	for _, n := range c.SchemaVersions {
+		raw, err := c.VersionSchema(n)
+		if err != nil {
+			g.warn("%s/%s: %v", db, c.Name, err)
+			continue
+		}
+		vp := fmt.Sprintf("%sV%d", prefix, n)
+		conv := newConverter(raw, vp, fmt.Sprintf("%s/%s %s ", db, c.Name, registry.SchemaVersionFile(n)), g.warn)
+		docSchema, _ := fileAwareSchema(c, raw)
+		t := conv.typeOf(docSchema, "")
+		for _, name := range slices.Sorted(keys(conv.defs)) {
+			fmt.Fprintf(w, "export type %s = %s;\n", name, conv.defs[name])
+		}
+		fmt.Fprintf(w, "/** %s/%s as stored in version %d of its schema. */\nexport type %s = { id: string; _meta: Meta & { schema_version: %d } } & %s;\n", db, c.Name, n, vp, n, wrap(t))
+		names = append(names, vp)
+	}
+	return strings.Join(names, " | ")
 }

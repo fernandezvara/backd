@@ -746,6 +746,9 @@ func (g *pyGen) queryConsts(db string, c *registry.Collection, prefix string) {
 	if c.SoftDelete != nil {
 		fields = append(fields, softDeleteQueryFields...)
 	}
+	if c.Versioned {
+		fields = append(fields, schemaVersionQueryFields...)
+	}
 	for _, p := range slices.Sorted(keys(c.Fields)) {
 		fields = append(fields, fieldOf(p, c.Fields[p], schemaFor(c.RawSchema, p)))
 	}

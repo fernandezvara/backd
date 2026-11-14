@@ -155,3 +155,93 @@ func TestRealmInfoListsSchemaVersions(t *testing.T) {
 		t.Errorf("diff = %v", d)
 	}
 }
+
+func TestGoldenVersionedTypes(t *testing.T) {
+	reg := loadVersions(t, "testdata")
+	out, err := Generate(reg, Options{Realm: "versions"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden := filepath.Join("testdata", "versions.types.d.ts")
+	if *update {
+		if err := os.WriteFile(golden, []byte(out.Types), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(want) != out.Types {
+		t.Errorf("generated types differ from %s (run go test -update):\n%s", golden, out.Types)
+	}
+	for _, want := range []string{
+		"export type MainAssetsV1 = { id: string; _meta: Meta & { schema_version: 1 } }",
+		"export type MainAssetsV3 = { id: string; _meta: Meta & { schema_version: 3 } }",
+		"export type MainAssets = MainAssetsV1 | MainAssetsV2 | MainAssetsV3;",
+	} {
+		if !strings.Contains(out.Types, want) {
+			t.Errorf("types lack %q", want)
+		}
+	}
+	// What a client writes is the current version only.
+	if !strings.Contains(out.Types, "export type MainAssetsInput = { description?: string; owner_note?: MainAssetsOwnerNote") && !strings.Contains(out.Types, "export type MainAssetsInput = {") {
+		t.Error("no MainAssetsInput")
+	}
+	if strings.Contains(out.Types, "MainAssetsInput = { body") {
+		t.Error("the write input still has the dropped field")
+	}
+}
+
+// A document is assignable to the union only with the fields of its own version, and the write
+// input is the current version. (TypeScript can't narrow a union by a property of _meta, which is
+// why the generated `upgrade` takes the whole union rather than a switch.)
+func TestVersionedTypesAreChecked(t *testing.T) {
+	deno, err := exec.LookPath("deno")
+	if err != nil {
+		t.Skip("deno isn't installed")
+	}
+	reg := loadVersions(t, "testdata")
+	out, err := Generate(reg, Options{Realm: "versions"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	write := func(name, content string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("types.d.ts", out.Types)
+	const good = `import type { MainAssets, MainAssetsV1, MainAssetsV3, MainAssetsInput } from "./types.d.ts";
+const when = "2026-01-01T00:00:00.000Z" as MainAssetsV1["_meta"]["created_at"];
+export const v1: MainAssets = { id: "a", _meta: { created_at: when, updated_at: when, schema_version: 1 }, title: "t", body: "old" };
+export const v3: MainAssets = { id: "b", _meta: { created_at: when, updated_at: when, schema_version: 3 }, title: "t", visibility: "private" };
+export const input: MainAssetsInput = { title: "t", visibility: "team" };
+export function stamp(x: MainAssets): 1 | 2 | 3 | undefined { return x._meta.schema_version; }
+export const asV3: MainAssetsV3 = v3 as MainAssetsV3;
+`
+	write("good.ts", good)
+	check := func(file string) (string, error) {
+		cmd := exec.Command(deno, "check", "--no-lock", "--no-config", file)
+		cmd.Dir = dir
+		b, err := cmd.CombinedOutput()
+		return string(b), err
+	}
+	if b, err := check("good.ts"); err != nil {
+		t.Fatalf("good.ts doesn't type-check:\n%s", b)
+	}
+	for name, src := range map[string]string{
+		"v3-missing-visibility": `import type { MainAssetsV3 } from "./types.d.ts";
+export const x: MainAssetsV3 = { id: "x", _meta: { created_at: "" as any, updated_at: "" as any, schema_version: 3 }, title: "t" };`,
+		"input-with-dropped-field": `import type { MainAssetsInput } from "./types.d.ts";
+export const x: MainAssetsInput = { title: "t", visibility: "team", body: "gone" };`,
+		"unknown-version": `import type { MainAssets } from "./types.d.ts";
+export const x: MainAssets = { id: "x", _meta: { created_at: "" as any, updated_at: "" as any, schema_version: 4 }, title: "t" };`,
+	} {
+		write(name+".ts", src)
+		if b, err := check(name + ".ts"); err == nil {
+			t.Errorf("%s should not type-check:\n%s", name, b)
+		}
+	}
+}
