@@ -88,7 +88,7 @@ func TestRun(t *testing.T) {
 		{"functions build extra", []string{"functions", "build", "extra"}, nil, 2, "unexpected arguments"},
 		{"functions build flag", []string{"functions", "build", "--force"}, nil, 2, "flag provided but not defined: -force"},
 		{"functions build no config", []string{"functions", "build"}, nil, 1, "CONFIG_DIR is required"},
-		{"functions build nothing", []string{"functions", "build"}, map[string]string{"CONFIG_DIR": empty}, 0, "no functions in CONFIG_DIR"},
+		{"functions build nothing", []string{"functions", "build"}, map[string]string{"CONFIG_DIR": empty}, 0, "no functions or schema migrations in CONFIG_DIR"},
 		{"bootstrap help", []string{"bootstrap", "help"}, nil, 0, "Usage: backd-server bootstrap"},
 		{"bootstrap email", []string{"bootstrap", "--realm", "acme"}, nil, 2, "--email"},
 		{"bootstrap config", []string{"bootstrap", "--realm", "acme", "--email", "a@x.io"}, nil, 1, "CONFIG_DIR is required"},

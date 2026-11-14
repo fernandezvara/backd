@@ -58,7 +58,8 @@ func Build(ctx context.Context, reg *registry.Registry, opts Options) error {
 			projects = append(projects, db)
 		}
 	}
-	if len(projects) == 0 {
+	migrating := migrationDatabases(reg)
+	if len(projects) == 0 && len(migrating) == 0 {
 		return nil
 	}
 	v, err := DenoVersion(ctx, opts.Deno)
@@ -71,6 +72,12 @@ func Build(ctx context.Context, reg *registry.Registry, opts Options) error {
 	for _, db := range projects {
 		if err := buildProject(ctx, db, opts); err != nil {
 			return fmt.Errorf("%s/%s: %w", db.Realm, db.Name, err)
+		}
+	}
+	// Migrations are always type-checked, whatever Check says for the functions.
+	for _, db := range migrating {
+		if err := buildMigrations(ctx, db, opts); err != nil {
+			return fmt.Errorf("%s/%s migrations: %w", db.Realm, db.Name, err)
 		}
 	}
 	return nil
@@ -171,6 +178,11 @@ func prune(buildDir string, m registry.Manifest) error {
 	for _, b := range m.Functions {
 		keep[b.Bundle] = true
 	}
+	return pruneExcept(buildDir, keep)
+}
+
+// pruneExcept removes the files of buildDir that are not in keep.
+func pruneExcept(buildDir string, keep map[string]bool) error {
 	entries, err := os.ReadDir(buildDir)
 	if err != nil {
 		return err

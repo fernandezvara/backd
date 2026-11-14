@@ -9,6 +9,7 @@ Until a stable release is declared, a minor release may have breaking changes; t
 ### Added
 
 - **A collection can keep its schema as versioned files** (`schema.v1.json`, `schema.v2.json`, and `schema.v2.ts` for the migration, #944). The highest version is the current schema; a plain `schema.json` works as before. Every write to a versioned collection records `_meta.schema_version`, a document without it reads as version 1, and a collection with more than one version gets an index on it. `collection.yaml` accepts `min_schema_version` (checked at load, not enforced yet). Running the migrations and the version an app declares come in the next parts of the schema versioning milestone.
+- **`backd-server functions build` also builds schema migrations** (#945): one type-checked bundle per collection in `<database>/_migrations/.build/`, in databases without functions too. A migration may only `import type` from `./schema.d.ts`. Startup refuses a missing or stale migration bundle, and dev mode rebuilds on change. The Kubernetes and production images pick them up with the build they already run.
 
 ### Documentation
 

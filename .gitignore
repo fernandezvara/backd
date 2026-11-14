@@ -23,6 +23,8 @@
 /clients/js/test/integration/config/**/_functions/.build/
 # same, for the bundles backd builds in the local stack (docker-compose.yml)
 /examples/config/**/_functions/.build/
+/examples/config/**/_migrations/.build/
+/clients/js/test/integration/config/**/_migrations/.build/
 
 # Private Claude Code instructions (imports ~/.claude/projects/backd.md)
 /CLAUDE.local.md

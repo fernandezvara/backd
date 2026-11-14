@@ -33,7 +33,7 @@ func functionsBuild(c *kli.CommandContext) error {
 		return err
 	}
 	if built == 0 {
-		fmt.Fprintln(c.Stdout(), "no functions in CONFIG_DIR")
+		fmt.Fprintln(c.Stdout(), "no functions or schema migrations in CONFIG_DIR")
 	}
 	return nil
 }
