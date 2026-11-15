@@ -45,7 +45,7 @@ func (a *authAPI) routes(r chi.Router) {
 	a.consentRoutes(r)
 	a.orgRoutes(r)
 	r.Route("/v1/{realm}/_auth", func(r chi.Router) {
-		r.Use(noStore, a.resolveRealm, withTimeout(a.opTimeout))
+		r.Use(noStore, a.resolveRealm, withTimeout(a.opTimeout), refuseOnBehalf)
 		json := requireContentType("application/json")
 		r.With(json, a.signInOfOrgs).Post("/signup", a.signup)
 		// The public key a browser subscribes with: no session, cacheable.
@@ -819,4 +819,19 @@ func jsonBytes(v any) []byte {
 		return nil
 	}
 	return out
+}
+
+// refuseOnBehalf answers 400 invalid_header to a request that carries X-Backd-On-Behalf-Of. The
+// account routes act on a person's own account (their sessions, password, second factor,
+// passkeys and devices), so a service holding an API key can't use them "as" the person: the
+// header is for data, files, functions and organizations (design/act-as-user.md §3). The admin
+// API refuses it too, in requireAdmin.
+func refuseOnBehalf(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(onBehalfHeader) != "" {
+			writeError(w, r, http.StatusBadRequest, codeInvalidHeader, onBehalfHeader+" is not allowed on account routes")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

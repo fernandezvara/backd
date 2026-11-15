@@ -10688,6 +10688,13 @@ components:
         (`/_admin`) needs a key with the `admin` role (a `data` key gets 403).
         Never use it in browsers.
 
+        A key may act as one user of the realm with the header `X-Backd-On-Behalf-Of: <user id>`:
+        that user's access rules apply and the documents it creates are theirs. It is accepted on
+        the data, file, function, realtime and organization routes, and answers
+        `400 invalid_header` on `/_admin` and on the account routes of `/_auth` (sessions,
+        password, second factor, passkeys, devices), with a session or without credentials, for an
+        id that is not a user of the realm, and with a callback token. A disabled user is `403`.
+
   parameters:
     schemaVersion:
       name: X-Backd-Schema-Version

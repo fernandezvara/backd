@@ -14,7 +14,7 @@ This page summarizes how `backd` protects data in realms with an `auth` section,
 |---|---|---|
 | Anonymous | nothing | What [access rules](../../../build/auth/rules/) allow `user == nil` |
 | User | session token (`bds_…`) | What access rules allow that user; manage their own account and sessions |
-| Server-side service | API key (`bdk_…`) with the `data` role | Everything in the realm's data; act as a user with `X-Backd-On-Behalf-Of` |
+| Server-side service | API key (`bdk_…`) with the `data` role | Everything in the realm's data; act as a user with `X-Backd-On-Behalf-Of` on data, files, functions, realtime and organizations (never on `/_admin` or a user's account routes, which refuse the header) |
 | Management tooling | API key with the `admin` role | The same, plus the [admin API](../admin/): users, roles, invitations, API keys |
 | Administrator | session of a user holding an [admin role](../../../build/configuration/realm/#roles), for example through [`backd login`](../cli/) | What access rules allow that user, plus the admin API |
 | Operator | access to `CONFIG_DIR` and MongoDB | Everything, including creating a realm's first administrator with [`backd-server bootstrap`](../cli/#the-first-administrator) |
