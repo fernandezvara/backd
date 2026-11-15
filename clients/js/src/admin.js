@@ -184,6 +184,7 @@ import { connectionBody } from './orgs.js'
  * @property {string} prefix          First characters of the key.
  * @property {string[]} networks      Where it may be used from; empty: anywhere.
  * @property {string[]} scopes        What it reaches (`read:blog/posts`, `call:main/export`…); empty: everything.
+ * @property {string | null} rate_limit  Its own request limit (`3000/1m0s`, or `none`); null: the realm's and the instance's.
  * @property {string} created_at
  * @property {string | null} last_used_at
  * @property {string | null} expires_at
@@ -1047,7 +1048,8 @@ class AdminAPIKeys {
 
   /**
    * Creates a key; store its `key` now, it is never shown again.
-   * @param {{ name: string, role?: 'data' | 'admin', expiresIn?: string, networks?: string[], scopes?: string[], org?: string }} input
+   * @param {{ name: string, role?: 'data' | 'admin', expiresIn?: string, networks?: string[], scopes?: string[], org?: string, rateLimit?: string }} input
+   *   `rateLimit` is the key's own request limit, `<requests>/<window>` (`'3000/1m'`) or `'none'`, for a service that sends more than a browser.
    *   `org` binds a data key that acts on behalf of users to one organization (id or slug), as a
    *   session scoped to it would be. `role` defaults to data; `expiresIn`: days (`90d`) or Go durations (`12h`). `scopes` limit what a
    *   data key reaches: `read`, `write` or `call`, optionally followed by `:<database>` or
@@ -1055,7 +1057,7 @@ class AdminAPIKeys {
    * @param {RequestOptions} [opts]
    * @returns {Promise<NewAPIKey>}
    */
-  async create({ name, role, expiresIn, networks, scopes, org }, opts) {
+  async create({ name, role, expiresIn, networks, scopes, org, rateLimit }, opts) {
     /** @type {Record<string, unknown>} */
     const body = { name }
     if (role !== undefined) body.role = role
@@ -1063,6 +1065,7 @@ class AdminAPIKeys {
     if (networks !== undefined) body.networks = networks
     if (scopes !== undefined) body.scopes = scopes
     if (org !== undefined) body.org = org
+    if (rateLimit !== undefined) body.rate_limit = rateLimit
     return (await this.admin._request({ method: 'POST', path: ['apikeys'], body, reauth: true, ...opts })).data
   }
 

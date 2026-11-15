@@ -23,6 +23,8 @@ import (
 
 // authAPI serves /v1/{realm}/_auth/….
 type authAPI struct {
+	// limiter is the request limiter; nil when it is off.
+	limiter *requestLimiter
 	// users returns the user service of an auth-enabled realm, or nil.
 	users     func(realm string) *auth.Users
 	reg       *registry.Registry
@@ -177,6 +179,9 @@ func (a *authAPI) authenticate(w http.ResponseWriter, r *http.Request, ignoreCon
 		if src == fromCookie {
 			clearSessionCookie(w, r, svc.Settings)
 		}
+		if !a.limiter.refusedCredential(w, r, realmOf(r)) {
+			return auth.Principal{}, false
+		}
 		authError(w, r, err)
 		return auth.Principal{}, false
 	}
@@ -187,6 +192,9 @@ func (a *authAPI) authenticate(w http.ResponseWriter, r *http.Request, ignoreCon
 		return auth.Principal{}, false
 	}
 	setActor(r.Context(), "user:"+p.User.ID)
+	if !a.limiter.principalStage(w, r, realmOf(r), auth.Caller{User: &p}) {
+		return auth.Principal{}, false
+	}
 	return p, true
 }
 

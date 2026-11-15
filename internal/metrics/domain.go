@@ -175,6 +175,22 @@ func (m *Metrics) RateLimited(realm, scope string) {
 	}
 }
 
+// WatchRateLimiter exposes the request limiter's table: how many buckets it holds and how many
+// requests shared an overflow bucket because it was full. Registering twice keeps the first.
+func (m *Metrics) WatchRateLimiter(size func() int, overflowed func() int64) {
+	if m == nil {
+		return
+	}
+	_ = m.Registry.Register(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Namespace: Namespace, Name: "rate_limiter_buckets",
+		Help: "Buckets the request limiter holds on this instance; its table is capped, and a table that stays full is an attack or a limit set too tight.",
+	}, func() float64 { return float64(size()) }))
+	_ = m.Registry.Register(prometheus.NewCounterFunc(prometheus.CounterOpts{
+		Namespace: Namespace, Name: "rate_limiter_overflow_total",
+		Help: "Requests that shared an overflow bucket because the limiter's table was full.",
+	}, func() float64 { return float64(overflowed()) }))
+}
+
 // DuplicateID counts a create that asked for an id that exists.
 func (m *Metrics) DuplicateID(realm, database, collection string) {
 	if m != nil {

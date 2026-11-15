@@ -50,6 +50,9 @@ type KeyOptions struct {
 	Role     KeyRole           // "" means data
 	Networks registry.Networks // where the key may be used from; empty: anywhere
 	Scopes   Scopes            // what a data key reaches; empty: everything
+	// RateLimit is the key's own request limit, "<requests>/<window>" or "none" (design/rate-limiting.md):
+	// it replaces the limits of the key's classes. "" uses the realm's and the instance's.
+	RateLimit string
 	// Org binds a data key that acts on behalf of users to one organization (its id or slug): it
 	// counts only that organization, as a session scoped to it would. Only in a realm with
 	// organizations.
@@ -63,6 +66,7 @@ type APIKey struct {
 	Role       KeyRole           // "" (stored before roles existed) counts as data
 	Networks   registry.Networks // where the key may be used from; empty: anywhere
 	Scopes     Scopes            // what the key reaches; empty: everything
+	RateLimit  string            // the key's own request limit; "": the realm's and the instance's
 	Prefix     string            // first characters of the key, for recognizing it
 	Hash       string
 	CreatedAt  time.Time
@@ -95,6 +99,14 @@ func (s *Users) CreateAPIKey(ctx context.Context, name string, opts KeyOptions) 
 	if role == KeyRoleAdmin && opts.Scopes.Limited() {
 		return APIKey{}, "", errors.New("scopes limit data keys: an admin key reaches the admin API, which scopes don't cover")
 	}
+	limit := strings.TrimSpace(opts.RateLimit)
+	if limit != "" {
+		r, err := registry.ParseRate(limit)
+		if err != nil {
+			return APIKey{}, "", fmt.Errorf("rate limit %w", err)
+		}
+		limit = registry.FormatRate(r)
+	}
 	bound := ""
 	if opts.Org != "" {
 		if role == KeyRoleAdmin {
@@ -111,7 +123,7 @@ func (s *Users) CreateAPIKey(ctx context.Context, name string, opts KeyOptions) 
 		return APIKey{}, "", err
 	}
 	now := s.now()
-	k := APIKey{Name: name, Role: role, Networks: opts.Networks, Scopes: opts.Scopes, Prefix: key[:displayLen], Hash: HashToken(key), CreatedAt: now, Org: bound}
+	k := APIKey{Name: name, Role: role, Networks: opts.Networks, Scopes: opts.Scopes, RateLimit: limit, Prefix: key[:displayLen], Hash: HashToken(key), CreatedAt: now, Org: bound}
 	if ttl > 0 {
 		exp := now.Add(ttl)
 		k.ExpiresAt = &exp
@@ -122,6 +134,9 @@ func (s *Users) CreateAPIKey(ctx context.Context, name string, opts KeyOptions) 
 	details := map[string]any{"role": string(k.Role), "networks": k.Networks.Strings(), "scopes": k.Scopes.Strings()}
 	if k.Org != "" {
 		details["org"] = k.Org
+	}
+	if k.RateLimit != "" {
+		details["rate_limit"] = k.RateLimit
 	}
 	if k.ExpiresAt != nil {
 		details["expires_at"] = k.ExpiresAt.Format(time.RFC3339)

@@ -55,3 +55,29 @@ func TestAggregateLimits(t *testing.T) {
 func env(m map[string]string) func(string) string {
 	return func(k string) string { return m[k] }
 }
+
+func TestRateLimit(t *testing.T) {
+	env := func(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
+
+	l, err := RateLimit(env(nil), false)
+	if err != nil || !l.Enabled || l.Rates["read"] != registry.DefaultRates["read"] {
+		t.Errorf("defaults: %+v %v", l, err)
+	}
+	if l, _ := RateLimit(env(nil), true); l.Enabled {
+		t.Error("dev mode starts with the limiter off")
+	}
+	if l, _ := RateLimit(env(map[string]string{"BACKD_RATE_LIMIT": "on"}), true); !l.Enabled {
+		t.Error("BACKD_RATE_LIMIT=on turns it on in dev mode")
+	}
+	if l, _ := RateLimit(env(map[string]string{"BACKD_RATE_LIMIT": "off"}), false); l.Enabled {
+		t.Error("BACKD_RATE_LIMIT=off turns it off")
+	}
+	l, err = RateLimit(env(map[string]string{"BACKD_RATE_LIMIT_READ": "1200/1m", "BACKD_RATE_LIMIT_ADMIN": "none"}), false)
+	if err != nil || l.Rates["read"].Limit != 1200 || !l.Rates["admin"].Unlimited() || l.Rates["write"] != registry.DefaultRates["write"] {
+		t.Errorf("overrides: %+v %v", l, err)
+	}
+	_, err = RateLimit(env(map[string]string{"BACKD_RATE_LIMIT": "maybe", "BACKD_RATE_LIMIT_WRITE": "lots"}), false)
+	if err == nil || !strings.Contains(err.Error(), "BACKD_RATE_LIMIT must be on or off") || !strings.Contains(err.Error(), "BACKD_RATE_LIMIT_WRITE") {
+		t.Errorf("errors: %v", err)
+	}
+}

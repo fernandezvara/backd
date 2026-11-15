@@ -52,6 +52,8 @@ type Store interface {
 type collectionKey struct{}
 
 type documents struct {
+	// limiter is the request limiter; nil when it is off.
+	limiter        *requestLimiter
 	reg            *registry.Registry
 	store          Store
 	objects        *realmObjects            // each realm's object storage (files)

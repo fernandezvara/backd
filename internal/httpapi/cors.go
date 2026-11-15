@@ -17,7 +17,7 @@ const (
 	// X-Backd-On-Behalf-Of is left out on purpose: only server-side API
 	// keys may use it.
 	corsAllowHeaders  = "Authorization, Content-Type, If-Match, If-None-Match, Idempotency-Key, Prefer, X-Backd-Reauth, X-Backd-Schema-Version, X-Backd-Types, X-Request-ID"
-	corsExposeHeaders = "ETag, Idempotent-Replayed, Location, Preference-Applied, Retry-After, WWW-Authenticate, X-Backd-Types-Stale, X-Request-ID"
+	corsExposeHeaders = "ETag, Idempotent-Replayed, Location, Preference-Applied, RateLimit-Limit, RateLimit-Remaining, RateLimit-Reset, Retry-After, WWW-Authenticate, X-Backd-Types-Stale, X-Request-ID"
 	corsMaxAge        = "600"
 )
 

@@ -131,7 +131,8 @@ func (d *documents) identify(w http.ResponseWriter, r *http.Request, realm strin
 		return caller, false, false
 	}
 	if svc == nil {
-		return caller, false, true
+		// A realm without auth ignores credentials, but a request that sends some still counts.
+		return caller, false, d.limiter.principalStage(w, r, realm, caller)
 	}
 	// No Authorization header: a realm with cookies takes the session cookie.
 	fromCookieJar := false
@@ -144,6 +145,9 @@ func (d *documents) identify(w http.ResponseWriter, r *http.Request, realm strin
 	if err != nil {
 		if fromCookieJar {
 			clearSessionCookie(w, r, svc.Settings) // the session is gone: stop sending it
+		}
+		if !d.limiter.refusedCredential(w, r, realm) {
+			return caller, true, false
 		}
 		authError(w, r, err)
 		return caller, true, false
@@ -161,6 +165,9 @@ func (d *documents) identify(w http.ResponseWriter, r *http.Request, realm strin
 		}
 	}
 	setActor(r.Context(), caller.Actor())
+	if !d.limiter.principalStage(w, r, realm, caller) {
+		return caller, true, false
+	}
 	return caller, true, true
 }
 

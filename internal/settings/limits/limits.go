@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/fernandezvara/backd/internal/registry"
@@ -80,6 +81,38 @@ func Trigger(getenv func(string) string) (registry.TriggerLimits, error) {
 		l.MaxChain = n
 	}
 	return l, nil
+}
+
+// RateLimit reads the instance's request limits (design/rate-limiting.md §4): BACKD_RATE_LIMIT
+// (on or off; on unless dev is true, where it is off) and BACKD_RATE_LIMIT_<CLASS>, a rate such as
+// 600/1m or none, for ANONYMOUS, READ, WRITE, AUTH, FILES and ADMIN.
+func RateLimit(getenv func(string) string, dev bool) (registry.RateSettings, error) {
+	l := registry.DefaultRateSettings()
+	l.Enabled = !dev
+	var errs []error
+	switch v := strings.ToLower(strings.TrimSpace(getenv("BACKD_RATE_LIMIT"))); v {
+	case "":
+	case "on", "true":
+		l.Enabled = true
+	case "off", "false":
+		l.Enabled = false
+	default:
+		errs = append(errs, fmt.Errorf("BACKD_RATE_LIMIT must be on or off, got %q", v))
+	}
+	for _, class := range registry.RateClasses {
+		env := "BACKD_RATE_LIMIT_" + strings.ToUpper(class)
+		v := getenv(env)
+		if v == "" {
+			continue
+		}
+		r, err := registry.ParseRate(v)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", env, err))
+			continue
+		}
+		l.Rates[class] = r
+	}
+	return l, errors.Join(errs...)
 }
 
 // DefaultImageMaxPixels is the pixel limit for image versions when none is set.
