@@ -865,4 +865,19 @@ For server-side Dart tools, `BackdClient(url: url, realm: realm, apiKey: …)` s
 An API key shipped in an app is readable by every user and bypasses all [access rules](../../auth/rules/). `apiKey` exists for standalone Dart tools — a migration, an import, a cron job — never for anything your users run. There is no `dangerouslyAllowBrowser`: pure Dart doesn't run in a browser anyway.
 {{< /hint >}}
 
+
+### Acting as one user
+
+A server-side tool that handles a request for one of the realm's users makes a client that acts as them with `asUser`. Every request carries `X-Backd-On-Behalf-Of`, so [that user's access rules](../../auth/rules/) apply, not the key's full access, and what it creates is theirs:
+
+```dart
+final backd = BackdClient(url: url, realm: 'shelf', apiKey: key);
+final asAda = backd.asUser(userId); // the id of one of the realm's users
+final mine = await asAda.db('main').collection('assets').list();
+```
+
+- It needs a client made with `apiKey`, and it cannot be chained: `asUser` on an acting client throws a `StateError`.
+- **Each acting client has a revalidation cache and an app configuration of its own**, so what one user read is never served to another.
+- `auth` and the other account helpers throw on an acting client, and the server refuses the header on those routes: use the client made with the key for them. An unknown id is `400 invalid_header`, a disabled user `403`.
+
 There is no `admin` surface on this client — see the note at the top of this page. An API key with a `data` role already reads and writes every collection; administration itself stays in the [JavaScript client](../js/#api-keys-and-the-admin-api).

@@ -122,6 +122,20 @@ A realm that verifies addresses answers a sign-up with `VerificationRequiredErro
 
 An **API key** needs no sign-in: pass `api_key=` and every call sends it. Keep it to server-side programs.
 
+### Acting as one user
+
+A service that handles a request for one of the realm's users makes a client that acts as them with `as_user` (the sync and the async client both have it). Every call carries `X-Backd-On-Behalf-Of`, so [that user's access rules](../../auth/rules/) apply, not the key's full access, and what it creates is theirs:
+
+```python
+with Client(url=url, realm="shelf", api_key=key) as backd:
+    as_ada = backd.as_user(user_id)                       # the id of one of the realm's users
+    mine = as_ada.db("main").collection("assets").list()  # only what Ada may read
+```
+
+- It needs a client made with `api_key`, and it cannot be chained: `as_user` on an acting client raises `TypeError`.
+- **Each acting client has a revalidation cache and an app configuration of its own**, so what one user read is never served to another. It shares the connection of the client it came from, so closing either closes both.
+- `client.auth` and the other account helpers raise `TypeError` on an acting client, and the server refuses the header on those routes: use the client made with the key for them. An unknown id is `400 invalid_header`, a disabled user `403`.
+
 ### Passkeys
 
 A passkey is made and used by an authenticator (a phone, a security key, a password manager), which a script does not have, so the Python client has **no passkey sign-in**: the browser or an app does the ceremony. `client.auth.passkeys` has what surrounds it: `list`, `rename` and `remove` for the signed-in user's own (adding and removing need a fresh proof, `auth.reauth`), and the plain options and verify calls of each ceremony, so a test with a software authenticator, or a program with its own platform code, can drive the server. The options and the credential pass through as JSON (dicts).

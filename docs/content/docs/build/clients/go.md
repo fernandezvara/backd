@@ -55,6 +55,20 @@ defer c.Close()   // ends live views and releases idle connections
 
 Every call that does I/O takes a `context.Context` first, and ends with it. Every method takes `...client.RequestOption` last (`client.WithHeader`, `WithQuery`, `WithRetry`, …).
 
+### Acting as one user
+
+A service that handles a request for one of the realm's users makes a client that acts as them with `AsUser`. Every call carries `X-Backd-On-Behalf-Of`, so [that user's access rules](../../auth/rules/) apply, not the key's full access, and what it creates is theirs:
+
+```go
+key, _ := client.New(client.Options{URL: url, Realm: "shelf", APIKey: os.Getenv("BACKD_API_KEY")})
+asAda, err := key.AsUser(userID) // the id of one of the realm's users
+mine, err := asAda.DB("main").Collection("assets").List(ctx, client.Query{})
+```
+
+- It needs a client made with `APIKey`, and it cannot be chained: `AsUser` on an acting client returns an error.
+- **Each acting client has a revalidation cache and an app configuration of its own**, so what one user read is never served to another. Closing either client closes both.
+- `Auth()` and the other account helpers return an error on an acting client, and the server refuses the header on those routes: use the client made with the key for them. An unknown id is `400 invalid_header`, a disabled user `403`.
+
 ## Sign-up, login and sessions
 
 ```go
