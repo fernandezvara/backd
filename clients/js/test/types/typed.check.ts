@@ -77,6 +77,9 @@ orders.inTeam('team-1').create({ status: 'refunded', items: [] })
 // The organizations API: a role is a string, the app narrows it with the realm's OrgRole.
 export const myOrgs = client.orgs.signedIn()
 
+// A client acting as a user is the same typed client.
+export const asAda = createClient<Realm>({ url: 'https://api.example.com', realm: 'shop', apiKey: 'bdk_x' }).as_user('u_ada').db('main').collection('orders')
+
 // Untyped, nothing changes.
 const plain = createClient({ url: 'https://api.example.com', realm: 'shop' })
 export const anything = plain.db('whatever').collection('anything').list({ where: { a: 1 } })
