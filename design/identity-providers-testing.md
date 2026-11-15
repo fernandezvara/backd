@@ -4,7 +4,7 @@
 - **Design:** [sso.md](./sso.md)
 - **Status:** a guide to run by hand before each release that touches sign-in with providers
 
-CI tests the whole flow against a fake provider (`internal/oauth/oauthtest`, which becomes `sso/ssotest` in step S1 of [sso.md §14](./sso.md)): every rule of the design, every
+CI tests the whole flow against a fake provider (`sso/ssotest`): every rule of the design, every
 error code, the admin side and the client. What it cannot prove is that **Google, Microsoft, Apple and GitHub, and the generic OpenID Connect servers operators use**
 behave as the fake does: their consoles, their redirect rules, their token contents, Apple's form post and
 first-authorization name, Microsoft's tenants, Apple's revocation. This guide is the checklist for that, part

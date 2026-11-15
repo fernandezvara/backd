@@ -14,7 +14,6 @@ import (
 	"github.com/fernandezvara/backd/internal/executor"
 	"github.com/fernandezvara/backd/internal/imaging"
 	"github.com/fernandezvara/backd/internal/metrics"
-	"github.com/fernandezvara/backd/internal/oauth"
 	"github.com/fernandezvara/backd/internal/push"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage"
@@ -30,7 +29,7 @@ const workerPollInterval = 250 * time.Millisecond
 // function's own caller would, reusing the same bundle resolution,
 // callback construction and invocation recording sync calls use.
 type Worker struct {
-	oauth *oauth.Service // reaches the identity providers (to revoke Apple tokens)
+	oauth *ProviderClient // reaches the identity providers (to revoke Apple tokens)
 	// migrateDocsPerSecond overrides the rate of schema migrations (zero: auth.SchemaMigrateRate); tests only.
 	migrateDocsPerSecond int
 	id                   string

@@ -15,8 +15,9 @@ import (
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/email"
-	"github.com/fernandezvara/backd/internal/oauth"
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/sso/oauth2"
+	"github.com/fernandezvara/backd/sso/oidc"
 )
 
 // Sign-in with external identity providers: the redirect flow. The app sends the user
@@ -395,8 +396,8 @@ func (a *authAPI) startOAuth(w http.ResponseWriter, r *http.Request, in startInp
 		authError(w, r, err)
 		return "", false
 	}
-	params := oauth.AuthorizeParams{RedirectURI: callback, State: state, Nonce: nonce}
-	if oauth.UsesPKCE(p) {
+	params := oauth2.AuthorizeParams{RedirectURI: callback, State: state, Nonce: nonce}
+	if UsesPKCE(p) {
 		params.CodeChallenge = auth.PKCEChallenge(verifier)
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -488,7 +489,7 @@ func (a *authAPI) oauthCallback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	verifier := ""
-	if oauth.UsesPKCE(p) {
+	if UsesPKCE(p) {
 		verifier = st.Verifier
 	}
 	tokens, err := a.oauth.Exchange(r.Context(), p, p.ClientID, secret, code, callback, verifier)
@@ -557,7 +558,7 @@ func (a *authAPI) oauthCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 // signInClaimsOf is what a connection's restriction reads from a verified token.
-func signInClaimsOf(c oauth.Claims) auth.SignInClaims {
+func signInClaimsOf(c oidc.Claims) auth.SignInClaims {
 	return auth.SignInClaims{Email: c.Email, EmailVerified: c.EmailVerified, HostedDomain: c.HostedDomain, Tenant: c.Tenant, Username: c.Username}
 }
 
@@ -689,7 +690,7 @@ func providerSessionJSON(p auth.Principal, token, locale string, newUser bool, p
 
 // profileOf is what the provider says of the person: the ID token's claims, and, for Apple's
 // first authorization, the name Apple sends in the callback form (never in the token).
-func profileOf(c oauth.Claims, extra map[string]string) map[string]string {
+func profileOf(c oidc.Claims, extra map[string]string) map[string]string {
 	in := map[string]string{"name": c.Name, "given_name": c.GivenName, "family_name": c.FamilyName, "picture": c.Picture}
 	for k, v := range extra {
 		if in[k] == "" {

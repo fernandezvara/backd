@@ -14,7 +14,6 @@ import (
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/devreport"
 	"github.com/fernandezvara/backd/internal/metrics"
-	"github.com/fernandezvara/backd/internal/oauth"
 	"github.com/fernandezvara/backd/internal/push"
 	"github.com/fernandezvara/backd/internal/realtime"
 	"github.com/fernandezvara/backd/internal/registry"
@@ -122,16 +121,16 @@ type Config struct {
 	Metrics *metrics.Metrics
 	// OAuth reaches the identity providers; nil uses the built-in ones through a
 	// client that dials only their hosts. Tests point it at a fake.
-	OAuth *oauth.Service
+	OAuth *ProviderClient
 }
 
 // oauthService is the service that reaches the identity providers: the one configured, or the
 // built-in providers through a client that dials only their hosts.
-func (cfg Config) oauthService() *oauth.Service {
+func (cfg Config) oauthService() *ProviderClient {
 	if cfg.OAuth != nil {
 		return cfg.OAuth
 	}
-	return &oauth.Service{HTTP: oauth.NewClient(oauth.BuiltinHostAllowed, cfg.Dev)}
+	return newProviderClient(cfg.Dev)
 }
 
 // DefaultOpTimeout is the per-request storage deadline when none is configured.

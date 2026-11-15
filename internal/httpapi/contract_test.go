@@ -28,12 +28,12 @@ import (
 	"github.com/fernandezvara/backd/internal/auth/passkey"
 	"github.com/fernandezvara/backd/internal/auth/passkey/passkeytest"
 	"github.com/fernandezvara/backd/internal/exportpkg"
-	"github.com/fernandezvara/backd/internal/oauth"
-	"github.com/fernandezvara/backd/internal/oauth/oauthtest"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage"
 	"github.com/fernandezvara/backd/internal/storage/storagetest"
 	"github.com/fernandezvara/backd/internal/triggers"
+	"github.com/fernandezvara/backd/sso"
+	"github.com/fernandezvara/backd/sso/ssotest"
 )
 
 // contract checks HTTP responses against api/openapi.yaml.
@@ -341,10 +341,10 @@ func (c *contract) verify(t *testing.T, router chi.Routes) {
 // checks each response against api/openapi.yaml.
 func TestContract(t *testing.T) {
 	c := loadContract(t)
-	idp := oauthtest.New(t)
-	oauthSvc := idp.Service()
+	idp := ssotest.New(t)
+	oauthSvc := providerClientFor(idp)
 	live := oauthSvc.Endpoints
-	oauthSvc.Endpoints = func(p *registry.Provider) oauth.Endpoints { // a provider whose keys can't be fetched
+	oauthSvc.Endpoints = func(p *registry.Provider) sso.Endpoints { // a provider whose keys can't be fetched
 		e := live(p)
 		if p.ClientID == "dead-client" {
 			e.JWKS = "http://127.0.0.1:1/keys"

@@ -1,4 +1,7 @@
-package oauth
+// Package oidc verifies the ID tokens of OpenID Connect providers: the signature against
+// the provider's published keys (cached), issuer, audience, expiry and nonce. It knows
+// nothing of users or sessions.
+package oidc
 
 import (
 	"context"
@@ -7,10 +10,8 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,19 +19,8 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 
-	"github.com/fernandezvara/backd/internal/registry"
-)
-
-// Errors a provider's answers can lead to. None of them carries anything the
-// provider said beyond its own error code.
-var (
-	// ErrExchange: the provider refused the authorization code.
-	ErrExchange = errors.New("oauth: the provider refused the authorization code")
-	// ErrInvalidToken: an ID token that does not verify (signature, issuer,
-	// audience, expiry or nonce), or is missing what is needed.
-	ErrInvalidToken = errors.New("oauth: the ID token is not valid")
-	// ErrUnavailable: the provider could not be reached, or answered nonsense.
-	ErrUnavailable = errors.New("oauth: the provider is not available")
+	"github.com/fernandezvara/backd/sso"
+	"github.com/fernandezvara/backd/sso/safehttp"
 )
 
 const (
@@ -42,18 +32,15 @@ const (
 	microsoftMSA = "9188040d-6c67-4c5b-b112-36a304b66dad" // the tenant id of personal accounts
 )
 
-// Service is what the sign-in flow asks of providers.
-type Service struct {
-	// HTTP reaches the providers: NewClient(BuiltinHostAllowed, …) in production.
+// Verifier checks ID tokens. The zero value needs HTTP set.
+type Verifier struct {
+	// HTTP reaches the providers' key endpoints: safehttp.NewClient(…) in production.
 	HTTP *http.Client
-	// Endpoints gives a provider's URLs; BuiltinEndpoints when nil.
-	Endpoints func(*registry.Provider) Endpoints
 	// Now is the clock; time.Now when nil.
 	Now func() time.Time
 
-	mu    sync.Mutex
-	jwks  map[string]*jwksEntry  // by URL
-	apple map[string]appleSecret // by provider key id and team
+	mu   sync.Mutex
+	jwks map[string]*jwksEntry // by URL
 }
 
 type jwksEntry struct {
@@ -62,124 +49,11 @@ type jwksEntry struct {
 	fetchedAt time.Time
 }
 
-func (s *Service) now() time.Time {
+func (s *Verifier) now() time.Time {
 	if s.Now != nil {
 		return s.Now()
 	}
 	return time.Now()
-}
-
-func (s *Service) endpoints(p *registry.Provider) Endpoints {
-	if s.Endpoints != nil {
-		return s.Endpoints(p)
-	}
-	return BuiltinEndpoints(p)
-}
-
-// AuthorizeParams are what an authorization request carries.
-type AuthorizeParams struct {
-	RedirectURI   string
-	State         string
-	Nonce         string
-	CodeChallenge string // PKCE (S256) between backd and the provider; empty: none
-}
-
-// UsesPKCE says whether backd sends a PKCE challenge to the provider (Apple's web flow
-// does not take one).
-func UsesPKCE(p *registry.Provider) bool { return p.Name != registry.ProviderApple }
-
-// AuthorizeURL is where to send the user to sign in with the provider.
-func (s *Service) AuthorizeURL(p *registry.Provider, a AuthorizeParams) string {
-	q := url.Values{}
-	q.Set("response_type", "code")
-	q.Set("client_id", p.ClientID)
-	q.Set("redirect_uri", a.RedirectURI)
-	q.Set("state", a.State)
-	q.Set("nonce", a.Nonce)
-	switch p.Name {
-	case registry.ProviderApple:
-		q.Set("scope", "name email")
-		q.Set("response_mode", "form_post")
-	default:
-		q.Set("scope", "openid email profile")
-	}
-	if a.CodeChallenge != "" && UsesPKCE(p) {
-		q.Set("code_challenge", a.CodeChallenge)
-		q.Set("code_challenge_method", "S256")
-	}
-	return s.endpoints(p).Authorize + "?" + q.Encode()
-}
-
-// Tokens are what the code exchange gives back that backd keeps using: the ID token
-// and, from Apple, the refresh token (kept only to revoke it).
-type Tokens struct {
-	IDToken      string
-	RefreshToken string
-}
-
-// Exchange trades an authorization code for the user's ID token. clientID is the
-// application the code was issued to (the provider's web client, or for a native
-// app its own id), and secret the client secret of Google or Microsoft, or Apple's
-// already-signed one.
-func (s *Service) Exchange(ctx context.Context, p *registry.Provider, clientID, secret, code, redirectURI, codeVerifier string) (Tokens, error) {
-	form := url.Values{}
-	form.Set("grant_type", "authorization_code")
-	form.Set("code", code)
-	form.Set("client_id", clientID)
-	form.Set("client_secret", secret)
-	if redirectURI != "" {
-		form.Set("redirect_uri", redirectURI)
-	}
-	if codeVerifier != "" && UsesPKCE(p) {
-		form.Set("code_verifier", codeVerifier)
-	}
-	var out struct {
-		IDToken      string `json:"id_token"`
-		RefreshToken string `json:"refresh_token"`
-		Error        string `json:"error"`
-	}
-	status, err := s.postForm(ctx, s.endpoints(p).Token, form, &out)
-	switch {
-	case err != nil:
-		return Tokens{}, err
-	case status == http.StatusBadRequest || status == http.StatusUnauthorized:
-		return Tokens{}, fmt.Errorf("%w (%s)", ErrExchange, sanitize(out.Error))
-	case status != http.StatusOK || out.IDToken == "":
-		return Tokens{}, fmt.Errorf("%w: status %d", ErrUnavailable, status)
-	}
-	return Tokens{IDToken: out.IDToken, RefreshToken: out.RefreshToken}, nil
-}
-
-// sanitize keeps a provider's error code short and plain before it is logged.
-func sanitize(s string) string {
-	if len(s) > 64 || strings.ContainsFunc(s, func(r rune) bool { return r < ' ' || r > '~' }) {
-		return "?"
-	}
-	return s
-}
-
-func (s *Service) postForm(ctx context.Context, endpoint string, form url.Values, out any) (int, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
-	if err != nil {
-		return 0, err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Accept", "application/json")
-	resp, err := s.HTTP.Do(req)
-	if err != nil {
-		return 0, fmt.Errorf("%w: %v", ErrUnavailable, err)
-	}
-	defer resp.Body.Close()
-	data, err := readBody(resp)
-	if err != nil {
-		return 0, fmt.Errorf("%w: %v", ErrUnavailable, err)
-	}
-	if len(data) > 0 && out != nil {
-		if err := json.Unmarshal(data, out); err != nil && resp.StatusCode == http.StatusOK {
-			return 0, fmt.Errorf("%w: unreadable answer", ErrUnavailable)
-		}
-	}
-	return resp.StatusCode, nil
 }
 
 // Claims are what backd takes from a verified ID token.
@@ -275,23 +149,23 @@ func (f *flexBool) UnmarshalJSON(b []byte) error {
 // when native, the mobile apps'), expiry and nonce. nonce is what the token must carry
 // (exactly, or, when native, also as its SHA-256 in hex or base64url, as the platform
 // sign-in SDKs put it).
-func (s *Service) Verify(ctx context.Context, p *registry.Provider, idToken, nonce string, native bool) (Claims, error) {
+func (s *Verifier) Verify(ctx context.Context, p sso.Provider, idToken, nonce string, native bool) (Claims, error) {
 	if nonce == "" {
-		return Claims{}, fmt.Errorf("%w: no nonce to check", ErrInvalidToken)
+		return Claims{}, fmt.Errorf("%w: no nonce to check", sso.ErrInvalidToken)
 	}
 	c, err := s.check(ctx, p, idToken, native)
 	if err != nil {
 		return Claims{}, err
 	}
-	bad := func(why string) (Claims, error) { return Claims{}, fmt.Errorf("%w: %s", ErrInvalidToken, why) }
+	bad := func(why string) (Claims, error) { return Claims{}, fmt.Errorf("%w: %s", sso.ErrInvalidToken, why) }
 	if !nonceOK(c.Nonce, nonce, native) {
 		return bad("nonce")
 	}
 	out := Claims{Subject: c.Subject, Email: strings.TrimSpace(c.Email), EmailVerified: bool(c.EmailVerified), Name: c.Name, GivenName: c.GivenName, FamilyName: c.FamilyName, Picture: c.Picture}
-	if p.Name == registry.ProviderGoogle {
+	if p.Kind == sso.Google {
 		out.HostedDomain = strings.ToLower(c.HostedDomain)
 	}
-	if p.Name == registry.ProviderMicrosoft {
+	if p.Kind == sso.Microsoft {
 		// The tenant and the object id name the person; an address in a token is
 		// whatever the tenant's administrator set, so it is never taken as verified.
 		if c.TenantID == "" || c.ObjectID == "" {
@@ -316,7 +190,7 @@ func (s *Service) Verify(ctx context.Context, p *registry.Provider, idToken, non
 // gives back has none), and returns who it is for: the subject and the client id it was issued
 // to. It is how backd checks that an authorization code and the ID token a native app sent
 // belong to the same person.
-func (s *Service) Subject(ctx context.Context, p *registry.Provider, idToken string, native bool) (subject, audience string, err error) {
+func (s *Verifier) Subject(ctx context.Context, p sso.Provider, idToken string, native bool) (subject, audience string, err error) {
 	c, err := s.check(ctx, p, idToken, native)
 	if err != nil {
 		return "", "", err
@@ -326,12 +200,12 @@ func (s *Service) Subject(ctx context.Context, p *registry.Provider, idToken str
 			return c.Subject, a, nil
 		}
 	}
-	return "", "", fmt.Errorf("%w: audience", ErrInvalidToken)
+	return "", "", fmt.Errorf("%w: audience", sso.ErrInvalidToken)
 }
 
 // check verifies an ID token's signature, expiry, issuer and audience.
-func (s *Service) check(ctx context.Context, p *registry.Provider, idToken string, native bool) (idClaims, error) {
-	bad := func(why string) (idClaims, error) { return idClaims{}, fmt.Errorf("%w: %s", ErrInvalidToken, why) }
+func (s *Verifier) check(ctx context.Context, p sso.Provider, idToken string, native bool) (idClaims, error) {
+	bad := func(why string) (idClaims, error) { return idClaims{}, fmt.Errorf("%w: %s", sso.ErrInvalidToken, why) }
 	jws, err := jose.ParseSignedCompact(idToken, []jose.SignatureAlgorithm{jose.RS256, jose.ES256})
 	if err != nil || len(jws.Signatures) != 1 {
 		return bad("not a signed token")
@@ -362,13 +236,13 @@ func (s *Service) check(ctx context.Context, p *registry.Provider, idToken strin
 	return c, nil
 }
 
-func (s *Service) issuerOK(p *registry.Provider, c idClaims) bool {
-	switch p.Name {
-	case registry.ProviderGoogle:
+func (s *Verifier) issuerOK(p sso.Provider, c idClaims) bool {
+	switch p.Kind {
+	case sso.Google:
 		return c.Issuer == "https://accounts.google.com" || c.Issuer == "accounts.google.com"
-	case registry.ProviderApple:
+	case sso.Apple:
 		return c.Issuer == "https://appleid.apple.com"
-	case registry.ProviderMicrosoft:
+	case sso.Microsoft:
 		if c.TenantID == "" || c.Issuer != "https://login.microsoftonline.com/"+c.TenantID+"/v2.0" {
 			return false
 		}
@@ -417,8 +291,8 @@ func nonceOK(got, want string, native bool) bool {
 // verifySignature checks the token's signature with the key the provider published
 // under kid, fetching the keys when they are not cached, and again (at most once a
 // minute) when the key is not among them.
-func (s *Service) verifySignature(ctx context.Context, p *registry.Provider, jws *jose.JSONWebSignature, kid string) ([]byte, error) {
-	url := s.endpoints(p).JWKS
+func (s *Verifier) verifySignature(ctx context.Context, p sso.Provider, jws *jose.JSONWebSignature, kid string) ([]byte, error) {
+	url := p.Endpoints.JWKS
 	for attempt := range 2 {
 		keys, err := s.keys(ctx, url, attempt > 0)
 		if err != nil {
@@ -436,12 +310,12 @@ func (s *Service) verifySignature(ctx context.Context, p *registry.Provider, jws
 			break // the key is known and the signature is not its
 		}
 	}
-	return nil, fmt.Errorf("%w: signature", ErrInvalidToken)
+	return nil, fmt.Errorf("%w: signature", sso.ErrInvalidToken)
 }
 
 // keys returns the provider's published keys. force asks for a fresh copy, which is
 // given only when the cached one is at least a minute old.
-func (s *Service) keys(ctx context.Context, url string, force bool) (jose.JSONWebKeySet, error) {
+func (s *Verifier) keys(ctx context.Context, url string, force bool) (jose.JSONWebKeySet, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
@@ -459,7 +333,7 @@ func (s *Service) keys(ctx context.Context, url string, force bool) (jose.JSONWe
 		return s.staleKeys(url, err)
 	}
 	defer resp.Body.Close()
-	data, err := readBody(resp)
+	data, err := safehttp.ReadBody(resp)
 	var set jose.JSONWebKeySet
 	if err == nil && resp.StatusCode != http.StatusOK {
 		err = fmt.Errorf("status %d", resp.StatusCode)
@@ -478,11 +352,11 @@ func (s *Service) keys(ctx context.Context, url string, force bool) (jose.JSONWe
 }
 
 // staleKeys falls back on the keys already held when the provider can't be reached.
-func (s *Service) staleKeys(url string, cause error) (jose.JSONWebKeySet, error) {
+func (s *Verifier) staleKeys(url string, cause error) (jose.JSONWebKeySet, error) {
 	if e := s.jwks[url]; e != nil {
 		return e.keys, nil
 	}
-	return jose.JSONWebKeySet{}, fmt.Errorf("%w: the signing keys: %v", ErrUnavailable, cause)
+	return jose.JSONWebKeySet{}, fmt.Errorf("%w: the signing keys: %v", sso.ErrUnavailable, cause)
 }
 
 // cacheTTL reads max-age from a Cache-Control header, within sane limits.

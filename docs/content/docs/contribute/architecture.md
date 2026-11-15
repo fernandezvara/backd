@@ -38,7 +38,7 @@ The packages above are the core. The features built on it have packages of their
 | `internal/functions`, `internal/executor`, `internal/egress`, `internal/cron` | Building function bundles (and schema migrations), the Deno supervisor that runs each call and migration batch, the egress proxy, and cron expressions |
 | `internal/changefeed`, `internal/triggers`, `internal/realtime` | The change stream reader, the trigger dispatcher with its durable position, and server-sent subscriptions |
 | `internal/email`, `internal/push`, `internal/pushsend` | Email kinds and templates, push messages and templates, and the built-in FCM, APNs and Web Push senders |
-| `internal/oauth` | Google, Microsoft and Apple: authorize URLs, code exchange, ID-token verification |
+| `sso/` | The sign-in library, with no dependency on the rest of backd (a test enforces it): `oidc` (ID-token verification), `oauth2` (authorize URL, code exchange), `apple`, `pkce`, `safehttp` (the client that dials only a provider's hosts) and `ssotest` (a fake provider) |
 | `internal/authcore`, `internal/fieldcrypt` | API key scopes, the secrets cipher and field key encoding; per-field encryption before data reaches the database |
 | `internal/imaging`, `internal/exportpkg`, `internal/exportreadme` | Image versions, the export package format, and the README of a personal-data export |
 | `internal/appconfig`, `internal/ratelimit`, `internal/metrics` | App configuration, the in-memory request limiter, Prometheus instrumentation |

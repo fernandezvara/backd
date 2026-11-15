@@ -2,19 +2,18 @@ package auth
 
 import (
 	"context"
-	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/base64"
 	"errors"
 	"time"
 
 	"github.com/rs/xid"
 
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/sso/pkce"
 )
 
 // Sign-in with an external identity provider (the flow is in internal/httpapi, the
-// talk with the provider in internal/oauth; this is what happens to the user).
+// talk with the provider in sso/; this is what happens to the user).
 
 // The lifetimes of the two short-lived records of the redirect flow.
 const (
@@ -108,27 +107,13 @@ func randomValue() (string, error) {
 }
 
 // NewPKCE makes a PKCE verifier and its S256 challenge.
-func NewPKCE() (verifier, challenge string, err error) {
-	if verifier, err = randomValue(); err != nil {
-		return "", "", err
-	}
-	return verifier, PKCEChallenge(verifier), nil
-}
+func NewPKCE() (verifier, challenge string, err error) { return pkce.New() }
 
 // PKCEChallenge is the S256 challenge of a verifier.
-func PKCEChallenge(verifier string) string {
-	sum := sha256.Sum256([]byte(verifier))
-	return base64.RawURLEncoding.EncodeToString(sum[:])
-}
+func PKCEChallenge(verifier string) string { return pkce.Challenge(verifier) }
 
 // ValidPKCEChallenge says whether s looks like an S256 challenge (43 URL-safe characters).
-func ValidPKCEChallenge(s string) bool {
-	if len(s) != 43 {
-		return false
-	}
-	_, err := base64.RawURLEncoding.DecodeString(s)
-	return err == nil
-}
+func ValidPKCEChallenge(s string) bool { return pkce.Valid(s) }
 
 // BeginOAuth records a sign-in attempt and returns the state value to send to the
 // provider and the nonce and PKCE verifier to use with it.

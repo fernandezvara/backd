@@ -1,7 +1,7 @@
-// Package oauthtest is a small identity provider for tests: it signs ID tokens with
+// Package ssotest is a small identity provider for tests: it signs ID tokens with
 // its own key, publishes them, and plays the parts of a provider's authorize, token
 // and keys endpoints, so the sign-in flow can be run end to end without a real one.
-package oauthtest
+package ssotest
 
 import (
 	"crypto/rand"
@@ -18,8 +18,8 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 
-	"github.com/fernandezvara/backd/internal/oauth"
-	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/sso"
+	"github.com/fernandezvara/backd/sso/safehttp"
 )
 
 // Provider is the fake. Its endpoints serve any provider kind: tests point the
@@ -59,9 +59,9 @@ func New(t testing.TB) *Provider {
 	return p
 }
 
-// Endpoints points a service at the fake.
-func (p *Provider) Endpoints(*registry.Provider) oauth.Endpoints {
-	return oauth.Endpoints{Authorize: p.URL + "/authorize", Token: p.URL + "/token", JWKS: p.URL + "/keys", Revoke: p.URL + "/revoke"}
+// Endpoints points a provider at the fake.
+func (p *Provider) Endpoints() sso.Endpoints {
+	return sso.Endpoints{Authorize: p.URL + "/authorize", Token: p.URL + "/token", JWKS: p.URL + "/keys", Revoke: p.URL + "/revoke"}
 }
 
 // Host is the fake's host:port without the port, for an allowed-hosts check.
@@ -72,12 +72,7 @@ func (p *Provider) Host() string {
 
 // Client is an HTTP client that reaches the fake only (it listens on a private address).
 func (p *Provider) Client() *http.Client {
-	return oauth.NewClient(func(h string) bool { return h == p.Host() }, true)
-}
-
-// Service is an oauth.Service wired to the fake.
-func (p *Provider) Service() *oauth.Service {
-	return &oauth.Service{HTTP: p.Client(), Endpoints: p.Endpoints}
+	return safehttp.NewClient(func(h string) bool { return h == p.Host() }, true)
 }
 
 // SetUser sets the claims of the ID tokens the next authorizations will produce

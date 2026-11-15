@@ -7,8 +7,9 @@ import (
 	"time"
 
 	"github.com/fernandezvara/backd/internal/auth"
-	"github.com/fernandezvara/backd/internal/oauth"
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/sso"
+	"github.com/fernandezvara/backd/sso/oidc"
 )
 
 // Native sign-in: a mobile app that signs in with the platform (Sign in with Apple, Google
@@ -104,7 +105,7 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 	}
 	claims, err := a.oauth.Verify(r.Context(), p, str("id_token"), str("nonce"), true)
 	switch {
-	case errors.Is(err, oauth.ErrInvalidToken):
+	case errors.Is(err, sso.ErrInvalidToken):
 		logger(r.Context()).Info("a native ID token was not accepted", "provider", p.Name, "error", err)
 		writeError(w, r, http.StatusUnauthorized, codeInvalidToken, "the ID token is not valid for this realm")
 		return
@@ -204,7 +205,7 @@ func (a *authAPI) nativeFailure(w http.ResponseWriter, r *http.Request, svc *aut
 // Apple's refresh token, which backd keeps to revoke when the account is deleted. The code
 // must belong to the same person and app as the token, or a client could make backd keep
 // (and later revoke) someone else's token. It answers and returns false when it can't.
-func (a *authAPI) appleRefreshToken(w http.ResponseWriter, r *http.Request, p *registry.Provider, claims oauth.Claims, code string) (string, bool) {
+func (a *authAPI) appleRefreshToken(w http.ResponseWriter, r *http.Request, p *registry.Provider, claims oidc.Claims, code string) (string, bool) {
 	if code == "" {
 		writeError(w, r, http.StatusBadRequest, codeValidation, "the sign-in isn't described", Detail{Path: "authorization_code", Reason: "is required for Apple: backd revokes the user's tokens with it when the account is deleted"})
 		return "", false
@@ -224,11 +225,11 @@ func (a *authAPI) appleRefreshToken(w http.ResponseWriter, r *http.Request, p *r
 	if err == nil {
 		var subject, audience string
 		if subject, audience, err = a.oauth.Subject(r.Context(), p, tokens.IDToken, true); err == nil && (subject != claims.Subject || audience != claims.Audience) {
-			err = oauth.ErrInvalidToken
+			err = sso.ErrInvalidToken
 		}
 	}
 	switch {
-	case errors.Is(err, oauth.ErrExchange), errors.Is(err, oauth.ErrInvalidToken):
+	case errors.Is(err, sso.ErrExchange), errors.Is(err, sso.ErrInvalidToken):
 		logger(r.Context()).Info("an Apple authorization code was not accepted", "error", err)
 		writeError(w, r, http.StatusUnauthorized, codeInvalidToken, "the authorization code was refused, or is not the one of this ID token")
 		return "", false

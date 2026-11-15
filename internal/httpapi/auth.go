@@ -17,7 +17,6 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/fernandezvara/backd/internal/auth"
-	"github.com/fernandezvara/backd/internal/oauth"
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
@@ -32,7 +31,7 @@ type authAPI struct {
 	opTimeout time.Duration
 	// oauth talks to the identity providers; baseURL is backd's public address
 	// (BACKD_URL), where they send the user back to.
-	oauth   *oauth.Service
+	oauth   *ProviderClient
 	baseURL string
 	// fns calls the template data hooks of the hosted pages; set once the function routes exist.
 	fns *functions
