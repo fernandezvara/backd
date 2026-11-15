@@ -1,7 +1,7 @@
 # Design: field projection (`fields`)
 
 - **Issues:** #976–#979 (milestone 46-field-projection)
-- **Status:** decided 2026-11-15 (limits and typing chosen by the maintainer)
+- **Status:** decided
 - **Related designs:** [reference-expansion.md](./reference-expansion.md) (`expand=ref(a,b)`), [conditional-get.md](./conditional-get.md) (the representation tag), [field-encryption.md](./field-encryption.md)
 
 ## 1. The problem
