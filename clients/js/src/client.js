@@ -30,6 +30,7 @@ import { COOKIE_SESSION, memoryStorage } from './storage.js'
  * @property {string} realm               The realm to talk to.
  * @property {string} [apiKey]            Server-side only: an API key (`bdk_…`). Full access to the realm.
  * @property {boolean} [dangerouslyAllowBrowser] Allow `apiKey` in a browser. Anyone who loads the page gets the key.
+ * @property {string} [onBehalfOf]       Set by {@link Client#as_user}, never by hand: the id of the user an `apiKey` client acts as.
  * @property {string} [org]              The organization this client signs in to and works in, by id or by the slug people
  *   know (`'acme'`). Sign-in calls go to `/_auth/orgs/{org}/…`, so the session is scoped to it; the answer carries the id.
  *   Without it, the sign-in calls take `org` as an argument. See {@link Client#org} for an app that works in several.
@@ -174,6 +175,11 @@ export class Client {
     this.strategy = options.strategy
     /** @internal */
     this.apiKey = options.apiKey
+    /**
+     * The id of the user this client acts as (`as_user`), or undefined.
+     * @readonly
+     */
+    this.onBehalfOf = options.onBehalfOf
     /** @internal */
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis)
     /** @internal */
@@ -271,6 +277,25 @@ export class Client {
   }
 
   /**
+   * A client that acts as one user of the realm: every request carries `X-Backd-On-Behalf-Of`, so
+   * that user's access rules apply (not the key's full access) and what it creates is theirs. It has the
+   * address, realm, key and settings of this client and a revalidation cache of its own, so what one
+   * user read is never served to another. Only a client made with an `apiKey` can do it, and the
+   * result cannot do it again; the admin API and the account routes (`client.admin`, `client.auth`,
+   * passkeys, devices) refuse it, here and in the server. The name is spelled with an underscore on
+   * purpose, as in the Python client.
+   * @param {string} userId  The user's id.
+   * @returns {this}
+   */
+  as_user(userId) {
+    if (!this.apiKey) throw new TypeError('client.as_user: only a client made with an API key (`apiKey`) can act as a user')
+    if (this.onBehalfOf) throw new TypeError('client.as_user: this client already acts as a user; call as_user on the client made with the API key')
+    const id = typeof userId === 'string' ? userId.trim() : ''
+    if (!id) throw new TypeError('client.as_user: the user id is required')
+    return /** @type {any} */ (new Client({ ...this.options, onBehalfOf: id, completeOnLoad: false }))
+  }
+
+  /**
    * The client that made this one (the one without an organization), or this client.
    * @internal
    * @returns {Client}
@@ -321,8 +346,10 @@ export class Client {
     if (this.types) headers['X-Backd-Types'] = this.types
     if (this.schemaVersionHeader) headers['X-Backd-Schema-Version'] = this.schemaVersionHeader
     let sentSession = false
-    if (this.apiKey) headers.Authorization = 'Bearer ' + this.apiKey
-    else {
+    if (this.apiKey) {
+      headers.Authorization = 'Bearer ' + this.apiKey
+      if (this.onBehalfOf) headers['X-Backd-On-Behalf-Of'] = this.onBehalfOf
+    } else {
       const token = await this.storage.get()
       if (token) {
         if (token !== COOKIE_SESSION) headers.Authorization = 'Bearer ' + token
@@ -360,6 +387,9 @@ export class Client {
    * @returns {Promise<RawResponse>}
    */
   async request(req) {
+    if (this.onBehalfOf && (req.path[0] === '_admin' || req.path[0] === '_auth')) {
+      throw new TypeError('a client made with as_user cannot use the admin API or the account routes (' + req.path[0] + '): use the client made with the API key')
+    }
     const url = new URL(this.url + '/v1/' + [this.realm, ...req.path].map(encodeURIComponent).join('/'))
     for (const [k, v] of Object.entries(req.query ?? {})) {
       if (v !== undefined) url.searchParams.set(k, String(v))
@@ -379,6 +409,10 @@ export class Client {
       if (this.apiKey) {
         headers.Authorization = 'Bearer ' + this.apiKey
         owner = 'key:' + this.apiKey
+        if (this.onBehalfOf) {
+          headers['X-Backd-On-Behalf-Of'] = this.onBehalfOf
+          owner += '|as:' + this.onBehalfOf
+        }
       } else {
         const token = await this.storage.get()
         if (token) {

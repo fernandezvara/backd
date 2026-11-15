@@ -61,6 +61,7 @@ class Client:
         moved on it answers ``X-Backd-Types-Stale`` and ``on_stale_types`` is called, once. Leave it out in
         production: nothing is sent then.
     :param on_stale_types: called once when the types are stale; a warning is logged by default.
+    :param on_behalf_of: set by :meth:`as_user`, never by hand.
     :param schema_versions: the schema version of each versioned collection the program was built for, as
         ``{"main/assets": 3}`` (``schema_versions`` in ``realm.json``, made by ``backd types``). It is sent on
         every call as ``X-Backd-Schema-Version``: the server stamps the program's writes with it, and answers
@@ -88,6 +89,7 @@ class Client:
         types: str | None = None,
         on_stale_types: Callable[[], None] | None = None,
         schema_versions: Mapping[str, int] | None = None,
+        on_behalf_of: str | None = None,
         _root: Client | None = None,
     ) -> None:
         if not url:
@@ -111,6 +113,7 @@ class Client:
             "types": types,
             "on_stale_types": on_stale_types,
             "schema_versions": schema_versions,
+            "on_behalf_of": on_behalf_of,
         }
         self.url = url.rstrip("/")
         self.realm = realm
@@ -119,6 +122,8 @@ class Client:
         #: The strategy sign-in calls use when they name none.
         self.strategy = strategy
         self._api_key = api_key
+        #: The id of the user this client acts as (:meth:`as_user`), or ``None``.
+        self.on_behalf_of = on_behalf_of
         self.storage: TokenStorage = storage if storage is not None else MemoryStorage()
         self._retry = retry or Retry()
         self._headers = dict(headers or {})
@@ -204,6 +209,8 @@ class Client:
         value, sent_session, _ = self._credentials()
         if value:
             headers["Authorization"] = value
+            if self.on_behalf_of and self._api_key:
+                headers["X-Backd-On-Behalf-Of"] = self.on_behalf_of
         url = endpoint(self.url, self.realm, path)
         try:
             req = self._http.build_request(
@@ -270,6 +277,25 @@ class Client:
             found = root._org_clients[key] = Client(**opts, org=key, storage=root.storage.slot(key), _root=root)
         return found
 
+    def as_user(self, user_id: str) -> Client:
+        """A client that acts as one user of the realm: every call carries ``X-Backd-On-Behalf-Of``, so that
+        user's access rules apply (not the key's full access) and what it creates is theirs. It has the address,
+        realm, key and settings of this client and a revalidation cache of its own, so what one user read is
+        never served to another. Only a client made with an ``api_key`` can do it, and the result cannot do it
+        again; the admin API and the account routes (``client.auth``, devices) refuse it, here and in the
+        server."""
+        if not self._api_key:
+            raise TypeError("client.as_user: only a client made with an API key (`api_key`) can act as a user")
+        if self.on_behalf_of:
+            raise TypeError(
+                "client.as_user: this client already acts as a user; call as_user on the client made with the API key"
+            )
+        uid = user_id.strip() if isinstance(user_id, str) else ""
+        if not uid:
+            raise TypeError("client.as_user: the user id is required")
+        opts = {k: v for k, v in self._opts.items() if k != "on_behalf_of"}
+        return Client(**opts, on_behalf_of=uid, _root=self.root)
+
     def on_credential_change(self, fn: Callable[[], None]) -> None:
         """Registers ``fn`` to run when the signed-in caller changes (a sign-in, a sign-out, an expired
         session): whatever was read as the previous caller is not the new one's. The caches use it."""
@@ -313,7 +339,10 @@ class Client:
         """The ``Authorization`` value (``None`` for none), whether a session token was part of it, and the
         caller as the cache knows it."""
         if self._api_key:
-            return "Bearer " + self._api_key, False, "key:" + self._api_key
+            owner = "key:" + self._api_key
+            if self.on_behalf_of:
+                owner += "|as:" + self.on_behalf_of
+            return "Bearer " + self._api_key, False, owner
         token = self.storage.get()
         if token:
             return "Bearer " + token, True, "session:" + token
@@ -370,6 +399,11 @@ class Client:
         )
 
     def _send(self, req: Request) -> Response:
+        if self.on_behalf_of and req.path and req.path[0] in ("_admin", "_auth"):
+            raise TypeError(
+                f"a client made with as_user cannot use the admin API or the account routes ({req.path[0]}): "
+                "use the client made with the API key"
+            )
         url = endpoint(self.url, self.realm, req.path, req.query)
         headers: dict[str, str] = {"Accept": "*/*" if req.raw else "application/json", **self._headers, **req.headers}
         payload: bytes | None = None
@@ -398,6 +432,8 @@ class Client:
             value, sent_session, owner = self._credentials()
             if value:
                 headers["Authorization"] = value
+                if self.on_behalf_of and self._api_key:
+                    headers["X-Backd-On-Behalf-Of"] = self.on_behalf_of
 
         # Revalidation: send the tag of the copy we hold, if any.
         use_cache = req.cache and cacheable(req.method, req.path, req.query, req.raw)
