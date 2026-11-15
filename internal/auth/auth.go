@@ -70,7 +70,7 @@ type Identity struct {
 	UserID   string
 	Provider string
 	Subject  string // unique per provider (and organization)
-	// Org is the organization whose connection signed the person in (design/org-sso.md); empty for
+	// Org is the organization whose connection signed the person in (design/sso.md §9); empty for
 	// the realm's own providers and the password. A user holds one identity per provider per
 	// organization.
 	Org          string
@@ -453,7 +453,7 @@ type Store interface {
 	// ReplaceOrgInvitationToken swaps the token hash (and the sealed token, "" for none).
 	ReplaceOrgInvitationToken(ctx context.Context, org, id, tokenHash, sealed string) error
 	DeleteOrgInvitation(ctx context.Context, org, id string) error
-	// Organization sign-in connections (design/org-sso.md): one per organization and provider.
+	// Organization sign-in connections (design/sso.md §9): one per organization and provider.
 	// PutOrgConnection creates or replaces it, keeping Blocked, CreatedAt and the id of an
 	// existing one. OrgConnection and DeleteOrgConnection return ErrNotFound for none.
 	PutOrgConnection(ctx context.Context, c OrgConnection) error

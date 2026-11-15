@@ -10,7 +10,7 @@ import (
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
-// Organization sign-in connections (design/org-sso.md §4): managers of an organization with
+// Organization sign-in connections (design/sso.md §9.3): managers of an organization with
 // manage: sso under /_orgs/{org}/sso, realm administrators under /_admin/orgs/{org}/sso. The
 // client secret is accepted and never returned.
 

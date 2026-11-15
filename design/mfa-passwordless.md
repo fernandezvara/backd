@@ -2,7 +2,7 @@
 
 - **Issues:** features 13.1–13.11 (milestone `13-mfa-passwordless`)
 - **Status:** decided
-- **Related designs:** [account-lifecycle.md](./account-lifecycle.md) (password reset, email change, deletion, revocation), [email-delivery.md](./email-delivery.md) (tokens, hosted pages, templates, limits, `allowed_redirects`), [identity-providers.md](./identity-providers.md) (identities, one-time login codes, PKCE)
+- **Related designs:** [account-lifecycle.md](./account-lifecycle.md) (password reset, email change, deletion, revocation), [email-delivery.md](./email-delivery.md) (tokens, hosted pages, templates, limits, `allowed_redirects`), [sso.md](./sso.md) (identities, one-time login codes, PKCE)
 
 ## 1. The idea
 
@@ -38,10 +38,10 @@ Standing rules carried over:
 
 The template writes these sections **commented**, explaining each key.
 
-The keys are **top level** in `realm.yaml`, next to `providers:` and `sign_in:` ([identity-providers.md §3](./identity-providers.md#3-configuration-realmyaml)). `auth:` stays the `enabled`/`disabled` switch, so none of this lives under it.
+The keys are **top level** in `realm.yaml`, next to `providers:` and `sign_in:` ([sso.md §5.1](./sso.md)). `auth:` stays the `enabled`/`disabled` switch, so none of this lives under it.
 
 ```yaml
-sign_in:                              # already exists (identity-providers.md); one key is added
+sign_in:                              # already exists (sso.md); one key is added
   allowed_redirects: [https://app.acme.example, "acme://"]
   app_url: https://app.acme.example   # the app's address; fallback destination for browser sign-ins without redirect_to
 mfa:

@@ -75,7 +75,7 @@ const (
 	OrgMembersCollection     = "org_members"
 	OrgTeamsCollection       = "org_teams"
 	OrgInvitationsCollection = "org_invitations"
-	// OrgConnectionsCollection holds the sign-in connections organizations set up (design/org-sso.md).
+	// OrgConnectionsCollection holds the sign-in connections organizations set up (design/sso.md §9).
 	OrgConnectionsCollection = "org_connections"
 	// OrgMemberSeqCollection holds, per organization and user, the sequence number of the last
 	// membership event handed to a hook (design/team-access.md §7).

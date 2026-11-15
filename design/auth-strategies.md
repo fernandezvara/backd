@@ -2,7 +2,7 @@
 
 - **Issues:** not created yet
 - **Status:** decided (2026-11-12; §14 records the answers)
-- **Changes:** [mfa-passwordless.md](./mfa-passwordless.md) (`mfa.required_roles` and the way a second step is chosen), [identity-providers.md](./identity-providers.md) (where `providers:` and `sign_in:` live), and `support_docs/decisions.md` (`auth:` as an enabled/disabled scalar; the top-level sign-in keys). The decisions are in §14; `support_docs/decisions.md` gets its lines in issue A1.
+- **Changes:** [mfa-passwordless.md](./mfa-passwordless.md) (`mfa.required_roles` and the way a second step is chosen), [sso.md](./sso.md) (where `providers:` and `sign_in:` live), and `support_docs/decisions.md` (`auth:` as an enabled/disabled scalar; the top-level sign-in keys). The decisions are in §14; `support_docs/decisions.md` gets its lines in issue A1.
 - **Comes before:** the passkeys design (`design/passkeys.md`, PR #917). Passkeys become one *method* of a strategy, which removes several of its open problems (§12).
 - **Related designs:** [scoped-sessions.md](./scoped-sessions.md), [account-lifecycle.md](./account-lifecycle.md), [email-delivery.md](./email-delivery.md)
 
@@ -40,7 +40,7 @@ Standing rules carried over: no session in a URL; challenges hash-only with a TT
 | Topic | Decision |
 |---|---|
 | Strategy | a name and an ordered list of **methods**; every method must succeed, in order; the session records the strategy it was made with |
-| Methods | `password`, `passkey`, `totp`, `magic_link`, `sso` (an organization's own connection, §8) and the name of any configured provider (`google`, `microsoft`, `apple`; generic OIDC later). `recovery_code` is not listed: it stands in for `totp` wherever `totp` appears. |
+| Methods | `password`, `passkey`, `totp`, `magic_link`, `sso` (an organization's own connection, §8) and the name of any configured provider (`google`, `microsoft`, `apple`, `github`, and any generic `oidc` or `oauth2` provider named in `auth.providers`). `recovery_code` is not listed: it stands in for `totp` wherever `totp` appears. |
 | Order | the **first** method is any method and identifies the person; **later** methods are only `password`, `totp` or `passkey` (an email code or a provider as a second step was rejected in the MFA design) |
 | Who picks | the **client**, with a `strategy` field on the sign-in call; backd does not guess from the user agent |
 | Roles | a role may list `strategies`; it is **active in a session** only when the session's strategy is in that list; no list means every strategy |
