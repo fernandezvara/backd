@@ -19,7 +19,7 @@ HTTP ──▶ handlers ──────┴──▶ storage.Repository ──
 | Package | Role |
 |---|---|
 | `internal/settings` | Environment variables → `Settings` |
-| `internal/registry` | Immutable realm → database → collection tree, with realm settings (`realm.yaml`), compiled schemas and field index |
+| `internal/registry` | Immutable realm → database → collection tree, with realm settings (`realm.yaml`), compiled schemas and field index. Sign-in configuration is in `signin.go` (`auth.sign_in`), `signin_providers.go` (the kinds of provider, one table), `signin_fields.go` (the field rules every place shares) and `signin_org.go` (`organizations.sso` and `organizations.domains`) |
 | `internal/templates` | Embedded starter files written by `backd template` |
 | `internal/rules` | Compiles the `rules:` of `collection.yaml`: expr-lang rules and runs the static checks (guards, roles, fields, `now`, read rules as filters) |
 | `internal/auth` | Storage-neutral identity model (users, identities, sessions), password policy, argon2id hashing with a concurrency cap, sign-up, login and session handling; persistence behind `auth.Store` (in-memory fake in `internal/auth/authtest`) |

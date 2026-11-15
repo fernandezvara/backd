@@ -78,9 +78,9 @@ func setUpProviders(t *testing.T, f *rulesFixture) {
 		}
 	}
 	f.svc.Settings.Providers = map[string]*registry.Provider{
-		"google":    {Name: "google", ClientID: "g-client", ClientSecret: "GOOGLE_SECRET", NativeClientIDs: []string{"g-native"}},
-		"microsoft": {Name: "microsoft", ClientID: "00000000-0000-0000-0000-000000000001", ClientSecret: "MICROSOFT_SECRET", Tenant: "common"},
-		"apple":     {Name: "apple", ClientID: "com.acme.web", NativeClientIDs: []string{"com.acme.ios"}, TeamID: "ABCDE12345", KeyID: "XYZ9876543", PrivateKey: "APPLE_KEY", RevokeOnDelete: true},
+		"google":    {Name: "google", Kind: "google", ClientID: "g-client", ClientSecret: "GOOGLE_SECRET", NativeClientIDs: []string{"g-native"}},
+		"microsoft": {Name: "microsoft", Kind: "microsoft", ClientID: "00000000-0000-0000-0000-000000000001", ClientSecret: "MICROSOFT_SECRET", Tenant: "common"},
+		"apple":     {Name: "apple", Kind: "apple", ClientID: "com.acme.web", NativeClientIDs: []string{"com.acme.ios"}, TeamID: "ABCDE12345", KeyID: "XYZ9876543", PrivateKey: "APPLE_KEY", RevokeOnDelete: true},
 	}
 	f.svc.Settings.SignInRedirects = []string{"https://app.acme.example", "acme://"}
 	addFirstStrategies(&f.svc.Settings)

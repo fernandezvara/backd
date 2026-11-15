@@ -126,10 +126,7 @@ func (a *authAPI) scope(r *http.Request) (*signInScope, bool) {
 		if !c.Enabled || !o.SSO.Allows(c.Provider) {
 			continue
 		}
-		sc.providers[c.Provider] = &registry.Provider{
-			Name: c.Provider, ClientID: c.ClientID, ClientSecret: auth.SSOSecretName(c.Provider),
-			NativeClientIDs: c.NativeClientIDs, Tenant: c.Tenant, Org: org.ID,
-		}
+		sc.providers[c.Provider] = auth.ConnectionProvider(c)
 		sc.conns[c.Provider] = c
 	}
 	return sc, true

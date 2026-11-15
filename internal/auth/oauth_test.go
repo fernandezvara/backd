@@ -385,7 +385,7 @@ func TestPurgingAnUnverifiedAccountRevokesItsAppleToken(t *testing.T) {
 	ctx := context.Background()
 	svc, store, clock := providerFixture(t)
 	svc.Cipher, _ = NewSecretCipher([]byte("01234567890123456789012345678901"))
-	svc.Settings.Providers = map[string]*registry.Provider{"apple": {Name: "apple", RevokeOnDelete: true}}
+	svc.Settings.Providers = map[string]*registry.Provider{"apple": {Name: "apple", Kind: "apple", RevokeOnDelete: true}}
 	svc.Settings.Account.PurgeUnverifiedAfter = time.Hour
 	p, _, err := svc.Signup(ctx, "old@example.com", "dev-p4ssw0rd!", "")
 	if err != nil {
