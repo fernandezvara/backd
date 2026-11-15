@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -70,6 +71,11 @@ type Query struct {
 	Expand string
 	// Language is the language a $search is stemmed in (a locale code such as "es").
 	Language string
+	// Fields returns only these paths of each document ("title", "address.city", "_meta.version"; id
+	// always). Rules, the order and Expand are unaffected, so select the fields you show OrderBy
+	// values from yourself. Read the result as [Doc]: a typed struct has zero values for what was not
+	// selected.
+	Fields []string
 }
 
 // whereJSON is the where parameter: the text as it is, or the JSON encoding of the filter.
@@ -127,7 +133,25 @@ func (q Query) values() (url.Values, error) {
 	if q.Language != "" {
 		v.Set("language", q.Language)
 	}
+	if len(q.Fields) > 0 {
+		f, err := fieldsValue(q.Fields)
+		if err != nil {
+			return nil, err
+		}
+		v.Set("fields", f)
+	}
 	return v, nil
+}
+
+// fieldsValue is the fields parameter: the paths, comma-separated.
+func fieldsValue(fields []string) (string, error) {
+	paths := make([]string, len(fields))
+	for i, f := range fields {
+		if paths[i] = strings.TrimSpace(f); paths[i] == "" {
+			return "", errors.New("client: fields must be field paths, such as \"title\" or \"address.city\"; one is empty")
+		}
+	}
+	return strings.Join(paths, ","), nil
 }
 
 var expandName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$`)

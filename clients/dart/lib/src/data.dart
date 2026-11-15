@@ -324,6 +324,7 @@ final class Collection {
     bool? fileLinks,
     String? language,
     String? expand,
+    List<String>? fields,
     DeletedDocs? deleted,
     RequestOptions? options,
   }) async {
@@ -341,6 +342,7 @@ final class Collection {
           fileLinks: fileLinks,
           language: language,
           expand: expand,
+          fields: fields,
           deleted: deleted,
         ),
         ...scopeQuery(team),
@@ -620,11 +622,15 @@ final class Collection {
   /// for a download button, `downloadFile` gets a fresh link.
   /// [expand] returns the declared references named in it in `_expanded` (see
   /// `expand()`).
+  /// [fields] returns only those paths (`['title', 'address.city']`,
+  /// `'_meta.version'`; `id` always), still as a [Doc]: what was not selected
+  /// is absent. `expand` still works without its reference field.
   Future<Doc> get(
     String id, {
     DeletedDocs? deleted,
     bool? fileLinks,
     String? expand,
+    List<String>? fields,
     RequestOptions? options,
   }) async =>
       (await client.request(RequestInit(
@@ -634,6 +640,7 @@ final class Collection {
           'deleted': deleted?.name,
           'file_links': fileLinks == true ? true : null,
           'expand': expand,
+          'fields': fieldsParam(fields),
         }),
         retry: options?.retry,
         headers: options?.headers,
@@ -647,11 +654,13 @@ final class Collection {
   /// [idempotencyKey], a repeated request returns the document created by
   /// the first one; the client also retries such a request itself after a
   /// network error, `429` or `503` (see [RetryOptions]).
-  /// [team] overrides the scope of [inTeam] for this create.
+  /// [team] overrides the scope of [inTeam] for this create. [fields] limits
+  /// the answer to those paths; the document is stored whole.
   Future<Doc> create(
     Doc doc, {
     String? idempotencyKey,
     String? team,
+    List<String>? fields,
     RequestOptions? options,
   }) async {
     final scopedTeam = team ?? this.team;
@@ -659,7 +668,7 @@ final class Collection {
       method: 'POST',
       path: _path,
       body: doc,
-      query: scopeQuery(scopedTeam),
+      query: {...scopeQuery(scopedTeam), ..._compactQuery({'fields': fieldsParam(fields)})},
       headers: {
         ...?options?.headers,
         if (idempotencyKey != null) 'Idempotency-Key': idempotencyKey,
@@ -672,16 +681,19 @@ final class Collection {
 
   /// Replaces the whole document: fields not in [doc] are removed.
   /// [ifMatch] makes the write fail with a [VersionMismatchError] unless the
-  /// document is still at that version (`3`, `'*'`, `'"2", "3"'`).
+  /// document is still at that version (`3`, `'*'`, `'"2", "3"'`). [fields]
+  /// limits the answer to those paths; the document is stored whole.
   Future<Doc> replace(
     String id,
     Doc doc, {
     Object? ifMatch,
+    List<String>? fields,
     RequestOptions? options,
   }) async =>
       (await client.request(RequestInit(
         method: 'PUT',
         path: [..._path, id],
+        query: _compactQuery({'fields': fieldsParam(fields)}),
         body: doc,
         headers: _writeHeaders(ifMatch, options),
         retry: options?.retry,
@@ -690,16 +702,19 @@ final class Collection {
           .data as Doc;
 
   /// Updates some fields (JSON Merge Patch): fields in [patch] are set,
-  /// nested objects are merged, and `null` removes a field.
+  /// nested objects are merged, and `null` removes a field. [fields] limits
+  /// the answer to those paths; the document is stored whole.
   Future<Doc> patch(
     String id,
     Doc patch, {
     Object? ifMatch,
+    List<String>? fields,
     RequestOptions? options,
   }) async =>
       (await client.request(RequestInit(
         method: 'PATCH',
         path: [..._path, id],
+        query: _compactQuery({'fields': fieldsParam(fields)}),
         body: patch,
         contentType: 'application/merge-patch+json',
         headers: _writeHeaders(ifMatch, options),
@@ -728,15 +743,17 @@ final class Collection {
 
   /// Brings a soft-deleted document back, as it was, at the next version.
   /// [NotFoundError] if it isn't in the trash or the caller may not see it
-  /// there.
+  /// there. [fields] limits the answer to those paths.
   Future<Doc> restore(
     String id, {
     Object? ifMatch,
+    List<String>? fields,
     RequestOptions? options,
   }) async =>
       (await client.request(RequestInit(
         method: 'POST',
         path: [..._path, id, 'restore'],
+        query: _compactQuery({'fields': fieldsParam(fields)}),
         headers: _writeHeaders(ifMatch, options),
         retry: options?.retry,
         cache: options?.cache ?? true,
@@ -763,6 +780,7 @@ Map<String, Object?> _listQuery({
   bool? fileLinks,
   String? language,
   String? expand,
+  List<String>? fields,
   DeletedDocs? deleted,
 }) =>
     _compactQuery({
@@ -783,8 +801,19 @@ Map<String, Object?> _listQuery({
       'deleted': deleted?.name,
       'file_links': fileLinks == true ? true : null,
       'expand': expand,
+      'fields': fieldsParam(fields),
       'language': language,
     });
+
+/// The `fields` parameter: the paths, comma-separated; null when none are asked for.
+String? fieldsParam(List<String>? fields) {
+  if (fields == null) return null;
+  if (fields.isEmpty || fields.any((f) => f.trim().isEmpty)) {
+    throw ArgumentError.value(fields, 'fields',
+        'must be a non-empty list of field paths, such as [\'title\', \'address.city\']');
+  }
+  return fields.map((f) => f.trim()).join(',');
+}
 
 /// `ifMatch` plus the caller's headers: the If-Match of a write.
 Map<String, String>? _writeHeaders(Object? ifMatch, RequestOptions? options) {

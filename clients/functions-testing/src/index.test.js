@@ -678,3 +678,28 @@ Deno.test('a trigger handler can be tested with fakeTrigger and the fake ctx', a
   assertEquals(await onPaid(input, ctx), { order: 'o1', by: 'u_7' })
   assertEquals(await onPaid(input, ctx), { skipped: true }, 'the same event twice is one effect')
 })
+
+Deno.test('ctx.db: fields keeps id and the selected paths, as the server does', async () => {
+  resetIds()
+  const { ctx } = createContext({ user: { id: 'u1', email: 'ada@example.com' } })
+  const orders = ctx.db('shop').collection('orders')
+  const made = await orders.create({ item: 'widget', qty: 1, address: { city: 'Madrid', zip: '28001' }, lines: [{ sku: 'a', n: 1 }, { sku: 'b', n: 2 }] })
+
+  assertEquals(await orders.get(made.id, { fields: ['item'] }), { id: made.id, item: 'widget' })
+  assertEquals((await orders.get(made.id, { fields: ['address.city'] })).address, { city: 'Madrid' })
+  assertEquals((await orders.get(made.id, { fields: ['lines.sku'] })).lines, [{ sku: 'a' }, { sku: 'b' }])
+  assertEquals(Object.keys(await orders.get(made.id, { fields: ['item'] })).includes('_meta'), false)
+  assertEquals((await orders.get(made.id, { fields: ['_meta.version'] }))._meta, { version: 1 })
+  assertEquals((await orders.get(made.id, { fields: ['address', 'address.city'] })).address, { city: 'Madrid', zip: '28001' })
+
+  const page = await orders.list({ fields: ['qty'] })
+  assertEquals(page.items, [{ id: made.id, qty: 1 }])
+
+  assertEquals(await orders.patch(made.id, { qty: 2 }, { fields: ['qty'] }), { id: made.id, qty: 2 })
+  assertEquals(await orders.replace(made.id, { item: 'gadget' }, { fields: ['item'] }), { id: made.id, item: 'gadget' })
+  assertEquals((await orders.create({ item: 'x' }, { fields: ['item'] })).item, 'x')
+  // The stored document is whole.
+  assertEquals((await orders.get(made.id)).item, 'gadget')
+
+  await assertRejects(() => orders.get(made.id, { fields: [] }), TypeError)
+})

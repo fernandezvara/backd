@@ -45,6 +45,19 @@ import { Job } from './functions.js'
  */
 
 /**
+ * A document reduced to the paths named in `fields`: `id` and what was selected, nothing typed. A read
+ * or write that takes `fields` answers with this, never with the collection's document type.
+ * @typedef {{ id: string } & Record<string, unknown>} PartialDoc
+ */
+
+/**
+ * What a call answers: a {@link PartialDoc} when its options carry `fields`, else `Full`.
+ * @template O
+ * @template Full
+ * @typedef {O extends { fields: readonly string[] } ? PartialDoc : Full} FieldsResult
+ */
+
+/**
  * @typedef {object} ListParams
  * @property {object | string} [where]      Filter in backd's query language, e.g. `{ price: { $lt: 20 } }`
  *   or `{ $or: [{ title: { $icontains: 'go' } }, { body: { $icontains: 'go' } }] }`.
@@ -54,6 +67,9 @@ import { Job } from './functions.js'
  * @property {string} [after]               The `next_cursor` of the previous page: continues the list after it
  *   (same `where` and `orderBy`). Can't be combined with `skip`.
  * @property {boolean} [count]              Also return `total`.
+ * @property {readonly string[]} [fields]   Return only these paths of each document (`['title', 'address.city']`,
+ *   `'_meta.version'`; `id` always): a {@link PartialDoc}, not the collection's type. Rules, the order and `expand`
+ *   are unaffected; select the fields you show `orderBy` values from yourself.
  * @property {boolean} [fileLinks]          Add `url` and `expires_at` to every file of every document.
  * @property {string} [language]            The language a `$search` is stemmed in (a locale code such as `es`
  *   or `en-GB`); default: the user's locale, then the browser's.
@@ -79,7 +95,8 @@ import { Job } from './functions.js'
 /**
  * Options for writes. `ifMatch` makes the write fail with a
  * VersionMismatchError unless the document is still at that version.
- * @typedef {RequestOptions & { ifMatch?: number | string }} WriteOptions
+ * `fields` limits the answer to those paths (a {@link PartialDoc}); the document is stored whole.
+ * @typedef {RequestOptions & { ifMatch?: number | string, fields?: readonly string[] }} WriteOptions
  */
 
 /**
@@ -87,7 +104,8 @@ import { Job } from './functions.js'
  * `fileLinks` adds `url` and `expires_at` to every file the document holds: for content shown right
  * away (a gallery, a preview). They expire; for a download button, `downloadFile` gets a fresh link.
  * `expand` returns the declared references named in it in `_expanded` (see `expand()`).
- * @typedef {RequestOptions & { deleted?: 'only' | 'include', fileLinks?: boolean, expand?: string }} GetOptions
+ * `fields` returns only those paths (a {@link PartialDoc}); `expand` still works without its reference field.
+ * @typedef {RequestOptions & { deleted?: 'only' | 'include', fileLinks?: boolean, expand?: string, fields?: readonly string[] }} GetOptions
  */
 
 /**
@@ -106,7 +124,8 @@ import { Job } from './functions.js'
  * created in (a member, or a holder of a team role there; `?team=` on the wire). A session works
  * in the organization it was opened for, so there is no organization to name. `org` is for the
  * administrators' data route (`admin.data(...)`), which creates in any active organization.
- * @typedef {RequestOptions & { idempotencyKey?: string, team?: string, org?: string }} CreateOptions
+ * `fields` limits the answer to those paths (a {@link PartialDoc}); the document is stored whole.
+ * @typedef {RequestOptions & { idempotencyKey?: string, team?: string, org?: string, fields?: readonly string[] }} CreateOptions
  */
 
 /**
@@ -286,12 +305,13 @@ export class Collection {
   }
 
   /**
-   * One page of documents the caller may read.
-   * @param {ListParams} [params]
+   * One page of documents the caller may read. With `fields` the items are {@link PartialDoc}s.
+   * @template {ListParams} [P=ListParams]
+   * @param {P} [params]
    * @param {RequestOptions} [opts]
-   * @returns {Promise<Page<T>>}
+   * @returns {Promise<P extends { fields: readonly string[] } ? Page<PartialDoc> : Page<T>>}
    */
-  async list(params = {}, opts) {
+  async list(params = /** @type {P} */ ({}), opts) {
     const query = { ...listQuery(params), ...scopeQuery(this.team) }
     const { data } = await this.client.request({ method: 'GET', path: this.path, query, ...opts })
     return data
@@ -384,13 +404,14 @@ export class Collection {
   /**
    * One document; NotFoundError if it doesn't exist or the caller may not read it.
    * A soft-deleted document is only found with `deleted: 'only'` or `'include'`.
+   * @template {GetOptions} [O=GetOptions]
    * @param {string} id
-   * @param {GetOptions} [opts]
-   * @returns {Promise<Doc<T>>}
+   * @param {O} [opts]
+   * @returns {Promise<FieldsResult<O, Doc<T>>>}
    */
-  async get(id, opts = {}) {
-    const { deleted, fileLinks, expand, ...rest } = opts
-    return (await this.client.request({ method: 'GET', path: [...this.path, id], query: { deleted, file_links: fileLinks || undefined, expand }, ...rest })).data
+  async get(id, opts = /** @type {O} */ ({})) {
+    const { deleted, fileLinks, expand, fields, ...rest } = opts
+    return (await this.client.request({ method: 'GET', path: [...this.path, id], query: { deleted, file_links: fileLinks || undefined, expand, fields: fieldsParam(fields) }, ...rest })).data
   }
 
   /**
@@ -399,9 +420,10 @@ export class Collection {
    * exists). With an
    * `idempotencyKey`, a repeated request returns the document created by the
    * first one.
+   * @template {CreateOptions} [O=CreateOptions]
    * @param {T} doc
-   * @param {CreateOptions} [opts]
-   * @returns {Promise<Doc<T>>}
+   * @param {O} [opts]
+   * @returns {Promise<FieldsResult<O, Doc<T>>>}
    */
   async create(doc, opts) {
     const scoped = { ...opts }
@@ -411,24 +433,26 @@ export class Collection {
 
   /**
    * Replaces the whole document: fields not in `doc` are removed.
+   * @template {WriteOptions} [O=WriteOptions]
    * @param {string} id
    * @param {T} doc
-   * @param {WriteOptions} [opts]
-   * @returns {Promise<Doc<T>>}
+   * @param {O} [opts]
+   * @returns {Promise<FieldsResult<O, Doc<T>>>}
    */
-  async replace(id, doc, opts = {}) {
+  async replace(id, doc, opts = /** @type {O} */ ({})) {
     return (await this.client.request({ method: 'PUT', path: [...this.path, id], body: doc, ...write(opts) })).data
   }
 
   /**
    * Updates some fields (JSON Merge Patch): fields in `patch` are set,
    * nested objects are merged, and `null` removes a field.
+   * @template {WriteOptions} [O=WriteOptions]
    * @param {string} id
    * @param {Partial<T> | Record<string, unknown>} patch
-   * @param {WriteOptions} [opts]
-   * @returns {Promise<Doc<T>>}
+   * @param {O} [opts]
+   * @returns {Promise<FieldsResult<O, Doc<T>>>}
    */
-  async patch(id, patch, opts = {}) {
+  async patch(id, patch, opts = /** @type {O} */ ({})) {
     return (
       await this.client.request({
         method: 'PATCH',
@@ -560,11 +584,12 @@ export class Collection {
   /**
    * Brings a soft-deleted document back, as it was, at the next version.
    * NotFoundError if it isn't in the trash or the caller may not see it there.
+   * @template {WriteOptions} [O=WriteOptions]
    * @param {string} id
-   * @param {WriteOptions} [opts]
-   * @returns {Promise<Doc<T>>}
+   * @param {O} [opts]
+   * @returns {Promise<FieldsResult<O, Doc<T>>>}
    */
-  async restore(id, opts = {}) {
+  async restore(id, opts = /** @type {O} */ ({})) {
     return (await this.client.request({ method: 'POST', path: [...this.path, id, 'restore'], ...write(opts) })).data
   }
 }
@@ -584,8 +609,22 @@ function listQuery(p) {
     deleted: p.deleted,
     file_links: p.fileLinks || undefined,
     expand: p.expand,
+    fields: fieldsParam(p.fields),
     language: p.language,
   }
+}
+
+/**
+ * The `fields` query parameter: the paths, comma-separated; nothing when none are given.
+ * @param {readonly string[] | undefined} fields
+ * @returns {string | undefined}
+ */
+function fieldsParam(fields) {
+  if (fields === undefined) return undefined
+  if (!Array.isArray(fields) || fields.length === 0 || fields.some((f) => typeof f !== 'string' || !f.trim())) {
+    throw new TypeError('`fields` must be a non-empty list of field paths, such as ["title", "address.city"]')
+  }
+  return fields.map((f) => f.trim()).join(',')
 }
 
 /**
@@ -606,8 +645,8 @@ function scopeQuery(team) {
  * @returns {RequestOptions & { query?: Record<string, string> }}
  */
 function keyed(opts = {}) {
-  const { idempotencyKey, team, org, ...rest } = opts
-  const scope = { ...scopeQuery(team), ...(org === undefined ? {} : { org }) }
+  const { idempotencyKey, team, org, fields, ...rest } = opts
+  const scope = { ...scopeQuery(team), ...(org === undefined ? {} : { org }), ...(fields === undefined ? {} : { fields: fieldsParam(fields) }) }
   /** @type {RequestOptions & { query?: Record<string, string> }} */
   const out = Object.keys(scope).length === 0 ? rest : { ...rest, query: scope }
   return idempotencyKey === undefined ? out : { ...out, headers: { ...out.headers, 'Idempotency-Key': idempotencyKey } }
@@ -618,9 +657,11 @@ function keyed(opts = {}) {
  * @param {WriteOptions} opts
  * @returns {RequestOptions}
  */
-function write({ ifMatch, ...opts }) {
-  if (ifMatch === undefined) return opts
-  return { ...opts, headers: { ...opts.headers, 'If-Match': ifMatchValue(ifMatch) } }
+function write({ ifMatch, fields, ...opts }) {
+  /** @type {RequestOptions & { query?: Record<string, string | undefined> }} */
+  const out = fields === undefined ? opts : { ...opts, query: { ...(/** @type {any} */ (opts).query), fields: fieldsParam(fields) } }
+  if (ifMatch === undefined) return out
+  return { ...out, headers: { ...out.headers, 'If-Match': ifMatchValue(ifMatch) } }
 }
 
 /**

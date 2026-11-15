@@ -166,6 +166,15 @@ def csv(v: str | Sequence[str] | None) -> str | None:
     return ",".join(v)
 
 
+def fields_param(fields: Sequence[str] | None) -> str | None:
+    """The ``fields`` parameter: the paths, comma-separated; ``None`` when there are none to ask for."""
+    if fields is None:
+        return None
+    if isinstance(fields, str) or not fields or any(not isinstance(f, str) or not f.strip() for f in fields):
+        raise TypeError('`fields` must be a non-empty list of field paths, such as ["title", "address.city"]')
+    return ",".join(f.strip() for f in fields)
+
+
 def if_match_value(v: int | str) -> str:
     """``3`` → ``"3"``; strings (``*``, ``"3"``, ``"2", "3"``) are sent as given."""
     return f'"{v}"' if isinstance(v, int) else v

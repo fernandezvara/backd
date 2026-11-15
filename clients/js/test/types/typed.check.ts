@@ -77,6 +77,13 @@ orders.inTeam('team-1').create({ status: 'refunded', items: [] })
 // The organizations API: a role is a string, the app narrows it with the realm's OrgRole.
 export const myOrgs = client.orgs.signedIn()
 
+// `fields` answers with an untyped partial document, never with the collection's type.
+export const partial = orders.get('o_1', { fields: ['status'] }).then((o) => o.id)
+// @ts-expect-error a partial document has no typed fields
+orders.get('o_1', { fields: ['status'] }).then((o) => o.status.toUpperCase())
+export const partialPage = orders.list({ fields: ['status'] }).then((p) => p.items[0].id)
+export const fullStill = orders.get('o_1').then((o) => o.status)
+
 // A client acting as a user is the same typed client.
 export const asAda = createClient<Realm>({ url: 'https://api.example.com', realm: 'shop', apiKey: 'bdk_x' }).as_user('u_ada').db('main').collection('orders')
 

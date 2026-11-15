@@ -338,7 +338,7 @@ class FakeCollection {
    * cursor's position semantics.
    * @returns {Promise<{ items: any[], limit: number, skip: number, has_more: boolean, next_cursor?: string, total?: number }>}
    */
-  async list({ where, orderBy, limit = 20, skip = 0, after, count, expand } = {}) {
+  async list({ where, orderBy, limit = 20, skip = 0, after, count, expand, fields } = {}) {
     if (after !== undefined) {
       if (skip) throw new Error('after can\'t be combined with skip')
       skip = Number(after)
@@ -355,7 +355,7 @@ class FakeCollection {
     } else if (orderBy) {
       items = sortBy(items, orderBy)
     }
-    const page = this.expanded(items.slice(skip, skip + limit), expand)
+    const page = selectFields(this.expanded(items.slice(skip, skip + limit), expand), fields)
     /** @type {{ items: any[], limit: number, skip: number, has_more: boolean, next_cursor?: string, total?: number }} */
     const out = { items: page, limit, skip, has_more: skip + limit < items.length }
     if (out.has_more) out.next_cursor = String(skip + limit)
@@ -400,14 +400,14 @@ class FakeCollection {
     if (!doc || (rule && !rule(doc, { user: this.who.user }))) {
       throw new NotFoundError({ status: 404, code: 'not_found', message: `document not found: ${id}` })
     }
-    return this.expanded([doc], opts.expand)[0]
+    return selectFields(this.expanded([doc], opts.expand), opts.fields)[0]
   }
 
-  async create(fields) {
+  async create(fields, opts = {}) {
     const id = nextId()
     const doc = { ...fields, id, _meta: { version: 1, created_at: now(), updated_at: now(), owner: this.actor } }
     this.map.set(id, doc)
-    return doc
+    return selectFields([doc], opts.fields)[0]
   }
 
   async replace(id, fields, opts = {}) {
@@ -415,7 +415,7 @@ class FakeCollection {
     checkIfMatch(doc, opts.ifMatch)
     const next = { ...fields, id, _meta: { ...doc._meta, version: doc._meta.version + 1, updated_at: now() } }
     this.map.set(id, next)
-    return next
+    return selectFields([next], opts.fields)[0]
   }
 
   async patch(id, patch, opts = {}) {
@@ -424,7 +424,7 @@ class FakeCollection {
     const next = mergePatch({ ...doc }, patch)
     next._meta = { ...doc._meta, version: doc._meta.version + 1, updated_at: now() }
     this.map.set(id, next)
-    return next
+    return selectFields([next], opts.fields)[0]
   }
 
   async delete(id, opts = {}) {
@@ -432,6 +432,53 @@ class FakeCollection {
     checkIfMatch(doc, opts.ifMatch)
     this.map.delete(id)
   }
+}
+
+/**
+ * The documents reduced to the `fields` a call asked for, as the server does: `id` always, `_meta`
+ * only when named, a path selects its whole subtree and applies to every element of an array, and
+ * `_expanded` stays. The fake does not know the schema, so a path that is no field is not refused.
+ * @param {any[]} docs
+ * @param {readonly string[] | undefined} fields
+ */
+function selectFields(docs, fields) {
+  if (fields === undefined) return docs
+  if (!Array.isArray(fields) || fields.length === 0 || fields.some((f) => typeof f !== 'string' || !f.trim())) {
+    throw new TypeError('backd: `fields` must be a non-empty list of field paths, such as ["title", "address.city"]')
+  }
+  /** @type {any} */
+  const tree = {}
+  for (const path of fields.map((f) => f.trim())) {
+    const parts = path.split('.')
+    let node = tree
+    for (const [i, part] of parts.entries()) {
+      if (node[part] === true) break // a parent is already selected
+      if (i === parts.length - 1) node[part] = true
+      else node = node[part] ??= {}
+    }
+  }
+  /** @param {any} value @param {any} node @returns {any} */
+  const project = (value, node) => {
+    if (node === true) return value
+    if (Array.isArray(value)) return value.map((el) => project(el, node)).filter((el) => el !== undefined)
+    if (value && typeof value === 'object') {
+      /** @type {Record<string, any>} */
+      const out = {}
+      for (const [k, child] of Object.entries(node)) if (k in value) out[k] = project(value[k], child)
+      return out
+    }
+    return undefined
+  }
+  return docs.map((doc) => {
+    /** @type {Record<string, any>} */
+    const out = { id: doc.id }
+    if (doc._expanded !== undefined) out._expanded = doc._expanded
+    for (const [k, child] of Object.entries(tree)) if (k in doc) {
+      const kept = project(doc[k], child)
+      if (kept !== undefined) out[k] = kept
+    }
+    return out
+  })
 }
 
 /** @param {string | Uint8Array | ArrayBuffer | Blob | ReadableStream} data */

@@ -269,6 +269,10 @@ class Doc(_DocRequired, total=False):
 
 D = TypeVar("D")
 
+#: A document reduced to the paths named in ``fields``: ``id`` and what was selected, nothing typed. A read or
+#: write that takes ``fields`` returns this, never the collection's document type.
+PartialDoc = dict[str, Any]
+
 
 @dataclass
 class Page(Generic[D]):
