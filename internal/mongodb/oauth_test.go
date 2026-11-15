@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/fernandezvara/backd/internal/auth"
+	"github.com/fernandezvara/backd/sso"
+	"github.com/fernandezvara/backd/sso/ssotest"
 )
 
 func TestAuthStoreOAuthStatesAndCodesWorkOnce(t *testing.T) {
@@ -51,4 +53,13 @@ func TestAuthStoreOAuthStatesAndCodesWorkOnce(t *testing.T) {
 	if _, err := s.ClaimLoginCode(ctx, "c2", now.Add(time.Hour)); !errors.Is(err, auth.ErrNotFound) {
 		t.Errorf("expired code: %v", err)
 	}
+}
+
+func TestAuthStoreConformsToTheSSOStore(t *testing.T) {
+	s, _ := authFixture(t)
+	ssotest.TestStore(t, func(now func() time.Time) sso.Store {
+		h := &auth.SSOHost{Users: &auth.Users{Store: s, Now: now}, Realm: "r"}
+		store, _, _, _ := h.Ports()
+		return store
+	})
 }

@@ -26,6 +26,7 @@ type oauthStateDoc struct {
 	InvitationID  string   `bson:"invitation_id,omitempty"`
 	LinkUserID    string   `bson:"link_user_id,omitempty"`
 	Locales       []string `bson:"locales,omitempty"`
+	Host          []byte   `bson:"host,omitempty"`
 	// Consents are the consents accepted for a sign-up through the attempt.
 	Consents  map[string]string `bson:"consents,omitempty"`
 	CreatedAt time.Time         `bson:"created_at"`
