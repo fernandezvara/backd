@@ -13,7 +13,7 @@ toc: true
 | Protection | What it means | Docker Compose | Kubernetes |
 |---|---|---|---|
 | **TLS** | `backd` serves plain HTTP; terminate TLS in front of it and redirect HTTP to HTTPS | [TLS](docker-compose/#tls) | [Traffic in](kubernetes/#traffic-in) |
-| **Rate limits** | Limit requests per address, with a stricter zone for sign-up, password reset and verification | [Rate limits](docker-compose/#rate-limits) | [Traffic in](kubernetes/#traffic-in) |
+| **Rate limits** | Limit requests per address, with a stricter zone for sign-up, password reset and verification (`backd` also limits per instance: [Rate limiting](../rate-limiting/)) | [Rate limits](docker-compose/#rate-limits) | [Traffic in](kubernetes/#traffic-in) |
 | **Client addresses** | The proxy overwrites `X-Forwarded-For`; `TRUSTED_PROXIES` lists only your proxies | [Client addresses](docker-compose/#client-addresses) | [Traffic in](kubernetes/#traffic-in) |
 | **Body size** | Cap request bodies at the edge | [Request body size](docker-compose/#request-body-size) | [Traffic in](kubernetes/#traffic-in) |
 | **A closed admin API** | Public instances serve no admin API (`BACKD_ADMIN_API=false`); a separate internal instance does | [Admin API](docker-compose/#admin-api) | [Who may reach the admin host](kubernetes/#who-may-reach-the-admin-host) |

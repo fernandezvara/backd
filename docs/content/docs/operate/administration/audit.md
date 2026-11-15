@@ -83,7 +83,7 @@ Each realm with an `auth` section keeps an **audit trail**: one record per secur
 | `secret.key.create`, `secret.key.rotate`, `secret.key.delete` | A [field key](../../../build/configuration/field-keys/) is created, imported, rotated or deleted | `fingerprint` (the new one), `generated` or `previous` and `rewrapped`; never the key |
 | `secret.set`, `secret.delete` | A [function secret](../../../build/functions/secrets/) is set or deleted; the target is `secret:<database>/<name>` (`secret:realm/<name>` for the realm's) | `database` (empty for the realm's) or `org`; never the value |
 | `secret.rotate_key` | An operator re-encrypts every function secret with `backd-server secret rotate-key` | `count` |
-| `apikey.create`, `apikey.revoke` | An API key is created or revoked | `role`, `networks`, `expires_at` |
+| `apikey.create`, `apikey.revoke` | An API key is created or revoked | `role`, `networks`, `expires_at`; `rate_limit` when the key has [its own request limit](../../rate-limiting/) |
 | `invitation.create`, `invitation.revoke` | An invitation is created or revoked | `bound_to_email` (whether it is), `expires_at` |
 | `invitation.sent` | An invitation is emailed to its address | `expires_at` |
 | `passkey.registered` | A user added a passkey | `passkey`, `name`, `synced` |
