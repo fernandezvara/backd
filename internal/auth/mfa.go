@@ -321,6 +321,7 @@ func (s *Users) verifyMFA(ctx context.Context, challenge, method, code string, c
 	}
 	defer release()
 	if err := s.checkMFALock(ctx, c.UserID); err != nil {
+		s.auditStepFailure(ctx, c, method, ReasonThrottled, ip)
 		return Verified{}, err
 	}
 	var left int
@@ -337,12 +338,14 @@ func (s *Users) verifyMFA(ctx context.Context, challenge, method, code string, c
 	case method == MethodPasskey && asked == MethodPasskey:
 		used, ok, err = s.checkPasskeyStep(ctx, c, credential)
 	default:
+		s.auditStepFailure(ctx, c, method, ReasonInvalidCode, ip)
 		return Verified{}, &InvalidCodeError{AttemptsLeft: MaxChallengeAttempts - c.Attempts}
 	}
 	if err != nil {
 		return Verified{}, err
 	}
 	if !ok {
+		s.auditStepFailure(ctx, c, method, ReasonInvalidCode, ip)
 		return Verified{}, s.secondFactorFailed(ctx, c, ks)
 	}
 	// One use: whoever deletes the challenge first gets the session.

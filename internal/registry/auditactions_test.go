@@ -70,7 +70,7 @@ func TestEveryRecordedAuditActionIsInTheTable(t *testing.T) {
 		}
 	}
 	for _, a := range AuditActions {
-		if _, ok := found[a.Name]; !ok && !strings.HasPrefix(a.Name, "user.login") && a.Name != "user.step_failed" {
+		if _, ok := found[a.Name]; !ok {
 			t.Errorf("%q is in registry.AuditActions but the code never records it", a.Name)
 		}
 	}
