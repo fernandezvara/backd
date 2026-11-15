@@ -30,9 +30,10 @@ Realms with `auth: disabled` are open to anyone who can reach `backd`: never exp
 ## What you get
 
 - **Configuration as files.** Invalid config stops startup and names the file; `backd config check` runs the same checks in CI.
-- **Schema-validated writes,** mirrored as a MongoDB validator, with field-level errors and optimistic concurrency (`ETag`, `If-Match`).
-- **Queries without injection:** `where`, `order_by`, pagination and counts over an allowlisted query language.
-- **Users, sessions and API keys** per realm, with brute-force protection, invitations, network restrictions and an audit trail; administration through an [admin API](operate/administration/admin/) and the [command line](operate/administration/cli/), never database credentials.
+- **Schema-validated writes,** mirrored as a MongoDB validator, with field-level errors, `default` values and optimistic concurrency (`ETag`, `If-Match`).
+- **Schemas that evolve:** [versioned schema files and migrations](build/configuration/evolving-a-schema/) that run in the background, apps that declare the version they were built for, and a minimum version for the ones too old.
+- **Queries without injection:** `where`, `order_by`, pagination, counts and `fields` projection over an allowlisted query language.
+- **Users, sessions and API keys** per realm, signing in by password, magic link, passkey, provider or company SSO, with an optional second factor chosen per role through [strategies](build/auth/strategies/), brute-force protection, invitations, network restrictions and an audit trail; administration through an [admin API](operate/administration/admin/) and the [command line](operate/administration/cli/), never database credentials.
 - **Access rules** (`rules:` in `collection.yaml`) decided per document, with read rules applied inside the database query.
 - **Server-side functions** in isolated Deno processes: sync calls, [background jobs](build/functions/jobs/), [cron schedules](build/functions/cron/), [webhooks](build/functions/webhooks/), encrypted secrets, rate limits, idempotency and a network allowlist.
 - **Files, push, organizations and realtime:** S3-compatible storage per realm, FCM/APNs/Web Push senders, B2B teams and roles, and server-sent events of the changes a caller may read.

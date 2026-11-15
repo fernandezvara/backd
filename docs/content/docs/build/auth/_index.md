@@ -20,7 +20,7 @@ auth:
     google: [google]                   # a provider declared in auth.providers
 ```
 
-- The methods are `password`, `magic_link`, `totp` (never first), `sso` (an organization's own [connection](../../operate/organization-sign-in/); needs `organizations.sso`) and the names of the providers in `auth.providers`.
+- The methods are `password`, `passkey` ([Passkeys](passkeys/)), `magic_link`, `totp` (never first), `sso` (an organization's own [connection](../../operate/organization-sign-in/); needs `organizations.sso`) and the names of the providers in `auth.providers`.
 - **Choosing one.** The sign-in routes take a `strategy` (`POST /_auth/login`, `POST /_auth/magic-link`, the provider routes, and the same under `/_auth/orgs/{org}/…`). It may be left out while exactly one strategy starts with that method; otherwise the answer is `400 strategy_required`. A name that does not exist or starts with another method is `400 unknown_strategy`. `GET /_auth/strategies` (no credentials) lists the names and their methods, so an app can draw its sign-in screen.
 - **Steps.** Every method must succeed, in order. After the first, a `totp` step answers with a challenge (`next: ["totp"]`) that `POST /_auth/mfa/verify` trades for the next step or the session; a person with no authenticator enrols as part of signing in ([Multi-factor authentication](mfa/)). A person's own authenticator never adds a step to a strategy that lacks `totp`.
 - **Roles.** A role can list the `strategies` it accepts (`roles.<name>.strategies`; none listed means all). A role is **active** in a session only if the session's strategy is one of them: `user.roles` in rules and functions, the admin API and the admin interface see the active roles only. A person who signs in with a strategy their role does not list still gets a session, without that role, and the answer's `roles_inactive` says which roles stayed off, so the app can offer a stronger way in. Listing is explicit: a stronger strategy does not carry a weaker one's roles unless the role lists it.
@@ -46,6 +46,7 @@ Whatever the first factor, a user with a second factor is still asked for it —
 | [Authentication strategies](strategies/) | How a realm lets people sign in: strategies, their steps, and roles that depend on them |
 | [Users and passwords](users/) | Creating and managing a realm's users with `backd user` or the admin API |
 | [Sign-up, login and sessions](sessions/) | The `/_auth` endpoints: sign up, log in, sessions, password reset, brute-force protection, sign-in methods, deleting the account |
+| [Personal data export](personal-data/) | A user's downloadable copy of what the realm holds about them |
 | [Magic links](magic-links/) | Signing in from an email alone: the link, the code, account claiming |
 | [Passkeys](passkeys/) | Signing in with a fingerprint, face, PIN or security key: how they work, `rp_id` and origins, native apps, a lost device |
 | [Re-authentication](reauth/) | A fresh proof of identity before sensitive actions |
@@ -61,6 +62,6 @@ Whatever the first factor, a user with a second factor is still asked for it —
 - [Admin API](../../operate/administration/admin/): server-side user management.
 - [Audit trail](../../operate/administration/audit/) of security-sensitive actions.
 - [Deactivating and erasing users](../../operate/administration/erasure/), with per-collection policies for their data; [compliance](../../operate/administration/compliance/) covers personal-data scope, retention and recipes.
-- Provider sign-in in the clients: [JavaScript](../clients/js/#sign-in-with-google-microsoft-or-apple) and [Dart](../clients/dart/#sign-in-with-a-provider-on-desktop) — `signInWith`, `completeSignIn`, `signInWithIdToken`.
+- Provider sign-in in the clients: [JavaScript](../clients/js/#sign-in-with-google-microsoft-or-apple) and [Dart](../clients/dart/#sign-in-with-a-provider-on-desktop) — `signInWith`, `completeSignIn`, `signInWithIdToken`; the [Go](../clients/go/) and [Python](../clients/python/) clients have their own pages.
 
-See the [security model](../../operate/administration/security/) for what `backd` protects, and the [hardening checklist](../../operate/checklist/) before exposing a realm. **Planned:** personal-data export as a downloadable package; other OpenID Connect providers (`type: oidc`).
+See the [security model](../../operate/administration/security/) for what `backd` protects, and the [hardening checklist](../../operate/checklist/) before exposing a realm. **Planned:** other OpenID Connect providers (`type: oidc`). A user's own copy of their data is [Personal data export](personal-data/).
