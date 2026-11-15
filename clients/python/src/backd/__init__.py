@@ -136,7 +136,7 @@ from .size import SizeFamily, format_bytes, parse_size
 from .storage import FileStorage, MemoryStorage, SlotStorage, TokenStorage
 from .upload import Progress, Upload, UploadSource, part_size_for
 
-__version__ = "0.9.11"
+__version__ = "0.9.12"
 
 __all__ = [
     "AggregateGroup",

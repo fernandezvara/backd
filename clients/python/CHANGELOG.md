@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.12
 
 - `fields=` on `list`, `get`, `create`, `replace`, `patch` and `restore` returns only those paths (`id` always) as plain dicts: the type checker sees `PartialDoc`, not the collection's `TypedDict`. New `PartialDoc` export.
 - `client.as_user(id)` on a client made with an `api_key` (sync and async) returns a client that acts as one user of the realm (`X-Backd-On-Behalf-Of`), with a cache and an app configuration of its own. It cannot be chained and refuses the account routes.

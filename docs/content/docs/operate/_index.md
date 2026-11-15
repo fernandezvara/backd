@@ -184,7 +184,7 @@ blog__main.posts
 shop__orders.items
 ```
 
-### Upgrading to the release after v0.9.11
+### Upgrading to v0.9.12
 
 This release adds [rate limiting](rate-limiting/), sign-in entries in the [audit trail](administration/audit/), [`fields`](../build/api/querying/) on reads, `as_user` in the clients and schema `default` values. Replace the binaries or the images and run `backd-server provision` as usual; nothing in the configuration needs editing, but four behaviours change:
 
@@ -192,6 +192,7 @@ This release adds [rate limiting](rate-limiting/), sign-in entries in the [audit
 2. **Failed sign-ins are recorded.** `user.login_failed` and `user.step_failed` are on by default (a failure is recorded on the 1st, 10th, 100th… attempt per target and address in ten minutes, so a flood cannot fill the trail); `user.login` is off. Switch any of them with `audit.entries` in `realm.yaml`; `backd template realm` writes the whole block.
 3. **A key can no longer act as an administrator.** `X-Backd-On-Behalf-Of` answers `403` for a user who holds a role with admin rights, and `400 invalid_header` on the account routes of `/_auth`. Back-office tools that acted as an admin user must use the admin API with their own key instead.
 4. **A schema's `default` is now applied.** It used to be dropped without notice. A `default` already in a `schema.json` starts filling absent fields on create and `PUT`, and one that doesn't satisfy its own property stops the load: run `backd config check` first. See [Defaults](../build/configuration/config-dir/#defaults).
+5. **The clients are released with it** (`backd-js`, `package:backd`, `pkg/client` and `backd` on PyPI, all 0.9.12): `fields`, `as_user` and the audit and rate-limit errors need them. Older clients keep working against this server. If you deploy with the Helm chart, its `rateLimit` block sets the limits; the [production reference](production/) turns them on behind nginx.
 
 ### Upgrading to v0.9.11
 
