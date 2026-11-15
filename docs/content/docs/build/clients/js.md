@@ -349,6 +349,21 @@ With TypeScript (or JSDoc), describe a collection's fields for typed documents:
 const posts = backd.db('main').collection('posts')
 ```
 
+### Selecting fields
+
+`fields` on `list`, `get` and the writes returns only those paths (`id` always), so a list screen does not download every body:
+
+```js
+const titles = await posts.list({ fields: ['title', 'published_at'], limit: 50 })
+titles.items[0].title                       // PartialDoc: { id, title, published_at }
+await posts.patch(id, { title: 'New' }, { fields: ['_meta.version'] })   // the document is stored whole
+```
+
+- **The answer is untyped.** A partial document comes back, not the collection's type: it is a `PartialDoc` (`{ id: string } & Record<string, unknown>`), also on a typed client, because the fields you did not select are not there. Select only what you read.
+- Rules, the order and the cursor are unaffected. If you show the value a list is ordered by, select that field yourself. `expand` still works without its reference field. See [Selecting fields](../../api/querying/#selecting-fields) for the details and the limits.
+- Revalidation keeps working: a partial read has a tag of its own, so it never returns a full document's cached body.
+- `search` and `iterate` do not narrow their type when you pass `fields`.
+
 ### Revalidation cache
 
 The client remembers the last body and `ETag` of each document and list it read, in memory, and sends them back as `If-None-Match` on the next read of the same URL. When nothing changed the server answers `304` without a body and the client returns the copy it holds: the query and the [rules](../../auth/rules/) still run for every read, so you never see more than the caller may read now, only less data on the wire.

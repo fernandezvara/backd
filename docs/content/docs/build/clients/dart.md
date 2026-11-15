@@ -320,6 +320,19 @@ await posts.delete(id);
 - What a user sees and may change is decided by the collection's [access rules](../../auth/rules/). A document they can't read answers `NotFoundError`; an operation they can't do answers `ForbiddenError`, or `AuthenticationError` when they aren't signed in.
 - `iterate` follows each page's `next_cursor`, so documents created, changed or deleted while it runs never shift a page, and the end is as fast as the start. A cursor can't follow an `orderBy` on arrays, objects or fields of mixed types: `iterate` then fetches by offset (`skip`), where documents created or deleted meanwhile can be skipped or repeated. `after` can't be combined with `skip`; see [paging with a cursor](../../api/querying/#paging-with-a-cursor).
 
+### Selecting fields
+
+`fields` on `list`, `get` and the writes returns only those paths (`id` always), still as a `Doc` (a map) in which what was not selected is absent:
+
+```dart
+final titles = await posts.list(fields: ['title', 'published_at'], limit: 50);
+await posts.patch(id, {'title': 'New'}, fields: ['_meta.version']); // stored whole
+```
+
+- **Untyped.** The typed collections (`BackdClient<Realm>`) decode into your classes, which expect every field, so they do not take `fields`: use the collection's `raw` for a partial read.
+- Rules, the order and the cursor are unaffected; if you show the value a list is ordered by, select it too. `expand` still works without its reference field. See [Selecting fields](../../api/querying/#selecting-fields).
+- A partial read has an `ETag` of its own, so the cache never mixes it with a full document.
+
 ### Revalidation cache
 
 The client remembers the last body and `ETag` of each document and list it read, in memory, and sends them back as `If-None-Match` on the next read of the same URL. When nothing changed the server answers `304` without a body and the client returns the copy it holds: the query and the [rules](../../auth/rules/) still run for every read, so you never see more than the caller may read now, only less data on the wire.

@@ -1,5 +1,6 @@
 ## Unreleased
 
+- `fields:` on `list`, `get`, `create`, `replace`, `patch` and `restore` of a collection returns only those paths (`id` always), as a `Doc` in which what was not selected is absent. The typed collections do not take it; use `raw`.
 - `client.asUser(id)` on a client made with an `apiKey` returns a client that acts as one user of the realm (`X-Backd-On-Behalf-Of`), with a cache and an app configuration of its own. It cannot be chained and refuses the account routes.
 
 ## 0.9.11

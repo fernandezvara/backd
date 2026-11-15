@@ -35,7 +35,7 @@ A `304` saves the transfer, not the work. On every read `backd` still runs the q
 
 | Response | `ETag` | Notes |
 |---|---|---|
-| A document | `"<version>"`, for example `"3"` | The document's `_meta.version`. A response that differs from the stored document for the caller (hidden fields) adds `.r` and 8 hex characters, such as `"3.r1a2b3c4d"`. |
+| A document | `"<version>"`, for example `"3"` | The document's `_meta.version`. A response that differs from the stored document for the caller (hidden fields, or the paths of [`fields`](../querying/#selecting-fields)) adds `.r` and 8 hex characters, such as `"3.r1a2b3c4d"`: the same document read with other `fields` has another tag. |
 | A list | `W/"<hash>"` | Weak: a hash over the id, version and view of every returned document, `has_more`, the cursor and the total. One tag covers the whole page. |
 | With `?file_links=true` | the version, for `If-Match` | Never `304`: the links are made per response and expire, so the answer carries `Cache-Control: private, no-store`. |
 

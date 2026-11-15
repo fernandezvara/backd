@@ -16,6 +16,7 @@ The list endpoint, `GET /v1/{realm}/{database}/{collection}`, accepts these quer
 | `skip` | `0` | Number of documents to skip |
 | `after` | none | The `next_cursor` of the previous page: continues the list after it (see [Paging with a cursor](#paging-with-a-cursor)). Can't be combined with `skip` |
 | `count` | `false` | `true` adds `total`, the number of documents matching `where` |
+| `fields` | all | Comma-separated paths to return, `id` always: `fields=title,address.city` (see [Selecting fields](#selecting-fields)) |
 | `deleted` | none | In a collection with [soft delete](../documents/#soft-delete): `only` lists the deleted documents (the trash), `include` both. Needs the `restore` rule besides `read` |
 
 Each parameter may appear at most once. Any other parameter returns `400 invalid_query`.
@@ -127,6 +128,31 @@ Values are checked against the field's schema type:
 | Fields in `order_by` | 8 |
 | Nesting of `$or` / `$and` | 4 levels |
 | Text of a `$search` | 256 bytes, 10 terms |
+
+## Selecting fields
+
+A list or a read returns whole documents. `fields` keeps only the paths you name, so a list screen that shows a title and a date does not download every body:
+
+```http
+GET /v1/shop/blog/posts?fields=title,published_at,author.name&limit=50
+GET /v1/shop/blog/posts/p_1?fields=title,_meta.version
+```
+
+```json
+{ "items": [ { "id": "p_1", "title": "Hello", "published_at": "2026-11-01T09:00:00Z", "author": { "name": "Ada" } } ], "limit": 50, "skip": 0, "has_more": false }
+```
+
+- **What is returned.** `id` always; the paths you name, each with its whole subtree (`address` returns `address.city` and `address.zip`; a path through an array applies to every element); `_meta` only when you name it (`_meta`, or a field of it such as `_meta.version`).
+- **Which paths.** Declared fields of the collection, dotted for nested ones, `_meta` and its fields. Anything else is `400 invalid_query` with the path in `details` (`fields.nope`), and so are more than 32 paths. Naming `id` changes nothing.
+- **Writes too.** `POST`, `PUT`, `PATCH` and the restore of a deleted document take `fields` and use it to shape the answer. The document is stored whole, and a bad value is refused before anything is written.
+- **It is applied last,** to the document as the caller sees it. So the [read rule](../../auth/rules/) decides what is readable exactly as before, a field hidden by `reveal` stays hidden (selecting an [encrypted field](../../configuration/field-keys/) you may not read does not show it), and a list keeps its order and its `next_cursor`.
+- **The answer is a partial document,** not the collection's type. The clients return it untyped, and the docs of each one say so.
+
+What is not adjusted for you:
+
+- **`order_by` values and the cursor.** The cursor is built from the stored document, so paging works whatever you select; but a screen that shows the value it is ordered by needs that field in `fields`.
+- **`expand`** is computed from the stored document: `_expanded` appears even when the reference field is not selected, and the field itself is returned only if you select it.
+- **Revalidation.** The `ETag` of a partial answer is its own, so a full read never matches it and the other way round (see [Caching](../caching/)).
 
 ## Full-text search
 
