@@ -98,6 +98,27 @@ Each realm with an `auth` section keeps an **audit trail**: one record per secur
 | `session.revoke` | An administrator ends a user's session ([admin API](../admin/)) | `session` |
 | `admin.refused` | An admin API request is refused: by a network restriction, or because the administrator's roles don't open the [area](../admin/#admin-rights) or hold the rights of the user or role involved | `reason`, `method`, `path` |
 | `realm.bootstrap` | `backd-server bootstrap` creates the realm's first administrator | `role` |
+| `audit.entries_changed` | At start, the set of [entries switched away from their default](#choosing-what-is-recorded) differs from the last start's; the actor is `config:realm.yaml` and the target `audit.entries`. Always recorded: it can't be switched off | `changed` (the entries whose value changed), `non_default` (all that differ from their default now) |
+
+## Choosing what is recorded
+
+Every action in the table above can be switched on or off in the realm's `realm.yaml`, with one `true` or `false` per action under `audit.entries`:
+
+```yaml
+audit:
+  entries:
+    user.login: true      # also record every successful sign-in (off by default)
+    data.update: false    # do not record administrator edits of documents
+```
+
+- **Defaults.** Every action is recorded, as it always was, except `user.login`, which is off. `backd template realm` (and `backd template project`) write the whole list with these defaults, in groups, so a choice is one edit.
+- **A typo stops the start.** A name that is not an action is refused, with the closest names, so `role.ad: false` cannot silently record nothing.
+- **Turning one off is itself recorded.** When the entries that differ from their default change between two starts, `audit.entries_changed` is recorded; the server also logs them at start.
+- A change needs a restart (dev mode reloads).
+
+{{< hint style="warning" >}}
+A record that was never written cannot be recovered. Turn off only what you are sure you do not need: `role.add`, `apikey.create`, `secret.set` and the other changes to who can do what are what an investigation starts from.
+{{< /hint >}}
 
 Which sign-ins are recorded:
 

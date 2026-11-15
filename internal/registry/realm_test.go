@@ -179,6 +179,8 @@ func TestRealmSettingsErrors(t *testing.T) {
 		{"user admin network wider than the realm's", "auth:\n  strategies:\n    password: [password]\nadmin:\n  allowed_networks: [10.1.0.0/16]\nroles:\n  ops:\n    users: [{email: a@x.io, admin_networks: [10.0.0.0/8]}]", []string{"must lie within"}},
 		{"bad audit retention", "auth:\n  strategies:\n    password: [password]\naudit:\n  retention: forever", []string{"audit.retention: invalid duration"}},
 		{"audit retention too short", "auth:\n  strategies:\n    password: [password]\naudit:\n  retention: 12h", []string{"audit.retention: must be at least 1d"}},
+		{"audit entry typo", authBase + "audit:\n  entries:\n    role.ad: false", []string{`audit.entries: "role.ad" is not an audit action; did you mean role.add`}},
+		{"audit entry not a boolean", authBase + "audit:\n  entries:\n    role.add: maybe", []string{"invalid YAML"}},
 		{"audit settings without auth", "auth: disabled\naudit:\n  retention: 30d", []string{"audit: only applies"}},
 		{"different networks in two roles", "auth:\n  strategies:\n    password: [password]\nroles:\n  ops:\n    users: [{email: a@x.io, login_networks: [10.0.0.1]}]\n  qa:\n    users: [{email: a@x.io, login_networks: [10.0.0.2]}]", []string{"has different networks in another role"}},
 		{"max_concurrency too low", authBase + "functions:\n  max_concurrency: 0", []string{"functions.max_concurrency: must be at least 1, got 0"}},

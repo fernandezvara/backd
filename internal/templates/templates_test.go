@@ -2,6 +2,7 @@ package templates
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -376,5 +377,35 @@ func TestCollectionPolicy(t *testing.T) {
 	}
 	if c, _ := reg.Collection("demo", "main", "posts"); c.Erasure == nil || c.Erasure.Action != registry.ErasureAnonymize {
 		t.Errorf("the sample's policy: %+v", c.Erasure)
+	}
+}
+
+func TestRealmTemplateListsEveryAuditAction(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Realm(root, "demo", true); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "demo", "realm.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, a := range registry.AuditActions {
+		want := fmt.Sprintf("    %s: %t\n", a.Name, !a.Off)
+		if !strings.Contains(text, want) {
+			t.Errorf("realm.yaml lacks %q", strings.TrimSpace(want))
+		}
+	}
+	if strings.Contains(text, "#AUDIT_ENTRIES#") {
+		t.Error("the placeholder was not replaced")
+	}
+	// The generated file is a valid realm: it loads, and records what the defaults say.
+	reg, err := registry.Load(root)
+	if err != nil {
+		t.Fatalf("the template does not load: %v", err)
+	}
+	s := reg.Realms["demo"].Settings
+	if s.AuditEnabled("user.login") || !s.AuditEnabled("user.login_failed") || !s.AuditEnabled("role.add") {
+		t.Errorf("the template changes the defaults: %v", s.AuditEntries)
 	}
 }
