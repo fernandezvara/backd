@@ -135,6 +135,20 @@ check "429 uses backd's error envelope with Retry-After" \
          curl -s --cacert '$ca' -X POST -H 'Content-Type: application/json' -d '{}' '$api/_auth/login' | grep -q '\"code\":\"too_many_requests\"'"
 check "reads are not limited by the auth zone" [ "$(status "$api/main/posts")" = 200 ]
 
+echo "--- backd's own request limits (behind nginx's, per instance)"
+# Straight at the instance from the probe container, so nginx's limits are not in the way. This
+# runs after the checks that use the probe, because the flood uses up its address's allowance.
+hdr=$(compose exec -T probe curl -si http://backd:8080/v1/blog/main/posts 2>/dev/null | tr -d '\r')
+check "an answer carries the limit of its class (anonymous: 120 a minute)" sh -c "echo '$hdr' | grep -qi '^ratelimit-limit: 120'"
+codes=$(compose exec -T probe sh -c 'for i in $(seq 1 160); do curl -s -o /dev/null -w "%{http_code}\n" http://backd:8080/v1/blog/main/posts; done | sort | uniq -c | tr "\n" " "' 2>/dev/null)
+echo "     160 requests: $codes"
+check "past the allowance, backd answers 429" sh -c "echo '$codes' | grep -q ' 429'"
+check "and most of the first 120 got through" sh -c "echo '$codes' | grep -q ' 200 '"
+# The first refusal, whole (headers and body), in a file: the body has quotes the shell would trip on.
+compose exec -T probe sh -c 'for i in $(seq 1 160); do r=$(curl -si http://backd:8080/v1/blog/main/posts | tr -d "\r"); case "$r" in "HTTP/1.1 429"*) printf "%s\n" "$r"; break;; esac; done' > "$work/429.txt" 2>/dev/null
+check "the refusal is backd's envelope with Retry-After and RateLimit-Remaining 0" \
+  sh -c "grep -qi '^retry-after: ' '$work/429.txt' && grep -qi '^ratelimit-remaining: 0' '$work/429.txt' && grep -q '\"code\":\"too_many_requests\"' '$work/429.txt'"
+
 echo "--- MongoDB"
 check "connections without TLS are refused" sh -c "! mongo_out=\$(docker compose -p $project --env-file '$work/.env' run --rm -T --no-deps provision mongosh 'mongodb://mongo:27017/?serverSelectionTimeoutMS=3000' --quiet --eval 'db.adminCommand({ping:1})' 2>&1)"
 out=$(mongo_as "mongodb://mongo:27017/?$tls" 'db.adminCommand({listDatabases: 1})' || true)

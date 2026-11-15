@@ -29,6 +29,11 @@ x-backd-environment: &backd-environment
     TRUSTED_PROXIES: ${PROXY_IP:-172.30.80.10}
     # nginx's client_max_body_size matches this.
     MAX_BODY_BYTES: "1048576"
+    # backd's own request limits (docs: Operations -> Rate limiting and abuse): per instance and in
+    # memory, a second line behind nginx's limits, which stay in front and are the exact ones. The
+    # numbers are backd's defaults; set BACKD_RATE_LIMIT_<CLASS> (READ, WRITE, AUTH, ANONYMOUS, FILES,
+    # ADMIN) to change one, or BACKD_RATE_LIMIT=off to leave limiting to nginx alone.
+    BACKD_RATE_LIMIT: ${BACKD_RATE_LIMIT:-on}
     # Functions: the executor and worker (docs: Functions ->
     # "Running in production").
     BACKD_INTERNAL_ADDR: ":8081"

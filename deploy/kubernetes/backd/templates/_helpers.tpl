@@ -106,6 +106,12 @@ valueFrom:
   value: ":9090"
 - name: METRICS_TOKEN
   {{- include "backd.fromSecret" (dict "name" .Values.secrets.keys "key" "BACKD_METRICS_TOKEN") | nindent 2 }}
+- name: BACKD_RATE_LIMIT
+  value: {{ ternary "on" "off" .Values.rateLimit.enabled | quote }}
+{{- range $class, $rate := .Values.rateLimit.rates }}
+- name: BACKD_RATE_LIMIT_{{ upper $class }}
+  value: {{ $rate | quote }}
+{{- end }}
 {{- range $k, $v := .Values.env }}
 - name: {{ $k }}
   value: {{ $v | quote }}
