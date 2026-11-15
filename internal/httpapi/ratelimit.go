@@ -43,7 +43,9 @@ func newRequestLimiter(cfg Config) *requestLimiter {
 	if inst.Rates == nil {
 		inst.Rates = registry.DefaultRates
 	}
-	return &requestLimiter{l: ratelimit.New(0, cfg.Now), inst: inst, reg: cfg.Registry, metrics: cfg.Metrics}
+	rl := &requestLimiter{l: ratelimit.New(0, cfg.Now), inst: inst, reg: cfg.Registry, metrics: cfg.Metrics}
+	cfg.Metrics.WatchRateLimiter(rl.l.Size, rl.l.Overflowed)
+	return rl
 }
 
 // realmPath splits /v1/{realm}/rest.
