@@ -83,7 +83,7 @@ Replace `secrets/tls/edge.crt` and `edge.key` with a real certificate, for examp
 
 ## Rate limits
 
-`backd` itself only throttles [failed logins](../../../build/auth/sessions/#brute-force-protection). Everything else is limited in nginx, per client address:
+`backd` has [limits of its own](../../rate-limiting/), per instance and in memory, which the reference leaves on (`BACKD_RATE_LIMIT`) as a second line. nginx stays in front: its limits are exact, they protect TLS and connections, and the strict `auth` zone below is what stops a sign-up or reset flood before `backd` sees it. Limited in nginx, per client address:
 
 | Zone | Applies to | Rate | Burst |
 |---|---|---|---|

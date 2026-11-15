@@ -70,6 +70,7 @@ Every realm needs an `auth` key: either `auth: disabled` (no authentication, for
 | `openapi.public` | `false` | `true` serves the realm's [OpenAPI document](../../api/openapi/) at `/v1/<realm>/_openapi.json` to everyone, not only to its administrators. |
 | `app_config.cache_ttl` | `5m` | How long clients may use the [app configuration](../config-dir/#app-configuration) without asking again, from `1s` to `1d`. |
 | `audit.retention` | `365d` | How long [audit records](../../../operate/administration/audit/) are kept, at least `1d`. |
+| `rate_limit.<class>` | the instance's | The realm's own [request limit](../../../operate/rate-limiting/) for a class (`anonymous`, `auth`, `read`, `write`, `files`, `admin`): `<requests>/<window>` such as `1200/1m`, or `none`. It replaces the instance's rate for this realm, up or down; it cannot switch the instance's limiter off. |
 | `audit.entries` | every action on, except `user.login` | One `true` or `false` per [audit action](../../../operate/administration/audit/#choosing-what-is-recorded): whether the action is recorded. `backd template realm` writes them all. |
 | `admin.read_access.users` | `false` | `true`: read-only administrators (`admin: read`) can also read users (emails, roles, sessions). Users hold personal data, so a realm opts in. |
 | `admin.read_access.data` | `false` | `true`: read-only administrators can read documents through the admin data route. |

@@ -49,6 +49,7 @@ Go through this page before any realm faces the internet, and again after changi
 - [ ] **The admin API** is only reachable from your operators' network: `admin.allowed_networks` in each `realm.yaml` (and `admin_networks` per admin where useful), plus `ADMIN_ALLOW_FROM` at the edge in the reference.
 - [ ] **The [metrics](../metrics/) port is private** (`METRICS_ADDR` is never published or proxied, and `METRICS_TOKEN` is set if anything but Prometheus can reach it).
 - [ ] **API keys of services with fixed addresses are pinned** to them with `--networks`.
+- [ ] **Request limits are on, and `TRUSTED_PROXIES` names your proxies.** `BACKD_RATE_LIMIT` is `on` in production mode (the default); behind a proxy without `TRUSTED_PROXIES` every user shares one address's [limits](../rate-limiting/). They are per instance: keep your proxy's limits in front for an exact one.
 
 ## MongoDB
 

@@ -38,7 +38,8 @@ Keys are managed by the realm's administrators, with `backd apikey` (after [`bac
 | `backd apikey create --realm <realm> --name <name> --scopes read:blog/posts,call:main/contact` | Create a key that reaches only what the [scopes](#scopes) grant |
 | `backd apikey create --realm <realm> --name <name> --org acme-corp` | In a realm with [organizations](../../organizations/api/#api-keys-on-behalf-of-a-user), bind a key that acts on behalf of users to one organization |
 | `backd apikey create --realm <realm> --name <name> --expires 90d` | Create a key that stops working after 90 days (days or Go durations such as `12h`) |
-| `backd apikey list --realm <realm>` | List keys: name, role, first characters, scopes, networks, creation, last use and expiry |
+| `backd apikey create --realm <realm> --name <name> --rate-limit 3000/1m` | Create a key with its own [request limit](../../../operate/rate-limiting/) (`none` lifts the limits for it) |
+| `backd apikey list --realm <realm>` | List keys: name, role, first characters, scopes, networks, request limit, creation, last use and expiry |
 | `backd apikey revoke --realm <realm> --name <name>` | Delete the key; it stops working at once |
 
 ```sh

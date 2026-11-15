@@ -262,7 +262,7 @@ A released server outside dev mode refuses a development CLI (`User-Agent: backd
 ## What you are responsible for
 
 - **TLS.** `backd` serves plain HTTP; terminate TLS in front of it.
-- **Rate limiting** of requests other than failed logins, in the [reverse proxy](../../#rate-limiting-and-abuse).
+- **Exact, global rate limiting** in the [reverse proxy](../../#rate-limiting-and-abuse). `backd` limits requests itself ([Rate limiting](../../rate-limiting/): by client address before anyone is identified, by user or API key afterwards, a guessed credential counted against the address), but per instance and in memory, so N instances allow up to N times a limit, and a restart forgets. Keep `TRUSTED_PROXIES` right, or every user behind a proxy shares one address's bucket.
 - **`TRUSTED_PROXIES`** when behind a proxy, so throttling sees real clients.
 - **API keys:** store them as secrets, give each service its own, set expiries and rotate them (see the [policy](../../../build/auth/api-keys/#expiry-and-rotation-policy)), revoke unused ones. Never ship them to browsers or apps.
 - **Rules:** review the `rules:` of each `collection.yaml`. A missing rule denies, but a too-broad one (`read: "true"`) publishes a collection. Unique indexes can reveal that a value exists: creating a document with a value that a hidden document already has answers `409`.

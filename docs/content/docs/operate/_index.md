@@ -19,6 +19,7 @@ This section is for the **operator**: whoever deploys, secures, monitors, backs 
 | Package and promote the config | [Deploying config](deploying/) |
 | Check before exposing it | [Hardening checklist](checklist/) and the [security model](administration/security/) |
 | Run it: users, API keys, secrets, the audit trail | [Administration](administration/) and the [command line](administration/cli/) |
+| Limit how fast clients may call it | [Rate limiting](rate-limiting/) |
 | Watch it | [Metrics](metrics/) and the [change feed](change-feed/) |
 | Back it up and restore it | [Backup and restore](backup/) and [Keeping storage tidy](storage-maintenance/) |
 | Connect email, storage and push providers | [Providers](providers/) |
@@ -508,7 +509,9 @@ Give your process manager a stop grace period longer than `SHUTDOWN_TIMEOUT`:
 
 ### Rate limiting and abuse
 
-`backd` doesn't limit request rates, except for [failed logins](../build/auth/sessions/#brute-force-protection). Put a reverse proxy, API gateway or CDN in front of it and limit there (the [production reference](production/docker-compose/#rate-limits) has a tested nginx configuration):
+`backd` limits requests itself, [per instance and in memory](rate-limiting/): by client address for requests without credentials, by user or API key for the rest, in classes (`anonymous`, `auth`, `read`, `write`, `files`, `admin`) with defaults that a normal app never meets. It is on in production mode and off in dev mode (`BACKD_RATE_LIMIT`), and a realm (`rate_limit:`) or an API key (`--rate-limit`) can set its own. It also throttles [failed logins](../build/auth/sessions/#brute-force-protection), across instances.
+
+It does not replace the proxy: it is per instance (N instances allow up to N times a limit), so for an exact, global limit put a reverse proxy, API gateway or CDN in front of it (the [production reference](production/docker-compose/#rate-limits) has a tested nginx configuration):
 
 - **Sign-up:** in realms with `signup: open`, limit `POST /v1/{realm}/_auth/signup` per client address, or use `signup: invite`.
 - **Public data:** collections whose `read` rule lets anonymous callers in can be scraped; limit or cache them.
