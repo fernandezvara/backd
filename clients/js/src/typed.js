@@ -126,14 +126,14 @@
  * @template {RealmShape} R
  * @template {CollectionShape} C
  * @typedef {{
- *   list(params?: TypedListParams<C['where'], C['order_by']>, opts?: RequestOptions): Promise<TypedPage<C['doc'] & WithExpanded<R, C>>>,
+ *   list<P extends TypedListParams<C['where'], C['order_by']> = TypedListParams<C['where'], C['order_by']>>(params?: P, opts?: RequestOptions): Promise<P extends { fields: readonly string[] } ? TypedPage<import('./data.js').PartialDoc> : TypedPage<C['doc'] & WithExpanded<R, C>>>,
  *   iterate(params?: Omit<TypedListParams<C['where'], C['order_by']>, 'skip' | 'count'>, opts?: RequestOptions): AsyncGenerator<C['doc'] & WithExpanded<R, C>, void, undefined>,
- *   get(id: string, opts?: import('./data.js').GetOptions): Promise<C['doc'] & WithExpanded<R, C>>,
+ *   get<O extends import('./data.js').GetOptions = import('./data.js').GetOptions>(id: string, opts?: O): Promise<import('./data.js').FieldsResult<O, C['doc'] & WithExpanded<R, C>>>,
  *   aggregate(params?: C extends { aggregate: infer A extends AggregateShape } ? ([A] extends [never] ? never : TypedAggregateParams<A, C['where']>) : import('./data.js').AggregateParams, opts?: RequestOptions): Promise<import('./data.js').AggregateResult>,
  *   search(text: string, params?: Omit<TypedListParams<C['where'], never>, 'orderBy' | 'after'>, opts?: RequestOptions): Promise<TypedPage<C['doc'] & WithExpanded<R, C>>>,
- *   create(doc: C extends { create: infer X } ? X : C['input'], opts?: import('./data.js').CreateOptions): Promise<C['doc']>,
- *   replace(id: string, doc: C['input'], opts?: import('./data.js').WriteOptions): Promise<C['doc']>,
- *   patch(id: string, patch: Partial<C['input']>, opts?: import('./data.js').WriteOptions): Promise<C['doc']>,
+ *   create<O extends import('./data.js').CreateOptions = import('./data.js').CreateOptions>(doc: C extends { create: infer X } ? X : C['input'], opts?: O): Promise<import('./data.js').FieldsResult<O, C['doc']>>,
+ *   replace<O extends import('./data.js').WriteOptions = import('./data.js').WriteOptions>(id: string, doc: C['input'], opts?: O): Promise<import('./data.js').FieldsResult<O, C['doc']>>,
+ *   patch<O extends import('./data.js').WriteOptions = import('./data.js').WriteOptions>(id: string, patch: Partial<C['input']>, opts?: O): Promise<import('./data.js').FieldsResult<O, C['doc']>>,
  *   delete(id: string, opts?: import('./data.js').DeleteOptions): Promise<void>,
  *   inTeam(team: string): TypedCollection<R, C>,
  * }} TypedCollection

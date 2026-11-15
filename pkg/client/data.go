@@ -184,6 +184,9 @@ type ReadOptions struct {
 	Deleted   string
 	FileLinks bool
 	Expand    string
+	// Fields returns only these paths ("title", "address.city"; id always). Read the result as [Doc]:
+	// a typed struct has zero values for what was not selected.
+	Fields []string
 }
 
 // Collection is a collection of a database. Its calls return documents as [Doc]; use [Typed] to
@@ -317,6 +320,13 @@ func (t *Typed[T]) Get(ctx context.Context, id string, o ReadOptions, opts ...Re
 	}
 	if o.Expand != "" {
 		q.Set("expand", o.Expand)
+	}
+	if len(o.Fields) > 0 {
+		f, err := fieldsValue(o.Fields)
+		if err != nil {
+			return nil, err
+		}
+		q.Set("fields", f)
 	}
 	var doc T
 	if _, err := t.coll.c.Do(ctx, "GET", append(t.coll.Path(), id), nil, &doc, append([]RequestOption{WithQuery(q)}, opts...)...); err != nil {

@@ -8,8 +8,17 @@ from collections.abc import AsyncIterator, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, BinaryIO, Generic, Literal, TypeVar, cast, overload
 
 from .._live import ReferenceSpec, SubscribeOptions, SubscriptionSpec
-from ..models import AggregateResult, BatchOperation, FileDetails, FileField, FileLink, Page, PreparedUpload
-from ..query import Where, csv, if_match_value, where_json
+from ..models import (
+    AggregateResult,
+    BatchOperation,
+    FileDetails,
+    FileField,
+    FileLink,
+    Page,
+    PartialDoc,
+    PreparedUpload,
+)
+from ..query import Where, csv, fields_param, if_match_value, where_json
 from ..upload import Progress, Upload, UploadSource
 from .files import AsyncFiles, file_field, file_url, prepare_upload, upload_file
 from .functions import AsyncJob, call_function
@@ -156,6 +165,40 @@ class AsyncCollection(Generic[D]):
 
     # -- reads -----------------------------------------------------------------------------
 
+    @overload
+    async def list(
+        self,
+        *,
+        where: Where | str | None = ...,
+        order_by: str | Sequence[str] | None = ...,
+        limit: int | None = ...,
+        skip: int | None = ...,
+        after: str | None = ...,
+        count: bool = ...,
+        deleted: Deleted | None = ...,
+        file_links: bool = ...,
+        expand: str | None = ...,
+        fields: Sequence[str],
+        language: str | None = ...,
+        cache: bool = ...,
+    ) -> Page[PartialDoc]: ...
+    @overload
+    async def list(
+        self,
+        *,
+        where: Where | str | None = ...,
+        order_by: str | Sequence[str] | None = ...,
+        limit: int | None = ...,
+        skip: int | None = ...,
+        after: str | None = ...,
+        count: bool = ...,
+        deleted: Deleted | None = ...,
+        file_links: bool = ...,
+        expand: str | None = ...,
+        fields: None = ...,
+        language: str | None = ...,
+        cache: bool = ...,
+    ) -> Page[D]: ...
     async def list(
         self,
         *,
@@ -168,9 +211,10 @@ class AsyncCollection(Generic[D]):
         deleted: Deleted | None = None,
         file_links: bool = False,
         expand: str | None = None,
+        fields: Sequence[str] | None = None,
         language: str | None = None,
         cache: bool = True,
-    ) -> Page[D]:
+    ) -> Page[D] | Page[PartialDoc]:
         """One page of documents the caller may read.
 
         ``where`` is a filter in backd's query language (a dict, or its JSON text); ``order_by`` lists fields,
@@ -179,6 +223,9 @@ class AsyncCollection(Generic[D]):
         ``total``; ``file_links`` adds ``url`` and ``expires_at`` to every file; ``expand`` names the references
         to return in ``_expanded`` (build it with :func:`backd.expand`; never sent unless you set it);
         ``deleted`` is ``"only"`` (the trash) or ``"include"`` in a collection with ``soft_delete``;
+        ``fields`` returns only those paths of each document (``["title", "address.city"]``, ``"_meta.version"``;
+        ``id`` always) as plain dicts, not the collection's type: rules, the order and ``expand`` are unaffected,
+        so select what you show ``order_by`` values from yourself;
         ``language`` is the language a ``$search`` is stemmed in; ``cache=False`` skips the client's revalidation
         cache for this read."""
         query: dict[str, Any] = {
@@ -191,6 +238,7 @@ class AsyncCollection(Generic[D]):
             "deleted": deleted,
             "file_links": True if file_links else None,
             "expand": expand,
+            "fields": fields_param(fields),
             "language": language,
             **self._scope(),
         }
@@ -311,6 +359,28 @@ class AsyncCollection(Generic[D]):
         res = await self._client.request("GET", [*self.path, "_aggregate"], query=query)
         return cast(AggregateResult, res.data)
 
+    @overload
+    async def get(
+        self,
+        id: str,
+        *,
+        deleted: Deleted | None = ...,
+        file_links: bool = ...,
+        expand: str | None = ...,
+        fields: Sequence[str],
+        cache: bool = ...,
+    ) -> PartialDoc: ...
+    @overload
+    async def get(
+        self,
+        id: str,
+        *,
+        deleted: Deleted | None = ...,
+        file_links: bool = ...,
+        expand: str | None = ...,
+        fields: None = ...,
+        cache: bool = ...,
+    ) -> D: ...
     async def get(
         self,
         id: str,
@@ -318,18 +388,45 @@ class AsyncCollection(Generic[D]):
         deleted: Deleted | None = None,
         file_links: bool = False,
         expand: str | None = None,
+        fields: Sequence[str] | None = None,
         cache: bool = True,
-    ) -> D:
+    ) -> D | PartialDoc:
         """One document; :class:`NotFoundError` if it doesn't exist or the caller may not read it. A soft-deleted
         document is only found with ``deleted="only"`` or ``"include"``. ``file_links`` adds ``url`` and
         ``expires_at`` to every file the document holds (they expire). ``expand`` returns the declared references
-        named in it in ``_expanded``."""
-        query = {"deleted": deleted, "file_links": True if file_links else None, "expand": expand}
+        named in it in ``_expanded``. ``fields`` returns only those paths (``id`` always) as a plain dict, not the
+        collection's type."""
+        query = {
+            "deleted": deleted,
+            "file_links": True if file_links else None,
+            "expand": expand,
+            "fields": fields_param(fields),
+        }
         res = await self._client.request("GET", [*self.path, id], query=query, cache=cache)
-        return cast(D, res.data)
+        return cast("D | PartialDoc", res.data)
 
     # -- writes ----------------------------------------------------------------------------
 
+    @overload
+    async def create(
+        self,
+        doc: Mapping[str, Any],
+        *,
+        idempotency_key: str | None = ...,
+        team: str | None = ...,
+        org: str | None = ...,
+        fields: Sequence[str],
+    ) -> PartialDoc: ...
+    @overload
+    async def create(
+        self,
+        doc: Mapping[str, Any],
+        *,
+        idempotency_key: str | None = ...,
+        team: str | None = ...,
+        org: str | None = ...,
+        fields: None = ...,
+    ) -> D: ...
     async def create(
         self,
         doc: Mapping[str, Any],
@@ -337,38 +434,70 @@ class AsyncCollection(Generic[D]):
         idempotency_key: str | None = None,
         team: str | None = None,
         org: str | None = None,
-    ) -> D:
+        fields: Sequence[str] | None = None,
+    ) -> D | PartialDoc:
         """Creates a document. ``_meta`` is set by the server, and so is ``id``, unless the collection declares
         ``custom_id``: then ``doc`` carries the ``id`` (``400 id_required`` otherwise; ``409 id_taken`` if it
         exists). With an ``idempotency_key``, a repeated request returns the document created by the first one:
         the server remembers the answer for 24 hours, and the client also retries such a request itself after a
-        ``429`` or ``503`` (see ``retry``)."""
+        ``429`` or ``503`` (see ``retry``). ``fields`` limits the answer to those paths (a plain dict, not the
+        collection's type); the document is stored whole."""
         res = await self._client.request(
             "POST",
             self.path,
             body=doc,
-            query=self._scope(team, org),
+            query={**self._scope(team, org), "fields": fields_param(fields)},
             headers=_idempotency(idempotency_key),
         )
-        return cast(D, res.data)
+        return cast("D | PartialDoc", res.data)
 
-    async def replace(self, id: str, doc: Mapping[str, Any], *, if_match: int | str | None = None) -> D:
+    @overload
+    async def replace(
+        self, id: str, doc: Mapping[str, Any], *, if_match: int | str | None = ..., fields: Sequence[str]
+    ) -> PartialDoc: ...
+    @overload
+    async def replace(
+        self, id: str, doc: Mapping[str, Any], *, if_match: int | str | None = ..., fields: None = ...
+    ) -> D: ...
+    async def replace(
+        self, id: str, doc: Mapping[str, Any], *, if_match: int | str | None = None, fields: Sequence[str] | None = None
+    ) -> D | PartialDoc:
         """Replaces the whole document: fields not in ``doc`` are removed. ``if_match`` makes the write fail with
-        a :class:`VersionMismatchError` unless the document is still at that version."""
-        res = await self._client.request("PUT", [*self.path, id], body=doc, headers=_if_match(if_match))
-        return cast(D, res.data)
+        a :class:`VersionMismatchError` unless the document is still at that version. ``fields`` limits the
+        answer to those paths (a plain dict); the document is stored whole."""
+        res = await self._client.request(
+            "PUT", [*self.path, id], body=doc, query={"fields": fields_param(fields)}, headers=_if_match(if_match)
+        )
+        return cast("D | PartialDoc", res.data)
 
-    async def patch(self, id: str, patch: Mapping[str, Any], *, if_match: int | str | None = None) -> D:
+    @overload
+    async def patch(
+        self, id: str, patch: Mapping[str, Any], *, if_match: int | str | None = ..., fields: Sequence[str]
+    ) -> PartialDoc: ...
+    @overload
+    async def patch(
+        self, id: str, patch: Mapping[str, Any], *, if_match: int | str | None = ..., fields: None = ...
+    ) -> D: ...
+    async def patch(
+        self,
+        id: str,
+        patch: Mapping[str, Any],
+        *,
+        if_match: int | str | None = None,
+        fields: Sequence[str] | None = None,
+    ) -> D | PartialDoc:
         """Updates some fields (JSON Merge Patch): fields in ``patch`` are set, nested objects are merged, and
-        ``None`` removes a field."""
+        ``None`` removes a field. ``fields`` limits the answer to those paths (a plain dict); the document is
+        stored whole."""
         res = await self._client.request(
             "PATCH",
             [*self.path, id],
             body=patch,
+            query={"fields": fields_param(fields)},
             content_type="application/merge-patch+json",
             headers=_if_match(if_match),
         )
-        return cast(D, res.data)
+        return cast("D | PartialDoc", res.data)
 
     async def delete(self, id: str, *, purge: bool = False, if_match: int | str | None = None) -> None:
         """Deletes a document. In a collection with ``soft_delete`` it is marked deleted and can be restored;
@@ -464,11 +593,19 @@ class AsyncCollection(Generic[D]):
             )
         return cast(D, await self.files(id, field).delete(file_id, if_match=if_match))
 
-    async def restore(self, id: str, *, if_match: int | str | None = None) -> D:
+    @overload
+    async def restore(self, id: str, *, if_match: int | str | None = ..., fields: Sequence[str]) -> PartialDoc: ...
+    @overload
+    async def restore(self, id: str, *, if_match: int | str | None = ..., fields: None = ...) -> D: ...
+    async def restore(
+        self, id: str, *, if_match: int | str | None = None, fields: Sequence[str] | None = None
+    ) -> D | PartialDoc:
         """Brings a soft-deleted document back, as it was, at the next version. :class:`NotFoundError` if it
-        isn't in the trash or the caller may not see it there."""
-        res = await self._client.request("POST", [*self.path, id, "restore"], headers=_if_match(if_match))
-        return cast(D, res.data)
+        isn't in the trash or the caller may not see it there. ``fields`` limits the answer to those paths."""
+        res = await self._client.request(
+            "POST", [*self.path, id, "restore"], query={"fields": fields_param(fields)}, headers=_if_match(if_match)
+        )
+        return cast("D | PartialDoc", res.data)
 
 
 def _page(data: Any) -> Page[Any]:

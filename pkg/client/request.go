@@ -68,6 +68,27 @@ func WithQuery(q url.Values) RequestOption {
 	}
 }
 
+// WithFields limits the answer of a write (Create, Replace, Patch, Restore) to these paths ("title",
+// "address.city", "_meta.version"; id always). The document is stored whole. Read the result as
+// [Doc]: a typed struct has zero values for what was not selected. Reads take Fields in [Query] and
+// [ReadOptions].
+func WithFields(paths ...string) RequestOption {
+	return func(r *request) {
+		f, err := fieldsValue(paths)
+		if err == nil && len(paths) == 0 {
+			err = errors.New("client: WithFields needs at least one field path")
+		}
+		if err != nil {
+			r.err = err
+			return
+		}
+		if r.query == nil {
+			r.query = url.Values{}
+		}
+		r.query.Set("fields", f)
+	}
+}
+
 // WithHeader sets a header for the call.
 func WithHeader(key, value string) RequestOption {
 	return func(r *request) { r.headers.Set(key, value) }

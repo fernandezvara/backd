@@ -471,7 +471,14 @@ export interface ListParams<W, O> {
   count?: boolean;
   /** References to return in _expanded: "author(name,avatar),tags". Nothing is expanded without it. */
   expand?: string;
+  /** Return only these paths of each document (id always): the items are PartialDoc, not the collection's type. */
+  fields?: readonly string[];
 }
+
+/** A document reduced to the paths named in fields: id and what was selected, nothing typed. */
+export type PartialDoc = { id: string } & Record<string, unknown>;
+/** What a call answers: a PartialDoc when its options carry fields, else the full type. */
+type Fielded<X, Full> = X extends { fields: readonly string[] } ? PartialDoc : Full;
 
 /** What a document's references expand to: the selected fields and the id, null when missing or unreadable. */
 type ExpandedDoc<DB, N> = DB extends keyof Realm["db"]
@@ -537,18 +544,18 @@ export interface AggregateResult { groups: AggregateGroup[]; total_groups: numbe
 
 /** A collection of a database, typed from its schema. */
 export interface TypedCollection<D, I, C, W, O, E = {}, A = never> {
-  get(id: string, options?: { expand?: string }): Promise<D & WithExpanded<E>>;
+  get<X extends { expand?: string; fields?: readonly string[] }>(id: string, options?: X): Promise<Fielded<X, D & WithExpanded<E>>>;
   /** Summarizes the documents the caller may read (only for collections that declare aggregate:). */
   aggregate(params?: [A] extends [never] ? never : AggregateParams<A & { group_by: string; dates: string; metrics: string }, W>): Promise<AggregateResult>;
   /** Full-text search, best match first, with the score in _meta.score. Needs a text index. */
   search(text: string, params?: Omit<ListParams<W, never>, "orderBy" | "after">): Promise<Page<D & WithExpanded<E>>>;
   files(id: string, field: string): FileField<D>;
-  list(params?: ListParams<W, O>): Promise<Page<D & WithExpanded<E>>>;
+  list<P extends ListParams<W, O>>(params?: P): Promise<P extends { fields: readonly string[] } ? Page<PartialDoc> : Page<D & WithExpanded<E>>>;
   iterate(params?: Omit<ListParams<W, O>, "skip" | "count">): AsyncGenerator<D & WithExpanded<E>, void, undefined>;
   /** org: the organization a document of a collection with organizations is created in. */
-  create(doc: C, options?: { idempotencyKey?: string; org?: string }): Promise<D>;
-  replace(id: string, doc: I, options?: { ifMatch?: number | string }): Promise<D>;
-  patch(id: string, patch: Partial<I>, options?: { ifMatch?: number | string }): Promise<D>;
+  create<X extends { idempotencyKey?: string; org?: string; fields?: readonly string[] }>(doc: C, options?: X): Promise<Fielded<X, D>>;
+  replace<X extends { ifMatch?: number | string; fields?: readonly string[] }>(id: string, doc: I, options?: X): Promise<Fielded<X, D>>;
+  patch<X extends { ifMatch?: number | string; fields?: readonly string[] }>(id: string, patch: Partial<I>, options?: X): Promise<Fielded<X, D>>;
   delete(id: string, options?: { ifMatch?: number | string }): Promise<void>;
 }
 
