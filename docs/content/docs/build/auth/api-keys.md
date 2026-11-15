@@ -137,6 +137,7 @@ curl https://localhost:8443/v1/blog/main/posts \
 - The access log records the actor as `key:<name> as user:<id>`, so the service stays visible.
 - **In a realm with organizations the key is bound to one:** `--org` when it is made (the organization's id or slug). The request counts only that organization, as a session scoped to it would; a key without one counts none, so a collection that belongs to organizations answers `400 org_required` to a create and nothing to a list. See [API keys on behalf of a user](../../organizations/api/#api-keys-on-behalf-of-a-user).
 - Only API keys may send the header. With a session or without credentials it answers `400 invalid_header`, as does an id that isn't a user of the realm. A disabled user answers `403 forbidden`.
+- **It works on data, files, functions, realtime and organization routes, and nowhere else.** The admin API (`/_admin`) and the account routes of `/_auth` (sessions, password, second factor, passkeys, devices) answer `400 invalid_header`: a service can act on a person's data, never on their account, so it can't change another person's password or second factor "as them".
 
 Use it when a backend handles a request for a user and should be bound by the same rules, for example a server-rendered page or a webhook acting for an account.
 
