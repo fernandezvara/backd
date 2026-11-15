@@ -49,11 +49,12 @@ func (w *Worker) revokeApple(ctx context.Context, svc *auth.Users, p *registry.P
 	if clientID == "" {
 		clientID = p.ClientID
 	}
-	secret, err := w.oauth.AppleClientSecret(p, clientID, values["realm."+p.PrivateKey])
-	if err != nil {
-		return err
+	sp := p.SSO()
+	if w.oauthEndpoints != nil {
+		sp.Endpoints = w.oauthEndpoints(p)
 	}
-	return w.oauth.Revoke(ctx, p, clientID, secret, token)
+	sp.Secret = values["realm."+p.PrivateKey]
+	return w.oauth.Revoke(ctx, sp, clientID, token)
 }
 
 type errSecretMissing []string

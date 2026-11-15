@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 
@@ -88,10 +89,11 @@ func (h *SSOHost) Engine(proto sso.Protocol) *sso.Engine {
 
 // ProviderOf is the provider as the engine uses it, for a realm provider or a connection's:
 // secrets read, endpoints set, the restrictions and the authority check attached. ok is false when
-// a secret it needs is not set (the provider is then unavailable).
+// a secret it needs is not set (the provider is then unavailable for a redirect flow; the
+// provider returned has no secret then, which a native sign-in of Google or Microsoft does not need).
 func (h *SSOHost) ProviderOf(ctx context.Context, p *registry.Provider, conn *OrgConnection) (sso.Provider, bool, error) {
 	secrets, ok, err := h.Users.ProviderSecrets(ctx, p)
-	if err != nil || !ok {
+	if err != nil {
 		return sso.Provider{}, false, err
 	}
 	sp := p.SSO()
@@ -118,8 +120,11 @@ func (h *SSOHost) ProviderOf(ctx context.Context, p *registry.Provider, conn *Or
 		}
 		sp.Authority = func(ctx context.Context) error { return h.Users.CheckConnectionAuthority(ctx, c) }
 	}
-	return sp, true, nil
+	return sp, ok, nil
 }
+
+// UserOf returns a user the engine returned as an account (or reads it).
+func (h *SSOHost) UserOf(ctx context.Context, id string) (User, error) { return h.user(ctx, id) }
 
 // ProviderSecrets reads the secrets the provider needs, by name; ok is false when one is not set.
 func (s *Users) ProviderSecrets(ctx context.Context, p *registry.Provider) (map[string]string, bool, error) {
@@ -293,30 +298,34 @@ func (h *SSOHost) user(ctx context.Context, id string) (User, error) {
 	return h.Users.Store.UserByID(ctx, id)
 }
 
-// ssoError turns an error of the account rules into the library's.
+// ssoError turns an error of the account rules into the library's. The original stays in the
+// chain, so a caller can still tell ErrInvitationRequired from ErrInvalidInvitation.
 func ssoError(err error) error {
 	var refused *RefusedError
+	var mapped error
 	switch {
 	case err == nil:
 		return nil
 	case errors.As(err, &refused):
-		return &sso.Refused{UserID: refused.UserID, Reason: refused.Reason}
+		mapped = &sso.Refused{UserID: refused.UserID, Reason: refused.Reason}
 	case errors.Is(err, ErrAccountExists):
-		return sso.ErrAccountExists
+		mapped = sso.ErrAccountExists
 	case errors.Is(err, ErrLinkConflict):
-		return sso.ErrLinkConflict
+		mapped = sso.ErrLinkConflict
 	case errors.Is(err, ErrSignupClosed):
-		return sso.ErrSignupClosed
+		mapped = sso.ErrSignupClosed
 	case errors.Is(err, ErrInvitationRequired), errors.Is(err, ErrInvalidInvitation):
-		return sso.ErrInvitationInvalid
+		mapped = sso.ErrInvitationInvalid
 	case errors.Is(err, ErrEmailNotVerified):
-		return sso.ErrEmailNotVerified
+		mapped = sso.ErrEmailNotVerified
 	case errors.Is(err, ErrEmailRequired):
-		return sso.ErrEmailRequired
+		mapped = sso.ErrEmailRequired
 	case errors.Is(err, ErrNotFound):
 		return sso.ErrNotFound
+	default:
+		return err
 	}
-	return err
+	return fmt.Errorf("%w: %w", mapped, err)
 }
 
 func (d ssoDirectory) NormalizeEmail(raw string) string {
@@ -483,4 +492,55 @@ func (e ssoEvents) Emit(ctx context.Context, ev sso.Event) {
 			e.h.Users.Log.Error("keep Apple's refresh token for revocation", "error", err)
 		}
 	}
+}
+
+// ResolveProviderLogin decides who a provider's person is under the rules of design/sso.md §8.1:
+// the engine's decision, carried out on the realm's accounts. It starts no session. The sign-in
+// handlers run it inside the engine; this is the same decision for callers that already hold the
+// verified login.
+func (s *Users) ResolveProviderLogin(ctx context.Context, in ProviderLogin) (ProviderResult, error) {
+	h := &SSOHost{Users: s}
+	hd := SSOHostData{Locales: in.Locales, Consents: in.Consents, Invitation: in.Invitation}
+	if in.ScopeOrg != "" {
+		hd.ScopeOrg, hd.Invitation = in.ScopeOrg, in.OrgInvitation
+	}
+	link := sso.LinkNever
+	if in.TrustsEmail {
+		link = sso.LinkVerifiedEmail
+	}
+	res, err := h.Engine(nil).Resolve(ctx, sso.Login{
+		Provider: sso.Provider{Name: in.Provider, Kind: sso.Kind(in.Provider), Org: in.Org, Link: link},
+		Claims:   sso.Claims{Subject: in.Subject, Email: in.Email, EmailVerified: in.EmailVerified},
+		Profile:  in.Profile, Intent: sso.Intent(in.Intent), LinkUserID: in.LinkUserID, Host: hd.Encode(),
+		Request: sso.Request{IP: in.IP, UserAgent: in.UserAgent},
+	})
+	out := ProviderResult{NewUser: res.NewUser, Linked: res.Linked, Profile: res.Profile}
+	if res.Account.ID != "" {
+		out.User, _ = h.user(ctx, res.Account.ID)
+	}
+	return out, authError(err)
+}
+
+// authError is the realm's own error for one of the library's, keeping the library's in the chain.
+func authError(err error) error {
+	var refused *sso.Refused
+	var own error
+	switch {
+	case err == nil:
+		return nil
+	case errors.As(err, &refused):
+		if errors.Is(err, ErrSignInRefused) {
+			return err
+		}
+		return &RefusedError{UserID: refused.UserID, Reason: refused.Reason}
+	case errors.Is(err, sso.ErrAccountExists) && !errors.Is(err, ErrAccountExists):
+		own = ErrAccountExists
+	case errors.Is(err, sso.ErrLinkConflict) && !errors.Is(err, ErrLinkConflict):
+		own = ErrLinkConflict
+	case errors.Is(err, sso.ErrEmailRequired) && !errors.Is(err, ErrEmailRequired):
+		own = ErrEmailRequired
+	default:
+		return err
+	}
+	return fmt.Errorf("%w: %w", own, err)
 }

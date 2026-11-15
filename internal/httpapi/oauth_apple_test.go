@@ -16,7 +16,7 @@ import (
 func (f *oauthFixture) worker(t *testing.T) *Worker {
 	t.Helper()
 	return NewWorker(Config{
-		Registry: f.reg, Store: f.store, OAuth: providerClientFor(f.idp),
+		Registry: f.reg, Store: f.store, OAuth: providerClientFor(f.idp), OAuthEndpoints: fakeEndpoints(f.idp),
 		Users: func(realm string) *auth.Users {
 			if realm == "acme" {
 				return f.svc
