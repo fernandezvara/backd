@@ -43,3 +43,38 @@ func TestOnBehalfOfIsRefusedOnAccountAndAdminRoutes(t *testing.T) {
 		}
 	}
 }
+
+// A key cannot act as an administrator, on any route: acting as a user must never bring more
+// privileges than the key has.
+func TestAKeyCannotActAsAnAdministratorOnTheDataRoutes(t *testing.T) {
+	f := newRulesFixture(t)
+	_, plain, err := f.svc.CreateAPIKey(context.Background(), "service", auth.KeyOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	as := func(key, user string) (int, string) {
+		rec, out := f.doH(t, "GET", "/v1/acme/app/notes", "", map[string]string{"Authorization": "Bearer " + key, "X-Backd-On-Behalf-Of": user})
+		e, _ := out["error"].(map[string]any)
+		msg, _ := e["message"].(string)
+		return rec.Code, msg
+	}
+	// "staff" holds admin rights in this realm, "admin" is only a name.
+	if err := f.svc.AddRole(context.Background(), "ada@example.com", "staff"); err != nil {
+		t.Fatal(err)
+	}
+	for name, key := range map[string]string{"an admin key": f.key, "a data key": plain} {
+		if code, msg := as(key, f.adaID); code != http.StatusForbidden || !strings.Contains(msg, "cannot act as an administrator") {
+			t.Errorf("%s acting as an administrator: %d %q", name, code, msg)
+		}
+		if code, _ := as(key, f.bobID); code == http.StatusForbidden || code == http.StatusBadRequest {
+			t.Errorf("%s acting as a user without admin rights: %d", name, code)
+		}
+	}
+	// A role that only has a name is not an administrator.
+	if err := f.svc.AddRole(context.Background(), "bob@example.com", "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := as(plain, f.bobID); code == http.StatusForbidden || code == http.StatusBadRequest {
+		t.Errorf("acting as a user whose role has no admin rights: %d", code)
+	}
+}

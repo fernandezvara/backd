@@ -3,6 +3,7 @@ package auth_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -193,5 +194,37 @@ func TestFailedSecondStepIsRecordedAndTheLoginOnlyAfterIt(t *testing.T) {
 	}
 	if m, _ := logins[0].Details["methods"].([]string); len(m) != 2 || m[1] != MethodTOTP {
 		t.Errorf("methods = %v", logins[0].Details["methods"])
+	}
+}
+
+func TestAKeyCannotActAsAnAdministrator(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := signInAuditSetup(t) // role "ops" holds admin rights
+	svc.Settings.Roles["reader"] = registry.Role{Admin: 0, AdminRead: true}
+	svc.Settings.Roles["editor"] = registry.Role{}
+	admin, _ := svc.Create(ctx, "root@example.com", nil)
+	reader, _ := svc.Create(ctx, "reader@example.com", nil)
+	editor, _ := svc.Create(ctx, "editor@example.com", nil)
+	for _, g := range []struct{ email, role string }{{admin.Email, "ops"}, {reader.Email, "reader"}, {editor.Email, "editor"}} {
+		if err := svc.AddRole(ctx, g.email, g.role); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, key, err := svc.CreateAPIKey(ctx, "svc", KeyOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	caller, err := svc.Identify(ctx, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, u := range []User{admin, reader} {
+		if _, err := svc.OnBehalfOf(ctx, caller, u.ID); !errors.Is(err, ErrOnBehalfOfAdmin) {
+			t.Errorf("acting as %s: %v, want ErrOnBehalfOfAdmin", u.Email, err)
+		}
+	}
+	got, err := svc.OnBehalfOf(ctx, caller, editor.ID)
+	if err != nil || got.User == nil || got.User.User.ID != editor.ID {
+		t.Errorf("acting as a user without admin rights: %+v %v", got, err)
 	}
 }

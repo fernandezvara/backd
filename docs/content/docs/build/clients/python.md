@@ -134,7 +134,7 @@ with Client(url=url, realm="shelf", api_key=key) as backd:
 
 - It needs a client made with `api_key`, and it cannot be chained: `as_user` on an acting client raises `TypeError`.
 - **Each acting client has a revalidation cache and an app configuration of its own**, so what one user read is never served to another. It shares the connection of the client it came from, so closing either closes both.
-- `client.auth` and the other account helpers raise `TypeError` on an acting client, and the server refuses the header on those routes: use the client made with the key for them. An unknown id is `400 invalid_header`, a disabled user `403`.
+- `client.auth` and the other account helpers raise `TypeError` on an acting client, and the server refuses the header on those routes: use the client made with the key for them. An unknown id is `400 invalid_header`; a disabled user, or one who holds an admin role (a key cannot act as an administrator), is `403`.
 
 ### Passkeys
 
