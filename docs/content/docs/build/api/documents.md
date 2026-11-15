@@ -76,7 +76,7 @@ Content-Type: application/json
 { "name": "Widget", "price": 12.5, "status": "active" }
 ```
 
-The body is validated against the collection's `schema.json`. The response is `201 Created` with the stored document and a `Location` header pointing at it.
+The body is validated against the collection's `schema.json`, after the schema's [`default` values](../../configuration/config-dir/#defaults) are filled in for the fields it leaves out. The response is `201 Created` with the stored document and a `Location` header pointing at it.
 
 ### Custom ids
 
@@ -268,7 +268,7 @@ Every read and write below also takes [`fields`](../querying/#selecting-fields) 
 
 ## Replace (PUT)
 
-The body becomes the complete new document and is validated as a whole. Fields that aren't in the body are removed. `id` and `_meta.created_at` are kept.
+The body becomes the complete new document and is validated as a whole. Fields that aren't in the body are removed, and then the schema's [`default` values](../../configuration/config-dir/#defaults) are filled in. `id` and `_meta.created_at` are kept.
 
 ## Update (PATCH)
 

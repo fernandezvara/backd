@@ -100,6 +100,7 @@ type Collection struct {
 	RawSchema    map[string]any        // decoded schema.json (numbers as json.Number)
 	Schema       *jsonschema.Schema    // compiled draft 2020-12 schema
 	Fields       map[string]Field      // dot path → field info, for query checks
+	Defaults     []Default             // schema.json's `default` values, parents first; filled in on create and PUT
 	Indexes      []Index               // declared in indexes.json
 	IndexPath    string                // path of indexes.json, when present
 	Rules        *rules.Set            // from collection.yaml's rules:; nil allows nothing

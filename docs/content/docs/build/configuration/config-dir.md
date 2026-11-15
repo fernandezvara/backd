@@ -136,6 +136,22 @@ shop/orders/items/
 
 The version an app declares (`X-Backd-Schema-Version`) stamps its writes, and `min_schema_version` in [`collection.yaml`](#collectionyaml) (a whole number from 1 to the current version, only in a versioned collection) makes the server answer `426 upgrade_required` to apps below it: see [the schema version an app declares](../../api/documents/#the-schema-version-an-app-declares).
 
+### Defaults
+
+A property's `default` is filled in by the server when a **create** or a **`PUT`** (which replaces the whole document) leaves the field out, before the document is validated, so a `required` field with a default can be omitted:
+
+```json
+"status": { "enum": ["draft", "sent"], "default": "draft" },
+"address": { "type": "object", "default": {}, "properties": { "country": { "type": "string", "default": "ES" } } }
+```
+
+- **Where it applies:** `POST`, `PUT` and the `create` and `replace` operations of [`_batch`](../../api/documents/#batch-writes), and the documents a [function](../../functions/writing/) writes with `ctx.db`. The rule tests' `create` and `update` calls fill them too, so a rule that reads `data.status` sees what the server sees.
+- **Where it doesn't:** a `PATCH` changes only what it names, so it never refills a field (`{"status": null}` removes it, and the result is checked as always). A [schema migration](#versioned-schemas) writes what the migration returns, and an import writes the document as it is in the package. Documents already stored are not touched.
+- **An explicit `null` is a value** and is kept: only an absent field gets its default.
+- **Where it can be declared:** on a property reached through `properties`, at any depth. A default inside an object applies when the object is in the document (or was itself just filled by a default). Properties inside array `items`, `allOf`, `anyOf`, `oneOf` and `$ref` are not filled.
+- **Checked at startup:** a `default` that doesn't satisfy its own property's schema (`"minimum": 1, "default": 0`) stops the load, naming the file and the path.
+- **Values only.** There are no computed defaults (the time, the caller). Those still need the client, a [trigger](../../functions/triggers/) or a [function](../../functions/writing/).
+
 ### Dates
 
 By default a `format: date-time` property is text: MongoDB stores the string, and comparing or sorting it as time only works when every value has the same form. Add `x-backd-store` to store it as a **BSON Date** instead, so queries, sorting and index ranges compare instants:

@@ -420,6 +420,11 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 		return nil, fmt.Errorf("%s: invalid schema: %w", path, err)
 	}
 
+	defaults, err := collectDefaults(path, raw)
+	if err != nil {
+		return nil, err
+	}
+
 	coll := &Collection{
 		Realm:          db.Realm,
 		Database:       db.Name,
@@ -434,6 +439,7 @@ func loadCollection(db *Database, settings RealmSettings, name, dir string) (*Co
 		RawSchema:      raw,
 		Schema:         compiled,
 		Fields:         fieldIndex(raw),
+		Defaults:       defaults,
 		Files:          files,
 		configLeaf:     db.configLeaf(),
 	}

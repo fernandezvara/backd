@@ -489,7 +489,8 @@ func verdict(allow bool) string {
 // checked validates a document the caller would send, as the server does
 // before it looks at the rules.
 func (r *runner) checked(where string, fields map[string]any) (map[string]any, bool) {
-	out, err := r.userFields(fields)
+	// The server fills the schema's defaults in before it validates.
+	out, err := r.userFields(r.c.ApplyDefaults(docutil.DeepCopyMap(fields)))
 	if err != nil {
 		r.problem("%s: %v (the server would answer 400 before the rules are asked)", where, err)
 		return nil, false
