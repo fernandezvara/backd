@@ -144,9 +144,10 @@ codes=$(compose exec -T probe sh -c 'for i in $(seq 1 160); do curl -s -o /dev/n
 echo "     160 requests: $codes"
 check "past the allowance, backd answers 429" sh -c "echo '$codes' | grep -q ' 429'"
 check "and most of the first 120 got through" sh -c "echo '$codes' | grep -q ' 200 '"
-hdr=$(compose exec -T probe curl -si http://backd:8080/v1/blog/main/posts 2>/dev/null | tr -d '\r')
+# The first refusal, whole (headers and body), in a file: the body has quotes the shell would trip on.
+compose exec -T probe sh -c 'for i in $(seq 1 160); do r=$(curl -si http://backd:8080/v1/blog/main/posts | tr -d "\r"); case "$r" in "HTTP/1.1 429"*) printf "%s\n" "$r"; break;; esac; done' > "$work/429.txt" 2>/dev/null
 check "the refusal is backd's envelope with Retry-After and RateLimit-Remaining 0" \
-  sh -c "echo '$hdr' | grep -qi '^retry-after: ' && echo '$hdr' | grep -qi '^ratelimit-remaining: 0'"
+  sh -c "grep -qi '^retry-after: ' '$work/429.txt' && grep -qi '^ratelimit-remaining: 0' '$work/429.txt' && grep -q '\"code\":\"too_many_requests\"' '$work/429.txt'"
 
 echo "--- MongoDB"
 check "connections without TLS are refused" sh -c "! mongo_out=\$(docker compose -p $project --env-file '$work/.env' run --rm -T --no-deps provision mongosh 'mongodb://mongo:27017/?serverSelectionTimeoutMS=3000' --quiet --eval 'db.adminCommand({ping:1})' 2>&1)"
