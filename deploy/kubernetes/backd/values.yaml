@@ -84,6 +84,13 @@ maxBodyBytes: 1MiB
 # network policy lets only the ingress controller's pods reach backd.
 trustedProxies: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7
 
+# backd's own request limits, in each Pod's memory (N Pods allow up to N times a limit; the ingress
+# controller's limits, if you set them, are the exact ones). `rates` takes a class (anonymous, read,
+# write, auth, files, admin) and a rate such as "1200/1m" or "none": rates: {read: 1200/1m}.
+rateLimit:
+  enabled: true
+  rates: {}
+
 # More environment for every backd process (see Configuration -> Environment variables), for
 # example BACKD_AGGREGATE_TIME or BACKD_IMAGE_CONCURRENCY. Never put a secret here.
 env: {}
