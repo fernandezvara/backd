@@ -229,6 +229,9 @@ func (s *Users) MagicLinkDestination(c AuthChallenge) string {
 func (s *Users) UseMagicLink(ctx context.Context, token, ip string) (code, destination string, err error) {
 	c, err := s.MagicLinkByToken(ctx, token)
 	if err != nil {
+		if errors.Is(err, ErrInvalidMagicLink) {
+			s.auditSignInFailure(ctx, signInFailure{action: AuditUserLoginFailed, reason: ReasonInvalidLink, ip: ip})
+		}
 		return "", "", err
 	}
 	destination = s.MagicLinkDestination(c)
@@ -237,6 +240,7 @@ func (s *Users) UseMagicLink(ctx context.Context, token, ip string) (code, desti
 	}
 	// Whoever deletes the request first gets the sign-in.
 	if _, err := s.Store.ClaimChallenge(ctx, c.ID, s.now()); errors.Is(err, ErrNotFound) {
+		s.auditSignInFailure(ctx, signInFailure{action: AuditUserLoginFailed, email: c.Email, userID: c.UserID, strategy: c.Strategy, reason: ReasonInvalidLink, ip: ip})
 		return "", destination, ErrInvalidMagicLink
 	} else if err != nil {
 		return "", destination, err
@@ -257,18 +261,24 @@ const MagicLinkLoginMethod = "link"
 // of its PKCE challenge it signs the user in like the link would, answering a session or
 // the MFA challenge. Five wrong codes end the request.
 func (s *Users) VerifyMagicLinkCode(ctx context.Context, requestID, code, verifier, ip string) (Redeemed, error) {
+	failed := func(reason string, c AuthChallenge) {
+		s.auditSignInFailure(ctx, signInFailure{action: AuditUserLoginFailed, email: c.Email, userID: c.UserID, strategy: c.Strategy, reason: reason, ip: ip})
+	}
 	if requestID == "" || code == "" || verifier == "" {
+		failed(ReasonInvalidLink, AuthChallenge{})
 		return Redeemed{}, ErrInvalidMagicLink
 	}
 	id := HashToken(requestID)
 	ks := keys(s.Settings.Throttle(), "", ip)
 	if err := s.checkThrottle(ctx, ks); err != nil {
+		failed(ReasonThrottled, AuthChallenge{})
 		return Redeemed{}, err
 	}
 	c, err := s.Store.GetChallenge(ctx, id, s.now())
 	if errors.Is(err, ErrNotFound) || (err == nil && (c.Kind != ChallengeMagicLink || c.Purpose != MagicLinkPurposeLink || c.CodeHash == "")) {
 		// An address that keeps trying ids that lead nowhere is slowed down like one that
 		// keeps trying wrong codes.
+		failed(ReasonInvalidLink, AuthChallenge{})
 		if rerr := s.recordFailure(ctx, ks); rerr != nil {
 			return Redeemed{}, rerr
 		}
@@ -286,12 +296,14 @@ func (s *Users) VerifyMagicLinkCode(ctx context.Context, requestID, code, verifi
 	}
 	if cur.Attempts > MagicLinkCodeAttempts {
 		_ = s.Store.DeleteChallenge(ctx, id)
+		failed(ReasonInvalidCode, c)
 		return Redeemed{}, ErrInvalidMagicLink
 	}
 	// The code alone is not enough: the verifier ties it to the app that asked.
 	okCode := subtle.ConstantTimeCompare([]byte(s.codeHash(id, code)), []byte(c.CodeHash)) == 1
 	okVerifier := subtle.ConstantTimeCompare([]byte(PKCEChallenge(verifier)), []byte(c.CodeChallenge)) == 1
 	if !okCode || !okVerifier {
+		failed(ReasonInvalidCode, c)
 		if cur.Attempts >= MagicLinkCodeAttempts {
 			_ = s.Store.DeleteChallenge(ctx, id)
 		}

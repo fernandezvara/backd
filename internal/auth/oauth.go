@@ -191,17 +191,23 @@ func (s *Users) IssueLoginCodeFor(ctx context.Context, userID, method, strategy,
 // Every failure is ErrInvalidCredentials, and the answer is the same for an unknown,
 // expired or used code.
 func (s *Users) RedeemLoginCode(ctx context.Context, code, verifier string) (Redeemed, error) {
+	failed := func(userID, strategy string) {
+		s.auditSignInFailure(ctx, signInFailure{action: AuditUserLoginFailed, userID: userID, strategy: strategy, reason: ReasonInvalidCode})
+	}
 	if code == "" || verifier == "" {
+		failed("", "")
 		return Redeemed{}, ErrInvalidCredentials
 	}
 	lc, err := s.Store.ClaimLoginCode(ctx, HashToken(code), s.now())
 	if errors.Is(err, ErrNotFound) {
+		failed("", "")
 		return Redeemed{}, ErrInvalidCredentials
 	}
 	if err != nil {
 		return Redeemed{}, err
 	}
 	if subtle.ConstantTimeCompare([]byte(PKCEChallenge(verifier)), []byte(lc.CodeChallenge)) != 1 {
+		failed(lc.UserID, lc.Strategy)
 		return Redeemed{}, ErrInvalidCredentials
 	}
 	u, err := s.Store.UserByID(ctx, lc.UserID)
