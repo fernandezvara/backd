@@ -176,6 +176,18 @@ The baseline is in the operations guide ([the dispatcher](../operate/change-feed
 
 When a change moves the baseline on purpose, update the tables in the operations guide with the new numbers in the same commit.
 
+### Query speed by complexity
+
+A separate test, for your own machine only (it is skipped unless `BACKD_QUERY_PERF` is set, so CI never runs it), times the HTTP API against a real MongoDB in five tiers: trivial (a get by id, a first page), simple (one condition, ordering, counting, a cursor page), moderate (combined conditions, `$or`, `$icontains`, deep `skip`), complex (full-text search, `expand`, aggregations) and writes. It seeds 100,000 documents from a fixed random seed and prints the minimum, median, p95 and maximum of each scenario in milliseconds.
+
+```sh
+make perf-queries                              # results in perf-results/queries.json
+cp perf-results/queries.json perf-results/baseline.json   # keep this run as the baseline
+make perf-queries                              # now each scenario is compared with the baseline
+```
+
+`BACKD_PERF_DOCS` (documents, 100,000 by default), `BACKD_PERF_RUNS` (timed requests per scenario, 30), `BACKD_PERF_BASELINE` (a report to compare with) and `BACKD_PERF_TOLERANCE` (how many times slower the median may be before the scenario is marked `SLOWER`, 1.5) tune it. Requests go through the whole handler in-process, so there is no network in the numbers; compare runs on the same idle machine, never absolute figures. Scenarios under a millisecond are never flagged: that is noise.
+
 ## Translating the admin UI
 
 Every string of the [admin UI](../operate/administration/admin-ui/) is in `ui/admin/src/i18n/en.json`; `es.json` is its Spanish translation, with the same keys and the same `{placeholders}`. A new string goes into `en.json` first and into every other file in the same change: a Vitest check (`npm test` in `ui/admin`, `make ui-test`) fails when a key is missing from one file, when a message uses different placeholders than its English original, or when a translation was left identical to English without being listed as a name or technical word. To add a language, add its file, its code and its own name to `ui/admin/src/i18n/locale.ts` and `i18n/index.ts`, and translate the keys; the language switch and the browser detection pick it up from there.
