@@ -49,7 +49,7 @@ func (a *authAPI) oauthRoutes(r chi.Router, json func(http.Handler) http.Handler
 		r.With(a.signInOfOrgs).Get("/providers", a.providerList)
 	}
 	oauthRoutes(r)
-	// The same flow for the providers an organization's managers connected (design/org-sso.md).
+	// The same flow for the providers an organization's managers connected (design/sso.md §9).
 	r.Route("/orgs/{org}", func(r chi.Router) {
 		oauthRoutes(r)
 		a.orgSignInRoutes(r, json)

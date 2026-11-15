@@ -11,7 +11,7 @@ import (
 	"github.com/fernandezvara/backd/internal/auth"
 )
 
-// Organization sign-in connections (design/org-sso.md §4): one document per organization and
+// Organization sign-in connections (design/sso.md §9.3): one document per organization and
 // provider, with a deterministic id from the pair so a replace needs no existence check.
 type orgConnectionDoc struct {
 	ID              string    `bson:"_id"`

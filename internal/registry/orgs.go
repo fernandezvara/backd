@@ -180,7 +180,7 @@ type OrgSettings struct {
 	// person which organizations they belong to (design/scoped-sessions.md §5.4): it holds {slug}
 	// (the id for an organization with none) and may hold {org}. Empty: the realm has no such email.
 	SigninLink string
-	// SSO is the organization sign-in section (design/org-sso.md); nil when the realm doesn't
+	// SSO is the organization sign-in section (design/sso.md §9); nil when the realm doesn't
 	// let organizations set up their own providers.
 	SSO    *OrgSSOSettings
 	create *rules.Rule

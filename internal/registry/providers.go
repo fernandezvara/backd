@@ -34,7 +34,7 @@ var (
 )
 
 // The checks of a Google or Microsoft application's fields live in the functions below, so the
-// providers: of realm.yaml and an organization's sign-in connections (design/org-sso.md) are
+// providers: of realm.yaml and an organization's sign-in connections (design/sso.md §9) are
 // held to the same rules. Each returns what is wrong, or "" when the value is fine.
 
 var domainPattern = regexp.MustCompile(`^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$`)
@@ -130,7 +130,7 @@ type Provider struct {
 	// account goes away.
 	TeamID, KeyID, PrivateKey string
 	RevokeOnDelete            bool
-	// Org is set on a provider built from an organization's connection (design/org-sso.md): the
+	// Org is set on a provider built from an organization's connection (design/sso.md §9): the
 	// id of the organization. Its ClientSecret then names an organization secret, and the
 	// restrictions of the connection apply on top of the token checks.
 	Org string
@@ -152,7 +152,7 @@ func (p *Provider) SecretNames() []string {
 // claim a tenant administrator controls).
 func (p *Provider) TrustsEmail() bool {
 	// A connection an organization's managers control never vouches for an address: it can't
-	// link a sign-in to an account (design/org-sso.md §6).
+	// link a sign-in to an account (design/sso.md §8).
 	return p.Org == "" && (p.Name == ProviderGoogle || p.Name == ProviderApple)
 }
 

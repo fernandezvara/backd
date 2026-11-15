@@ -11,7 +11,7 @@ import (
 	"github.com/fernandezvara/backd/internal/registry"
 )
 
-// Organization sign-in connections (design/org-sso.md §4): a provider configured for one
+// Organization sign-in connections (design/sso.md §9.3): a provider configured for one
 // organization by its managers, with the client secret kept as an organization secret.
 
 // Audit actions of connections; the target is org:<id>, details never hold the secret.
@@ -510,7 +510,7 @@ func (s *Users) CheckConnectionAuthority(ctx context.Context, c OrgConnection) e
 }
 
 // AfterOrgSignIn is what a successful sign-in through an organization's connection does to the
-// membership (design/org-sso.md §6). The person joins with the connection's join roles only
+// membership (design/sso.md §8). The person joins with the connection's join roles only
 // when this sign-in made the identity (a new person, or an explicit link): someone who is
 // already a member stays as they are, and someone a manager removed stays out until invited
 // again. A failure to join never fails the sign-in: the person is signed in and not joined.

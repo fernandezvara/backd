@@ -3355,7 +3355,7 @@ func TestContract(t *testing.T) {
 		f.reg.Realms["acme"].Settings.Compliance = prior
 	}
 
-	// Organization sign-in connections (design/org-sso.md §4).
+	// Organization sign-in connections (design/sso.md §9.3).
 	{
 		orgs, adm := "/v1/acme/_orgs", "/v1/acme/_admin/orgs"
 		const google = `{"client_id": "123-abc.apps.googleusercontent.com", "client_secret": "contract-secret", "hosted_domain": "acme.example", "join_roles": ["editor"]}`

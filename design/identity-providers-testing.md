@@ -1,11 +1,11 @@
 # Testing provider sign-in with real providers
 
 - **Issue:** #216
-- **Design:** [identity-providers.md](./identity-providers.md)
+- **Design:** [sso.md](./sso.md)
 - **Status:** a guide to run by hand before each release that touches sign-in with providers
 
-CI tests the whole flow against a fake provider (`internal/oauth/oauthtest`): every rule of the design, every
-error code, the admin side and the client. What it cannot prove is that **Google, Microsoft and Apple**
+CI tests the whole flow against a fake provider (`internal/oauth/oauthtest`, which becomes `sso/ssotest` in step S1 of [sso.md §14](./sso.md)): every rule of the design, every
+error code, the admin side and the client. What it cannot prove is that **Google, Microsoft, Apple and GitHub, and the generic OpenID Connect servers operators use**
 behave as the fake does: their consoles, their redirect rules, their token contents, Apple's form post and
 first-authorization name, Microsoft's tenants, Apple's revocation. This guide is the checklist for that, part
 by part. Run it against a staging stack with real accounts, never against production data.
@@ -295,7 +295,15 @@ in `sign_in.allowed_redirects`.
 - **Providers:** remove the test accounts' grants (Google: [myaccount.google.com/permissions](https://myaccount.google.com/permissions); Microsoft: [myapps.microsoft.com](https://myapps.microsoft.com); Apple: *Sign in with Apple* list), delete the test OAuth clients, Services ID and key if you will not reuse them.
 - **Tunnel/host:** shut it down; remove the redirect URIs from the provider consoles.
 
-## 15. Recording the result
+## 15. Added by the sso.md redesign (run each part when its step ships)
+
+- **GitHub (S4).** Create an OAuth App (callback `{BACKD_URL}/v1/{realm}/_auth/oauth/github/callback`). Sign in with an account whose primary email is verified (links or creates as Google does); with one whose only address is unverified (`email_required`); rename the GitHub login and sign in again (same backd user: the subject is the numeric id).
+- **Generic OIDC, realm (S3).** Keycloak in a container: a realm, a client with the callback, a user with a verified email. Check discovery with a wrong `issuer` (the provider is unavailable), `link_by_email` off (a known address gives `account_exists`) and on, and a discovery document that names a host outside the issuer's registered domain (refused). With `allow_private_network: true` and the server on a private address: works; without it: refused.
+- **Issuer change (S2/S3).** Change a provider's `issuer`, sign in as someone else with the same `sub`: a new user, never the old one; the old identity shows as dormant.
+- **Organization OIDC (S5, S6).** Verify a domain with a real TXT record. An `oidc` connection cannot be enabled before it; a user whose token email is on another domain, or unverified, is `not_allowed`; an issuer outside the realm's `organizations.sso.oidc.issuers` is refused; removing the pattern stops the connection; a lapsed domain (remove the record, run the re-check) stops admitting.
+- **Linking by verified domain (S5).** A password account with a verified address on the domain, then an organization sign-in with that address: linked, and the account's owner receives the email.
+
+## 16. Recording the result
 
 Add a section to `support_docs/release-smoke-tests.md` (local, never committed) per run, in this shape, and
 remember to fix the design or the code if anything differed from the "Expect" column:

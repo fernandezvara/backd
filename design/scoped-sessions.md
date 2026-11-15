@@ -2,13 +2,13 @@
 
 - **Issues:** milestone `34-scoped-sessions` (to be created, see §12); replaces #600 of `31-org-sso-extensions`
 - **Status:** proposed (for review)
-- **Builds on:** [org-sso.md](./org-sso.md) (connections, org-bound OAuth routes, `sessions.org`, `identities.org`; milestone `30-org-sso`)
-- **Changes:** [organizations.md](./organizations.md) (`?org=`, listing and creating organizations, invitations), [org-sso.md](./org-sso.md) (slugs in addresses, the unenforced `sessions.org`), [mfa-passwordless.md](./mfa-passwordless.md) (what a session remembers), [account-lifecycle.md](./account-lifecycle.md) (sign-up), [team-access.md](./team-access.md) §10 (company context), [compliance.md](./compliance.md) (export)
-- **Related designs:** [identity-providers.md](./identity-providers.md), [email-delivery.md](./email-delivery.md), [internal-functions.md](./internal-functions.md)
+- **Builds on:** [sso.md](./sso.md) (connections, org-bound OAuth routes, `sessions.org`, `identities.org`; milestone `30-org-sso`)
+- **Changes:** [organizations.md](./organizations.md) (`?org=`, listing and creating organizations, invitations), [sso.md](./sso.md) (slugs in addresses, the unenforced `sessions.org`), [mfa-passwordless.md](./mfa-passwordless.md) (what a session remembers), [account-lifecycle.md](./account-lifecycle.md) (sign-up), [team-access.md](./team-access.md) §10 (company context), [compliance.md](./compliance.md) (export)
+- **Related designs:** [sso.md](./sso.md), [email-delivery.md](./email-delivery.md), [internal-functions.md](./internal-functions.md)
 
 ## 1. The idea
 
-A session belongs to a user, and a user belongs to any number of organizations. One token reaches all of them, and the caller picks the organization on every request with `?org=`. [org-sso.md](./org-sso.md) lets an organization bring its own Google Workspace or Microsoft tenant, and records on the session which organization's connection opened it ("nothing enforces it yet"). Without enforcement the token that Acme's tenant vouched for still reaches Beta's data, which Acme's tenant has nothing to do with.
+A session belongs to a user, and a user belongs to any number of organizations. One token reaches all of them, and the caller picks the organization on every request with `?org=`. [sso.md](./sso.md) lets an organization bring its own Google Workspace or Microsoft tenant, and records on the session which organization's connection opened it ("nothing enforces it yet"). Without enforcement the token that Acme's tenant vouched for still reaches Beta's data, which Acme's tenant has nothing to do with.
 
 The fix is a different shape of session, not a check bolted onto access:
 
@@ -32,7 +32,7 @@ Principles carried over:
 |---|---|
 | Scope | a realm with `organizations.enabled` has **only scoped sessions**: `sessions.org` is always set. Realms without organizations are unchanged |
 | Signing in | only through `/v1/{realm}/_auth/orgs/{org}/…`; the unscoped `signup`, `magic-link` and `oauth` routes no longer exist in such realms, and `login` stays for **operators** alone (§5.5) |
-| The organization in a path | the **id**. Only the routes that run before there is a session (§5) also take the **slug** people know (`acme`), because the person does not know an id; every route that needs a session takes the id only (this narrows "the id or the slug" of [org-sso.md §2](./org-sso.md#2-decisions-at-a-glance)) |
+| The organization in a path | the **id**. Only the routes that run before there is a session (§5) also take the **slug** people know (`acme`), because the person does not know an id; every route that needs a session takes the id only (this narrows "the id or the slug" of [sso.md §2](./sso.md)) |
 | The slug | **required** when an organization is created; it is the name people type, shown in URLs and emails |
 | Forgot the company | `POST /_auth/orgs/find { email }` always answers `202` and emails the address its companies with sign-in links (§5.4) |
 | Sign-in experience | company from the URL or one prefilled field, then the methods the organization allows; one generic failure message; the browser remembers companies, the API never lists them (§8.3) |
@@ -53,12 +53,12 @@ Principles carried over:
 
 ## 3. Configuration
 
-No new realm key: `organizations.enabled` implies scoped sessions, and `organizations.sso` stays as [org-sso.md §4](./org-sso.md#4-connections-issue-303) defines it. Startup checks gain:
+No new realm key: `organizations.enabled` implies scoped sessions, and `organizations.sso` stays as [sso.md §9.3](./sso.md) defines it. Startup checks gain:
 
 - `invitation_link` must contain `{org}` (the link is how the app learns which organization to sign in to); today it is optional;
 - **the slug is required** to create an organization (`POST /_auth/orgs`, `POST /_orgs`, the admin API and `backd orgs create`), because it is what people type. It keeps today's format (lowercase letters and digits separated by single `-`, at most 63 characters) and may not look like an id (`[0-9a-v]{20}`), so a name can never be mistaken for another organization's id. Organizations that exist without one still sign in by id; startup lists them and `backd orgs set-slug <org> <slug>` sets one;
 - `organizations.signin_link` (for example `"https://{slug}.app.example/signin"`; `{slug}` and `{org}` are replaced, and it must be within `allowed_redirects`) is where the emails of §5.4 send people. It is optional: without it (or without `email:`) `POST /_auth/orgs/find` answers `404`;
-- the realm's `signup` (`open`, `invite`, `closed`) governs `POST /_auth/orgs` for new addresses (§5.2): an invite-only realm lets a person start a company with the realm's invitation; joining an existing organization always needs an invitation of that organization (or a connection that admits the person, [org-sso.md §6](./org-sso.md#6-accounts-and-joining-issue-305)). An account that exists without a team (made before the upgrade) is given one by an operator (`backd orgs create --owner`).
+- the realm's `signup` (`open`, `invite`, `closed`) governs `POST /_auth/orgs` for new addresses (§5.2): an invite-only realm lets a person start a company with the realm's invitation; joining an existing organization always needs an invitation of that organization (or a connection that admits the person, [sso.md §8](./sso.md)). An account that exists without a team (made before the upgrade) is given one by an operator (`backd orgs create --owner`).
 
 ## 4. Scoped sessions
 
@@ -115,7 +115,7 @@ Paths are relative to `/v1/{realm}`. **`{org}` is the organization id; the route
 
 | Method and path | Purpose |
 |---|---|
-| `GET /_auth/orgs/{org}/providers` † | exists ([org-sso.md §5](./org-sso.md#5-signing-in-issue-304)); the answer also lists the organization's other methods: `{ items: ["google"], methods: ["password", "magic_link"], sso_required: false }`. An unknown, inactive or connection-less id answers as a plain organization, so the shape never shows that it exists |
+| `GET /_auth/orgs/{org}/providers` † | exists ([sso.md §9.3](./sso.md)); the answer also lists the organization's other methods: `{ items: ["google"], methods: ["password", "magic_link"], sso_required: false }`. An unknown, inactive or connection-less id answers as a plain organization, so the shape never shows that it exists |
 | `POST /_auth/orgs/{org}/login` † | password; accepts `invitation` |
 | `POST /_auth/orgs/{org}/signup` † | new account; **requires** `invitation` |
 | `POST /_auth/orgs/{org}/magic-link` † | request a link; redeemed through the login-code exchange |
@@ -135,7 +135,7 @@ Removed in realms with organizations (`login` stays for operators, §5.5): `/_au
 
 - **Membership is checked after the credentials.** A person who is not a member, an organization that does not exist and one that is not active all answer as a wrong password does (`401 invalid_credentials`, same timing: the password is hashed anyway).
 - **MFA, consent and verification steps** work as today; the challenge records the organization and the session is created scoped to it.
-- **Invitations are accepted here.** A valid `invitation` creates or extends the membership in the same step, after the first factor, with the binding rules of [organizations.md §7.1](./organizations.md#71-creating): an `email` binding needs the verified email, a `user` binding that user; an invitation for someone else answers `403 invitation_not_for_you`. A person signing in with a valid invitation is therefore *not* refused as a non-member. In a connection's flow the invitation also clears a `blocked` entry ([org-sso.md §6](./org-sso.md#6-accounts-and-joining-issue-305)).
+- **Invitations are accepted here.** A valid `invitation` creates or extends the membership in the same step, after the first factor, with the binding rules of [organizations.md §7.1](./organizations.md#71-creating): an `email` binding needs the verified email, a `user` binding that user; an invitation for someone else answers `403 invitation_not_for_you`. A person signing in with a valid invitation is therefore *not* refused as a non-member. In a connection's flow the invitation also clears a `blocked` entry ([sso.md §8](./sso.md)).
 - **`signup` always needs an invitation.** The account is born verified, as invitations by email already are ([account-lifecycle.md §4.5](./account-lifecycle.md#45-invitations-by-email-issue-49)).
 - **Emails** (magic link, reset, verification) take the organization from the path, which replaces the optional `org` field of [team-access.md §10](./team-access.md#10-company-context-and-template-data-hooks-issue-2410); they are sent only to members, with the same answer and timing otherwise.
 - **Previews** need no session: the token is 256 random bits and the call is limited per IP. Unknown, expired, revoked and used-up tokens answer the same `400 invalid_invitation`.
@@ -152,7 +152,7 @@ Removed in realms with organizations (`login` stays for operators, §5.5): `/_au
 People sign in to "Acme", not to `org_cq…`. The id is what routes take once there is a session; before it, the routes marked † also accept the slug, so `acme.app.com`, `app.example/acme` or a "company" field on the sign-in page are enough.
 
 - **Resolved inside the call.** The slug is looked up as part of the sign-in itself, so there is no endpoint that answers "does this slug exist?". An unknown slug, the slug of an inactive organization, a non-member and a wrong password produce the same answer, with the same work done (the password is hashed anyway). Ids and slugs share one path segment: an id is tried first, and slugs cannot look like an id (§3).
-- **What still shows:** only what a working connection needs to show. `providers` lists the buttons of an organization that has a connection and answers like a plain organization otherwise ([org-sso.md](./org-sso.md), review item A1, accepted there). Nothing is learnt about organizations without a connection.
+- **What still shows:** only what a working connection needs to show. `providers` lists the buttons of an organization that has a connection and answers like a plain organization otherwise ([sso.md](./sso.md), review item A1, accepted there). Nothing is learnt about organizations without a connection.
 - **Everything after sign-in uses the id.** The sign-in answer returns it (`org`), the clients keep it, redirects and emails carry it, and routes that need a session take the id only.
 - **When the person does not know it,** the "which companies am I in?" email (§5.4) tells the owner of the address, and verified-domain discovery (#601) answers only for domains an organization has proved.
 
@@ -182,7 +182,8 @@ Replaces #600. Because sessions are scoped, enforcing a connection is a rule abo
 - **Who is affected:** members who joined another way (an invited contractor, say) can no longer enter until they sign in through the connection. Before enabling it, managers see who has no identity on the connection (`GET /_orgs/{org}/members?sso=false`); the response of `PATCH` lists the count.
 - **Existing sessions** of the organization that were not opened through a connection are revoked when it is enabled.
 - **Break glass:** realm admins clear it (`PATCH /_admin/orgs/{org}`, `backd org sso required off`), audited.
-- **Interplay:** an organization's `require_mfa` still applies; the provider's own second factor is not trusted ([org-sso.md §6](./org-sso.md#6-accounts-and-joining-issue-305)).
+- **Amended by [scim.md §9](./scim.md) (not yet built):** holders of `manage: org` keep `login`, `magic-link` and `reset-password/request` when `sso_required` is on, and every such holder must have a password and a second factor (MFA or passkey), enforced when the role is granted. That backup rule replaces the requirement above that the person turning it on has signed in through a connection, so an owner still cannot lock themselves out, and a broken connection no longer locks out the people who run the organization.
+- **Interplay:** an organization's `require_mfa` still applies; the provider's own second factor is not trusted ([sso.md §8](./sso.md)).
 
 ## 7. Account-level actions
 
@@ -302,10 +303,10 @@ New milestone `34-scoped-sessions`, after `30-org-sso` has merged:
 | Issue | Change |
 |---|---|
 | #597 Design: extensions | Depends on this design too; it must not describe `require_sso` as a membership filter any more |
-| #598 Apple | No change; its routes follow the id-only rule |
-| #599 Generic OIDC | No change; add that an owner-chosen issuer always refuses private, loopback, link-local and metadata addresses, and `https` only (outside `BACKD_DEV`) |
+| #598 Apple | **Closed as won't-do** by [sso.md §2](./sso.md): Apple gives no company proof for organizations |
+| #599 Generic OIDC | Built as step S6 of [sso.md §14](./sso.md): an issuer from the realm's allow-list, always `https`, never a private, loopback, link-local or metadata address (outside `BACKD_DEV`), admitted by a verified domain |
 | #600 Require organization sign-in | **Close**, replaced by 34.6: a rule about how people may sign in to an organization (`400 sso_required`, `sso_session` limits), not a `403 org_requires_sso` filter on sessions |
-| #601 Verified domains and discovery | Keep; it complements the "which companies am I in?" email of §5.4, which needs no proved domain. Linking an existing account by verified email only when the domain is verified for the organization **and** the account is already a member or invited, never to a stranger's account. The email lookup is the one way to find an organization from an address; it is the only discovery path in the API, limited per IP and answering only for verified domains |
+| #601 Verified domains and discovery | **Moves to the sign-in milestone**, step S5 ([sso.md §10](./sso.md)); originally: keep; it complements the "which companies am I in?" email of §5.4, which needs no proved domain. Linking an existing account by verified email only when the domain is verified for the organization **and** the account is already a member or invited, never to a stranger's account. The email lookup is the one way to find an organization from an address; it is the only discovery path in the API, limited per IP and answering only for verified domains |
 | #602 Review and docs | Add leakage tests over scoped sessions and the enforcement paths; depends on 34.6 |
 
 And one change to milestone `30-org-sso`, before it merges: **the organization routes that need a session (`/_orgs/{org}/sso`, `/_admin/orgs/{org}/sso`) accept the slug as well as the id**. They take the id only; the pre-session routes (`oauth/start`, `id-token`, `providers`) keep the slug (§5.3).

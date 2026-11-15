@@ -150,7 +150,7 @@ func realmConfig(s registry.RealmSettings, seesUsers bool) map[string]any {
 			"allow_require_mfa": o.AllowRequireMFA, "members_visible_to": o.MembersVisibleTo,
 		}
 		if o.SSO != nil {
-			// What organizations may connect (design/org-sso.md); absent when the feature is off.
+			// What organizations may connect (design/sso.md §9); absent when the feature is off.
 			orgs["sso"] = map[string]any{"providers": orStrings(o.SSO.Providers), "max_per_org": o.SSO.MaxPerOrg}
 		}
 		out["organizations"] = orgs

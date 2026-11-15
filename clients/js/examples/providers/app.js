@@ -4,7 +4,7 @@
 // page with a one-time code that the client redeems for a session on its own
 // (backd.auth.ready is the outcome).
 // Signed in, the page lists the user's sign-in methods and can link or
-// unlink providers. See design/identity-providers.md and its testing guide.
+// unlink providers. See design/sso.md and its testing guide.
 import { createClient, localStorageStorage } from 'backd-js'
 
 const backd = createClient({
@@ -209,7 +209,7 @@ document.addEventListener('alpine:init', () => {
 })
 
 // A readable message for each outcome the flow can end with
-// (design/identity-providers.md §8), plus validation details.
+// (design/sso.md §7.4), plus validation details.
 function describe(err) {
   const friendly = {
     cancelled: 'The sign-in was cancelled at the provider.',
