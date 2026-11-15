@@ -70,7 +70,7 @@ for f in pico.min.css alpine.min.js zip.js; do
 done
 
 # The JavaScript client the app imports (backd-js, as source).
-for f in account admin auth buckets cache client config consents data errors expand files functions index oauth orgs push realtime sha256 storage typed xhr; do
+for f in account admin auth buckets cache client config consents data errors expand files functions index oauth orgs passkeys push realtime sha256 size storage typed xhr; do
   curl -fsSL "https://fernandezvara.github.io/backd/tutorial/client/$f.js" -o "client/$f.js"
 done
 ```

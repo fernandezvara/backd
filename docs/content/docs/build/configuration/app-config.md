@@ -85,6 +85,8 @@ Administrators with write access to the `config` area change values through the 
 
 ```
 backd app-config set --realm shop --key maintenance.enabled --value true
+backd app-config set --realm shop --values '{"limits.upload_mb": 20, "features.export": true}'
+backd app-config reset --realm shop --keys maintenance,limits.upload_mb   # back to the declared defaults
 backd app-config history --realm shop
 backd app-config rollback --realm shop --version c4
 ```

@@ -6,7 +6,7 @@ weight: 310
 toc: true
 ---
 
-`backd` deliberately leaves some protections to the infrastructure around it: TLS, request rate limits and sign-up spam, body size limits at the edge, and database security. They are the same wherever `backd` runs. This section separates *what* to put in place, on this page, from the *technology* that does it ([Docker Compose](docker-compose/) or [Kubernetes](kubernetes/)) and from the *place* it runs ([cloud providers](cloud-providers/)).
+`backd` deliberately leaves some protections to the infrastructure around it: TLS, shared (cross-instance) request rate limits and sign-up spam, body size limits at the edge, and database security. They are the same wherever `backd` runs. This section separates *what* to put in place, on this page, from the *technology* that does it ([Docker Compose](docker-compose/) or [Kubernetes](kubernetes/)) and from the *place* it runs ([cloud providers](cloud-providers/)).
 
 ## What every installation needs
 
