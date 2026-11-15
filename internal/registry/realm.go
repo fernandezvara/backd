@@ -107,6 +107,9 @@ type RealmSettings struct {
 	// AuditRetention is how long audit records are kept (audit.retention);
 	// DefaultAuditRetention when not set.
 	AuditRetention time.Duration
+	// AuditEntries are realm.yaml's `audit.entries`: for each audit action, whether it is recorded.
+	// Read them through AuditEnabled, which applies the defaults.
+	AuditEntries map[string]bool
 	// Triggers are realm.yaml's `triggers:` limits (design/triggers-and-realtime.md §7); read
 	// them through TriggerLimits, which applies the instance's.
 	Triggers TriggerSettings
@@ -351,7 +354,8 @@ type realmDoc struct {
 		} `yaml:"read_access"`
 	} `yaml:"admin"`
 	Audit *struct {
-		Retention *string `yaml:"retention"`
+		Retention *string         `yaml:"retention"`
+		Entries   map[string]bool `yaml:"entries"`
 	} `yaml:"audit"`
 	AppConfig *struct {
 		CacheTTL *string `yaml:"cache_ttl"`
@@ -618,6 +622,16 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 			errs = append(errs, fmt.Errorf("audit.retention: must be at least 1d, got %s", *a.Retention))
 		default:
 			s.AuditRetention = d
+		}
+	}
+	if a := doc.Audit; a != nil && len(a.Entries) > 0 {
+		s.AuditEntries = make(map[string]bool, len(a.Entries))
+		for _, name := range slices.Sorted(maps.Keys(a.Entries)) {
+			if !IsAuditAction(name) {
+				errs = append(errs, auditEntriesError(name))
+				continue
+			}
+			s.AuditEntries[name] = a.Entries[name]
 		}
 	}
 

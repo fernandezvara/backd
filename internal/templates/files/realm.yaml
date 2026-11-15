@@ -113,10 +113,15 @@ auth:
   # reauth:
   #   ttl: 5m                        # 1m to 1h
 
-# How long the audit trail keeps its records (at least 1d). They hold user
-# ids and client addresses: personal data in many jurisdictions.
-# audit:
-#   retention: 365d
+# The audit trail. Records hold user ids and client addresses: personal data in many
+# jurisdictions, so `retention` (at least 1d) says how long they are kept.
+# `entries` lists every action the server can record: true records it, false does not.
+# Errors are recorded by default and sign-in successes are not (user.login); turn off
+# only what you are sure you do not need, since a missing record cannot be recovered.
+audit:
+  # retention: 365d
+  entries:
+#AUDIT_ENTRIES#
 
 # Browser origins allowed to call this realm (CORS). Empty means CORS is off.
 # cors:
