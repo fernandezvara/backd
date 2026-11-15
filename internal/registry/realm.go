@@ -18,6 +18,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/fernandezvara/backd/internal/email"
+	"github.com/fernandezvara/backd/internal/ratelimit"
 	"github.com/fernandezvara/backd/internal/strutil"
 )
 
@@ -107,6 +108,9 @@ type RealmSettings struct {
 	// AuditRetention is how long audit records are kept (audit.retention);
 	// DefaultAuditRetention when not set.
 	AuditRetention time.Duration
+	// RateLimits are realm.yaml's `rate_limit:`: the rate of the classes the realm sets, which
+	// replace the instance's for this realm (see RateSettings.RateFor).
+	RateLimits map[string]ratelimit.Rate
 	// AuditEntries are realm.yaml's `audit.entries`: for each audit action, whether it is recorded.
 	// Read them through AuditEnabled, which applies the defaults.
 	AuditEntries map[string]bool
@@ -353,7 +357,8 @@ type realmDoc struct {
 			Data  bool `yaml:"data"`
 		} `yaml:"read_access"`
 	} `yaml:"admin"`
-	Audit *struct {
+	RateLimit map[string]string `yaml:"rate_limit"`
+	Audit     *struct {
 		Retention *string         `yaml:"retention"`
 		Entries   map[string]bool `yaml:"entries"`
 	} `yaml:"audit"`
@@ -622,6 +627,21 @@ func parseRealmSettings(data []byte) (RealmSettings, []error) {
 			errs = append(errs, fmt.Errorf("audit.retention: must be at least 1d, got %s", *a.Retention))
 		default:
 			s.AuditRetention = d
+		}
+	}
+	if len(doc.RateLimit) > 0 {
+		s.RateLimits = make(map[string]ratelimit.Rate, len(doc.RateLimit))
+		for _, class := range slices.Sorted(maps.Keys(doc.RateLimit)) {
+			if !IsRateClass(class) {
+				errs = append(errs, fmt.Errorf("rate_limit.%s: not a request class; the classes are %s", class, strings.Join(RateClasses, ", ")))
+				continue
+			}
+			r, err := ParseRate(doc.RateLimit[class])
+			if err != nil {
+				errs = append(errs, fmt.Errorf("rate_limit.%s: %w", class, err))
+				continue
+			}
+			s.RateLimits[class] = r
 		}
 	}
 	if a := doc.Audit; a != nil && len(a.Entries) > 0 {

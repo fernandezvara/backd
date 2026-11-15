@@ -411,6 +411,7 @@ func registerRemote(cfg *kli.Config) {
 		cmdutil.Optional(cc, "networks", "where the key may be used from: comma-separated IP addresses or CIDR networks")
 		cmdutil.Optional(cc, "scopes", "what a data key reaches: comma-separated grants such as read:blog/posts,write:blog,call:main/export (default: everything)")
 		cmdutil.Optional(cc, "org", "in a realm with organizations, the organization (id or slug) a data key acting on behalf of users works in")
+		cmdutil.Optional(cc, "rate-limit", "the key's own request limit, <requests>/<window> such as 3000/1m, or none (default: the realm's and the instance's)")
 	})
 	k.SubCommand("list").ShortHelp("list the realm's API keys (never the keys themselves)").
 		Func(cmdutil.Act("backd apikey list", admin.ApikeyList)).Config(clicore.Remote)

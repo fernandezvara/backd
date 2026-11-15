@@ -48,6 +48,9 @@ type Config struct {
 	Expand registry.ExpandLimits
 	// Aggregate are the instance's aggregation limits (BACKD_AGGREGATE_*); zero means the defaults.
 	Aggregate registry.AggregateLimits
+	// RateLimit are the instance's request limits (BACKD_RATE_LIMIT*). The zero value is off, so a
+	// handler built without them (tests, direct mode) limits nothing.
+	RateLimit registry.RateSettings
 	// Realtime serves POST /v1/{realm}/_realtime; nil when this instance reads no change
 	// stream (BACKD_EVENTS=false). RealtimeLimits are the instance's, for the realm to lower.
 	Realtime       *realtime.Hub
@@ -154,7 +157,8 @@ func NewHandler(cfg Config) http.Handler {
 		maxBody = DefaultMaxBodyBytes
 	}
 	r := chi.NewRouter()
-	r.Use(withRequestID(cfg.Log), withTrustedProxies(cfg.TrustedProxies), requestMetrics(cfg.Metrics), accessLog, recoverer, securityHeaders, cors(cfg.Registry), refuseDevClients(cfg), typesStale(cfg.Registry), limitBody(maxBody))
+	limiter := newRequestLimiter(cfg)
+	r.Use(withRequestID(cfg.Log), withTrustedProxies(cfg.TrustedProxies), requestMetrics(cfg.Metrics), accessLog, recoverer, securityHeaders, cors(cfg.Registry), refuseDevClients(cfg), limiter.addressStage, typesStale(cfg.Registry), limitBody(maxBody))
 	r.NotFound(notFound)
 	r.MethodNotAllowed(methodNotAllowed)
 
@@ -188,14 +192,14 @@ func NewHandler(cfg Config) http.Handler {
 	if users == nil {
 		users = func(string) *auth.Users { return nil }
 	}
-	authRoutes := &authAPI{users: users, reg: cfg.Registry, actions: hostedActions(), opTimeout: opTimeout, oauth: cfg.oauthService(), baseURL: cfg.BackdURL}
+	authRoutes := &authAPI{users: users, reg: cfg.Registry, actions: hostedActions(), opTimeout: opTimeout, oauth: cfg.oauthService(), baseURL: cfg.BackdURL, limiter: limiter}
 	authRoutes.routes(r)
-	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users, callbackKey: cfg.CallbackKey, objects: newRealmObjects(cfg.Registry, users).withKeys(cfg.StorageAccessKey, cfg.StorageSecretKey).withPublicKeys(cfg.PublicStorageAccessKey, cfg.PublicStorageSecretKey), baseURL: cfg.BackdURL, maxUpload: maxUploadOf(cfg), imageMaxPixels: cfg.ImageMaxPixels, expand: cfg.Expand.OrDefault(), aggregateLim: cfg.Aggregate.OrDefault(), metrics: cfg.Metrics, hub: cfg.Realtime, realtimeLimits: cfg.RealtimeLimits}
+	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users, callbackKey: cfg.CallbackKey, objects: newRealmObjects(cfg.Registry, users).withKeys(cfg.StorageAccessKey, cfg.StorageSecretKey).withPublicKeys(cfg.PublicStorageAccessKey, cfg.PublicStorageSecretKey), baseURL: cfg.BackdURL, maxUpload: maxUploadOf(cfg), imageMaxPixels: cfg.ImageMaxPixels, expand: cfg.Expand.OrDefault(), aggregateLim: cfg.Aggregate.OrDefault(), metrics: cfg.Metrics, hub: cfg.Realtime, realtimeLimits: cfg.RealtimeLimits, limiter: limiter}
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, executorToken: cfg.ExecutorToken, log: cfg.Log, dev: cfg.Dev, concurrency: limiterFor(cfg.Registry), metrics: cfg.Metrics}
 	authRoutes.fns = fns
 	spec := &openAPI{reg: cfg.Registry}
 	if !cfg.DisableAdminAPI {
-		admin := &adminAPI{users: users, reg: cfg.Registry, fns: fns, fingerprint: cfg.ConfigFingerprint, version: cfg.Version, env: cfg.Env, baseURL: cfg.BackdURL, offline: cfg.Offline, devProblems: cfg.DevProblems, imageMaxPixels: cfg.ImageMaxPixels, expandMaxArray: cfg.Expand.OrDefault().MaxArray, aggregate: cfg.Aggregate, triggers: cfg.TriggerLimits, triggerAdmin: cfg.Triggers}
+		admin := &adminAPI{users: users, reg: cfg.Registry, fns: fns, fingerprint: cfg.ConfigFingerprint, version: cfg.Version, env: cfg.Env, baseURL: cfg.BackdURL, offline: cfg.Offline, devProblems: cfg.DevProblems, imageMaxPixels: cfg.ImageMaxPixels, expandMaxArray: cfg.Expand.OrDefault().MaxArray, aggregate: cfg.Aggregate, triggers: cfg.TriggerLimits, triggerAdmin: cfg.Triggers, limiter: limiter}
 		admin.routes(r, authRoutes.resolveRealm, withTimeout(opTimeout))
 		spec.protected = noStore(authRoutes.resolveRealm(withTimeout(opTimeout)(admin.requireAdmin(admin.need(registry.RightConfig)(http.HandlerFunc(spec.serve))))))
 	}

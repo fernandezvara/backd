@@ -23,6 +23,7 @@ type apiKey struct {
 	Prefix     string   `json:"prefix"`
 	Networks   []string `json:"networks"`
 	Scopes     []string `json:"scopes"`
+	RateLimit  *string  `json:"rate_limit"`
 	CreatedAt  string   `json:"created_at"`
 	LastUsedAt *string  `json:"last_used_at"`
 	ExpiresAt  *string  `json:"expires_at"`
@@ -48,6 +49,12 @@ func keyOptions(c *kli.CommandContext, body map[string]any) error {
 	}
 	if v := cmdutil.Str(c, "org"); v != "" {
 		body["org"] = v
+	}
+	if v := cmdutil.Str(c, "rate-limit"); v != "" {
+		if _, err := registry.ParseRate(v); err != nil {
+			return cmdutil.UsageErr(fmt.Errorf("--rate-limit: %w", err))
+		}
+		body["rate_limit"] = v
 	}
 	if v := cmdutil.Str(c, "scopes"); v != "" {
 		grants := strings.Split(v, ",")
@@ -84,6 +91,9 @@ func ApikeyCreate(c *kli.CommandContext) error {
 	if len(k.Scopes) > 0 {
 		msg += " It reaches only: " + strings.Join(k.Scopes, ", ") + "."
 	}
+	if k.RateLimit != nil {
+		msg += " Its own request limit: " + *k.RateLimit + "."
+	}
 	if k.ExpiresAt != nil {
 		msg += " It expires at " + *k.ExpiresAt + "."
 	} else {
@@ -103,7 +113,7 @@ func ApikeyList(c *kli.CommandContext) error {
 		return err
 	}
 	tw := tabwriter.NewWriter(c.Stdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tROLE\tKEY\tSCOPES\tNETWORKS\tCREATED\tLAST USED\tEXPIRES")
+	fmt.Fprintln(tw, "NAME\tROLE\tKEY\tSCOPES\tNETWORKS\tRATE LIMIT\tCREATED\tLAST USED\tEXPIRES")
 	for _, k := range page.Items {
 		nets, scopes := strings.Join(k.Networks, ","), strings.Join(k.Scopes, ",")
 		if nets == "" {
@@ -112,7 +122,7 @@ func ApikeyList(c *kli.CommandContext) error {
 		if scopes == "" {
 			scopes = "all" // no scopes: full access
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s…\t%s\t%s\t%s\t%s\t%s\n", k.Name, k.Role, k.Prefix, scopes, nets, k.CreatedAt, orDash(k.LastUsedAt), orDash(k.ExpiresAt))
+		fmt.Fprintf(tw, "%s\t%s\t%s…\t%s\t%s\t%s\t%s\t%s\t%s\n", k.Name, k.Role, k.Prefix, scopes, nets, orDash(k.RateLimit), k.CreatedAt, orDash(k.LastUsedAt), orDash(k.ExpiresAt))
 	}
 	return tw.Flush()
 }

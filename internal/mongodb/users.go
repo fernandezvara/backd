@@ -680,6 +680,7 @@ type apiKeyDoc struct {
 	Role       string     `bson:"role"`
 	Networks   []string   `bson:"networks,omitempty"`
 	Scopes     []string   `bson:"scopes,omitempty"`
+	RateLimit  string     `bson:"rate_limit,omitempty"`
 	Prefix     string     `bson:"prefix"`
 	CreatedAt  time.Time  `bson:"created_at"`
 	LastUsedAt *time.Time `bson:"last_used_at,omitempty"`
@@ -702,12 +703,12 @@ func scopes(stored []string) auth.Scopes {
 }
 
 func (d apiKeyDoc) key() auth.APIKey {
-	return auth.APIKey{Name: d.Name, Role: auth.KeyRole(d.Role), Networks: networks(d.Networks), Scopes: scopes(d.Scopes), Prefix: d.Prefix, Hash: d.Hash, CreatedAt: d.CreatedAt.UTC(), LastUsedAt: utcPtr(d.LastUsedAt), ExpiresAt: utcPtr(d.ExpiresAt), Org: d.Org}
+	return auth.APIKey{Name: d.Name, Role: auth.KeyRole(d.Role), Networks: networks(d.Networks), Scopes: scopes(d.Scopes), RateLimit: d.RateLimit, Prefix: d.Prefix, Hash: d.Hash, CreatedAt: d.CreatedAt.UTC(), LastUsedAt: utcPtr(d.LastUsedAt), ExpiresAt: utcPtr(d.ExpiresAt), Org: d.Org}
 }
 
 func (s *AuthStore) CreateAPIKey(ctx context.Context, k auth.APIKey) error {
 	_, err := s.apiKeys().InsertOne(ctx, apiKeyDoc{
-		Hash: k.Hash, Name: k.Name, Role: string(k.Role), Networks: k.Networks.Strings(), Scopes: k.Scopes.Strings(), Prefix: k.Prefix, CreatedAt: k.CreatedAt, LastUsedAt: k.LastUsedAt, ExpiresAt: k.ExpiresAt, Org: k.Org,
+		Hash: k.Hash, Name: k.Name, Role: string(k.Role), Networks: k.Networks.Strings(), Scopes: k.Scopes.Strings(), RateLimit: k.RateLimit, Prefix: k.Prefix, CreatedAt: k.CreatedAt, LastUsedAt: k.LastUsedAt, ExpiresAt: k.ExpiresAt, Org: k.Org,
 	})
 	if mongo.IsDuplicateKeyError(err) {
 		return auth.ErrKeyNameTaken

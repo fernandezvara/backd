@@ -212,6 +212,7 @@ func Serve(ctx context.Context, a *App) error {
 		}
 		a.log.Warn("BACKD_DEV_ANY_ADDR=true: dev mode on an address that isn't localhost; make sure nothing but this machine can reach it", "addr", a.cfg.HTTPAddr)
 	}
+	a.logRateLimits()
 	if a.cfg.DisableAdminAPI {
 		a.log.Info("BACKD_ADMIN_API=false: this instance serves no admin API; use the instance that does (the CLI's BACKD_URL, the admin UI)")
 	}
@@ -465,6 +466,7 @@ func (a *App) HandlerConfig() httpapi.Config {
 		ImageMaxPixels:    a.cfg.ImageMaxPixels,
 		Expand:            a.cfg.Expand,
 		Aggregate:         a.cfg.Aggregate,
+		RateLimit:         a.cfg.RateLimit,
 		TriggerLimits:     a.cfg.TriggerLimits,
 		Realtime:          a.hub,
 		RealtimeLimits:    a.cfg.Realtime,
@@ -1222,5 +1224,32 @@ func (a *App) announce(ctx context.Context) func() {
 		rel, stop := context.WithTimeout(context.Background(), 5*time.Second)
 		defer stop()
 		mongodb.ReleaseInstance(rel, a.client, id)
+	}
+}
+
+// logRateLimits says once, at start, whether requests are limited and by how much, and which realms
+// set limits of their own.
+func (a *App) logRateLimits() {
+	rl := a.cfg.RateLimit
+	if !rl.Enabled {
+		a.log.Info("request rate limiting is off (BACKD_RATE_LIMIT=off, or dev mode)")
+		return
+	}
+	attrs := []any{"note", "per instance and in memory: with N instances a client may make up to N times these"}
+	for _, class := range registry.RateClasses {
+		attrs = append(attrs, class, registry.FormatRate(rl.RateFor(nil, class)))
+	}
+	a.log.Info("request rate limiting is on", attrs...)
+	for _, rlm := range a.reg.SortedRealms() {
+		if len(rlm.Settings.RateLimits) == 0 {
+			continue
+		}
+		own := []any{"realm", rlm.Name}
+		for _, class := range registry.RateClasses {
+			if r, ok := rlm.Settings.RateLimits[class]; ok {
+				own = append(own, class, registry.FormatRate(r))
+			}
+		}
+		a.log.Info("realm sets its own request limits", own...)
 	}
 }

@@ -26,6 +26,8 @@ import (
 // adminAPI serves /v1/{realm}/_admin/…: user management for server-side
 // services holding one of the realm's API keys.
 type adminAPI struct {
+	// limiter is the request limiter; nil when it is off.
+	limiter     *requestLimiter
 	users       func(realm string) *auth.Users
 	reg         *registry.Registry
 	fns         *functions                 // runs functions by hand (see adminInvoke)
@@ -238,11 +240,17 @@ func (a *adminAPI) requireAdmin(next http.Handler) http.Handler {
 		}
 		caller, err := usersOf(r).Identify(r.Context(), credential)
 		if err != nil {
+			if !a.limiter.refusedCredential(w, r, realmOf(r)) {
+				return
+			}
 			authError(w, r, err)
 			return
 		}
 		setActor(r.Context(), caller.Actor())
 		if !allowedFrom(w, r, caller) {
+			return
+		}
+		if !a.limiter.principalStage(w, r, realmOf(r), caller) {
 			return
 		}
 		// An admin API key opens every area; a user opens what their roles do.
@@ -914,6 +922,7 @@ func apiKeyJSON(k auth.APIKey) map[string]any {
 		"prefix":       k.Prefix,
 		"networks":     k.Networks.Strings(),
 		"scopes":       k.Scopes.Strings(),
+		"rate_limit":   nilIfEmpty(k.RateLimit),
 		"created_at":   formatTime(k.CreatedAt),
 		"last_used_at": lastUsed,
 		"expires_at":   expires,
@@ -950,12 +959,13 @@ func (a *adminAPI) createAPIKey(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	f, ok := fields(w, r, obj, map[string]string{"name": "string", "role": "string?", "expires_in": "string?", "networks": "strings?", "scopes": "strings?", "org": "string?"})
+	f, ok := fields(w, r, obj, map[string]string{"name": "string", "role": "string?", "expires_in": "string?", "networks": "strings?", "scopes": "strings?", "org": "string?", "rate_limit": "string?"})
 	if !ok {
 		return
 	}
 	var opts auth.KeyOptions
 	opts.Org, _ = f["org"].(string)
+	opts.RateLimit, _ = f["rate_limit"].(string)
 	if s, ok := f["role"].(string); ok {
 		role, err := auth.ParseKeyRole(s)
 		if err != nil || s == "" {
@@ -996,6 +1006,9 @@ func (a *adminAPI) createAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	case orgInvalid(err):
 		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "org", Reason: err.Error()})
+		return
+	case err != nil && strings.HasPrefix(err.Error(), "rate limit "):
+		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "rate_limit", Reason: strings.TrimPrefix(err.Error(), "rate limit ")})
 		return
 	case err != nil && strings.HasPrefix(err.Error(), "invalid API key name"):
 		writeError(w, r, http.StatusBadRequest, codeValidation, "invalid request body", Detail{Path: "name", Reason: err.Error()})

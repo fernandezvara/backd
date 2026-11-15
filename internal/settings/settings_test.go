@@ -23,7 +23,7 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := Settings{ConfigDir: "/cfg", MongoURI: "mongodb://m", HTTPAddr: ":8080", ProvisionMode: ProvisionApply, LogLevel: slog.LevelInfo, MaxBodyBytes: 1 << 20, MaxUploadBytes: 100 << 20, ImageMaxPixels: 40_000_000, ImageTimeout: 30 * time.Second, Expand: registry.DefaultExpandLimits, Aggregate: registry.DefaultAggregateLimits, TriggerLimits: registry.DefaultTriggerLimits, DeploymentID: "default",
+	want := Settings{ConfigDir: "/cfg", MongoURI: "mongodb://m", HTTPAddr: ":8080", ProvisionMode: ProvisionApply, LogLevel: slog.LevelInfo, MaxBodyBytes: 1 << 20, MaxUploadBytes: 100 << 20, ImageMaxPixels: 40_000_000, ImageTimeout: 30 * time.Second, Expand: registry.DefaultExpandLimits, Aggregate: registry.DefaultAggregateLimits, RateLimit: registry.DefaultRateSettings(), TriggerLimits: registry.DefaultTriggerLimits, DeploymentID: "default",
 		MongoOpTimeout: 10 * time.Second, ShutdownTimeout: 15 * time.Second, AdminUIIdle: 30 * time.Minute, InternalAddr: ":8081", WorkerConcurrency: 10, Events: true, Triggers: true}
 	if !reflect.DeepEqual(s, want) {
 		t.Errorf("got %+v, want %+v", s, want)
@@ -348,5 +348,21 @@ func TestByteSettingsTakeUnits(t *testing.T) {
 func TestLoadRefusesBadImageMaxPixels(t *testing.T) {
 	if _, err := Load(env(map[string]string{"CONFIG_DIR": "/c", "MONGO_URI": "m", "BACKD_IMAGE_MAX_PIXELS": "x"})); err == nil {
 		t.Error("Load accepted a bad BACKD_IMAGE_MAX_PIXELS")
+	}
+}
+
+func TestLoadRateLimitIsOffInDevMode(t *testing.T) {
+	base := map[string]string{"CONFIG_DIR": "/cfg", "MONGO_URI": "mongodb://m"}
+	prod, err := Load(env(base))
+	if err != nil || !prod.RateLimit.Enabled {
+		t.Fatalf("production: %+v %v", prod.RateLimit, err)
+	}
+	dev, err := Load(env(map[string]string{"CONFIG_DIR": "/cfg", "MONGO_URI": "mongodb://m", "BACKD_DEV": "true"}))
+	if err != nil || dev.RateLimit.Enabled {
+		t.Fatalf("dev: %+v %v", dev.RateLimit, err)
+	}
+	devOn, err := Load(env(map[string]string{"CONFIG_DIR": "/cfg", "MONGO_URI": "mongodb://m", "BACKD_DEV": "true", "BACKD_RATE_LIMIT": "on", "BACKD_RATE_LIMIT_READ": "10/1s"}))
+	if err != nil || !devOn.RateLimit.Enabled || devOn.RateLimit.Rates["read"].Limit != 10 {
+		t.Fatalf("dev with the limiter on: %+v %v", devOn.RateLimit, err)
 	}
 }

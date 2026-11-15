@@ -50,6 +50,8 @@ type Settings struct {
 	Expand registry.ExpandLimits
 	// Aggregate are the instance's limits for aggregations (BACKD_AGGREGATE_*).
 	Aggregate registry.AggregateLimits
+	// RateLimit are the instance's request limits (BACKD_RATE_LIMIT*): on unless BACKD_DEV.
+	RateLimit registry.RateSettings
 	// DeploymentID is BACKD_DEPLOYMENT_ID (default "default"): what keeps the trigger dispatcher
 	// of this backd deployment apart from another one's when both share a MongoDB cluster.
 	DeploymentID string
@@ -216,6 +218,12 @@ func Load(getenv func(string) string) (Settings, error) {
 		s.Aggregate = l
 	}
 
+	// Dev mode is read below; the limiter is off there unless BACKD_RATE_LIMIT turns it on.
+	if l, err := limits.RateLimit(getenv, strings.EqualFold(getenv("BACKD_DEV"), "true")); err != nil {
+		errs = append(errs, err)
+	} else {
+		s.RateLimit = l
+	}
 	if l, err := RealtimeLimitsFrom(getenv); err != nil {
 		errs = append(errs, err)
 	} else {

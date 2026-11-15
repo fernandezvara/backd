@@ -26,6 +26,14 @@ info:
     exposed to browsers. Only a User-Agent whose first product token is exactly `backd` is
     looked at.
 
+    Requests are limited by the instance (design: in memory, per instance): a refused request is
+    `429 too_many_requests` with `Retry-After` (seconds), and the answers of limited classes carry
+    `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset` (seconds until the bucket is full)
+    for the bucket the request used. The classes are `anonymous` and `auth` (by client address, for
+    requests without credentials), and `read`, `write`, `files` and `admin` (by user or API key); an
+    API key may have a limit of its own. Health checks, preflights and the internal listener are not
+    limited. Every operation can answer `429` for this reason.
+
     Every operation may answer `403 dev_client_refused`: a released server outside dev mode
     refuses a development CLI (`User-Agent: backd/dev`) on every route, before
     authentication. It guards against mistakes (an untested build on production data), not
@@ -6170,6 +6178,14 @@ paths:
                     (`X-Backd-On-Behalf-Of`) to one organization, by id or slug: it counts only that
                     organization, as a session scoped to it would. Without it such a key counts no
                     organization. Not for admin keys.
+                rate_limit:
+                  type: string
+                  examples: ["3000/1m", "none"]
+                  description: >-
+                    The key's own request limit, `<requests>/<window>` (a window of 1s to 24h) or `none`:
+                    it replaces the limits of the read, write, files and admin classes for this key, for a
+                    service that legitimately sends more than a browser. Without it the key uses the realm's
+                    and the instance's limits. Requests made on behalf of users count against the key.
       responses:
         "201":
           headers:
@@ -11741,10 +11757,11 @@ components:
     APIKey:
       type: object
       additionalProperties: false
-      required: [name, role, prefix, networks, scopes, created_at, last_used_at, expires_at, org]
+      required: [name, role, prefix, networks, scopes, rate_limit, created_at, last_used_at, expires_at, org]
       properties:
         name: { type: string }
         org: { type: [string, "null"], description: "The organization the key is bound to when it acts on behalf of a user; null: none." }
+        rate_limit: { type: [string, "null"], description: "The key's own request limit (`3000/1m0s`, or `none`); null: the realm's and the instance's." }
         role: { enum: [data, admin] }
         prefix: { type: string, description: "The first characters of the key, to recognize it.", pattern: "^bdk_" }
         networks: { type: array, items: { type: string }, description: "Where the key may be used from; empty means anywhere." }
@@ -11757,10 +11774,11 @@ components:
       description: An API key as listed, plus the key itself, shown only here.
       type: object
       additionalProperties: false
-      required: [name, role, prefix, networks, scopes, created_at, last_used_at, expires_at, org, key]
+      required: [name, role, prefix, networks, scopes, rate_limit, created_at, last_used_at, expires_at, org, key]
       properties:
         name: { type: string }
         org: { type: [string, "null"] }
+        rate_limit: { type: [string, "null"] }
         role: { enum: [data, admin] }
         prefix: { type: string, pattern: "^bdk_" }
         networks: { type: array, items: { type: string } }
