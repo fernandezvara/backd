@@ -16,6 +16,11 @@ const (
 	// record admin.login, passkeys passkey.login, organization connections org.sso.login).
 	// Details: strategy, methods, session_id. Off by default.
 	AuditUserLogin = "user.login"
+	// AuditUserStepFailed is a later step that failed: a wrong authenticator or recovery code, or
+	// a step answered with the wrong method. The target is the user. Details: step (the method
+	// that was tried), strategy, reason, attempts and throttled as for user.login_failed. A failed
+	// passkey step is passkey.login_failed.
+	AuditUserStepFailed = "user.step_failed"
 	// AuditUserLoginFailed is a first step that failed. The target is the user, or `anonymous`
 	// with address_hash when the address has no account. Details: strategy, reason, attempts
 	// (when the window saw more than one) and throttled.
@@ -48,7 +53,7 @@ func (s *Users) auditLogin(ctx context.Context, u User, sess Session, methods []
 
 // signInFailure describes one failed sign-in for auditSignInFailure.
 type signInFailure struct {
-	action   string // AuditUserLoginFailed (or the step action, below)
+	action   string // AuditUserLoginFailed or AuditUserStepFailed
 	email    string // the address the person typed or the challenge was made for; "" if none
 	userID   string // the account, when the failure knows it
 	strategy string
@@ -163,4 +168,13 @@ func (s *Users) passwordFailureReason(ctx context.Context, email, ip string, err
 		return ReasonInvalidCredentials
 	}
 	return ""
+}
+
+// auditStepFailure records a failed second step of a challenge. A passkey step has its own entry
+// (passkey.login_failed, written where the ceremony is checked).
+func (s *Users) auditStepFailure(ctx context.Context, c AuthChallenge, method, reason, ip string) {
+	if method == MethodPasskey {
+		return
+	}
+	s.auditSignInFailure(ctx, signInFailure{action: AuditUserStepFailed, userID: c.UserID, strategy: c.Strategy, step: method, reason: reason, ip: ip})
 }

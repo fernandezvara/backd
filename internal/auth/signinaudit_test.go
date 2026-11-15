@@ -166,3 +166,32 @@ func TestFailedLinkAndCodeRedemptionsAreRecorded(t *testing.T) {
 		t.Errorf("records = %+v", got)
 	}
 }
+
+func TestFailedSecondStepIsRecordedAndTheLoginOnlyAfterIt(t *testing.T) {
+	ctx := context.Background()
+	f := newMFAFixture(t)
+	f.svc.Settings.AuditEntries = map[string]bool{AuditUserLogin: true}
+	ch := f.challenge(t)
+
+	if _, err := f.svc.VerifyMFA(ctx, ch, MethodTOTP, "000000", "10.0.0.9"); err == nil {
+		t.Fatal("a wrong code must fail")
+	}
+	got := recordsOf(f.store, AuditUserStepFailed)
+	if len(got) != 1 || got[0].Target != "user:"+f.user.ID || got[0].Details["step"] != MethodTOTP || got[0].Details["reason"] != ReasonInvalidCode {
+		t.Fatalf("step_failed records = %+v", got)
+	}
+	if n := len(recordsOf(f.store, AuditUserLogin)); n != 0 {
+		t.Fatalf("user.login recorded before the second step, %d", n)
+	}
+
+	if _, err := f.svc.VerifyMFA(ctx, ch, MethodTOTP, f.code(t, 0), "10.0.0.9"); err != nil {
+		t.Fatal(err)
+	}
+	logins := recordsOf(f.store, AuditUserLogin)
+	if len(logins) != 1 {
+		t.Fatalf("user.login records = %d, want 1", len(logins))
+	}
+	if m, _ := logins[0].Details["methods"].([]string); len(m) != 2 || m[1] != MethodTOTP {
+		t.Errorf("methods = %v", logins[0].Details["methods"])
+	}
+}
