@@ -22,7 +22,7 @@ Every collection's `schema.json` is enforced at two levels.
 | `exclusiveMinimum: n` / `exclusiveMaximum: n` | `minimum` / `maximum: n` plus `exclusiveMinimum` / `exclusiveMaximum: true` |
 | `properties`, `required`, `enum`, `minimum`, `maximum`, `multipleOf`, `minLength`, `maxLength`, `pattern`, `items`, `minItems`, `maxItems`, `uniqueItems`, `additionalProperties`, `minProperties`, `maxProperties`, `allOf`, `anyOf`, `oneOf`, `not` | copied as-is (subschemas translated recursively) |
 
-- Annotations (`title`, `description`, `default`, `examples`, `$comment`, …) are dropped silently.
+- Annotations (`title`, `description`, `examples`, `$comment`, …) are dropped silently. `default` is not an annotation for `backd`: the API fills it in on a write (see [Defaults](../config-dir/#defaults)), and it stays out of the database validator.
 - Any other keyword (for example `format`, `$ref`/`$defs`, `prefixItems`, `unevaluatedProperties` or `if`/`then`/`else`) is left out of the database validator and logged at `info` level with its location. The API level still enforces it.
 
 ## Finding documents that no longer match

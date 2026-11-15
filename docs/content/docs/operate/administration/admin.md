@@ -81,6 +81,7 @@ Paths are relative to `/v1/{realm}/_admin`. Bodies are JSON (`Content-Type: appl
 | `GET /users/{id}/mfa` | none | `200` with the user's [second factor](../../../build/auth/mfa/): `enabled`, `methods`, `recovery_codes_left`, `required`; never a secret or a code |
 | `GET /users/{id}/devices` | none | `200` with the user's [push devices](../../../build/push/devices/), most recently seen first (`id`, `platform`, `name`, `created_at`, `last_seen`; never a token); `404 push_not_configured` without `push:` |
 | `DELETE /users/{id}/devices/{device_id}` | none | `204`; the device stops receiving pushes; audited as `device.removed`. `404` for an unknown device |
+| `DELETE /push/devices?platform=android\|ios\|web` | none | `200` with `{platform, removed}`: removes every device of a platform in the realm, which is what rotating the VAPID key does for `web` (`backd push web-keys --rotate`). Audited as `push.devices_removed` |
 | `GET /users/{id}/sessions` | none | `200` with the user's unexpired sessions, newest first (`id`, `created_at`, `last_used_at`, `expires_at`; never a token) |
 | `DELETE /users/{id}/sessions/{session_id}` | none | `204`; the session's token stops working at once; audited as `session.revoke`. `404` for an unknown session |
 | `POST /users/{id}/password` | `{"password"}` | `204` |
@@ -110,6 +111,7 @@ Paths are relative to `/v1/{realm}/_admin`. Bodies are JSON (`Content-Type: appl
 | `GET /orgs/{org}/teams`, `POST /orgs/{org}/teams` | `{"name", "roles"?}` | The organization's [teams](../../../build/organizations/api/#teams); `201` on create, `409 team_name_taken` or `team_limit_reached`. Audited as `org.team_create` |
 | `PATCH` and `DELETE /orgs/{org}/teams/{team}` | `{"name"?, "roles"?}` | `200` / `204`; `409 last_org_manager` when no manager would be left. Audited as `org.team_update`, `org.team_delete` |
 | `PUT` and `DELETE /orgs/{org}/teams/{team}/members/{user}` | none | `200` with the member; `404` when the user isn't a member. Audited as `org.team_member_add`, `org.team_member_remove` |
+| `POST`, `PATCH` and `DELETE /orgs/{org}/teams/{team}/roles` | `{"user", "role", "from"?, "until"?}` | Give a member a [team role](../../../build/organizations/team-roles/), change its window, or take it away, without being a manager of the team. Same bodies and answers as the member-facing `/_orgs/{org}/teams/{team}/roles` |
 | `GET /orgs/{org}/invitations` | none | `200` with the organization's [invitations](../../../build/organizations/api/#invitations), never tokens |
 | `POST /orgs/{org}/invitations` | `{"binding", "user"?, "email"?, "roles"?, "teams"?, "send"?, "expires_in"?, "max_uses"?}` | `201` with the invitation and its `token` and `link`, which are shown only now; any role may be given, but an open link never one that manages the organization. Audited as `org.invitation_create` |
 | `POST /orgs/{org}/invitations/{id}/link` | none | `200` with a new token and link; the old one stops working |

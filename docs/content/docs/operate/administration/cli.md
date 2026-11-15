@@ -120,6 +120,21 @@ When `BACKD_API_KEY` is set, `backd user` and `backd apikey` send that key inste
 BACKD_URL=https://api.example.com BACKD_API_KEY=$ADMIN_KEY backd user list --realm blog
 ```
 
+### Organizations
+
+`backd orgs` is for realm administrators; people manage their own organizations through the `/_orgs` API. The commands you reach for most:
+
+```sh
+backd orgs create --realm shop --name "Acme" --slug acme --owner ada@example.com
+backd orgs members --realm shop --id ORG_ID
+backd orgs add-member --realm shop --id ORG_ID --email bob@example.com --roles editor   # audited, no invitation
+backd orgs invite --realm shop --id ORG_ID --email carol@example.com --roles editor --send
+backd orgs invite --realm shop --id ORG_ID --open --uses 25      # an open link: anyone signed in who holds it
+backd orgs claims-set --realm shop --id ORG_ID --claims '{"plan": "pro"}'   # at most 1 KiB of JSON
+```
+
+An invitation's link and token are printed **once**. `--send` also emails the link (needs `email:` and the secrets key on the server); `--expires` is `7d` by default and at most `30d`. The sign-in connection commands (`sso`, `sso-set`, `sso-delete`, `sso-required-off`) are in [company sign-in](../../../build/organizations/sign-in/).
+
 ## Errors
 
 Commands print the API's error code and message, with a hint when there's something to do:

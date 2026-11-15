@@ -18,7 +18,7 @@ flowchart LR
             direction LR
             db["database<br/>MongoDB {realm}__{database}"]
             col["collection<br/>MongoDB collection"]
-            doc["document<br/>JSON + _meta.id · _meta.owner · _meta.org"]
+            doc["document<br/>JSON + id · _meta (version · owner · org)"]
             db --> col --> doc
         end
         subgraph features["features"]
@@ -37,8 +37,9 @@ flowchart LR
 
 - **A realm is where you manage the data's security** — the authority everything inside shares. Users, sessions, API keys, organizations, email templates and secrets belong to one realm, so a realm can be a whole application, or a group of applications that share the same users and get single sign-on across their databases, or a part of an app you want apart by design (a public area next to a private one). Nothing crosses the boundary: the users of one realm never sign in to another, so one `backd` instance can safely serve several unrelated realms. `realm.yaml` holds the realm's settings.
 - **A database groups a realm's collections.** Split them however it helps: `main` for the app's data, another for notifications or logs. It is stored as the MongoDB database `<realm>__<database>`, so anything that speaks MongoDB sees the data laid out plainly.
-- **A collection holds documents of one shape.** Its `schema.json` validates every write, `indexes.json` declares the indexes and `collection.yaml` says who may read, write or delete. It is stored as one MongoDB collection.
-- **A document is a JSON object** in a collection: your fields, plus a server-owned `_meta.id` and `_meta` carrying timestamps, the owner, and the organization and team when they apply.
+- **A collection holds documents of one shape.** Its `schema.json` validates every write (and fills in the `default` of a field the request leaves out), `indexes.json` declares the indexes and `collection.yaml` says who may read, write or delete. It is stored as one MongoDB collection.
+- **A schema can change over time without breaking old apps.** A collection can keep its schema as versions (`schema.v1.json`, `schema.v2.json`…) with a TypeScript migration between them: every document records the version it was written under, a background job brings stored documents up to the current one, apps declare the version they were built for, and a minimum version turns away apps too old to work. See [Evolving a schema](../build/configuration/evolving-a-schema/).
+- **A document is a JSON object** in a collection: your fields, plus a server-owned `id` and `_meta`, which carries the timestamps, the write `version`, the schema version, the owner, and the organization and team when they apply.
 - **Users, sessions, API keys and organizations belong to the realm:** one sign-in reaches every database in it, with brute-force protection, invitations, a second factor and consents.
 - **Functions are JS/TS in isolated Deno processes** — sync calls, background jobs, cron, webhooks and triggers — for the logic clients can't be trusted with.
 - **Email and push** use the realm's templates and send through delivery functions you write.
@@ -53,7 +54,7 @@ config/                         CONFIG_DIR
     ├── _realm/                 email, pages, push, consents, compliance, config
     └── main/                   a database
         ├── orders/             a collection
-        │   ├── schema.json     what a document may contain
+        │   ├── schema.json     what a document may contain (or schema.v1.json, schema.v2.json… for a schema that evolves)
         │   ├── indexes.json    its indexes
         │   └── collection.yaml who may read and write, files, triggers
         └── _functions/         server-side functions

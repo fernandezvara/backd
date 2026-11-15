@@ -50,7 +50,7 @@ The record of an `async` function call: the call answers `202` at once and a [wo
 
 ## `_meta`
 
-The part of every document that the server owns: timestamps, `version`, and in a realm with auth the owner and who created and last changed it. Requests cannot set it. See [Documents](../api/documents/).
+The part of every document that the server owns: timestamps, `version` (the write counter), the [schema version](#schema-version) in a versioned collection, and in a realm with auth the owner and who created and last changed it. Requests cannot set it. See [Documents](../api/documents/).
 
 ## Method
 

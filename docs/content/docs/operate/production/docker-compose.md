@@ -6,7 +6,7 @@ weight: 311
 toc: true
 ---
 
-`backd` deliberately leaves some protections to the infrastructure around it: TLS, request rate limits and sign-up spam, body size limits at the edge, and database security. The repository ships a reference deployment that puts all of these in place. It lives in [`deploy/production/`](https://github.com/fernandezvara/backd/tree/main/deploy/production), and CI tests it end to end on every change.
+`backd` deliberately leaves some protections to the infrastructure around it: TLS, shared (cross-instance) request rate limits and sign-up spam, body size limits at the edge, and database security. The repository ships a reference deployment that puts all of these in place. It lives in [`deploy/production/`](https://github.com/fernandezvara/backd/tree/main/deploy/production), and CI tests it end to end on every change.
 
 The protections themselves are the same on every platform ([Production deployment](../)); this page is how Docker Compose does them. For a cluster, see [Kubernetes](../kubernetes/).
 

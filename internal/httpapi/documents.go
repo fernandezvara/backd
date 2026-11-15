@@ -204,6 +204,7 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	c.ApplyDefaults(body)
 	if !validate(w, r, c, body) {
 		return
 	}
@@ -541,6 +542,7 @@ func (d *documents) replace(w http.ResponseWriter, r *http.Request) {
 		if pending != nil && !pending.apply(w, r, c, candidate, timesToStrings(current).(map[string]any)) {
 			return nil, false
 		}
+		c.ApplyDefaults(candidate)
 		if !validate(w, r, c, candidate) {
 			return nil, false
 		}

@@ -13034,7 +13034,9 @@ components:
       type: object
       description: |
         The document's fields, validated against the collection's
-        schema.json. `_id` and `_meta` are ignored, and so is `id` on `PUT` and
+        schema.json. On a create and a `PUT`, a property's schema `default` is
+        filled in first when the body leaves the field out (never on `PATCH`;
+        an explicit `null` is kept). `_id` and `_meta` are ignored, and so is `id` on `PUT` and
         `PATCH`. On a create, `id` is the document's id in a collection that
         declares `custom_id` (required there), and `400 id_not_allowed` in one
         that generates ids. File fields are ignored too,

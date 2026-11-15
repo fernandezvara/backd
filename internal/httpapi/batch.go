@@ -272,6 +272,7 @@ func (d *documents) parseBatchOp(w http.ResponseWriter, r *http.Request, realm, 
 		// A replace keeps the document's files, so with file fields it is validated
 		// once the stored document is read (applyBatchOp).
 		if kind == "create" || len(c.Files) == 0 {
+			c.ApplyDefaults(doc)
 			if err := c.Schema.Validate(doc); err != nil {
 				writeError(w, r, http.StatusBadRequest, codeValidation, fmt.Sprintf("operation %d failed schema validation", index), prefixDetails(idx, validationDetails(err))...)
 				return batchOp{}, false
@@ -363,6 +364,7 @@ func (d *documents) applyBatchOp(ctx context.Context, r *http.Request, a access,
 		if len(op.collection.Files) > 0 {
 			candidate := docutil.DeepCopyMap(op.fields)
 			keepFileFields(op.collection, candidate, current)
+			op.collection.ApplyDefaults(candidate)
 			if err := op.collection.Schema.Validate(timesToStrings(candidate)); err != nil {
 				return nil, &patchValidationErr{err: err}
 			}

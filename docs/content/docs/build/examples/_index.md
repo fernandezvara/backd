@@ -17,6 +17,11 @@ The repository includes example configurations under `examples/config`, and exam
 | [Mailbox](../functions/email/#developing-without-a-provider) | `workshop` | The emails the workshop realm would send, captured by its `email-capture` function instead of delivered, with working links: a small app to read them. Local development only |
 | [Expenses with functions](expenses-with-functions/) | `expenses-with-functions` | The same app, same layout, with those holes closed by five functions — compared side by side with what changed and why |
 | [Identity providers - minimal](idtest/) | `idtest` | A minimal example of identity providers configuration |
+| [Evolving a schema](../configuration/evolving-a-schema/) | `evolve` | `main/assets` in three schema versions with their migrations (`body` becomes `description`, every asset gets a `visibility`), built and run by the test suite |
+| [Knowledge base](../organizations/example-knowledge-base/) | `kb` | Documentation for organizations: company pages, private, shared and public team pages, and drafts |
+| [Shop](../functions/quickstart/) | `shop` | Two databases (`orders`, `billing`) and the function the [functions quickstart](../functions/quickstart/) builds |
 | [Shelf (the Tutorial)](../../tutorial/) | `shelf` | A team asset library built chapter by chapter: realms, auth, rules, invitations, functions of every mode, jobs, email, a signed webhook, API keys and audit — `tour.js` is its regression test |
+
+The `adminui` and `passkeys` realms are fixtures of the admin interface's end-to-end tests (development passwords, local stacks only): they are not examples to copy.
 
 `make dev-examples` serves the configurations and the applications on `https://localhost:8443`, with an index of the applications at `/example/` (see [Local development](../../contribute/local-development/)).
