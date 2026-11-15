@@ -285,6 +285,11 @@ func (s *Users) signIn(ctx context.Context, email, password, ip string, hooks si
 		}
 		return nil
 	})
+	if err != nil {
+		if reason := s.passwordFailureReason(ctx, email, ip, err); reason != "" {
+			s.auditSignInFailure(ctx, signInFailure{action: AuditUserLoginFailed, email: email, strategy: hooks.Handover.strategy, reason: reason, ip: ip})
+		}
+	}
 	if errors.Is(err, ErrPasswordExpired) {
 		err = &PasswordExpiredError{EmailQueued: s.mailExpiredPassword(ctx, u, ip)}
 	}
@@ -378,6 +383,7 @@ func (s *Users) startSessionWith(ctx context.Context, u User, methods []string, 
 	if s.Settings.IsAdmin(u.Roles) && len(methods) > 0 {
 		s.AuditAs(ctx, userTarget(u.ID), AuditAdminLogin, userTarget(u.ID), map[string]any{"session_id": sess.ID, "strategy": strategy, "methods": methods})
 	}
+	s.auditLogin(ctx, u, sess, methods, pk.id != "")
 	return s.principalOf(u, sess), token, nil
 }
 

@@ -92,17 +92,43 @@ Each realm with an `auth` section keeps an **audit trail**: one record per secur
 | `passkey.login_failed` | A passkey sign-in, or a passkey step after another method, fails; the app is only told `invalid_passkey`. The target is the user when the passkey is known, else `anonymous` | `reason` (such as `unknown_credential`, `unknown_or_expired_challenge`, `counter_regressed`, `disabled`, `erased`, `network`, `email_not_verified`, `not_a_member`), `step` (a step after another method), `passkey` |
 | `passkey.clone_suspected` | A passkey's signature counter went backwards, which can mean a copied authenticator; the sign-in is refused and, in a realm that sends email, the user is told | `passkey`, `name` |
 | `admin.login` | A user holding an admin role logs in | `session_id`, `strategy`, `methods` |
+| `user.login` | A user who holds no admin role signs in with a password, an emailed code or link, or Google, Microsoft or Apple. **Off by default**; turn it on with [`audit.entries`](#choosing-what-is-recorded). Administrators record `admin.login`, passkeys `passkey.login` and organization connections `org.sso.login` instead | `session_id`, `strategy`, `methods` |
+| `user.login_failed` | A first step failed: a wrong password or an unknown address (the same `invalid_credentials`), a disabled account, an unverified address, a refused network, an expired password, the throttle, or a bad or used emailed code or link. The target is the user, or `anonymous` when the address has no account | `reason`, `strategy`; `address_hash` for an unknown address; `attempts` and `throttled` (see below) |
+| `user.step_failed` | A later step failed: a wrong authenticator or recovery code (or a step answered with the wrong method) after the first factor was right; the throttle and the [lockout](../../../build/auth/mfa/) count too. A failed passkey step is `passkey.login_failed`. The target is the user | `step` (`totp`, `recovery_code`), `reason`, `strategy`; `attempts` and `throttled` as for `user.login_failed` |
 | `encrypt.start`, `encrypt.rekey`, `encrypt.migrate` | An [encryption migration](../../../build/configuration/field-keys/#change-encryption-on-existing-data) was started, a field rekeyed, or a migration finished (by the job) | `database`, `collection`, `fields`, `dry_run`, `job_id`, `generation`; the counts and the number of retired keys; never a value |
 | `data.reveal` | A full administrator read documents that hold [encrypted fields](../../../build/configuration/field-keys/#who-sees-an-encrypted-field) in plain through the admin data route (one record per read) | `database`, `collection`, `fields`, `documents`; never a value |
 | `data.create`, `data.update`, `data.delete`, `data.restore`, `data.purge` | A document is written through the [admin data route](../admin/#data) (a batch audits each operation) | `database`, `collection`, `id`; the target is `doc:<database>/<collection>/<id>`; never content |
 | `session.revoke` | An administrator ends a user's session ([admin API](../admin/)) | `session` |
 | `admin.refused` | An admin API request is refused: by a network restriction, or because the administrator's roles don't open the [area](../admin/#admin-rights) or hold the rights of the user or role involved | `reason`, `method`, `path` |
 | `realm.bootstrap` | `backd-server bootstrap` creates the realm's first administrator | `role` |
+| `audit.entries_changed` | At start, the set of [entries switched away from their default](#choosing-what-is-recorded) differs from the last start's; the actor is `config:realm.yaml` and the target `audit.entries`. Always recorded: it can't be switched off | `changed` (the entries whose value changed), `non_default` (all that differ from their default now) |
+
+## Choosing what is recorded
+
+Every action in the table above can be switched on or off in the realm's `realm.yaml`, with one `true` or `false` per action under `audit.entries`:
+
+```yaml
+audit:
+  entries:
+    user.login: true      # also record every successful sign-in (off by default)
+    data.update: false    # do not record administrator edits of documents
+```
+
+- **Defaults.** Every action is recorded, as it always was, except `user.login`, which is off. `backd template realm` (and `backd template project`) write the whole list with these defaults, in groups, so a choice is one edit.
+- **A typo stops the start.** A name that is not an action is refused, with the closest names, so `role.ad: false` cannot silently record nothing.
+- **Turning one off is itself recorded.** When the entries that differ from their default change between two starts, `audit.entries_changed` is recorded; the server also logs them at start.
+- A change needs a restart (dev mode reloads).
+
+{{< hint style="warning" >}}
+A record that was never written cannot be recovered. Turn off only what you are sure you do not need: `role.add`, `apikey.create`, `secret.set` and the other changes to who can do what are what an investigation starts from.
+{{< /hint >}}
 
 Which sign-ins are recorded:
 
-- **Recorded:** a sign-in by a user who holds an admin role (`admin.login`), every passkey sign-in and its failures (`passkey.login`, `passkey.login_failed`), and a sign-in through an organization's connection (`org.sso.login`).
-- **Not recorded:** other users signing in with a password, an emailed code, a magic link or Google, Microsoft or Apple, and failed attempts of those methods. Failures are [throttled](../../../build/auth/sessions/#brute-force-protection) and counted, and every request is in the access log.
+- **Always, unless switched off:** a sign-in by a user who holds an admin role (`admin.login`), every passkey sign-in and its failures (`passkey.login`, `passkey.login_failed`), a sign-in through an organization's connection (`org.sso.login`), and every failed step (`user.login_failed`, `user.step_failed`).
+- **Only when switched on:** the successful sign-ins of everyone else (`user.login`).
+- **Failures are counted, not copied.** A failure is recorded the first time a target fails from an address in a ten-minute window, and again at the 10th, 100th, 1,000th… (with `attempts`), so a flood of guesses cannot fill the trail; the one that makes the [throttle](../../../build/auth/sessions/#brute-force-protection) refuse is recorded once per window with `throttled`. For an address with no account the record holds `address_hash`, a keyed hash that tells two failures about the same address apart without keeping the address: never the address, a password or a code. Provider sign-ins that are refused stay `identity.signin_refused`.
+- Every request is in the access log as well.
 
 ## Records
 

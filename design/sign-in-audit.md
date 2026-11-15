@@ -16,7 +16,7 @@ The audit trail records security-sensitive *changes*. Of the *sign-ins* it recor
 |---|---|---|
 | `admin.login` | a sign-in by a user who holds an admin role (existing). **A special case:** it records admins only, never ordinary users | on |
 | `user.login` | a sign-in by a user who holds **no** admin role, by any method except a passkey or an organization connection (they have their own entries) | off |
-| `user.login_failed` | a first step that failed: wrong password, unknown address, disabled account, unverified address, network refused, expired password, bad or used email code or magic link, a provider sign-in refused | on |
+| `user.login_failed` | a first step that failed: wrong password, unknown address, disabled account, unverified address, network refused, expired password, bad or used email code or magic link, a bad or used emailed code or link (a provider sign-in that is refused stays `identity.signin_refused`, already recorded) | on |
 | `user.step_failed` | a later step that failed: a TOTP, recovery or email code, or a link | on |
 | `passkey.login` | a passkey sign-in (existing) | on |
 | `passkey.login_failed` | a failed passkey sign-in or step (existing) | on |
@@ -57,21 +57,21 @@ audit:
 
 The trail is append-only and kept a year, and a failure is something an attacker causes. Two rules:
 
-- **One record per target and address in a window.** The first failure of a (target, client address) pair in 10 minutes is recorded; later ones in the window are counted, not recorded. The failure that makes the existing sign-in throttle refuse the address is recorded too, with `throttled: true`. The count of the window goes in the next record as `suppressed`. The counter reuses `IncrementCounter` (the `login_attempts` store) under its own key namespace.
+- **A log-scale record per target and address in a window.** The 1st failure of a (target, client address) pair in 10 minutes is recorded, then the 10th, 100th, 1,000th…, with `attempts` (the count so far); the others are counted, not recorded. The failure that makes the existing sign-in throttle refuse the address is recorded once per window, with `throttled: true`. The counter reuses `IncrementCounter` (the `login_attempts` store) under its own key namespace.
 - **Successes are not capped:** one record per sign-in is the point of turning `user.login` on, and it needs a session first.
 
 ## 5. What a record holds
 
-- **Target:** the user's id when the account exists. When it does not, `anonymous`, and the details carry `address_hash`: a keyed hash (HMAC with a key derived from the realm's secret) of the normalized address, truncated. It lets an operator see that two failures were about the same address without the trail ever holding an address that may belong to no one. This is the rule the passkey failures already follow for an unknown credential.
-- **Details:** `strategy`, `methods` (the steps taken), `session_id` for a success; `reason` for a failure; `step` for `user.step_failed`. Never a password, a code, a link or a token.
-- **Reasons** are a closed list: `invalid_credentials` (wrong password and unknown address look the same), `disabled`, `unverified`, `network`, `throttled`, `password_expired`, `invalid_code`, `invalid_link`, `provider_refused`. The app is told what it is told today; the trail may be more precise than the response because only administrators read it.
+- **Target:** the user's id when the account exists. When it does not, `anonymous`, and the details carry `address_hash`: a keyed hash (the secrets cipher's MAC over the realm and the address; left out when the instance has no secrets key) of the normalized address, truncated to 24 characters. It lets an operator see that two failures were about the same address without the trail ever holding an address that may belong to no one. This is the rule the passkey failures already follow for an unknown credential.
+- **Details:** `strategy`, `methods` (the steps taken), `session_id` for a success; `reason` for a failure, `attempts` and `throttled` as above; `step` for `user.step_failed`. Never a password, a code, a link or a token.
+- **Reasons** are a closed list: `invalid_credentials` (wrong password and unknown address look the same), `disabled`, `unverified`, `network`, `throttled`, `password_expired`, `invalid_code`, `invalid_link`. The app is told what it is told today; the trail may be more precise than the response because only administrators read it.
 - The client address and the request id are already part of every record.
 
 ## 6. One list, one gate
 
 - **One registry.** Every audit action is declared once, in a table in `internal/auth` (name, group, default, one-line meaning). The constants, the template, the validation of `audit.entries`, the docs check and the admin UI filter all read it. An action used without being in the table fails a unit test, which is what makes a later event work with no change to the setting: add it to the table and it is configurable, templated and checked.
 - **One gate.** Everything is recorded through the same write function, which looks the action up in the realm's `entries` and records nothing when it is off. The 90-odd call sites do not change. The sign-in paths call it like any other, and `admin.login`, the passkey entries and `org.sso.login` go through it too, so the setting governs them.
-- The sign-in paths already converge on a few functions in `internal/auth` (password, email code, magic link, provider/ID-token, the step verifiers); each records its success or failure once.
+- The sign-in paths already converge on a few functions in `internal/auth` (password, email code, magic link, login-code redemption, the step verifiers); each records its success or failure once.
 
 ## 7. Out of scope
 

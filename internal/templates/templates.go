@@ -45,7 +45,11 @@ func Realm(configDir, realm string, sample bool) ([]File, error) {
 	if err := checkDir(configDir); err != nil {
 		return nil, err
 	}
-	out, err := write(configDir, realm+"/"+registry.RealmFile, "files/realm.yaml")
+	realmYAML, err := files.ReadFile("files/realm.yaml")
+	if err != nil {
+		return nil, err
+	}
+	out, err := writeBytes(configDir, realm+"/"+registry.RealmFile, withAuditEntries(realmYAML))
 	if err != nil {
 		return out, err
 	}
@@ -359,4 +363,22 @@ func writeBytes(configDir, dst string, data []byte) ([]File, error) {
 		return nil, err
 	}
 	return []File{{Path: dst, Created: true}}, f.Close()
+}
+
+// withAuditEntries fills the #AUDIT_ENTRIES# line of realm.yaml with one line per audit action, in
+// groups and with their defaults, generated from the registry so the template can't go stale.
+func withAuditEntries(realmYAML []byte) []byte {
+	var b strings.Builder
+	for i, group := range registry.AuditGroups {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		fmt.Fprintf(&b, "    # %s\n", group)
+		for _, a := range registry.AuditActions {
+			if a.Group == group {
+				fmt.Fprintf(&b, "    %s: %t\n", a.Name, !a.Off)
+			}
+		}
+	}
+	return []byte(strings.Replace(string(realmYAML), "#AUDIT_ENTRIES#\n", b.String(), 1))
 }

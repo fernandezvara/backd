@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"maps"
+	"slices"
 	"time"
 
 	"github.com/rs/xid"
@@ -241,6 +242,9 @@ func (s *Users) Audit(ctx context.Context, action, target string, details map[st
 // AuditAs is Audit with an explicit actor (when not empty), for events
 // whose actor isn't the caller yet, such as a login.
 func (s *Users) AuditAs(ctx context.Context, actor, action, target string, details map[string]any) {
+	if !s.Settings.AuditEnabled(action) {
+		return // switched off with audit.entries in realm.yaml
+	}
 	src := auditSource(ctx)
 	if actor != "" {
 		src.Actor = actor
@@ -279,4 +283,64 @@ func (s *Users) AuditAs(ctx context.Context, actor, action, target string, detai
 // follow.
 func (s *Users) AuditTrail(ctx context.Context, f AuditFilter) ([]AuditRecord, bool, error) {
 	return s.Store.ListAudit(ctx, f)
+}
+
+// SyncAuditEntries logs which audit entries the realm has switched away from their default and,
+// when that set changed since the last start, records AuditEntriesChanged. The last set is read
+// from the latest such record, so nothing else is stored; with no record (or after it expired) the
+// comparison is against the defaults, so a realm that never touched `audit.entries` records nothing.
+func (s *Users) SyncAuditEntries(ctx context.Context) error {
+	var now []string
+	for _, a := range registry.AuditActions {
+		if s.Settings.AuditEnabled(a.Name) == !a.Off {
+			continue
+		}
+		now = append(now, a.Name)
+	}
+	slices.Sort(now)
+	if len(now) > 0 && s.Log != nil {
+		s.Log.Info("audit entries differ from their defaults", "realm", s.Realm, "entries", now)
+	}
+	var before []string
+	last, _, err := s.Store.ListAudit(ctx, AuditFilter{Action: registry.AuditEntriesChanged, Limit: 1})
+	if err != nil {
+		return err
+	}
+	if len(last) > 0 {
+		switch v := last[0].Details["non_default"].(type) {
+		case []string:
+			before = v
+		case []any:
+			for _, x := range v {
+				if name, ok := x.(string); ok {
+					before = append(before, name)
+				}
+			}
+		}
+		slices.Sort(before)
+	}
+	if slices.Equal(now, before) {
+		return nil
+	}
+	var changed []string
+	for _, name := range now {
+		if !slices.Contains(before, name) {
+			changed = append(changed, name)
+		}
+	}
+	for _, name := range before {
+		if !slices.Contains(now, name) {
+			changed = append(changed, name)
+		}
+	}
+	slices.Sort(changed)
+	s.AuditAs(ctx, ActorConfig, registry.AuditEntriesChanged, "audit.entries", map[string]any{"changed": changed, "non_default": nonNil(now)})
+	return nil
+}
+
+func nonNil(v []string) []string {
+	if v == nil {
+		return []string{}
+	}
+	return v
 }

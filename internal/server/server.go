@@ -902,6 +902,9 @@ func (a *App) syncRoles(ctx context.Context) error {
 		if n > 0 {
 			a.log.Info("role seeds from realm.yaml applied", "realm", rl.Name, "users", n)
 		}
+		if err := svc.SyncAuditEntries(ctx); err != nil {
+			return fmt.Errorf("realm %s: audit entries: %w", rl.Name, err)
+		}
 		rep, err := svc.ReportRoles(ctx)
 		if err != nil {
 			return fmt.Errorf("realm %s: check roles: %w", rl.Name, err)
