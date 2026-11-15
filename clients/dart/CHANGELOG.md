@@ -1,4 +1,4 @@
-## Unreleased
+## 0.9.11
 
 - `schemaVersions` sends `X-Backd-Schema-Version` on every request (from `schema_versions` in `realm.json`; the generated file carries the map as a constant): the server stamps the app's writes with it and answers `426` when it is below a collection's `min_schema_version`, an `UpgradeRequiredError` (`collection`, `min`, `declared`) that is never retried. A versioned collection's generated document is a sealed class.
 
