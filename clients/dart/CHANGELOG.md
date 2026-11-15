@@ -1,3 +1,7 @@
+## Unreleased
+
+- `client.asUser(id)` on a client made with an `apiKey` returns a client that acts as one user of the realm (`X-Backd-On-Behalf-Of`), with a cache and an app configuration of its own. It cannot be chained and refuses the account routes.
+
 ## 0.9.11
 
 - `schemaVersions` sends `X-Backd-Schema-Version` on every request (from `schema_versions` in `realm.json`; the generated file carries the map as a constant): the server stamps the app's writes with it and answers `426` when it is below a collection's `min_schema_version`, an `UpgradeRequiredError` (`collection`, `min`, `declared`) that is never retried. A versioned collection's generated document is a sealed class.

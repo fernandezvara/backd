@@ -933,6 +933,22 @@ For server-side code, `createClient({ url, realm, apiKey })` sends an [API key](
 An API key in a browser or mobile app is readable by every visitor and bypasses all [access rules](../../auth/rules/). `dangerouslyAllowBrowser` exists for internal tools on a trusted network; anything public should sign users in with sessions instead.
 {{< /hint >}}
 
+### Acting as one user
+
+A service that handles a request for one of the realm's users makes a client that acts as them with `as_user` (spelled with an underscore on purpose, as in the Python client). Every request carries `X-Backd-On-Behalf-Of`, so [that user's access rules](../../auth/rules/) apply, not the key's full access, and what it creates is theirs:
+
+```js
+const backd = createClient({ url, realm: 'blog', apiKey: process.env.BACKD_API_KEY })
+
+const asAda = backd.as_user(userId)                      // userId: the id of one of the realm's users
+const mine = await asAda.db('main').collection('posts').list()   // only what Ada may read
+```
+
+- It needs a client made with an `apiKey`, and it cannot be chained: `as_user` on an acting client throws.
+- **Each acting client has a revalidation cache and an app configuration of its own**, so what one user read is never served to another. Keep one acting client per user while their requests last, and let it go afterwards.
+- `client.admin`, `client.auth` and the other account helpers throw on an acting client, and the server refuses the header on those routes: use the client made with the key for them. An unknown id is `400 invalid_header`, a disabled user `403`.
+- It works on typed clients too, and with `org` set it counts only that organization.
+
 A client with an API key with the `admin` role (`backd apikey create --realm <realm> --name <name> --role admin`) can use the [admin API](../../../operate/administration/admin/):
 
 ```js

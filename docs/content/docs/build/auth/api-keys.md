@@ -141,6 +141,8 @@ curl https://localhost:8443/v1/blog/main/posts \
 
 Use it when a backend handles a request for a user and should be bound by the same rules, for example a server-rendered page or a webhook acting for an account.
 
+**From the clients** you do not write the header: `client.as_user(id)` in [JavaScript](../../clients/js/#acting-as-one-user) and [Python](../../clients/python/#acting-as-one-user), `client.asUser(id)` in [Dart](../../clients/dart/#acting-as-one-user) and `client.AsUser(id)` in [Go](../../clients/go/#acting-as-one-user) return a client that sends it on every request, with a cache of its own so that one user's reads are never served to another.
+
 ## Who can access data
 
 In a realm with an `auth` section, data routes (`/v1/{realm}/{database}/{collection}…`) decide by caller:

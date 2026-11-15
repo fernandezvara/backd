@@ -54,7 +54,6 @@ One line each, so you can tell early. "Not built" means no code exists today; th
 | **SCIM provisioning** (users created and removed by a company's identity provider) | [Invitations](../build/organizations/) and company sign-in | Design only |
 | **Atomic update operators** (increment, push, add to set) | `PATCH` is a JSON Merge Patch; use `If-Match` and retry, or a [function](../build/functions/) | Not built |
 | **Built-in request rate limiting** | Failed logins and function calls are limited; put a reverse proxy in front for the rest ([Operate](../operate/#rate-limiting-and-abuse)) | Delegated to the proxy |
-| **Acting on behalf of a user from a client library** | The server accepts `X-Backd-On-Behalf-Of`; call it with your own HTTP client | Planned: [#33](https://github.com/fernandezvara/backd/issues/33) |
 | **Outbound webhooks** as a declared feature | A trigger plus a function that calls out through [egress](../build/functions/) | Not built |
 | **Guest users that later upgrade to accounts** | Anonymous access through rules, or an [invitation](../build/organizations/) | Not built |
 | **Geospatial queries** | Filter by coordinates yourself, or in a function | Not built |
