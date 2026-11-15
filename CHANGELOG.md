@@ -4,6 +4,12 @@ All notable changes to `backd` and to its JavaScript client `backd-js`, which ar
 
 Until a stable release is declared, a minor release may have breaking changes; they are listed first.
 
+## Unreleased
+
+### Added
+
+- **The audit trail records sign-ins, and each action can be switched on or off** (#966–#970). `audit.entries` in `realm.yaml` takes one `true` or `false` per audit action (130 of them, all listed by `backd template realm`, which writes the block with the defaults); a name that is not an action stops the load with the closest names, and `audit.entries_changed` records, at start, which entries differ from their default. New: `user.login` (a successful sign-in by a user without an admin role; **off by default**), `user.login_failed` (a wrong password, an unknown address, a disabled or unverified account, a refused network, an expired password, the throttle, a bad emailed code or link) and `user.step_failed` (a wrong authenticator or recovery code). Failures are on by default and counted, not copied: the 1st, 10th, 100th… failure of a target from an address in ten minutes is recorded, with `attempts`, and an address with no account appears only as a keyed hash. `admin.login` still records administrators only. **Behaviour change:** failed sign-ins are now recorded; set `user.login_failed: false` and `user.step_failed: false` to keep the old behaviour.
+
 ## 0.9.11
 
 The **schema versioning** release: a collection keeps its schema as versioned files, documents are migrated to the current version in the background, and apps declare the version they were built for. Nothing changes for a collection with a single `schema.json`, and nothing needs editing before the new binaries start (see [Upgrading to v0.9.11](https://fernandezvara.github.io/backd/docs/operate/#upgrading-to-v0911)). The Go, JavaScript, Dart and Python clients, the command line and the admin interface are released with it.
