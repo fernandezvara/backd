@@ -35,7 +35,7 @@ func TestStore(t *testing.T, newStore func(now func() time.Time) sso.Store) {
 	})
 	t.Run("an expired attempt is gone", func(t *testing.T) {
 		s := newStore(now)
-		if err := s.PutAttempt(ctx, "k", sso.Attempt{Provider: "google", ExpiresAt: clock.Add(-time.Second)}); err != nil {
+		if err := s.PutAttempt(ctx, "k", sso.Attempt{Provider: "google", Scope: "realm", Intent: sso.IntentSignIn, Challenge: "c", Verifier: "v", Nonce: "n", RedirectTo: "https://app.example/", ExpiresAt: clock.Add(-time.Second)}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := s.TakeAttempt(ctx, "k"); !errors.Is(err, sso.ErrNotFound) {
@@ -58,7 +58,7 @@ func TestStore(t *testing.T, newStore func(now func() time.Time) sso.Store) {
 	})
 	t.Run("one take wins a race", func(t *testing.T) {
 		s := newStore(now)
-		if err := s.PutCode(ctx, "r", sso.Code{UserID: "u", ExpiresAt: clock.Add(time.Minute)}); err != nil {
+		if err := s.PutCode(ctx, "r", sso.Code{UserID: "u", Method: "google", Challenge: "c", ExpiresAt: clock.Add(time.Minute)}); err != nil {
 			t.Fatal(err)
 		}
 		wins := make(chan bool, 8)
