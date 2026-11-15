@@ -215,7 +215,8 @@ final class Config {
   Future<String> _scope() async {
     String? credential;
     if (client.apiKey != null) {
-      credential = 'key:${client.apiKey}';
+      credential = 'key:${client.apiKey}'
+          '${client.onBehalfOf == null ? '' : '|as:${client.onBehalfOf}'}';
     } else {
       final token = await client.storage.get();
       if (token != null) credential = 'session:$token';

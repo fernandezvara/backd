@@ -243,7 +243,7 @@ class AsyncConfig:
         c = self._client
         credential = ""
         if c._api_key:
-            credential = "key:" + c._api_key
+            credential = "key:" + c._api_key + ("|as:" + c.on_behalf_of if c.on_behalf_of else "")
         else:
             token = c.storage.get()
             if token:

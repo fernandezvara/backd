@@ -212,11 +212,14 @@ class BackdClient<R> {
     String? org,
     this.strategy,
     @internal this.parent,
+    @internal this.onBehalfOf,
+    @internal String? schemaHeader,
     @visibleForTesting
     Duration Function(int attempt, Duration? retryAfter, Duration maxDelay)
         backoff = _defaultBackoff,
   })  : url = url.replaceAll(RegExp('/+\$'), ''),
-        schemaVersionHeader = _schemaVersionHeader(schemaVersions),
+        schemaVersionHeader =
+            schemaHeader ?? _schemaVersionHeader(schemaVersions),
         orgRef = normalizeOrgRef(org),
         _cacheOptions = cache,
         storage = storage ?? MemoryTokenStorage(),
@@ -272,9 +275,12 @@ class BackdClient<R> {
   /// otherwise). `auth.strategies()` lists them.
   final String? strategy;
 
-  /// The client this one was made from by [org], or null.
+  /// The client this one was made from by [org] or [asUser], or null.
   @internal
   final BackdClient<R>? parent;
+
+  /// The id of the user a client made by [asUser] acts as, or null.
+  final String? onBehalfOf;
 
   final CacheOptions? _cacheOptions;
   final _orgClients = <String, BackdClient<R>>{};
@@ -411,6 +417,50 @@ class BackdClient<R> {
     });
   }
 
+  /// A client that acts as one user of the realm: every request carries
+  /// `X-Backd-On-Behalf-Of`, so that user's access rules apply (not the
+  /// key's full access) and what it creates is theirs. It has the address,
+  /// realm, key, transport and settings of this client and a revalidation
+  /// cache and app configuration of its own, so what one user read is never
+  /// served to another. Only a client made with an [apiKey] can do it, and
+  /// the result cannot do it again; the admin API and the account routes
+  /// (`auth`, devices) refuse it, here and in the server.
+  BackdClient<R> asUser(String userId) {
+    if (apiKey == null) {
+      throw StateError(
+          'client.asUser: only a client made with an API key (apiKey) can act as a user');
+    }
+    if (onBehalfOf != null) {
+      throw StateError(
+          'client.asUser: this client already acts as a user; call asUser on the client made with the API key');
+    }
+    final id = userId.trim();
+    if (id.isEmpty) {
+      throw ArgumentError.value(userId, 'userId', 'the user id is required');
+    }
+    return BackdClient<R>(
+      url: url,
+      realm: realm,
+      apiKey: apiKey,
+      storage: storage,
+      retry: retry,
+      cache: _cacheOptions,
+      configStorage: configStorage,
+      headers: headers,
+      transport: _transport,
+      streamTransport: _streamTransport,
+      types: types,
+      onStaleTypes: onStaleTypes,
+      schemaHeader: schemaVersionHeader,
+      oauthStorage: oauthStorage,
+      org: orgRef,
+      strategy: strategy,
+      parent: root,
+      onBehalfOf: id,
+      backoff: _backoff,
+    );
+  }
+
   /// A database of the realm. Its collections hold the documents.
   Database db(String name) => Database(this, name);
 
@@ -469,6 +519,7 @@ class BackdClient<R> {
     var sentSession = false;
     if (apiKey != null) {
       headers['Authorization'] = 'Bearer $apiKey';
+      if (onBehalfOf != null) headers['X-Backd-On-Behalf-Of'] = onBehalfOf!;
     } else {
       final token = await storage.get();
       if (token != null) {
@@ -535,6 +586,12 @@ class BackdClient<R> {
   /// parsed answer. Non-2xx answers throw a [BackdException].
   Future<RawResponse> request(RequestInit req) async {
     if (_closed) throw StateError('BackdClient is closed');
+    if (onBehalfOf != null &&
+        req.path.isNotEmpty &&
+        (req.path.first == '_admin' || req.path.first == '_auth')) {
+      throw StateError(
+          'a client made with asUser cannot use the admin API or the account routes (${req.path.first}): use the client made with the API key');
+    }
     var uri = Uri.parse(
       '$url/v1/${[realm, ...req.path].map(Uri.encodeComponent).join('/')}',
     );
@@ -579,6 +636,10 @@ class BackdClient<R> {
       if (apiKey != null) {
         sentHeaders['Authorization'] = 'Bearer $apiKey';
         owner = 'key:$apiKey';
+        if (onBehalfOf != null) {
+          sentHeaders['X-Backd-On-Behalf-Of'] = onBehalfOf!;
+          owner = '$owner|as:$onBehalfOf';
+        }
       } else {
         final token = await storage.get();
         if (token != null) {

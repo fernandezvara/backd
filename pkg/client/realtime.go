@@ -629,6 +629,9 @@ func (c *Client) openStream(ctx context.Context, path []string, body any) (*http
 	}
 	if h != "" {
 		req.Header.Set("Authorization", h)
+		if c.opts.onBehalfOf != "" && c.apiKey != "" {
+			req.Header.Set("X-Backd-On-Behalf-Of", c.opts.onBehalfOf)
+		}
 	}
 	res, err := c.doer.Do(req)
 	if err != nil {
