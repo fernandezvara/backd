@@ -184,6 +184,15 @@ blog__main.posts
 shop__orders.items
 ```
 
+### Upgrading to the release after v0.9.11
+
+This release adds [rate limiting](rate-limiting/), sign-in entries in the [audit trail](administration/audit/), [`fields`](../build/api/querying/) on reads, `as_user` in the clients and schema `default` values. Replace the binaries or the images and run `backd-server provision` as usual; nothing in the configuration needs editing, but four behaviours change:
+
+1. **Requests are limited by `backd` itself, on by default in production mode.** The defaults are generous (`anonymous` 120, `read` 600, `write` 120, `auth` 30, `files` 120 and `admin` 300 a minute). Behind a proxy, set `TRUSTED_PROXIES`, or every user shares one address's bucket and the `anonymous` and `auth` classes fill up for all of them. Tests and scripts that hammer one instance can set `BACKD_RATE_LIMIT=off`. Dev mode starts with it off. See [Rate limiting](rate-limiting/).
+2. **Failed sign-ins are recorded.** `user.login_failed` and `user.step_failed` are on by default (a failure is recorded on the 1st, 10th, 100th… attempt per target and address in ten minutes, so a flood cannot fill the trail); `user.login` is off. Switch any of them with `audit.entries` in `realm.yaml`; `backd template realm` writes the whole block.
+3. **A key can no longer act as an administrator.** `X-Backd-On-Behalf-Of` answers `403` for a user who holds a role with admin rights, and `400 invalid_header` on the account routes of `/_auth`. Back-office tools that acted as an admin user must use the admin API with their own key instead.
+4. **A schema's `default` is now applied.** It used to be dropped without notice. A `default` already in a `schema.json` starts filling absent fields on create and `PUT`, and one that doesn't satisfy its own property stops the load: run `backd config check` first. See [Defaults](../build/configuration/config-dir/#defaults).
+
 ### Upgrading to v0.9.11
 
 v0.9.11 adds [schema versioning](../build/configuration/evolving-a-schema/) and changes nothing for a collection that keeps a single `schema.json`: replace the binaries or the images and run `backd-server provision` as usual. The configuration, the command line and the data are as before, the HTTP API only grows, and `backd config fingerprint` of an unchanged configuration is the same. The clients move to `0.9.11` with the server (for Dart, `backd: ^0.9.11`).

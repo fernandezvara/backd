@@ -29,7 +29,21 @@ HTTP ──▶ handlers ──────┴──▶ storage.Repository ──
 | `internal/jsonnum` | Normalizes JSON numbers to int64 or float64 |
 | `internal/mongodb` | Everything MongoDB-specific: connection, validator translation, provisioner (including realm system databases), `Repository` and `auth.Store` implementations |
 
-The packages above are the core. The features built on it have packages of their own, each driver-neutral where it can be (functions and the executor, egress, triggers and realtime over the change feed, email and push, field encryption, images, app configuration, sign-in providers, the type and OpenAPI generators): the [repository layout](../#repository-layout) says what each does, and `design/<feature>.md` in the repository holds the reasoning.
+The packages above are the core. The features built on it have packages of their own, each driver-neutral where it can be:
+
+| Package | Role |
+|---|---|
+| `internal/server`, `internal/servercli` | The server roles (API, worker, provisioning, executor and egress bootstrap), their startup checks, and the `backd-server` command tree |
+| `internal/cli`, `internal/cmdutil`, `internal/apiheaders`, `internal/adminclient` | The `backd` command tree, the helpers both command trees share, the header names the CLI and the server both read, and the `/_admin` side of the Go client |
+| `internal/functions`, `internal/executor`, `internal/egress`, `internal/cron` | Building function bundles (and schema migrations), the Deno supervisor that runs each call and migration batch, the egress proxy, and cron expressions |
+| `internal/changefeed`, `internal/triggers`, `internal/realtime` | The change stream reader, the trigger dispatcher with its durable position, and server-sent subscriptions |
+| `internal/email`, `internal/push`, `internal/pushsend` | Email kinds and templates, push messages and templates, and the built-in FCM, APNs and Web Push senders |
+| `internal/oauth` | Google, Microsoft and Apple: authorize URLs, code exchange, ID-token verification |
+| `internal/authcore`, `internal/fieldcrypt` | API key scopes, the secrets cipher and field key encoding; per-field encryption before data reaches the database |
+| `internal/imaging`, `internal/exportpkg`, `internal/exportreadme` | Image versions, the export package format, and the README of a personal-data export |
+| `internal/appconfig`, `internal/ratelimit`, `internal/metrics` | App configuration, the in-memory request limiter, Prometheus instrumentation |
+| `internal/typegen`, `internal/openapigen`, `internal/rulestest`, `internal/devreport` | Generated types, the per-realm OpenAPI document, `backd rules test`, and what dev mode reports when a config doesn't load |
+| `internal/adminui`, `internal/buildinfo`, `internal/dbnames`, `internal/docutil`, `internal/strutil` | The embedded admin interface and small shared helpers |
 
 No MongoDB driver types cross the `storage` interface. Another document store (for example Amazon DocumentDB) can be added as a new implementation without touching handlers or validation.
 
@@ -53,6 +67,7 @@ The repository maps between the API shape and the stored shape:
 | `id` (string, [xid](https://github.com/rs/xid)) | `_id` (string) |
 | `_meta.created_at` / `_meta.updated_at` | BSON dates |
 | `_meta.version` | 64-bit integer |
+| `_meta.schema_version` | integer, only in [versioned collections](../../build/configuration/config-dir/#versioned-schemas); a document without it is version 1 |
 | `_meta.owner`, `_meta.created_by`, `_meta.updated_by` | strings (`owner` may be `null`), in realms with an `auth` section |
 | user fields | stored with keys sorted (recursively), after `_id` and `_meta` |
 
