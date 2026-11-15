@@ -13,7 +13,7 @@ Functions add up to four kinds of process. All are the same `backd` binary (the 
 | Process | Command | Needed for | How many |
 |---|---|---|---|
 | API | `backd-server serve` | calling functions over HTTP | as many as you like, all with the same config |
-| Executor | `backd-server executor` | running any function | one or more, reachable only from `backd` and workers |
+| Executor | `backd-server executor` | running any function, and the [schema migrations](../../build/configuration/evolving-a-schema/) of versioned collections | one or more, reachable only from `backd` and workers |
 | Worker | `backd-server worker`, or `backd-server serve --with-worker` | [async jobs](../../build/functions/jobs/) and [cron schedules](../../build/functions/cron/) | one or more; each job and each scheduled run is done by exactly one |
 | Egress | `backd-server egress` | functions that declare [`network`](../../build/functions/network/) | one or more; the executor's only way out |
 
@@ -25,7 +25,7 @@ The smallest useful deployment is `backd-server serve --with-worker` plus an exe
 
 ## Sizing
 
-- **Executor:** `EXECUTOR_MAX_PROCESSES` functions run at once (default 64), each using its `memory` plus about 130 MiB; beyond that calls answer `503` (a busy executor leaves async jobs queued for retry). Set the container's memory limit for that many.
+- **Executor:** `EXECUTOR_MAX_PROCESSES` functions run at once (default 64), each using its `memory` plus about 130 MiB; beyond that calls answer `503` (a busy executor leaves async jobs queued for retry). Set the container's memory limit for that many. Schema migrations are counted apart: at most 4 batches at once, 2 per realm, so a migration of a large collection can't starve the functions.
 - **Workers:** `WORKER_CONCURRENCY` jobs per worker process (default 10), and the executor's process limit above bounds the total. Long jobs hold a slot for their whole run: size for the jobs that run at the same time, not the ones per day.
 - **`backd`:** each function's `concurrency` (default 10) and the realm's `functions.max_concurrency` cap `sync` calls per instance; per-caller [`rate_limit`](../../build/functions/calling/#rate-limits) is shared across instances.
 

@@ -183,6 +183,19 @@ blog__main.posts
 shop__orders.items
 ```
 
+### Upgrading to v0.9.11
+
+v0.9.11 adds [schema versioning](../build/configuration/evolving-a-schema/) and changes nothing for a collection that keeps a single `schema.json`: replace the binaries or the images and run `backd-server provision` as usual. The configuration, the command line and the data are as before, the HTTP API only grows, and `backd config fingerprint` of an unchanged configuration is the same. The clients move to `0.9.11` with the server (for Dart, `backd: ^0.9.11`).
+
+What to know when you start using it:
+
+1. **A versioned collection** (`schema.v1.json`, `schema.v2.json`, and `schema.v2.ts` to migrate) needs `backd-server functions build` in your deploy pipeline, which also builds the migrations (the production and Kubernetes images already run it). A missing or stale migration bundle stops the start.
+2. **Migrations need a realm with `auth` enabled and an executor** (`BACKD_EXECUTOR_URL`): the job that migrates documents is a background job, so a collection with `schema.v<N>.ts` files in a realm with `auth: disabled` no longer loads. Without an executor the start logs a warning with the number of documents waiting.
+3. **`backd-server provision`** adds an index on `_meta.schema_version` to each collection with more than one version.
+4. **Order of a rollout:** server first, then the apps, and raise `min_schema_version` last, once nothing declares an older version: from then on an app that declares an older version gets `426 upgrade_required`. See [Evolving a schema](deploying/#evolving-a-schema).
+5. **Browser apps** can send `X-Backd-Schema-Version`: the CORS allow list includes it.
+6. **Metrics and audit:** `schema_migration_documents_total` and `schema_documents_below_current` are new, and the audit trail records `data.migrate` and `data.migrated` ([the full list](administration/audit/)).
+
 ### Upgrading to the strategy release
 
 v0.9.10 changes how sign-in is configured. **Every `realm.yaml` needs editing before the new binaries start**; nothing changes in the data or the indexes, and the HTTP API only grows (new fields and one route). A realm that still has the old keys stops at startup, with a message that names where each key went; `backd config check` prints them all at once.

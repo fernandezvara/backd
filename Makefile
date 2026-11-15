@@ -1,6 +1,6 @@
 COMPOSE_TEST = docker compose -f docker-compose.test.yml
 
-.PHONY: dev dev-examples dev-build dev-down dev-reset dev-logs dev-backd dev-server lint build ui ui-test ui-e2e test test-local perf vet lint-api openapi-clients shelf-types shelf-types-update js-test js-package js-integration dart-package dart-integration python-test python-integration python-package functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour shelf-tour-ci example-attacks release-check release-tag
+.PHONY: perf-queries dev dev-examples dev-build dev-down dev-reset dev-logs dev-backd dev-server lint build ui ui-test ui-e2e test test-local perf vet lint-api openapi-clients shelf-types shelf-types-update js-test js-package js-integration dart-package dart-integration python-test python-integration python-package functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour shelf-tour-ci example-attacks release-check release-tag
 
 build:
 	go build -o bin/backd ./cmd/backd
@@ -23,6 +23,16 @@ perf:
 	BACKD_LOAD_SCALE=10 BACKD_SOAK=30 BACKD_LOAD_REPORT=$(CURDIR)/perf-results/triggers.txt go test ./internal/triggers -run TestLoad -count=1 -timeout 900s
 	BACKD_LOAD_SCALE=10 BACKD_SOAK=30 BACKD_LOAD_REPORT=$(CURDIR)/perf-results/realtime.txt go test ./internal/realtime -run TestLoad -count=1 -timeout 900s
 	@echo; echo "--- triggers"; cat perf-results/triggers.txt; echo "--- realtime"; cat perf-results/realtime.txt
+
+# Query speed by complexity against a real MongoDB, for local baselines only (not run in CI). Results
+# go to perf-results/queries.json; with a baseline.json next to it (cp queries.json baseline.json)
+# every scenario is compared with it. See Development → Performance tests.
+perf-queries:
+	@test -n "$$MONGO_TEST_URI" || { echo "set MONGO_TEST_URI to a MongoDB replica set (see Development → Testing)"; exit 1; }
+	mkdir -p perf-results
+	env BACKD_QUERY_PERF=1 BACKD_PERF_REPORT=$(CURDIR)/perf-results/queries.json \
+	  $$(test -f perf-results/baseline.json && echo BACKD_PERF_BASELINE=$(CURDIR)/perf-results/baseline.json) \
+	  go test ./internal/httpapi -run TestQueryPerformance -v -count=1 -timeout 900s
 
 vet:
 	go vet ./...
@@ -224,10 +234,10 @@ example-attacks:
 # (each starts its own release or publish workflow). GitHub starts no workflow for
 # any tag of a push that carries more than three tags, so the server tag goes alone
 # and the three client tags together. Usage:
-#   make release-tag VERSION=v0.9.10
+#   make release-tag VERSION=v0.9.11
 # Run it on main, up to date with origin, after the release PR is merged.
 release-tag:
-	@test -n "$(VERSION)" || { echo "release-tag: set VERSION, e.g. make release-tag VERSION=v0.9.10" >&2; exit 1; }
+	@test -n "$(VERSION)" || { echo "release-tag: set VERSION, e.g. make release-tag VERSION=v0.9.11" >&2; exit 1; }
 	@echo "$(VERSION)" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$$' || { echo "release-tag: VERSION must look like vX.Y.Z (got '$(VERSION)')" >&2; exit 1; }
 	@test "$$(git rev-parse --abbrev-ref HEAD)" = main || { echo "release-tag: not on main" >&2; exit 1; }
 	@git diff --quiet && git diff --cached --quiet || { echo "release-tag: the working tree has uncommitted changes" >&2; exit 1; }

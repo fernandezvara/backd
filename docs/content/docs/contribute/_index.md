@@ -138,11 +138,13 @@ New sample collections under those directories are picked up automatically.
 To run the integration tests outside the compose setup:
 
 ```sh
-docker run -d --name backd-test-mongo -p 27018:27017 docker.io/library/mongo:8.2 --replSet rs0
-docker exec backd-test-mongo mongosh --quiet --eval \
+docker run -d --name backd-test-mongo --network host docker.io/library/mongo:8.2 --replSet rs0 --port 27018
+docker exec backd-test-mongo mongosh --port 27018 --quiet --eval \
   "rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'localhost:27018'}]})"
 MONGO_TEST_URI='mongodb://localhost:27018/?replicaSet=rs0' go test ./...
 ```
+
+MongoDB must listen on the same port the replica set announces, which is why the container uses the host network and `--port 27018` instead of `-p 27018:27017`. With the port mapping, `rs.initiate` fails with `No host described in new configuration … for replica set rs0 maps to this node`, because inside the container the server listens on 27017, not on the 27018 named in `host`. Stop it with `docker rm -f backd-test-mongo`.
 
 {{< hint warning >}}
 MongoDB 8.0 (and the current `latest` image) refuses to start on Linux kernel 6.19 or newer ([SERVER-121912](https://jira.mongodb.org/browse/SERVER-121912)). Use 8.2.
@@ -175,6 +177,18 @@ The baseline is in the operations guide ([the dispatcher](../operate/change-feed
 - **A regression** is a drop of a third or more in a throughput, a heap that grows with the length of a soak, or a correctness line that fails; the latter fail the test, not just the report.
 
 When a change moves the baseline on purpose, update the tables in the operations guide with the new numbers in the same commit.
+
+### Query speed by complexity
+
+A separate test, for your own machine only (it is skipped unless `BACKD_QUERY_PERF` is set, so CI never runs it), times the HTTP API against a real MongoDB in five tiers: trivial (a get by id, a first page), simple (one condition, ordering, counting, a cursor page), moderate (combined conditions, `$or`, `$icontains`, deep `skip`), complex (full-text search, `expand`, aggregations) and writes. It seeds 100,000 documents from a fixed random seed and prints the minimum, median, p95 and maximum of each scenario in milliseconds.
+
+```sh
+make perf-queries                              # results in perf-results/queries.json
+cp perf-results/queries.json perf-results/baseline.json   # keep this run as the baseline
+make perf-queries                              # now each scenario is compared with the baseline
+```
+
+`BACKD_PERF_DOCS` (documents, 100,000 by default), `BACKD_PERF_RUNS` (timed requests per scenario, 30), `BACKD_PERF_BASELINE` (a report to compare with) and `BACKD_PERF_TOLERANCE` (how many times slower the median may be before the scenario is marked `SLOWER`, 1.5) tune it. Requests go through the whole handler in-process, so there is no network in the numbers; compare runs on the same idle machine, never absolute figures. Scenarios under a millisecond are never flagged: that is noise.
 
 ## Translating the admin UI
 
