@@ -183,5 +183,5 @@ func nullAt(doc map[string]any, path string) {
 func (d *documents) writeViewed(w http.ResponseWriter, r *http.Request, c *registry.Collection, status int, doc map[string]any) {
 	shown, _ := d.revealerFor(r, c).view(doc)
 	w.Header().Set("ETag", etag(version(shown)))
-	writeJSON(w, status, d.renderIn(c, shown))
+	writeJSON(w, status, selectionOf(r).Apply(d.renderIn(c, shown)))
 }
