@@ -214,6 +214,19 @@ post, err := typed.Get(ctx, id, client.ReadOptions{})
 
 [Generated types](#generated-types) give you these structs, and the typed collections, from the realm's config.
 
+### Selecting fields
+
+`Fields` on `Query` and `ReadOptions`, and `WithFields(...)` on the writes, return only those paths (`id` always):
+
+```go
+titles, err := posts.List(ctx, client.Query{Fields: []string{"title", "published_at"}, Limit: 50})
+doc, err := posts.Patch(ctx, id, client.Doc{"title": "New"}, client.WithFields("_meta.version")) // stored whole
+```
+
+- **Read the answer as a `Doc`.** A `Typed[T]` struct decodes what arrived, so the fields you did not select are zero values: use the untyped collection for a partial read.
+- Rules, the order and the cursor are unaffected; if you show the value a list is ordered by, select it too. `expand` still works without its reference field. See [Selecting fields](../../api/querying/#selecting-fields).
+- A partial read has an `ETag` of its own, so the cache never mixes it with a full document.
+
 ### Revalidation cache
 
 The client keeps the last body and `ETag` of document and list reads in memory and asks the server `If-None-Match`, so a read of something unchanged costs a `304`. It is on by default (200 entries, 5 MiB; `Options.Cache` changes that), scoped to the signed-in caller (signing in or out forgets it), dropped for a document by a write to it, and never used for reads with `FileLinks` or `Expand`. `c.CacheStats()` says how it is doing; `client.WithoutCache()` skips it for one read.

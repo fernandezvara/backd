@@ -264,6 +264,8 @@ GET /v1/shop/blog/posts?expand=author(name,avatar),tags(name),category
 - **Not a join.** `where` and `order_by` use the collection's own fields: a path through a reference is `400 invalid_query`. Filter on the reference's source field instead. The [reference page](../references/) has the syntax, the startup errors, the cost guide and the alternatives.
 - **Writes** never expand, and `_expanded` in a body is ignored, like `_meta`. A [batch](#batch-writes) only writes, so it has nothing to expand. In [functions](../../functions/writing/#expanding-references), `ctx.db` expands as the caller and `ctx.admin.db` with admin access.
 
+Every read and write below also takes [`fields`](../querying/#selecting-fields) to return only some paths of the document (`id` always); the document is stored whole.
+
 ## Replace (PUT)
 
 The body becomes the complete new document and is validated as a whole. Fields that aren't in the body are removed. `id` and `_meta.created_at` are kept.

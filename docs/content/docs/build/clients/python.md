@@ -243,6 +243,19 @@ stop = client.config.on("change", lambda paths: print("changed:", paths))
 
 Pass `config_storage=FileConfigStorage(directory)` to start the next run with the last configuration it saw (`MemoryConfigStorage` is the default, and any object with `get`, `set`, `remove` and `all_keys` works). Copies are dropped on sign-out and when another user signs in.
 
+### Selecting fields
+
+`fields=` on `list`, `get` and the writes returns only those paths (`id` always) as plain dicts:
+
+```python
+titles = posts.list(fields=["title", "published_at"], limit=50)   # Page[PartialDoc]
+posts.patch(post_id, {"title": "New"}, fields=["_meta.version"])  # the document is stored whole
+```
+
+- **Untyped.** With `fields` the type checker sees `PartialDoc` (`dict[str, Any]`), not the collection's `TypedDict`, because the fields you did not select are not there. `search` and `iterate` do not take `fields`.
+- Rules, the order and the cursor are unaffected; if you show the value a list is ordered by, select it too. `expand` still works without its reference field. See [Selecting fields](../../api/querying/#selecting-fields).
+- A partial read has an `ETag` of its own, so the cache never mixes it with a full document.
+
 ## Files
 
 A file field (`files:` in `collection.yaml`) is read and written through the document. `collection.files(id, field)` has the operations; `upload_file` and friends pick the right way to send.
