@@ -1,7 +1,7 @@
 # Design: built-in request rate limiting
 
 - **Issues:** #980–#984 (milestone 47-rate-limiting)
-- **Status:** decided 2026-11-15 in its main lines (in-memory limiter per instance; configuration as in §4). The starting numbers of §4 are to be tuned with the load tests of 47.2.
+- **Status:** decided (in-memory limiter per instance; configuration as in §4). The starting numbers of §4 are tuned in 47.2.
 - **Related designs:** [metrics.md](./metrics.md), [kubernetes.md](./kubernetes.md); the sign-in throttle (`auth/sessions` "brute-force protection") and the function limits stay as they are
 
 ## 1. The problem
