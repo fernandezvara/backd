@@ -18,6 +18,8 @@ import (
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/sso"
+	"github.com/fernandezvara/backd/sso/protocol"
 )
 
 // authAPI serves /v1/{realm}/_auth/….
@@ -31,8 +33,10 @@ type authAPI struct {
 	opTimeout time.Duration
 	// oauth talks to the identity providers; baseURL is backd's public address
 	// (BACKD_URL), where they send the user back to.
-	oauth   *ProviderClient
-	baseURL string
+	oauth *protocol.Client
+	// endpoints overrides a provider's URLs (tests); nil: the built-in ones.
+	endpoints func(*registry.Provider) sso.Endpoints
+	baseURL   string
 	// fns calls the template data hooks of the hosted pages; set once the function routes exist.
 	fns *functions
 }

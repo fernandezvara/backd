@@ -276,30 +276,6 @@ func TestLoginCodesWorkOnceWithTheirVerifier(t *testing.T) {
 	}
 }
 
-func TestOAuthStatesWorkOnce(t *testing.T) {
-	ctx := context.Background()
-	svc, _, clock := providerFixture(t)
-	state, nonce, verifier, err := svc.BeginOAuth(ctx, OAuthState{Provider: "google", Intent: IntentSignIn, CodeChallenge: "c", RedirectTo: "https://app.example/x"})
-	if err != nil || state == "" || nonce == "" || verifier == "" || state == nonce {
-		t.Fatal(state, nonce, verifier, err)
-	}
-	st, err := svc.TakeOAuthState(ctx, state)
-	if err != nil || st.Provider != "google" || st.Nonce != nonce || st.Verifier != verifier || st.RedirectTo != "https://app.example/x" {
-		t.Fatalf("take: %+v, %v", st, err)
-	}
-	if _, err := svc.TakeOAuthState(ctx, state); !errors.Is(err, ErrNotFound) {
-		t.Errorf("a state used twice: %v", err)
-	}
-	state, _, _, _ = svc.BeginOAuth(ctx, OAuthState{Provider: "google", Intent: IntentSignIn})
-	*clock = clock.Add(11 * time.Minute)
-	if _, err := svc.TakeOAuthState(ctx, state); !errors.Is(err, ErrNotFound) {
-		t.Errorf("an expired state: %v", err)
-	}
-	if _, err := svc.TakeOAuthState(ctx, ""); !errors.Is(err, ErrNotFound) {
-		t.Errorf("an empty state: %v", err)
-	}
-}
-
 func TestLoginCodesHandTheProfileOverOnce(t *testing.T) {
 	ctx := context.Background()
 	svc, _, _ := providerFixture(t)

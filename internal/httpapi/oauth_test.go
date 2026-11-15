@@ -18,6 +18,7 @@ import (
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/sso"
+	"github.com/fernandezvara/backd/sso/protocol"
 	"github.com/fernandezvara/backd/sso/ssotest"
 )
 
@@ -31,15 +32,18 @@ type oauthFixture struct {
 	idp *ssotest.Provider
 }
 
-// newOAuthFixture serves realm acme with Google, Microsoft and Apple, all played by one fake
-// provider, and the users ada and bob (verified) and carl (not) of the rules fixture.
-// newOAuthFixture is a realm with providers and without organizations: people sign in with them
-// directly. The tests of providers in organizations use newOrgOAuthFixture.
-// providerClientFor is a ProviderClient that reaches the fake provider instead of the real ones.
-func providerClientFor(idp *ssotest.Provider) *ProviderClient {
-	return &ProviderClient{HTTP: idp.Client(), Endpoints: func(*registry.Provider) sso.Endpoints { return idp.Endpoints() }}
+// providerClientFor is a protocol client that reaches the fake provider instead of the real ones.
+func providerClientFor(idp *ssotest.Provider) *protocol.Client {
+	return (&protocol.Client{HTTP: idp.Client()}).Init()
 }
 
+// fakeEndpoints points every provider at the fake.
+func fakeEndpoints(idp *ssotest.Provider) func(*registry.Provider) sso.Endpoints {
+	return func(*registry.Provider) sso.Endpoints { return idp.Endpoints() }
+}
+
+// newOAuthFixture is a realm with providers and without organizations: people sign in with them
+// directly. The tests of providers in organizations use newOrgOAuthFixture.
 func newOAuthFixture(t *testing.T) *oauthFixture {
 	t.Helper()
 	f := newOrgOAuthFixture(t)
@@ -51,7 +55,7 @@ func newOAuthFixture(t *testing.T) *oauthFixture {
 func newOrgOAuthFixture(t *testing.T) *oauthFixture {
 	t.Helper()
 	idp := ssotest.New(t)
-	f := newRulesFixture(t, func(c *Config) { c.OAuth = providerClientFor(idp) })
+	f := newRulesFixture(t, func(c *Config) { c.OAuth, c.OAuthEndpoints = providerClientFor(idp), fakeEndpoints(idp) })
 	setUpProviders(t, f)
 	return &oauthFixture{rulesFixture: f, idp: idp}
 }

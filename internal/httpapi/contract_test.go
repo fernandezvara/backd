@@ -343,15 +343,19 @@ func TestContract(t *testing.T) {
 	c := loadContract(t)
 	idp := ssotest.New(t)
 	oauthSvc := providerClientFor(idp)
-	live := oauthSvc.Endpoints
-	oauthSvc.Endpoints = func(p *registry.Provider) sso.Endpoints { // a provider whose keys can't be fetched
+	live := fakeEndpoints(idp)
+	endpoints := func(p *registry.Provider) sso.Endpoints { // a provider whose keys can't be fetched
 		e := live(p)
 		if p.ClientID == "dead-client" {
 			e.JWKS = "http://127.0.0.1:1/keys"
 		}
 		return e
 	}
-	f := newRulesFixture(t, func(cfg *Config) { cfg.OAuth = oauthSvc; cfg.Triggers = &fakeTriggerAdmin{}; cfg.Realtime = testHub(t) })
+	f := newRulesFixture(t, func(cfg *Config) {
+		cfg.OAuth, cfg.OAuthEndpoints = oauthSvc, endpoints
+		cfg.Triggers = &fakeTriggerAdmin{}
+		cfg.Realtime = testHub(t)
+	})
 	setUpProviders(t, f)
 	router := f.h.(chi.Routes)
 	f.h = c.wrap(t, f.h)

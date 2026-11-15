@@ -117,35 +117,6 @@ func PKCEChallenge(verifier string) string { return pkce.Challenge(verifier) }
 // ValidPKCEChallenge says whether s looks like an S256 challenge (43 URL-safe characters).
 func ValidPKCEChallenge(s string) bool { return pkce.Valid(s) }
 
-// BeginOAuth records a sign-in attempt and returns the state value to send to the
-// provider and the nonce and PKCE verifier to use with it.
-func (s *Users) BeginOAuth(ctx context.Context, st OAuthState) (state, nonce, verifier string, err error) {
-	if state, err = randomValue(); err != nil {
-		return "", "", "", err
-	}
-	if nonce, err = randomValue(); err != nil {
-		return "", "", "", err
-	}
-	if verifier, err = randomValue(); err != nil {
-		return "", "", "", err
-	}
-	now := s.now()
-	st.ID, st.Nonce, st.Verifier, st.CreatedAt, st.ExpiresAt = HashToken(state), nonce, verifier, now, now.Add(OAuthStateTTL)
-	if err := s.Store.PutOAuthState(ctx, st); err != nil {
-		return "", "", "", err
-	}
-	return state, nonce, verifier, nil
-}
-
-// TakeOAuthState returns the attempt a state value belongs to, and forgets it: a state
-// is good for one callback. ErrNotFound when it is unknown, used or expired.
-func (s *Users) TakeOAuthState(ctx context.Context, state string) (OAuthState, error) {
-	if state == "" {
-		return OAuthState{}, ErrNotFound
-	}
-	return s.Store.ClaimOAuthState(ctx, HashToken(state), s.now())
-}
-
 // IssueLoginCode makes the one-time code that lets the app, holding the PKCE verifier
 // of challenge, get a session for the user; method is the first factor that proved them.
 func (s *Users) IssueLoginCode(ctx context.Context, userID, method, challenge string, newUser bool, profile map[string]string) (string, error) {
@@ -280,53 +251,6 @@ type ProviderResult struct {
 	Profile map[string]string
 }
 
-// ResolveProviderLogin decides who a provider's person is, under the rules of the
-// design: an identity already linked signs that user in; an address that matches
-// an account links only when the provider is trusted, says the address is verified
-// and the account's is too; otherwise a new account is made if the realm's sign-up
-// allows it. It does not start a session.
-func (s *Users) ResolveProviderLogin(ctx context.Context, in ProviderLogin) (ProviderResult, error) {
-	email := ""
-	if in.Email != "" {
-		var err error
-		if email, err = registry.NormalizeEmail(in.Email); err != nil {
-			email = ""
-		}
-	}
-	existing, err := s.Store.IdentityIn(ctx, in.Provider, in.Org, in.Subject)
-	switch {
-	case err == nil:
-		return s.knownIdentity(ctx, in, existing, email)
-	case !errors.Is(err, ErrNotFound):
-		return ProviderResult{}, err
-	}
-	if in.Intent == IntentLink {
-		return s.linkIdentity(ctx, in, email)
-	}
-	return s.signInNewIdentity(ctx, in, email)
-}
-
-// knownIdentity handles a provider account that is already linked.
-func (s *Users) knownIdentity(ctx context.Context, in ProviderLogin, id Identity, email string) (ProviderResult, error) {
-	if in.Intent == IntentLink && id.UserID != in.LinkUserID {
-		return ProviderResult{}, ErrLinkConflict
-	}
-	u, err := s.Store.UserByID(ctx, id.UserID)
-	if errors.Is(err, ErrNotFound) {
-		return ProviderResult{}, &RefusedError{UserID: id.UserID, Reason: "user missing"}
-	}
-	if err != nil {
-		return ProviderResult{}, err
-	}
-	if in.Intent != IntentLink {
-		if err := s.mayStartSession(u, in.IP); err != nil {
-			return ProviderResult{}, err
-		}
-	}
-	s.recordIdentityUse(ctx, id, in, email)
-	return ProviderResult{User: u}, nil
-}
-
 // mayStartSession applies the rules every sign-in answers to.
 func (s *Users) mayStartSession(u User, ip string) error {
 	switch {
@@ -356,21 +280,6 @@ func (s *Users) recordIdentityUse(ctx context.Context, id Identity, in ProviderL
 	}
 }
 
-// linkIdentity adds a provider account to the signed-in user.
-func (s *Users) linkIdentity(ctx context.Context, in ProviderLogin, email string) (ProviderResult, error) {
-	u, err := s.Store.UserByID(ctx, in.LinkUserID)
-	if err != nil && !errors.Is(err, ErrNotFound) {
-		return ProviderResult{}, err
-	}
-	if err != nil || u.Disabled || !u.ErasedAt.IsZero() {
-		return ProviderResult{}, &RefusedError{UserID: in.LinkUserID, Reason: "link to an unusable user"}
-	}
-	if err := s.addIdentity(ctx, u, in, email); err != nil {
-		return ProviderResult{}, err
-	}
-	return ProviderResult{User: u, Linked: true}, nil
-}
-
 // addIdentity stores the identity of a provider account for the user and audits it.
 func (s *Users) addIdentity(ctx context.Context, u User, in ProviderLogin, email string) error {
 	now := s.now()
@@ -390,31 +299,6 @@ func (s *Users) addIdentity(ctx context.Context, u User, in ProviderLogin, email
 	}
 	s.Audit(ctx, AuditIdentityLinked, userTarget(u.ID), details)
 	return nil
-}
-
-// signInNewIdentity handles a provider account backd has not seen: it links to the
-// account with the same address if the rules allow it, or signs a new user up.
-func (s *Users) signInNewIdentity(ctx context.Context, in ProviderLogin, email string) (ProviderResult, error) {
-	if email == "" {
-		return ProviderResult{}, ErrEmailRequired
-	}
-	u, err := s.Store.UserByEmail(ctx, email)
-	switch {
-	case err == nil:
-		if in.Org != "" || !in.TrustsEmail || !in.EmailVerified || !u.EmailVerified {
-			return ProviderResult{}, ErrAccountExists
-		}
-		if err := s.mayStartSession(u, in.IP); err != nil {
-			return ProviderResult{}, err
-		}
-		if err := s.addIdentity(ctx, u, in, email); err != nil {
-			return ProviderResult{}, err
-		}
-		return ProviderResult{User: u, Linked: true}, nil
-	case !errors.Is(err, ErrNotFound):
-		return ProviderResult{}, err
-	}
-	return s.signUpWithProvider(ctx, in, email)
 }
 
 // signUpWithProvider makes a user from a provider login, as the realm's sign-up mode allows.

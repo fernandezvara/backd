@@ -9,7 +9,6 @@ import (
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/sso"
-	"github.com/fernandezvara/backd/sso/oidc"
 )
 
 // Native sign-in: a mobile app that signs in with the platform (Sign in with Apple, Google
@@ -103,73 +102,43 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 		authError(w, r, err)
 		return
 	}
-	claims, err := a.oauth.Verify(r.Context(), p, str("id_token"), str("nonce"), true)
-	switch {
-	case errors.Is(err, sso.ErrInvalidToken):
-		logger(r.Context()).Info("a native ID token was not accepted", "provider", p.Name, "error", err)
-		writeError(w, r, http.StatusUnauthorized, codeInvalidToken, "the ID token is not valid for this realm")
-		return
-	case err != nil:
-		logger(r.Context()).Warn("could not verify a native ID token", "provider", p.Name, "error", err)
-		a.providerUnavailable(w, r, "the provider could not be reached")
+	host := a.host(r)
+	sp, secretsSet, err := host.ProviderOf(r.Context(), p, connOf(sc, p))
+	if err != nil {
+		logger(r.Context()).Error("read the secrets of a sign-in provider", "provider", p.Name, "error", err)
+		a.providerUnavailable(w, r, "this provider is not set up correctly")
 		return
 	}
-	if p.Org != "" {
-		if !sc.conns[p.Name].Admits(signInClaimsOf(claims)) {
-			logger(r.Context()).Info("a native person the connection does not admit", "provider", p.Name, "org", p.Org)
-			writeError(w, r, http.StatusForbidden, codeNotAllowed, "this account is not allowed to sign in through this organization")
-			return
-		}
-		if err := svc.CheckConnectionAuthority(r.Context(), sc.conns[p.Name]); err != nil {
-			if !errors.Is(err, auth.ErrConnectionUnusable) {
-				logger(r.Context()).Error("check a connection", "org", p.Org, "error", err)
-			}
-			writeError(w, r, http.StatusNotFound, codeNotFound, "this organization has no such sign-in provider")
-			return
-		}
-	}
-	var refresh string
-	if p.Name == registry.ProviderApple && p.RevokeOnDelete {
-		if refresh, ok = a.appleRefreshToken(w, r, p, claims, str("authorization_code")); !ok {
-			return
-		}
-	}
-	login := auth.ProviderLogin{
-		Provider: p.Name, Org: p.Org, Subject: claims.Subject, Email: claims.Email, EmailVerified: claims.EmailVerified, TrustsEmail: p.TrustsEmail(),
-		Intent: intent, LinkUserID: who.User.ID, Locales: append([]string{str("locale")}, acceptLanguages(r.Header.Get("Accept-Language"))...), IP: clientIP(r),
-		Profile:  profileOf(claims, nil),
-		Consents: consents, UserAgent: r.UserAgent(),
+	if !secretsSet && p.Name == registry.ProviderApple && p.RevokeOnDelete {
+		a.providerUnavailable(w, r, "this provider's secrets are not set")
+		return
 	}
 	if err := svc.ValidateConsents(consents); err != nil {
 		authError(w, r, err)
 		return
 	}
-	invitation := ""
+	hd := auth.SSOHostData{ScopeOrg: routeScope(r, sc), Locales: append([]string{str("locale")}, acceptLanguages(r.Header.Get("Accept-Language"))...), Consents: consents}
 	if inv := str("invitation"); inv != "" {
-		invitation = auth.HashToken(inv)
+		hd.Invitation = auth.HashToken(inv)
 	}
-	scopeOrg := routeScope(r, sc)
-	invitationOfScope(&login, invitation, scopeOrg)
-	res, err := svc.ResolveProviderLogin(r.Context(), login)
+	res, err := host.Engine(a.oauth).IDToken(r.Context(), sso.IDTokenInput{
+		Scope: auth.SSOScopeOf(p.Org), Provider: sp, IDToken: str("id_token"), Nonce: str("nonce"), AuthorizationCode: str("authorization_code"),
+		Intent: sso.Intent(intent), LinkUserID: who.User.ID, Host: hd.Encode(), Request: sso.Request{IP: clientIP(r), UserAgent: r.UserAgent()},
+	})
 	if err != nil {
-		a.nativeFailure(w, r, svc, p.Name, err)
+		a.nativeFailure(w, r, p.Name, err)
 		return
 	}
 	if intent == auth.IntentLink {
-		if p.Org != "" {
-			svc.AfterOrgSignIn(r.Context(), p.Org, p.Name, res)
-		}
-	} else if !enterScope(r, svc, scopeOrg, p, res, invitation) {
-		writeError(w, r, http.StatusForbidden, codeNotAllowed, "this account is not allowed to sign in through this organization")
-		return
-	}
-	if intent == auth.IntentLink {
-		a.keepAppleToken(r, svc, p, res.User.ID, claims.Audience, refresh)
 		writeJSON(w, http.StatusOK, map[string]any{"linked": p.Name})
 		return
 	}
-	a.keepAppleToken(r, svc, p, res.User.ID, claims.Audience, refresh)
-	out, err := svc.StartProviderSessionFor(r.Context(), res.User, signInMethod(p), strategy, res.NewUser, res.Profile, scopeOrg)
+	user, err := host.UserOf(r.Context(), res.Account.ID)
+	if err != nil {
+		authError(w, r, err)
+		return
+	}
+	out, err := svc.StartProviderSessionFor(r.Context(), user, sp.Method, strategy, res.NewUser, res.Profile, res.Scope)
 	if err != nil {
 		authError(w, r, err)
 		return
@@ -177,66 +146,40 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 	a.answerSignIn(w, r, out, http.StatusOK, useCookie, true)
 }
 
-// nativeFailure answers a provider login the rules refuse, in JSON.
-func (a *authAPI) nativeFailure(w http.ResponseWriter, r *http.Request, svc *auth.Users, provider string, err error) {
-	var refused *auth.RefusedError
+// nativeFailure answers a native sign-in the engine or the rules refuse, in JSON.
+func (a *authAPI) nativeFailure(w http.ResponseWriter, r *http.Request, provider string, err error) {
+	var refused *sso.Refused
 	switch {
+	case errors.Is(err, sso.ErrInvalidToken):
+		logger(r.Context()).Info("a native ID token was not accepted", "provider", provider, "error", err)
+		writeError(w, r, http.StatusUnauthorized, codeInvalidToken, "the ID token is not valid for this realm")
+	case errors.Is(err, sso.ErrExchange):
+		logger(r.Context()).Info("an Apple authorization code was not accepted", "error", err)
+		writeError(w, r, http.StatusUnauthorized, codeInvalidToken, "the authorization code was refused, or is not the one of this ID token")
+	case errors.Is(err, sso.ErrUnavailable):
+		logger(r.Context()).Warn("could not reach the provider for a native sign-in", "provider", provider, "error", err)
+		a.providerUnavailable(w, r, "the provider could not be reached")
+	case errors.Is(err, sso.ErrNotAllowed):
+		writeError(w, r, http.StatusForbidden, codeNotAllowed, "this account is not allowed to sign in through this organization")
+	case errors.Is(err, sso.ErrNotFound):
+		writeError(w, r, http.StatusNotFound, codeNotFound, "this organization has no such sign-in provider")
+	case errors.Is(err, sso.ErrAuthorizationCodeRequired):
+		writeError(w, r, http.StatusBadRequest, codeValidation, "the sign-in isn't described", Detail{Path: "authorization_code", Reason: "is required for Apple: backd revokes the user's tokens with it when the account is deleted"})
 	case errors.As(err, &refused):
-		svc.Audit(r.Context(), auth.AuditSignInRefused, "user:"+refused.UserID, map[string]any{"provider": provider, "reason": refused.Reason})
 		writeError(w, r, http.StatusForbidden, codeSignInRefused, "this account can't sign in")
-	case errors.Is(err, auth.ErrAccountExists):
+	case errors.Is(err, sso.ErrAccountExists):
 		writeError(w, r, http.StatusConflict, codeAccountExists, "an account with that address exists: sign in another way and link this provider from there", Detail{Path: "provider", Reason: provider})
-	case errors.Is(err, auth.ErrLinkConflict):
+	case errors.Is(err, sso.ErrLinkConflict):
 		writeError(w, r, http.StatusConflict, codeLinkConflict, "that provider account can't be linked to this user")
-	case errors.Is(err, auth.ErrSignupClosed):
+	case errors.Is(err, sso.ErrSignupClosed):
 		writeError(w, r, http.StatusForbidden, codeSignupClosed, "sign-up is not open in this realm")
-	case errors.Is(err, auth.ErrInvitationRequired), errors.Is(err, auth.ErrInvalidInvitation):
+	case errors.Is(err, sso.ErrInvitationInvalid):
 		writeError(w, r, http.StatusBadRequest, codeInvitationInvalid, "sign-up needs a valid invitation", Detail{Path: "invitation", Reason: "is required and must be valid"})
-	case errors.Is(err, auth.ErrEmailNotVerified):
+	case errors.Is(err, sso.ErrEmailNotVerified):
 		writeError(w, r, http.StatusForbidden, codeEmailNotVerified, err.Error())
-	case errors.Is(err, auth.ErrEmailRequired):
+	case errors.Is(err, sso.ErrEmailRequired):
 		writeError(w, r, http.StatusBadRequest, codeEmailRequired, "the provider gave no email address")
 	default:
 		authError(w, r, err)
 	}
-}
-
-// appleRefreshToken trades the authorization code an iOS app sends with its ID token for
-// Apple's refresh token, which backd keeps to revoke when the account is deleted. The code
-// must belong to the same person and app as the token, or a client could make backd keep
-// (and later revoke) someone else's token. It answers and returns false when it can't.
-func (a *authAPI) appleRefreshToken(w http.ResponseWriter, r *http.Request, p *registry.Provider, claims oidc.Claims, code string) (string, bool) {
-	if code == "" {
-		writeError(w, r, http.StatusBadRequest, codeValidation, "the sign-in isn't described", Detail{Path: "authorization_code", Reason: "is required for Apple: backd revokes the user's tokens with it when the account is deleted"})
-		return "", false
-	}
-	secrets, ok, err := a.providerSecrets(r.Context(), usersOf(r), p)
-	if err != nil || !ok {
-		a.providerUnavailable(w, r, "this provider's secrets are not set")
-		return "", false
-	}
-	secret, err := a.oauth.AppleClientSecret(p, claims.Audience, secrets[p.PrivateKey])
-	if err != nil {
-		logger(r.Context()).Error("sign Apple's client secret", "error", err)
-		a.providerUnavailable(w, r, "this provider is not set up correctly")
-		return "", false
-	}
-	tokens, err := a.oauth.Exchange(r.Context(), p, claims.Audience, secret, code, "", "")
-	if err == nil {
-		var subject, audience string
-		if subject, audience, err = a.oauth.Subject(r.Context(), p, tokens.IDToken, true); err == nil && (subject != claims.Subject || audience != claims.Audience) {
-			err = sso.ErrInvalidToken
-		}
-	}
-	switch {
-	case errors.Is(err, sso.ErrExchange), errors.Is(err, sso.ErrInvalidToken):
-		logger(r.Context()).Info("an Apple authorization code was not accepted", "error", err)
-		writeError(w, r, http.StatusUnauthorized, codeInvalidToken, "the authorization code was refused, or is not the one of this ID token")
-		return "", false
-	case err != nil:
-		logger(r.Context()).Warn("could not exchange an Apple authorization code", "error", err)
-		a.providerUnavailable(w, r, "the provider could not be reached")
-		return "", false
-	}
-	return tokens.RefreshToken, true
 }

@@ -2,11 +2,9 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"maps"
 	"net/http"
-	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -16,8 +14,8 @@ import (
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/email"
 	"github.com/fernandezvara/backd/internal/registry"
-	"github.com/fernandezvara/backd/sso/oauth2"
-	"github.com/fernandezvara/backd/sso/oidc"
+	"github.com/fernandezvara/backd/sso"
+	"github.com/fernandezvara/backd/sso/httpsso"
 )
 
 // Sign-in with external identity providers: the redirect flow. The app sends the user
@@ -29,14 +27,19 @@ import (
 // make a minute.
 const oauthRateLimit = 30
 
-// The query parameters backd adds to the app's redirect_to. They carry the prefix so that
-// they can't collide with the app's own, since the app may be any page.
+// The query parameters backd adds to the app's redirect_to are the engine's (sso.ParamCode, …);
+// the magic-link flow ends the same way, with the same names.
 const (
-	paramCode     = "backd_code"     // the one-time login code
-	paramError    = "backd_error"    // what went wrong
-	paramProvider = "backd_provider" // with account_exists: the provider that was used
-	paramLinked   = "backd_linked"   // a link succeeded: the provider
-	paramOrg      = "backd_org"      // with the code: the organization the session will be scoped to
+	paramCode  = sso.ParamCode
+	paramError = sso.ParamError
+	paramOrg   = sso.ParamOrg
+)
+
+// The codes a sign-in that did not work gives the app, as backd_error.
+const (
+	oauthProviderError = sso.CodeProviderError
+	oauthSignInRefused = sso.CodeSignInRefused
+	oauthSignupClosed  = sso.CodeSignupClosed
 )
 
 func (a *authAPI) oauthRoutes(r chi.Router, json func(http.Handler) http.Handler) {
@@ -166,12 +169,31 @@ func (a *authAPI) provider(w http.ResponseWriter, r *http.Request) (*registry.Pr
 
 // providerUsable says whether a sign-in through p could start now: its secrets are set and
 // backd's public address is known. It is the check start makes, so the list and start agree.
-func (a *authAPI) providerUsable(ctx context.Context, svc *auth.Users, realm string, p *registry.Provider) bool {
-	if _, ok := a.callbackURL(realm, p); !ok {
+func (a *authAPI) providerUsable(ctx context.Context, host *auth.SSOHost, sc *signInScope, p *registry.Provider) bool {
+	if _, ok := a.callbackURL(host.Realm, p); !ok {
 		return false
 	}
-	_, ok, err := a.providerSecrets(ctx, svc, p)
+	_, ok, err := host.ProviderOf(ctx, p, connOf(sc, p))
 	return err == nil && ok
+}
+
+// connOf is the connection a provider of the scope stands for, nil for the realm's own.
+func connOf(sc *signInScope, p *registry.Provider) *auth.OrgConnection {
+	if p.Org == "" {
+		return nil
+	}
+	c := sc.conns[p.Name]
+	return &c
+}
+
+// host is the realm's side of the sso engine's ports for a request.
+func (a *authAPI) host(r *http.Request) *auth.SSOHost {
+	realm := chi.URLParam(r, "realm")
+	base := a.baseURL
+	if rl := a.reg.Realms[realm]; rl != nil && rl.Settings.Email != nil && rl.Settings.Email.PublicURL != "" {
+		base = rl.Settings.Email.PublicURL
+	}
+	return &auth.SSOHost{Users: usersOf(r), Realm: realm, BaseURL: base, Endpoints: a.endpoints}
 }
 
 // providerList answers GET /_auth/providers and GET /_auth/orgs/{org}/providers: the names of
@@ -190,7 +212,7 @@ func (a *authAPI) providerList(w http.ResponseWriter, r *http.Request) {
 			if sc.ssoRequired && sc.providers[name].Org == "" {
 				continue // only the connection's buttons
 			}
-			if a.providerUsable(r.Context(), svc, chi.URLParam(r, "realm"), sc.providers[name]) {
+			if a.providerUsable(r.Context(), a.host(r), sc, sc.providers[name]) {
 				items = append(items, name)
 			}
 		}
@@ -216,33 +238,6 @@ func (a *authAPI) providerList(w http.ResponseWriter, r *http.Request) {
 // providersRateLimit is how many times one address may list the providers a minute: apps ask
 // when a sign-in page opens.
 const providersRateLimit = 60
-
-// providerSecrets reads the realm secrets the provider needs, by name; ok is false
-// when one is not set (the provider is then unavailable).
-func (a *authAPI) providerSecrets(ctx context.Context, svc *auth.Users, p *registry.Provider) (map[string]string, bool, error) {
-	if p.Org != "" {
-		// An organization's secret is read where only the sign-in code looks.
-		v, ok, err := svc.OrgSecret(ctx, p.Org, p.ClientSecret)
-		if err != nil || !ok {
-			return nil, false, err
-		}
-		return map[string]string{p.ClientSecret: v}, true, nil
-	}
-	names := p.SecretNames()
-	refs := make([]registry.SecretRef, len(names))
-	for i, n := range names {
-		refs[i] = registry.SecretRef{Realm: true, Name: n}
-	}
-	values, missing, err := svc.ResolveSecrets(ctx, refs, "")
-	if err != nil || len(missing) > 0 {
-		return nil, false, err
-	}
-	out := make(map[string]string, len(names))
-	for _, n := range names {
-		out[n] = values["realm."+n]
-	}
-	return out, true, nil
-}
 
 // callbackURL is the address the provider sends the user back to: backd's public
 // address (the realm's email.public_url, else BACKD_URL) and the callback path.
@@ -365,7 +360,9 @@ func (a *authAPI) startOAuth(w http.ResponseWriter, r *http.Request, in startInp
 		authError(w, r, err)
 		return "", false
 	}
-	if _, ok, err := a.providerSecrets(r.Context(), svc, p); err != nil || !ok {
+	host := a.host(r)
+	sp, ok, err := host.ProviderOf(r.Context(), p, connOf(sc, p))
+	if err != nil || !ok {
 		if err != nil {
 			logger(r.Context()).Error("read the secrets of a sign-in provider", "provider", p.Name, "error", err)
 		}
@@ -386,242 +383,55 @@ func (a *authAPI) startOAuth(w http.ResponseWriter, r *http.Request, in startInp
 		authError(w, r, err)
 		return "", false
 	}
-	st := auth.OAuthState{Provider: p.Name, Strategy: strategy, Org: p.Org, ScopeOrg: routeScope(r, sc), Intent: in.intent, CodeChallenge: in.challenge, RedirectTo: in.redirectTo, LinkUserID: who.User.ID,
-		Locales: append([]string{in.locale}, acceptLanguages(r.Header.Get("Accept-Language"))...), Consents: in.consents}
+	hd := auth.SSOHostData{ScopeOrg: routeScope(r, sc), Locales: append([]string{in.locale}, acceptLanguages(r.Header.Get("Accept-Language"))...), Consents: in.consents}
 	if in.invitation != "" {
-		st.InvitationID = auth.HashToken(in.invitation)
+		hd.Invitation = auth.HashToken(in.invitation)
 	}
-	state, nonce, verifier, err := svc.BeginOAuth(r.Context(), st)
+	authorizeURL, err := host.Engine(a.oauth).Start(r.Context(), sso.StartInput{
+		Scope: auth.SSOScopeOf(p.Org), Provider: sp, CallbackURL: callback, Intent: sso.Intent(in.intent), Strategy: strategy,
+		Challenge: in.challenge, RedirectTo: in.redirectTo, LinkUserID: who.User.ID, Host: hd.Encode(),
+	})
 	if err != nil {
 		authError(w, r, err)
 		return "", false
 	}
-	params := oauth2.AuthorizeParams{RedirectURI: callback, State: state, Nonce: nonce}
-	if UsesPKCE(p) {
-		params.CodeChallenge = auth.PKCEChallenge(verifier)
-	}
 	w.Header().Set("Cache-Control", "no-store")
-	return a.oauth.AuthorizeURL(p, params), true
+	return authorizeURL, true
 }
 
-// The codes a sign-in that did not work gives the app, as ?error=.
-const (
-	oauthCancelled         = "cancelled"
-	oauthAccountExists     = "account_exists"
-	oauthSignupClosed      = "signup_closed"
-	oauthInvitationInvalid = "invitation_invalid"
-	oauthLinkConflict      = "link_conflict"
-	oauthEmailNotVerified  = "email_not_verified"
-	oauthEmailRequired     = "email_required"
-	oauthSignInRefused     = "signin_refused"
-	oauthProviderError     = "provider_error"
-	// oauthNotAllowed: the person is not of the organization the connection admits.
-	oauthNotAllowed = "not_allowed"
-	// oauthSSORequired: the organization requires its connection, which this provider is not.
-	oauthSSORequired = "sso_required"
-)
-
-// ssoRequiredAt says whether a sign-in with the provider to the organization scopeOrg is closed
-// because the organization requires its connection: the realm's own providers are no way in then.
-func ssoRequiredAt(r *http.Request, svc *auth.Users, scopeOrg string, p *registry.Provider) bool {
-	if scopeOrg == "" || scopeOrg == unknownOrgScope || p.Org != "" {
-		return false
-	}
-	_, required := svc.OrgSSORequired(r.Context(), scopeOrg)
-	return required
-}
-
-// oauthCallback is where the provider sends the user back to.
+// oauthCallback is where the provider sends the user back to. The engine runs the rest; this
+// only says where the callback arrived and shows what came out.
 func (a *authAPI) oauthCallback(w http.ResponseWriter, r *http.Request) {
-	svc := usersOf(r)
-	if err := r.ParseForm(); err != nil {
-		a.oauthErrorPage(w, r)
-		return
+	scope := ""
+	if sc, ok := a.scope(r); ok {
+		scope = auth.SSOScopeOf(sc.org)
 	}
-	get := func(k string) string { return r.Form.Get(k) }
-	st, err := svc.TakeOAuthState(r.Context(), get("state"))
-	// The attempt must finish where it began: the same provider, and the same organization (or
-	// none), so a code started for one organization can't be finished at another's callback.
-	sc, scoped := a.scope(r)
-	if err != nil || st.Provider != chi.URLParam(r, "provider") || !scoped || st.Org != sc.org {
-		if err != nil && !errors.Is(err, auth.ErrNotFound) {
-			logger(r.Context()).Error("read a sign-in attempt", "error", err)
-		}
-		a.oauthErrorPage(w, r)
-		return
-	}
-	// From here the app is known: whatever goes wrong goes back to it.
-	back := func(params ...string) {
-		a.redirectToApp(w, r, st.RedirectTo, params...)
-	}
-	p, ok := sc.providers[st.Provider]
+	in, ok := httpsso.Callback(r, scope, chi.URLParam(r, "provider"))
 	if !ok {
-		back(paramError, oauthProviderError)
+		a.oauthErrorPage(w, r)
 		return
 	}
-	// An attempt that began before the organization required its connection can't finish after.
-	if st.Intent != auth.IntentLink && ssoRequiredAt(r, svc, st.ScopeOrg, p) {
-		back(paramError, oauthSSORequired)
+	in.Request = sso.Request{IP: clientIP(r), UserAgent: r.UserAgent()}
+	out := a.host(r).Engine(a.oauth).Callback(r.Context(), in)
+	if out.Err != nil {
+		logger(r.Context()).Warn("sign in with a provider", "provider", in.Provider, "error", out.Err)
+	}
+	if out.Page {
+		a.oauthErrorPage(w, r)
 		return
 	}
-	if e := get("error"); e != "" {
-		if e == "access_denied" || e == "user_cancelled_authorize" {
-			back(paramError, oauthCancelled)
-		} else {
-			back(paramError, oauthProviderError)
-		}
-		return
+	if out.UserID != "" {
+		setActor(r.Context(), "user:"+out.UserID)
 	}
-	code := get("code")
-	callback, ok := a.callbackURL(chi.URLParam(r, "realm"), p)
-	secrets, ok2, err := a.providerSecrets(r.Context(), svc, p)
-	if code == "" || !ok || !ok2 || err != nil {
-		logger(r.Context()).Error("sign-in with a provider can't go on", "provider", p.Name, "code_given", code != "", "secrets_set", ok2, "error", err)
-		back(paramError, oauthProviderError)
-		return
-	}
-	secret := secrets[p.ClientSecret]
-	if p.Name == registry.ProviderApple {
-		if secret, err = a.oauth.AppleClientSecret(p, p.ClientID, secrets[p.PrivateKey]); err != nil {
-			logger(r.Context()).Error("sign Apple's client secret", "error", err)
-			back(paramError, oauthProviderError)
-			return
-		}
-	}
-	verifier := ""
-	if UsesPKCE(p) {
-		verifier = st.Verifier
-	}
-	tokens, err := a.oauth.Exchange(r.Context(), p, p.ClientID, secret, code, callback, verifier)
-	if err != nil {
-		logger(r.Context()).Warn("the provider didn't give a token", "provider", p.Name, "error", err)
-		back(paramError, oauthProviderError)
-		return
-	}
-	claims, err := a.oauth.Verify(r.Context(), p, tokens.IDToken, st.Nonce, false)
-	if err != nil {
-		logger(r.Context()).Warn("the provider's ID token is not valid", "provider", p.Name, "error", err)
-		back(paramError, oauthProviderError)
-		return
-	}
-	if conn, org := sc.conns[p.Name], p.Org != ""; org {
-		if !conn.Admits(signInClaimsOf(claims)) {
-			logger(r.Context()).Info("a person the connection does not admit", "provider", p.Name, "org", p.Org)
-			back(paramError, oauthNotAllowed)
-			return
-		}
-		if err := svc.CheckConnectionAuthority(r.Context(), conn); err != nil {
-			if !errors.Is(err, auth.ErrConnectionUnusable) {
-				logger(r.Context()).Error("check a connection", "org", p.Org, "error", err)
-			}
-			back(paramError, oauthProviderError)
-			return
-		}
-	}
-	login := auth.ProviderLogin{
-		Provider: p.Name, Org: p.Org, Subject: claims.Subject, Email: claims.Email, EmailVerified: claims.EmailVerified, TrustsEmail: p.TrustsEmail(),
-		Intent: st.Intent, LinkUserID: st.LinkUserID, Locales: st.Locales, IP: clientIP(r),
-		Consents: st.Consents, UserAgent: r.UserAgent(),
-		Profile: profileOf(claims, firstAuthorization(p, get("user"))),
-	}
-	invitationOfScope(&login, st.InvitationID, st.ScopeOrg)
-	res, err := svc.ResolveProviderLogin(r.Context(), login)
-	if err != nil {
-		a.oauthFailure(w, r, svc, st, p, err)
-		return
-	}
-	a.keepAppleToken(r, svc, p, res.User.ID, p.ClientID, tokens.RefreshToken)
-	if st.Intent == auth.IntentLink {
-		if p.Org != "" {
-			svc.AfterOrgSignIn(r.Context(), p.Org, p.Name, res)
-		}
-	} else if !enterScope(r, svc, st.ScopeOrg, p, res, st.InvitationID) {
-		back(paramError, oauthNotAllowed)
-		return
-	}
-	if st.Intent == auth.IntentLink {
-		back(paramLinked, p.Name)
-		return
-	}
-	loginCode, err := svc.IssueLoginCodeFor(r.Context(), res.User.ID, signInMethod(p), st.Strategy, st.CodeChallenge, res.NewUser, res.Profile, st.ScopeOrg)
-	if err != nil {
-		logger(r.Context()).Error("issue a login code", "error", err)
-		back(paramError, oauthProviderError)
-		return
-	}
-	setActor(r.Context(), "user:"+res.User.ID)
-	if st.ScopeOrg != "" {
-		back(paramCode, loginCode, paramOrg, st.ScopeOrg)
-		return
-	}
-	back(paramCode, loginCode)
-}
-
-// signInClaimsOf is what a connection's restriction reads from a verified token.
-func signInClaimsOf(c oidc.Claims) auth.SignInClaims {
-	return auth.SignInClaims{Email: c.Email, EmailVerified: c.EmailVerified, HostedDomain: c.HostedDomain, Tenant: c.Tenant, Username: c.Username}
-}
-
-// keepAppleToken keeps Apple's refresh token for revoking it when the account goes away
-// (unless the provider is configured not to). A failure is logged, not the sign-in's.
-func (a *authAPI) keepAppleToken(r *http.Request, svc *auth.Users, p *registry.Provider, userID, clientID, refreshToken string) {
-	if p.Name != registry.ProviderApple || refreshToken == "" {
-		return
-	}
-	if err := svc.SaveAppleToken(r.Context(), userID, clientID, refreshToken); err != nil {
-		logger(r.Context()).Error("keep Apple's refresh token for revocation", "error", err)
-	}
-}
-
-// oauthFailure sends the app the code for a sign-in the rules refuse.
-func (a *authAPI) oauthFailure(w http.ResponseWriter, r *http.Request, svc *auth.Users, st auth.OAuthState, p *registry.Provider, err error) {
-	var refused *auth.RefusedError
-	code := oauthProviderError
-	switch {
-	case errors.As(err, &refused):
-		code = oauthSignInRefused
-		svc.Audit(r.Context(), auth.AuditSignInRefused, "user:"+refused.UserID, map[string]any{"provider": p.Name, "reason": refused.Reason})
-	case errors.Is(err, auth.ErrAccountExists):
-		a.redirectToApp(w, r, st.RedirectTo, paramError, oauthAccountExists, paramProvider, p.Name)
-		return
-	case errors.Is(err, auth.ErrSignupClosed):
-		code = oauthSignupClosed
-	case errors.Is(err, auth.ErrInvitationRequired), errors.Is(err, auth.ErrInvalidInvitation):
-		code = oauthInvitationInvalid
-	case errors.Is(err, auth.ErrLinkConflict):
-		code = oauthLinkConflict
-	case errors.Is(err, auth.ErrEmailNotVerified):
-		code = oauthEmailNotVerified
-	case errors.Is(err, auth.ErrEmailRequired):
-		code = oauthEmailRequired
-	default:
-		logger(r.Context()).Error("sign in with a provider", "provider", p.Name, "error", err)
-	}
-	a.redirectToApp(w, r, st.RedirectTo, paramError, code)
+	a.redirectToApp(w, r, out.RedirectTo, out.Params...)
 }
 
 // redirectToApp sends the browser to the app's redirect_to (checked when the attempt
 // began) with the given query parameters added.
 func (a *authAPI) redirectToApp(w http.ResponseWriter, r *http.Request, to string, params ...string) {
-	u, err := url.Parse(to)
-	if err != nil {
+	if !httpsso.Redirect(w, r, to, params...) {
 		a.oauthErrorPage(w, r)
-		return
 	}
-	q := u.Query()
-	for i := 0; i+1 < len(params); i += 2 {
-		q.Set(params[i], params[i+1])
-	}
-	u.RawQuery = q.Encode()
-	h := w.Header()
-	h.Set("Cache-Control", "no-store")
-	h.Set("Referrer-Policy", "no-referrer")
-	status := http.StatusFound
-	if r.Method == http.MethodPost {
-		status = http.StatusSeeOther // the provider's POST becomes the browser's GET
-	}
-	h.Set("Location", u.String())
-	w.WriteHeader(status)
 }
 
 // oauthErrorPage answers an attempt that can't be traced to an app: an unknown, used,
@@ -688,49 +498,6 @@ func providerSessionJSON(p auth.Principal, token, locale string, newUser bool, p
 	return out
 }
 
-// profileOf is what the provider says of the person: the ID token's claims, and, for Apple's
-// first authorization, the name Apple sends in the callback form (never in the token).
-func profileOf(c oidc.Claims, extra map[string]string) map[string]string {
-	in := map[string]string{"name": c.Name, "given_name": c.GivenName, "family_name": c.FamilyName, "picture": c.Picture}
-	for k, v := range extra {
-		if in[k] == "" {
-			in[k] = v
-		}
-	}
-	return auth.CleanProfile(in)
-}
-
-// firstAuthorization is the name Apple posts with a person's first authorization of the app;
-// no other provider sends such a field, and one sent to them is ignored.
-func firstAuthorization(p *registry.Provider, raw string) map[string]string {
-	if p.Name != registry.ProviderApple {
-		return nil
-	}
-	return appleFirstAuthorization(raw)
-}
-
-// appleFirstAuthorization reads the "user" field Apple posts to the callback the first time a
-// person authorizes the app: {"name": {"firstName": …, "lastName": …}}.
-func appleFirstAuthorization(raw string) map[string]string {
-	if raw == "" || len(raw) > 4096 {
-		return nil
-	}
-	var u struct {
-		Name struct {
-			First string `json:"firstName"`
-			Last  string `json:"lastName"`
-		} `json:"name"`
-	}
-	if json.Unmarshal([]byte(raw), &u) != nil {
-		return nil
-	}
-	out := map[string]string{"given_name": u.Name.First, "family_name": u.Name.Last}
-	if full := strings.TrimSpace(u.Name.First + " " + u.Name.Last); full != "" {
-		out["name"] = full
-	}
-	return out
-}
-
 // invitationPrefixOf is what an invitation token starts with on this route: an organization's
 // route takes the organization's invitations, the realm's takes account invitations.
 func invitationPrefixOf(r *http.Request) string {
@@ -740,51 +507,12 @@ func invitationPrefixOf(r *http.Request) string {
 	return auth.InvitationPrefix
 }
 
-// unknownOrgScope is the scope of an attempt started at the address of an organization that
-// can't be signed in to (it is not there, or is deleted): the attempt goes on like any other, so
-// nothing says so, and ends in the refusal a stranger to a real organization gets.
-const unknownOrgScope = "?"
-
 // routeScope is the organization a sign-in started at this route is for: the id of the one the
 // address names, unknownOrgScope when it names one that can't be signed in to, and "" for the
 // realm's address.
 func routeScope(r *http.Request, sc *signInScope) string {
 	if chi.URLParam(r, "org") != "" && sc.org == "" {
-		return unknownOrgScope
+		return auth.UnknownOrgScope
 	}
 	return sc.org
-}
-
-// invitationOfScope puts the invitation of a sign-in attempt where it belongs: with an
-// organization it is that organization's, which lets a new person make an account and join;
-// otherwise it is an account invitation of the realm.
-func invitationOfScope(login *auth.ProviderLogin, hash, scopeOrg string) {
-	switch scopeOrg {
-	case "":
-		login.Invitation = hash
-	case unknownOrgScope:
-	default:
-		login.ScopeOrg, login.OrgInvitation = scopeOrg, hash
-	}
-}
-
-// enterScope finishes a provider sign-in to an organization: an invitation it carried is used,
-// the connection's join rules run (a connection also admits whoever it is configured to), and for
-// a realm-level provider the person must be a member now. It returns false when the person may
-// not be signed in to the organization. A sign-in to the realm has nothing to do. An organization
-// that can't be signed in to ends here, after the provider has vouched for the person, like a
-// stranger to a real one.
-func enterScope(r *http.Request, svc *auth.Users, scopeOrg string, p *registry.Provider, res auth.ProviderResult, invitationHash string) bool {
-	switch scopeOrg {
-	case "":
-		return true
-	case unknownOrgScope:
-		return false
-	}
-	member := svc.EnterOrg(r.Context(), res.User, scopeOrg, invitationHash)
-	if p.Org != "" {
-		svc.AfterOrgSignIn(r.Context(), p.Org, p.Name, res)
-		return true
-	}
-	return member
 }

@@ -17,6 +17,8 @@ import (
 	"github.com/fernandezvara/backd/internal/push"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage"
+	"github.com/fernandezvara/backd/sso"
+	"github.com/fernandezvara/backd/sso/protocol"
 )
 
 // workerPollInterval is how long a worker's goroutine waits before
@@ -29,7 +31,9 @@ const workerPollInterval = 250 * time.Millisecond
 // function's own caller would, reusing the same bundle resolution,
 // callback construction and invocation recording sync calls use.
 type Worker struct {
-	oauth *ProviderClient // reaches the identity providers (to revoke Apple tokens)
+	oauth *protocol.Client // reaches the identity providers (to revoke Apple tokens)
+	// oauthEndpoints overrides a provider's URLs (tests); nil: the built-in ones.
+	oauthEndpoints func(*registry.Provider) sso.Endpoints
 	// migrateDocsPerSecond overrides the rate of schema migrations (zero: auth.SchemaMigrateRate); tests only.
 	migrateDocsPerSecond int
 	id                   string
@@ -74,7 +78,7 @@ func NewWorker(cfg Config, id string) *Worker {
 	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, users: users, callbackKey: cfg.CallbackKey, objects: newRealmObjects(cfg.Registry, users)}
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, log: log, metrics: cfg.Metrics}
 	docs.imageMaxPixels = cfg.ImageMaxPixels
-	return &Worker{id: id, fns: fns, reg: cfg.Registry, backdURL: cfg.BackdURL, oauth: cfg.oauthService(), log: log, lastScheduled: map[string]time.Time{}, lastPurge: map[string]time.Time{}, lastDevices: map[string]time.Time{}, lastTeamRoles: map[string]time.Time{}, images: newImageEngine(cfg), pushSenders: pushSendersOf(cfg, users, now), version: cfg.Version, fingerprint: cfg.ConfigFingerprint}
+	return &Worker{id: id, fns: fns, reg: cfg.Registry, backdURL: cfg.BackdURL, oauth: cfg.oauthService(), oauthEndpoints: cfg.OAuthEndpoints, log: log, lastScheduled: map[string]time.Time{}, lastPurge: map[string]time.Time{}, lastDevices: map[string]time.Time{}, lastTeamRoles: map[string]time.Time{}, images: newImageEngine(cfg), pushSenders: pushSendersOf(cfg, users, now), version: cfg.Version, fingerprint: cfg.ConfigFingerprint}
 }
 
 // newImageEngine builds the engine from the instance's settings: the concurrency is the

@@ -18,6 +18,8 @@ import (
 	"github.com/fernandezvara/backd/internal/realtime"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/triggers"
+	"github.com/fernandezvara/backd/sso"
+	"github.com/fernandezvara/backd/sso/protocol"
 )
 
 // Config holds the handler dependencies.
@@ -121,16 +123,19 @@ type Config struct {
 	Metrics *metrics.Metrics
 	// OAuth reaches the identity providers; nil uses the built-in ones through a
 	// client that dials only their hosts. Tests point it at a fake.
-	OAuth *ProviderClient
+	OAuth *protocol.Client
+	// OAuthEndpoints overrides the URLs of a provider (tests point them at a fake); the built-in
+	// ones when nil.
+	OAuthEndpoints func(*registry.Provider) sso.Endpoints
 }
 
 // oauthService is the service that reaches the identity providers: the one configured, or the
 // built-in providers through a client that dials only their hosts.
-func (cfg Config) oauthService() *ProviderClient {
+func (cfg Config) oauthService() *protocol.Client {
 	if cfg.OAuth != nil {
 		return cfg.OAuth
 	}
-	return newProviderClient(cfg.Dev)
+	return protocol.New(cfg.Dev)
 }
 
 // DefaultOpTimeout is the per-request storage deadline when none is configured.
@@ -191,7 +196,7 @@ func NewHandler(cfg Config) http.Handler {
 	if users == nil {
 		users = func(string) *auth.Users { return nil }
 	}
-	authRoutes := &authAPI{users: users, reg: cfg.Registry, actions: hostedActions(), opTimeout: opTimeout, oauth: cfg.oauthService(), baseURL: cfg.BackdURL, limiter: limiter}
+	authRoutes := &authAPI{users: users, reg: cfg.Registry, actions: hostedActions(), opTimeout: opTimeout, oauth: cfg.oauthService(), endpoints: cfg.OAuthEndpoints, baseURL: cfg.BackdURL, limiter: limiter}
 	authRoutes.routes(r)
 	docs := &documents{reg: cfg.Registry, store: cfg.Store, now: now, maxBody: maxBody, opTimeout: opTimeout, users: users, callbackKey: cfg.CallbackKey, objects: newRealmObjects(cfg.Registry, users).withKeys(cfg.StorageAccessKey, cfg.StorageSecretKey).withPublicKeys(cfg.PublicStorageAccessKey, cfg.PublicStorageSecretKey), baseURL: cfg.BackdURL, maxUpload: maxUploadOf(cfg), imageMaxPixels: cfg.ImageMaxPixels, expand: cfg.Expand.OrDefault(), aggregateLim: cfg.Aggregate.OrDefault(), metrics: cfg.Metrics, hub: cfg.Realtime, realtimeLimits: cfg.RealtimeLimits, limiter: limiter}
 	fns := &functions{docs: docs, runner: cfg.Functions, callbackURL: cfg.CallbackURL, executorToken: cfg.ExecutorToken, log: cfg.Log, dev: cfg.Dev, concurrency: limiterFor(cfg.Registry), metrics: cfg.Metrics}
