@@ -138,11 +138,13 @@ New sample collections under those directories are picked up automatically.
 To run the integration tests outside the compose setup:
 
 ```sh
-docker run -d --name backd-test-mongo -p 27018:27017 docker.io/library/mongo:8.2 --replSet rs0
-docker exec backd-test-mongo mongosh --quiet --eval \
+docker run -d --name backd-test-mongo --network host docker.io/library/mongo:8.2 --replSet rs0 --port 27018
+docker exec backd-test-mongo mongosh --port 27018 --quiet --eval \
   "rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'localhost:27018'}]})"
 MONGO_TEST_URI='mongodb://localhost:27018/?replicaSet=rs0' go test ./...
 ```
+
+MongoDB must listen on the same port the replica set announces, which is why the container uses the host network and `--port 27018` instead of `-p 27018:27017`. With the port mapping, `rs.initiate` fails with `No host described in new configuration … for replica set rs0 maps to this node`, because inside the container the server listens on 27017, not on the 27018 named in `host`. Stop it with `docker rm -f backd-test-mongo`.
 
 {{< hint warning >}}
 MongoDB 8.0 (and the current `latest` image) refuses to start on Linux kernel 6.19 or newer ([SERVER-121912](https://jira.mongodb.org/browse/SERVER-121912)). Use 8.2.
