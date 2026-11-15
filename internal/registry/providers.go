@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/fernandezvara/backd/sso"
 )
 
 // Sign-in with external identity providers (providers: in realm.yaml). Besides
@@ -134,6 +136,16 @@ type Provider struct {
 	// id of the organization. Its ClientSecret then names an organization secret, and the
 	// restrictions of the connection apply on top of the token checks.
 	Org string
+}
+
+// SSO is the provider as the sign-in library speaks to it, with the endpoints of its kind.
+func (p *Provider) SSO() sso.Provider {
+	kind := sso.Kind(p.Name)
+	return sso.Provider{
+		Name: p.Name, Kind: kind, ClientID: p.ClientID, NativeClientIDs: p.NativeClientIDs,
+		Tenant: p.Tenant, TeamID: p.TeamID, KeyID: p.KeyID,
+		Endpoints: sso.BuiltinEndpoints(kind, p.Tenant),
+	}
 }
 
 // SecretNames are the realm secrets the provider needs.

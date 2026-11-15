@@ -16,8 +16,9 @@ import (
 	"time"
 
 	"github.com/fernandezvara/backd/internal/auth"
-	"github.com/fernandezvara/backd/internal/oauth/oauthtest"
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/sso"
+	"github.com/fernandezvara/backd/sso/ssotest"
 )
 
 const (
@@ -27,13 +28,18 @@ const (
 
 type oauthFixture struct {
 	*rulesFixture
-	idp *oauthtest.Provider
+	idp *ssotest.Provider
 }
 
 // newOAuthFixture serves realm acme with Google, Microsoft and Apple, all played by one fake
 // provider, and the users ada and bob (verified) and carl (not) of the rules fixture.
 // newOAuthFixture is a realm with providers and without organizations: people sign in with them
 // directly. The tests of providers in organizations use newOrgOAuthFixture.
+// providerClientFor is a ProviderClient that reaches the fake provider instead of the real ones.
+func providerClientFor(idp *ssotest.Provider) *ProviderClient {
+	return &ProviderClient{HTTP: idp.Client(), Endpoints: func(*registry.Provider) sso.Endpoints { return idp.Endpoints() }}
+}
+
 func newOAuthFixture(t *testing.T) *oauthFixture {
 	t.Helper()
 	f := newOrgOAuthFixture(t)
@@ -44,8 +50,8 @@ func newOAuthFixture(t *testing.T) *oauthFixture {
 // newOrgOAuthFixture is a realm with providers and with organizations.
 func newOrgOAuthFixture(t *testing.T) *oauthFixture {
 	t.Helper()
-	idp := oauthtest.New(t)
-	f := newRulesFixture(t, func(c *Config) { c.OAuth = idp.Service() })
+	idp := ssotest.New(t)
+	f := newRulesFixture(t, func(c *Config) { c.OAuth = providerClientFor(idp) })
 	setUpProviders(t, f)
 	return &oauthFixture{rulesFixture: f, idp: idp}
 }

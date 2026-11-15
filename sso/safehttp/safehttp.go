@@ -1,11 +1,9 @@
-// Package oauth talks to external identity providers (Google, Microsoft, Apple):
-// the authorize URL, the code exchange, the verification of ID tokens and Apple's
-// client secret. It knows nothing of users or sessions.
+// Package safehttp is the HTTP client sign-in uses to reach identity providers.
 //
-// Everything it sends goes through an HTTP client that dials only the provider's
+// Everything it sends goes through a client that dials only the provider's
 // own hosts, resolves them itself and refuses private, loopback and link-local
 // addresses, so a mistake in configuration can't make backd reach inside the network.
-package oauth
+package safehttp
 
 import (
 	"context"
@@ -25,7 +23,7 @@ import (
 const maxBody = 1 << 20
 
 // ErrHostNotAllowed means a request named a host that is not one of the provider's.
-var ErrHostNotAllowed = errors.New("oauth: the host is not one of the provider's")
+var ErrHostNotAllowed = errors.New("sso: the host is not one of the provider's")
 
 // NewClient returns an HTTP client that connects only to hosts allowed accepts, by
 // name, and, unless allowPrivate, only to public addresses (checked after the name
@@ -95,14 +93,14 @@ func BuiltinHostAllowed(host string) bool {
 	return false
 }
 
-// readBody reads a provider's answer, at most maxBody bytes.
-func readBody(resp *http.Response) ([]byte, error) {
+// ReadBody reads a provider's answer, at most maxBody bytes.
+func ReadBody(resp *http.Response) ([]byte, error) {
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 	if err != nil {
 		return nil, err
 	}
 	if len(data) > maxBody {
-		return nil, errors.New("oauth: the provider's answer is too large")
+		return nil, errors.New("sso: the provider's answer is too large")
 	}
 	return data, nil
 }
