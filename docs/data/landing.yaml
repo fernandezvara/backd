@@ -7,7 +7,7 @@ sections:
     weight: 10
     template: hero
 
-    badge: "v0.9.11 · Versioned schemas, with migrations that run for you"
+    badge: "v0.9.12 · Rate limiting, schema defaults, field projection, sign-in audit"
 
     title: "backd"
     subtitle: "A **config-driven** REST backend over MongoDB. Declare realms, databases and collections as files on disk, and get a **schema-validated**, **queryable** document API. Add **server-side functions** for the logic clients can't be trusted with: background jobs, cron schedules and webhooks included."
