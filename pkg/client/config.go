@@ -172,7 +172,7 @@ func normalizePaths(paths []string) string {
 func (cfg *Config) scope(ctx context.Context) (string, error) {
 	credential := ""
 	if cfg.c.apiKey != "" {
-		credential = "key:" + cfg.c.apiKey
+		credential = cfg.c.keyOwner()
 	} else if token, err := cfg.c.store.Get(ctx); err != nil {
 		return "", err
 	} else if token != "" {

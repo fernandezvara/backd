@@ -61,3 +61,9 @@ async def test_an_acting_client_refuses_the_account_routes_before_sending(mode: 
     with pytest.raises(TypeError, match="cannot use the admin API or the account routes"):
         await go(ada.auth.me())
     assert server.calls == []
+
+
+async def test_the_app_configuration_of_acting_clients_is_kept_apart(mode: str) -> None:
+    client = make_client(mode, Server(), api_key="bdk_secret")
+    ada, bob = client.as_user("u_ada"), client.as_user("u_bob")
+    assert await go(ada.config._scope()) != await go(bob.config._scope())

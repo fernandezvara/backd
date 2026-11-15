@@ -173,7 +173,7 @@ export class Config {
    */
   async scope() {
     let credential = ''
-    if (this.client.apiKey) credential = 'key:' + this.client.apiKey
+    if (this.client.apiKey) credential = 'key:' + this.client.apiKey + (this.client.onBehalfOf ? '|as:' + this.client.onBehalfOf : '')
     else {
       const token = await this.client.storage.get()
       if (token) credential = token === COOKIE_SESSION ? 'cookie' : 'session:' + token

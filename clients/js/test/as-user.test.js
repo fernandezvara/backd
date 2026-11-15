@@ -63,3 +63,10 @@ test('as_user on a key client with an organization keeps the organization settin
   await ada.db('main').collection('posts').get('a')
   assert.equal(header(m.calls[0], 'X-Backd-On-Behalf-Of'), 'u_ada')
 })
+
+test('the app configuration of acting clients is kept apart', async () => {
+  const key = make(mockFetch([]))
+  const [ada, bob, plain] = await Promise.all([key.as_user('u_ada').config.scope(), key.as_user('u_bob').config.scope(), key.config.scope()])
+  assert.notEqual(ada, bob)
+  assert.notEqual(ada, plain)
+})

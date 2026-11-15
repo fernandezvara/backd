@@ -74,6 +74,8 @@ type Options struct {
 	MapError func(error) error
 	// OnStaleTypes is called once when the server says the types are stale; a warning is logged by default.
 	OnStaleTypes func()
+	// onBehalfOf is set by [Client.AsUser]: the user an APIKey client acts as.
+	onBehalfOf string
 	// UserAgent is sent as the User-Agent of every call (Go's default otherwise). The backd CLI
 	// sends backd/<version>: a backd server compares that with its own and answers
 	// X-Backd-Version-Skew on authenticated admin calls when they differ.
@@ -193,6 +195,31 @@ func (c *Client) OrgRef() string { return c.org }
 
 // HasAPIKey reports whether the client was created with an API key.
 func (c *Client) HasAPIKey() bool { return c.apiKey != "" }
+
+// OnBehalfOf returns the id of the user a client made by [Client.AsUser] acts as, or "".
+func (c *Client) OnBehalfOf() string { return c.opts.onBehalfOf }
+
+// AsUser returns a client that acts as one user of the realm: every call carries
+// X-Backd-On-Behalf-Of, so that user's access rules apply (not the key's full access) and what it
+// creates is theirs. It has the address, realm, key and settings of this client and a revalidation
+// cache and app configuration of its own, so what one user read is never served to another. Only a
+// client made with an APIKey can do it, and the result cannot do it again; the admin API and the
+// account routes (Auth, devices) refuse it, here and in the server. Closing either client closes both.
+func (c *Client) AsUser(userID string) (*Client, error) {
+	if c.apiKey == "" {
+		return nil, errors.New("client.AsUser: only a client made with an API key (Options.APIKey) can act as a user")
+	}
+	if c.opts.onBehalfOf != "" {
+		return nil, errors.New("client.AsUser: this client already acts as a user; call AsUser on the client made with the API key")
+	}
+	id := strings.TrimSpace(userID)
+	if id == "" {
+		return nil, errors.New("client.AsUser: the user id is required")
+	}
+	o := c.opts
+	o.onBehalfOf = id
+	return newClient(o, c.rootClient())
+}
 
 // Config returns the realm's app configuration: flags, switches and limits, cached per user.
 func (c *Client) Config() *Config { return c.config }

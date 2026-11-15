@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -151,7 +152,7 @@ func (c *Client) endpoint(path []string, query url.Values) string {
 // part of it, and the caller as the cache knows it.
 func (c *Client) credentials(ctx context.Context) (header string, session bool, owner string, err error) {
 	if c.apiKey != "" {
-		return "Bearer " + c.apiKey, false, "key:" + c.apiKey, nil
+		return "Bearer " + c.apiKey, false, c.keyOwner(), nil
 	}
 	token, err := c.store.Get(ctx)
 	if err != nil {
@@ -163,7 +164,19 @@ func (c *Client) credentials(ctx context.Context) (header string, session bool, 
 	return "Bearer " + token, true, "session:" + token, nil
 }
 
+// keyOwner is the caller of an API key client as the caches know it: an acting client is a caller
+// of its own.
+func (c *Client) keyOwner() string {
+	if c.opts.onBehalfOf != "" {
+		return "key:" + c.apiKey + "|as:" + c.opts.onBehalfOf
+	}
+	return "key:" + c.apiKey
+}
+
 func (c *Client) do(ctx context.Context, r *request) (*Response, error) {
+	if c.opts.onBehalfOf != "" && len(r.path) > 0 && (r.path[0] == "_admin" || r.path[0] == "_auth") {
+		return nil, fmt.Errorf("a client made with AsUser cannot use the admin API or the account routes (%s): use the client made with the API key", r.path[0])
+	}
 	var jsonBody []byte
 	if r.body != nil && r.raw == nil {
 		b, err := json.Marshal(r.body)
@@ -221,6 +234,9 @@ func (c *Client) do(ctx context.Context, r *request) (*Response, error) {
 		}
 		if h != "" {
 			headers.Set("Authorization", h)
+			if c.opts.onBehalfOf != "" && c.apiKey != "" {
+				headers.Set("X-Backd-On-Behalf-Of", c.opts.onBehalfOf)
+			}
 		}
 		sentSession, owner = session, o
 	}
