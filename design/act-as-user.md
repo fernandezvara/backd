@@ -1,7 +1,7 @@
 # Design: `as_user` in the clients
 
 - **Issues:** #971–#975 (milestone 45-as-user); closes #33 (widened from the JavaScript client to the four)
-- **Status:** decided 2026-11-15 (names, caches and administration routes chosen by the maintainer)
+- **Status:** decided
 - **Related designs:** [scoped-sessions.md](./scoped-sessions.md), [organizations.md](./organizations.md) (API keys on behalf of a user)
 
 ## 1. The problem
