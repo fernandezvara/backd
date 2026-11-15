@@ -172,6 +172,7 @@ aggregate:
 		{tier: trivial, name: "get one document by id", path: base1 + fmt.Sprintf("/o%08d", mid)},
 		{tier: trivial, name: "list, first page (20)", path: get("")},
 		{tier: trivial, name: "list, limit=100", path: get("", "limit", "100")},
+		{tier: trivial, name: "list, limit=100, fields=title,status", path: get("", "limit", "100", "fields", "title,status")},
 
 		{tier: simple, name: "where eq on indexed field", path: get("", "where", `{"category":"c07"}`)},
 		{tier: simple, name: "where eq on unindexed field", path: get("", "where", `{"status":"paid"}`)},

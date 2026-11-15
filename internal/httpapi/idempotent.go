@@ -112,6 +112,9 @@ func (d *documents) claimKey(w http.ResponseWriter, r *http.Request, scope strin
 			}
 		}
 	}
+	if m, ok := stored.(map[string]any); ok && scope != "_batch" {
+		stored = selectionOf(r).Apply(m) // the remembered answer is the whole document: this request's `fields` shape it
+	}
 	writeJSON(w, status, stored)
 	return nil, false
 }

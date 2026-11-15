@@ -237,6 +237,7 @@ func (b *builder) collectionAt(db string, c *registry.Collection, admin bool) {
 			orgParam(op, id, c)
 			teamParam(op, id, c)
 			expandParam(op, id, c)
+			fieldsParam(op, c)
 			aggregateParams(op, id, c)
 			if c.Text == nil {
 				dropParams(op, "language") // only a collection with a text index can be searched
@@ -532,4 +533,24 @@ func (b *builder) versionedDocSchemas(alias string, c *registry.Collection, curr
 		"description": fmt.Sprintf("A %s/%s document in any version of its schema that is still kept, told apart by `_meta.schema_version`.", c.Database, c.Name),
 		"oneOf":       refs,
 	}
+}
+
+// fieldsParam gives the operations that take `fields` the paths this collection can select.
+func fieldsParam(op map[string]any, c *registry.Collection) {
+	has := false
+	for _, p := range anySlice(op["parameters"]) {
+		if pm, ok := p.(map[string]any); ok && pm["$ref"] == "#/components/parameters/fields" {
+			has = true
+		}
+	}
+	if !has {
+		return
+	}
+	dropParams(op, "fields")
+	desc := "The paths of the document to return, separated by commas (at most 32): `id` is always returned, `_meta` only when named (`_meta`, or a field of it such as `_meta.version`). A path selects its whole subtree. It is applied last, so rules, the order and cursor of a list and `expand` are unaffected; the answer is a partial document, and the `ETag` of a partial answer is its own."
+	if paths := slices.Sorted(maps.Keys(c.Fields)); len(paths) > 0 {
+		desc += " This collection declares: `" + strings.Join(paths, "`, `") + "`."
+	}
+	param := map[string]any{"name": "fields", "in": "query", "required": false, "schema": map[string]any{"type": "string"}, "description": desc}
+	op["parameters"] = append(anySlice(op["parameters"]), param)
 }

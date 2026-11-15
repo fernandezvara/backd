@@ -165,6 +165,10 @@ func (d *documents) collection(r *http.Request) (*registry.Collection, storage.R
 
 func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 	c, repo := d.collection(r)
+	r, sel, ok := d.withSelection(w, r, c)
+	if !ok {
+		return
+	}
 	body, ok := readObject(w, r)
 	if !ok {
 		return
@@ -249,11 +253,15 @@ func (d *documents) create(w http.ResponseWriter, r *http.Request) {
 	kept, _ := d.storedView(c, doc)
 	claim.complete(r.Context(), http.StatusCreated, render(kept))
 	w.Header().Set("ETag", etag(version(doc)))
-	writeJSON(w, http.StatusCreated, out)
+	writeJSON(w, http.StatusCreated, sel.Apply(out))
 }
 
 func (d *documents) get(w http.ResponseWriter, r *http.Request) {
 	c, repo := d.collection(r)
+	r, sel, ok := d.withSelection(w, r, c)
+	if !ok {
+		return
+	}
 	view, ok := parseTrash(w, r, c)
 	if !ok {
 		return
@@ -292,7 +300,7 @@ func (d *documents) get(w http.ResponseWriter, r *http.Request) {
 		// this answer is never 304 and never stored.
 		w.Header().Set("ETag", etag(version(doc)))
 		w.Header().Set("Cache-Control", "private, no-store")
-		writeJSON(w, http.StatusOK, out)
+		writeJSON(w, http.StatusOK, sel.Apply(out))
 		return
 	}
 	if plan != nil {
@@ -301,18 +309,19 @@ func (d *documents) get(w http.ResponseWriter, r *http.Request) {
 		// and never 304.
 		w.Header().Set("ETag", etag(version(doc)))
 		w.Header().Set("Cache-Control", "private, no-cache")
-		writeJSON(w, http.StatusOK, out)
+		writeJSON(w, http.StatusOK, sel.Apply(out))
 		return
 	}
 	// What the caller may not see of the encrypted fields is part of the tag, so a caller whose
 	// reveal outcome changes never gets a stale 304; If-Match still compares the version only.
-	tag := docETag(version(doc), representationTag(append(slices.Clone(redacted), d.publicTag(c, doc)...)))
+	// So is the selection of `fields`: a partial answer is never matched by a full one's tag.
+	tag := docETag(version(doc), representationTag(sel.withKey(append(slices.Clone(redacted), d.publicTag(c, doc)...))))
 	readHeaders(w, tag)
 	d.publicCache(w, r, c, view)
 	if notModified(w, r, tag) {
 		return
 	}
-	writeJSON(w, http.StatusOK, d.renderIn(c, shown))
+	writeJSON(w, http.StatusOK, sel.Apply(d.renderIn(c, shown)))
 }
 
 type listResponse struct {
@@ -328,6 +337,10 @@ type listResponse struct {
 
 func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 	c, repo := d.collection(r)
+	r, sel, ok := d.withSelection(w, r, c)
+	if !ok {
+		return
+	}
 	q, details := parseListQuery(r.URL.Query(), c.Fields)
 	details = explainReferenceFilters(c, details)
 	if len(details) > 0 {
@@ -388,27 +401,28 @@ func (d *documents) list(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Cache-Control", "private, no-store")
-		writeJSON(w, http.StatusOK, resp)
+		writeJSON(w, http.StatusOK, sel.applyToPage(resp))
 		return
 	}
 	if plan != nil {
 		// Never cached and never 304: see get. A list's validator would not cover the
 		// expanded documents, so there is none.
 		w.Header().Set("Cache-Control", "private, no-cache")
-		writeJSON(w, http.StatusOK, resp)
+		writeJSON(w, http.StatusOK, sel.applyToPage(resp))
 		return
 	}
-	// The query and the rules have run: the validator covers what this caller sees.
-	tag := listETag(page.Items, representationTag(append(slices.Clone(hidden), d.publicTag(c, page.Items...)...)), resp.HasMore, resp.NextCursor, resp.Total)
+	// The query and the rules have run: the validator covers what this caller sees, and the
+	// selection of `fields`.
+	tag := listETag(page.Items, representationTag(sel.withKey(append(slices.Clone(hidden), d.publicTag(c, page.Items...)...))), resp.HasMore, resp.NextCursor, resp.Total)
 	readHeaders(w, tag)
 	d.publicCache(w, r, c, view)
 	if notModified(w, r, tag) {
 		return
 	}
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, http.StatusOK, sel.applyToPage(resp))
 }
 
-var listParams = map[string]bool{"language": true, "expand": true, "where": true, "order_by": true, "limit": true, "skip": true, "after": true, "count": true, "deleted": true, "file_links": true, "org": true, "team": true}
+var listParams = map[string]bool{"fields": true, "language": true, "expand": true, "where": true, "order_by": true, "limit": true, "skip": true, "after": true, "count": true, "deleted": true, "file_links": true, "org": true, "team": true}
 
 func parseListQuery(v url.Values, fields map[string]registry.Field) (storage.Query, []Detail) {
 	q := storage.Query{Limit: defaultLimit}
@@ -571,6 +585,10 @@ const maxWriteAttempts = 3
 // specific If-Match fails with 412; otherwise the cycle is retried, and
 // gives up with 409 write_conflict after maxWriteAttempts.
 func (d *documents) write(w http.ResponseWriter, r *http.Request, c *registry.Collection, repo storage.Repository, pending *pendingSet, build func(current map[string]any) (map[string]any, bool)) {
+	r, _, ok := d.withSelection(w, r, c) // before anything is written: a bad `fields` is a 400, not a late surprise
+	if !ok {
+		return
+	}
 	cond, ok := ifMatchFrom(w, r)
 	if !ok {
 		return
@@ -1034,7 +1052,7 @@ func (d *documents) restore(w http.ResponseWriter, r *http.Request) {
 			d.auditData(r, auth.AuditDataRestore, c, id)
 			w.Header().Set("ETag", etag(version(restored)))
 			shown, _ := d.revealerFor(r, c).view(restored)
-			writeJSON(w, http.StatusOK, d.renderIn(c, shown))
+			writeJSON(w, http.StatusOK, selectionOf(r).Apply(d.renderIn(c, shown)))
 			return
 		case errors.Is(err, storage.ErrVersionMismatch) && cond.specific():
 			writeError(w, r, http.StatusPreconditionFailed, codeVersionMismatch, "document was modified concurrently; If-Match no longer matches")

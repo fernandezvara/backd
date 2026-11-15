@@ -528,3 +528,42 @@ func TestVersionedCollectionDocuments(t *testing.T) {
 		t.Errorf("426 is not documented on the list: %v", responses)
 	}
 }
+
+// Reads and writes of a collection take `fields`, and its description names the collection's paths.
+func TestFieldsParameterNamesTheCollectionsPaths(t *testing.T) {
+	reg := load(t, map[string]string{
+		"app/realm.yaml":                 "auth:\n  strategies:\n    password: [password]\n  signup: open\n",
+		"app/main/posts/schema.json":     `{"type":"object","additionalProperties":false,"properties":{"title":{"type":"string"},"address":{"type":"object","properties":{"city":{"type":"string"}}}}}`,
+		"app/main/posts/collection.yaml": "rules:\n  read: user != nil\n  create: user != nil\n  update: user != nil\n",
+	})
+	doc := generate(t, reg, "app")
+	paths := doc["paths"].(map[string]any)
+	find := func(path, method string) map[string]any {
+		pathItem, _ := paths[path].(map[string]any)
+		op, _ := pathItem[method].(map[string]any)
+		if op == nil {
+			t.Fatalf("no %s %s in %v", method, path, func() []string {
+				var k []string
+				for p := range paths {
+					k = append(k, p)
+				}
+				return k
+			}())
+		}
+		for _, p := range op["parameters"].([]any) {
+			if pm, ok := p.(map[string]any); ok && pm["name"] == "fields" {
+				return pm
+			}
+		}
+		return nil
+	}
+	for _, c := range []struct{ path, method string }{
+		{"/v1/app/main/posts", "get"}, {"/v1/app/main/posts", "post"},
+		{"/v1/app/main/posts/{id}", "get"}, {"/v1/app/main/posts/{id}", "put"}, {"/v1/app/main/posts/{id}", "patch"},
+	} {
+		p := find(c.path, c.method)
+		if p == nil || !strings.Contains(p["description"].(string), "`address.city`, `title`") {
+			t.Errorf("%s %s: %v (parameters %v)", c.method, c.path, p, paths[c.path].(map[string]any)[c.method].(map[string]any)["parameters"])
+		}
+	}
+}

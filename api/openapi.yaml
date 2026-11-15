@@ -8934,6 +8934,7 @@ paths:
         - { $ref: "#/components/parameters/teamQuery" }
         - { $ref: "#/components/parameters/fileLinks" }
         - { $ref: "#/components/parameters/expand" }
+        - { $ref: "#/components/parameters/fields" }
         - { $ref: "#/components/parameters/language" }
         - { $ref: "#/components/parameters/ifNoneMatch" }
         - name: where
@@ -9026,6 +9027,7 @@ paths:
         - $ref: "#/components/parameters/idempotencyKeyDocuments"
         - $ref: "#/components/parameters/orgQuery"
         - $ref: "#/components/parameters/teamQuery"
+        - $ref: "#/components/parameters/fields"
       requestBody:
         required: true
         content:
@@ -9170,6 +9172,7 @@ paths:
         - { $ref: "#/components/parameters/deleted" }
         - { $ref: "#/components/parameters/fileLinks" }
         - { $ref: "#/components/parameters/expand" }
+        - { $ref: "#/components/parameters/fields" }
         - { $ref: "#/components/parameters/ifNoneMatch" }
       responses:
         "200": { $ref: "#/components/responses/Document" }
@@ -9185,7 +9188,7 @@ paths:
       summary: Replace a document
       operationId: replaceDocument
       security: [{}, { session: [] }, { apiKey: [] }]
-      parameters: [{ $ref: "#/components/parameters/ifMatch" }]
+      parameters: [{ $ref: "#/components/parameters/ifMatch" }, { $ref: "#/components/parameters/fields" }]
       requestBody:
         required: true
         content:
@@ -9206,7 +9209,7 @@ paths:
       summary: Update a document (JSON Merge Patch)
       operationId: patchDocument
       security: [{}, { session: [] }, { apiKey: [] }]
-      parameters: [{ $ref: "#/components/parameters/ifMatch" }]
+      parameters: [{ $ref: "#/components/parameters/ifMatch" }, { $ref: "#/components/parameters/fields" }]
       requestBody:
         required: true
         content:
@@ -9273,7 +9276,7 @@ paths:
         be free (`409` otherwise).
       operationId: restoreDocument
       security: [{}, { session: [] }, { apiKey: [] }]
-      parameters: [{ $ref: "#/components/parameters/ifMatch" }]
+      parameters: [{ $ref: "#/components/parameters/ifMatch" }, { $ref: "#/components/parameters/fields" }]
       responses:
         "200": { $ref: "#/components/responses/Document" }
         "400": { $ref: "#/components/responses/Error" }
@@ -10747,6 +10750,25 @@ components:
         for callers without one, then the index's `default_language`. Only meaningful with
         `$search` in `where`.
       schema: { type: string, maxLength: 35 }
+    fields:
+      name: fields
+      in: query
+      required: false
+      description: |
+        The paths of the document to return, separated by commas: declared fields (dotted for
+        nested ones, `address.city`), `_meta` or one of its fields (`_meta.version`). `id` is
+        always returned; `_meta` only when named. A path selects its whole subtree, and a path
+        through an array applies to every element. A path that is not a field of the collection is
+        `400 invalid_query` (`fields.<path>`), as are more than 32 paths. On writes (create,
+        replace, update, restore) it only shapes the answer: the document is stored whole, and a bad
+        value is refused before anything is written.
+
+        It is applied last, to the document as the caller sees it, so it never changes what the
+        rules allow, what `reveal` hides, the order or the cursor of a list, or `expand` (which still
+        answers in `_expanded`, from the stored document, even when the reference field is not
+        selected). The `ETag` of a partial answer is its own: a full read never matches it. The
+        answer is a partial document, not the collection's full type.
+      schema: { type: string, maxLength: 1024 }
     expand:
       name: expand
       in: query
