@@ -260,6 +260,11 @@ func (c Caller) Actor() string {
 // on behalf of a user.
 var ErrNotAllowedOnBehalf = errors.New("only API keys can act on behalf of a user")
 
+// ErrOnBehalfOfAdmin means a key tried to act as a user who holds an admin role. An administrator
+// cannot be faked: acting as a user must never bring more privileges than the key has, so the
+// administrators' own credentials are the only way to the administrators' rights.
+var ErrOnBehalfOfAdmin = errors.New("this user holds an admin role: a key cannot act as an administrator")
+
 // ErrUserDisabled means the user an API key acts for is disabled.
 var ErrUserDisabled = errors.New("user is disabled")
 
@@ -275,6 +280,9 @@ func (s *Users) OnBehalfOf(ctx context.Context, c Caller, userID string) (Caller
 	}
 	if u.Disabled {
 		return Caller{}, ErrUserDisabled
+	}
+	if s.Settings.IsAdmin(u.Roles) {
+		return Caller{}, ErrOnBehalfOfAdmin
 	}
 	// A key bound to an organization acts as a session scoped to it; one that isn't counts none.
 	c.User = &Principal{User: u, Session: Session{Org: c.Key.Org}}

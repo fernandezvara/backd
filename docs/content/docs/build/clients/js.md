@@ -961,7 +961,7 @@ const mine = await asAda.db('main').collection('posts').list()   // only what Ad
 
 - It needs a client made with an `apiKey`, and it cannot be chained: `as_user` on an acting client throws.
 - **Each acting client has a revalidation cache and an app configuration of its own**, so what one user read is never served to another. Keep one acting client per user while their requests last, and let it go afterwards.
-- `client.admin`, `client.auth` and the other account helpers throw on an acting client, and the server refuses the header on those routes: use the client made with the key for them. An unknown id is `400 invalid_header`, a disabled user `403`.
+- `client.admin`, `client.auth` and the other account helpers throw on an acting client, and the server refuses the header on those routes: use the client made with the key for them. An unknown id is `400 invalid_header`; a disabled user, or one who holds an admin role (a key cannot act as an administrator), is `403`.
 - It works on typed clients too, and with `org` set it counts only that organization.
 
 A client with an API key with the `admin` role (`backd apikey create --realm <realm> --name <name> --role admin`) can use the [admin API](../../../operate/administration/admin/):

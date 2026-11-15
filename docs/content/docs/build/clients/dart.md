@@ -891,6 +891,6 @@ final mine = await asAda.db('main').collection('assets').list();
 
 - It needs a client made with `apiKey`, and it cannot be chained: `asUser` on an acting client throws a `StateError`.
 - **Each acting client has a revalidation cache and an app configuration of its own**, so what one user read is never served to another.
-- `auth` and the other account helpers throw on an acting client, and the server refuses the header on those routes: use the client made with the key for them. An unknown id is `400 invalid_header`, a disabled user `403`.
+- `auth` and the other account helpers throw on an acting client, and the server refuses the header on those routes: use the client made with the key for them. An unknown id is `400 invalid_header`; a disabled user, or one who holds an admin role (a key cannot act as an administrator), is `403`.
 
 There is no `admin` surface on this client — see the note at the top of this page. An API key with a `data` role already reads and writes every collection; administration itself stays in the [JavaScript client](../js/#api-keys-and-the-admin-api).

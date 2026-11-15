@@ -205,7 +205,7 @@ func onBehalfError(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, r, http.StatusBadRequest, codeInvalidHeader, onBehalfHeader+": "+err.Error())
 	case errors.Is(err, auth.ErrNotFound):
 		writeError(w, r, http.StatusBadRequest, codeInvalidHeader, onBehalfHeader+": no user with this id in the realm")
-	case errors.Is(err, auth.ErrUserDisabled):
+	case errors.Is(err, auth.ErrUserDisabled), errors.Is(err, auth.ErrOnBehalfOfAdmin):
 		writeError(w, r, http.StatusForbidden, codeForbidden, onBehalfHeader+": "+err.Error())
 	default:
 		authError(w, r, err)

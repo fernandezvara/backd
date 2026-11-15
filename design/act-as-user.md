@@ -35,6 +35,8 @@ No administration endpoint accepts `X-Backd-On-Behalf-Of`, and the client enforc
 - Server: every route under `/_admin` answers `400 invalid_header` when the header is present. The `/_auth` routes of a signed-in user (me, sessions, devices, passkeys, MFA) refuse it too, because they act on the account, not on data: a service that could change another person's password or second factor "as them" would defeat the audit. The existing refusal with a callback token stays.
 - Client: `client.admin` (and the auth, passkey and account helpers) on an `as_user` client throws locally.
 
+- **An administrator cannot be faked.** A user who holds a role with admin rights answers `403` to the header, whatever the key (data or admin) and on every route that takes it: acting as a user must never bring more privileges than the key has, and an administrator's rights come only from the administrator's own credentials. A role without admin rights is not an administrator.
+
 This is a security-relevant change: `SECURITY.md` and the security model page say so.
 
 ## 4. Order of work

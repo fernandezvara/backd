@@ -10712,7 +10712,9 @@ components:
         the data, file, function, realtime and organization routes, and answers
         `400 invalid_header` on `/_admin` and on the account routes of `/_auth` (sessions,
         password, second factor, passkeys, devices), with a session or without credentials, for an
-        id that is not a user of the realm, and with a callback token. A disabled user is `403`.
+        id that is not a user of the realm, and with a callback token. A disabled user is `403`, and so is
+        a user who holds an admin role: a key cannot act as an administrator, so acting as a user never
+        brings more privileges than the key has.
 
   parameters:
     schemaVersion:
