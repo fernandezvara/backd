@@ -64,21 +64,11 @@ func (a *authAPI) oauthRoutes(r chi.Router, json func(http.Handler) http.Handler
 	r.With(json).Post("/token", a.loginCodeToken)
 }
 
-// signInMethod is how a session records the first factor of a provider sign-in: the provider's
-// name, or, through an organization's connection, the connection itself, so that session is never
-// taken for one opened by the realm's own provider.
 // strategyMethodOf is the method a provider's sign-in starts a strategy with: the provider's name,
 // or sso for a connection of an organization.
 func strategyMethodOf(p *registry.Provider) string {
 	if p.Org != "" {
 		return registry.MethodSSO
-	}
-	return p.Name
-}
-
-func signInMethod(p *registry.Provider) string {
-	if p.Org != "" {
-		return auth.ConnectionMethod(p.Org, p.Name)
 	}
 	return p.Name
 }
