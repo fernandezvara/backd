@@ -9,6 +9,7 @@
 package sso
 
 import (
+	"context"
 	"errors"
 	"net/url"
 )
@@ -54,7 +55,39 @@ type Provider struct {
 	// TeamID and KeyID are Apple's: they sign the client secret.
 	TeamID, KeyID string
 	Endpoints     Endpoints
+
+	// Org is the organization of a connection; empty for the realm's providers. Identities of
+	// a connection are (Name, Org, subject).
+	Org string
+	// Method is how a session records the first factor of this provider (its name, or the
+	// connection's).
+	Method string
+	// Link says whether the provider's verified addresses may link an existing account.
+	Link LinkPolicy
+	// Secret is the client secret (Apple: the .p8 private key's PEM), read by the host when it
+	// resolved the provider; the library keeps none.
+	Secret string
+	// RevokeOnDelete: keep Apple's refresh token so a deleted account's tokens can be revoked.
+	RevokeOnDelete bool
+	// Admit says whether the place admits the person the provider vouched for (a connection's
+	// restriction); nil admits everyone.
+	Admit func(Claims) bool
+	// Authority is a last check before a connection signs anybody in (its setter still holds
+	// the roles it was set with); nil is none. An error ends the attempt as an unavailable provider.
+	Authority func(ctx context.Context) error
 }
+
+// LinkPolicy says when a provider's word about an address is enough to link an account.
+type LinkPolicy int
+
+// The policies.
+const (
+	// LinkNever: an account with the address is reported (account_exists), never linked.
+	LinkNever LinkPolicy = iota
+	// LinkVerifiedEmail: a verified address the provider asserts links the account that has
+	// it, if the account's own address is verified too.
+	LinkVerifiedEmail
+)
 
 // Audiences are the client ids an ID token may be issued to: the web client and, for the
 // ID-token endpoint, the native ones.

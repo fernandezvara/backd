@@ -517,6 +517,7 @@ var systemCollections = []systemCollection{
 			"invitation_id":  str(),
 			"link_user_id":   str(),
 			"locales":        typ("array"),
+			"host":           typ("binData"),
 			"created_at":     typ("date"),
 			"expires_at":     typ("date"),
 		}),

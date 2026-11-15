@@ -74,6 +74,8 @@ type OAuthState struct {
 	InvitationID  string // HashToken of the invitation token, if one was passed (an organization's for a ScopeOrg)
 	LinkUserID    string // IntentLink: whose identity is being added
 	Locales       []string
+	// Host is the sso engine's opaque host data, stored and returned untouched.
+	Host []byte
 	// Consents are the consents the app accepted for a sign-up through this attempt.
 	Consents  map[string]string
 	CreatedAt time.Time
