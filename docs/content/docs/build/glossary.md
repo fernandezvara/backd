@@ -18,7 +18,7 @@ A set of documents of one shape: a folder with `schema.json`, `collection.yaml` 
 
 ## Connection
 
-An [organization](#organization)'s own sign-in settings for one [provider](#provider): the application the company registered with Google or Microsoft, a client secret and who may come in. See [company sign-in](../organizations/sign-in/).
+An [organization](#organization)'s own sign-in settings for one [provider](#provider): the application the company registered with Google, Microsoft or its own OpenID Connect server (its issuer), a client secret and who may come in. See [company sign-in](../organizations/sign-in/).
 
 ## Cron schedule
 
@@ -115,6 +115,10 @@ A role held within one team by a member of the organization; it means nothing ou
 ## Trigger
 
 A function that runs when documents of a collection are created, updated or removed, whoever changed them. It is declared in `collection.yaml`. See [Triggers](../functions/triggers/).
+
+## Verified domain
+
+A domain (`acme.example`) an [organization](#organization) has proved it controls, by a DNS record. Only addresses on a verified domain are trusted from the organization's own OpenID Connect server, and it lets people sign in by their address. See [Verified domains](../organizations/verified-domains/).
 
 ## Webhook
 

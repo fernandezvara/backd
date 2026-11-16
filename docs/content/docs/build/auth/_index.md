@@ -64,4 +64,4 @@ Whatever the first factor, a user with a second factor is still asked for it —
 - [Deactivating and erasing users](../../operate/administration/erasure/), with per-collection policies for their data; [compliance](../../operate/administration/compliance/) covers personal-data scope, retention and recipes.
 - Provider sign-in in the clients: [JavaScript](../clients/js/#sign-in-with-google-microsoft-or-apple) and [Dart](../clients/dart/#sign-in-with-a-provider-on-desktop) — `signInWith`, `completeSignIn`, `signInWithIdToken`; the [Go](../clients/go/) and [Python](../clients/python/) clients have their own pages.
 
-See the [security model](../../operate/administration/security/) for what `backd` protects, and the [hardening checklist](../../operate/checklist/) before exposing a realm. **Planned:** other OpenID Connect providers (`type: oidc`). A user's own copy of their data is [Personal data export](personal-data/).
+See the [security model](../../operate/administration/security/) for what `backd` protects, and the [hardening checklist](../../operate/checklist/) before exposing a realm. A user's own copy of their data is [Personal data export](personal-data/).
