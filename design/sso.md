@@ -657,6 +657,27 @@ OAuth 2 kinds have no token to verify: the userinfo is fetched over TLS from the
 
 Checked and found sound in that review and kept: state bound to its organization; identical unavailable answers; the realm's trust of an address is false for connections, so a known address is `account_exists` even when Google says verified (§8.1 changes this only for verified domains); no issuer URL accepted from managers outside the allow-list; list sizes bounded; removed members blocked.
 
+### 11.6 Review of the implementation (issue #1022, 2026-11-16)
+
+The code was read against §11: `sso/safehttp`, `sso/oidc` (verifier and discovery), the issuer patterns in `internal/registry/signin_org.go`, the host in `internal/auth/ssohost.go` and the discovery endpoint. The areas below were checked; a finding is **fixed** (with a test), or **accepted** with its reason.
+
+| # | Area | Finding | Result |
+|---|---|---|---|
+| F1 | SSRF | The address check judged the IPv6 address as written, so a name resolving to a NAT64 address (`64:ff9b::a9fe:a9fe`) or a 6to4 one reached the metadata or a private address on a network with a gateway | **Fixed:** the IPv4 address inside `64:ff9b::/96` and `2002::/16` is judged as an IPv4 address (`TestAddressClasses`) |
+| F2 | Availability | The key cache held its lock while the provider answered, so one slow key endpoint (an organization's own server) held up every sign-in of the realm for up to the 15 s timeout | **Fixed:** the lock is released during the fetch (`TestASlowKeyEndpointDoesNotBlockOthers`). Two simultaneous misses may fetch twice; the once-a-minute refetch rule still bounds a forced refetch |
+| F3 | Memory | The caches of key sets and discovery documents grew with every issuer ever seen, and a wildcard in the allow-list (`https://*.okta.com`) lets managers name many | **Fixed:** at most 512 entries each; expired entries go first, then the one that expires first (`TestCachesAreBounded`) |
+| F4 | Discovery | When an issuer stops answering, its last document and keys are used for as long as the process lives | **Accepted:** an outage of an identity provider must not lock a company out, the allow-list and the domain gate are still checked at every sign-in, and a connection that is removed or disabled stops at once. A restart clears it |
+| F5 | Allow-list | Matching was checked for `https://evil.okta.com.attacker.example`, `a.b.okta.com`, a trailing dot, a port other than 443, credentials, a public suffix and an address: all refused | No finding |
+| F6 | Tokens | `none` and `HS*`, `jku`/`jwk`/`x5u`/`x5c`, a missing `exp`, `nbf`/`iat` in the future (60 s leeway), several audiences without a matching `azp`, a token over 16 KiB, a missing nonce | No finding (algorithms are fixed in the parser; the rest is in `check`) |
+| F7 | Issuer binding | Identities match on (provider, org, issuer, subject); a discovery document naming another issuer, or an endpoint off the issuer's registered domain, makes the provider unavailable | No finding |
+| F8 | Verified-domain gate | An OpenID Connect connection admits only when the server says the address is verified and it is on a domain proved **now** (read at each sign-in, so a lapse and a removed pattern stop it); a narrower `domains` list is honoured by linking too, since linking happens only for people admitted | No finding |
+| F9 | Linking | Automatic linking needs the provider's verified flag, the account's verified address, the domain's `link_accounts` and, for domains, tells the owner; Microsoft counts an address only on the domain of the account name | No finding |
+| F10 | Enumeration | `/_auth/orgs/discover` answers the same list shape for every address and is limited per client address; unavailable connections answer alike | No finding |
+| F11 | Secrets and logs | Client secrets are sealed, never returned; the tests that scan the log and audit trail pass | No finding |
+| F12 | Shared tenants | With a wildcard such as `https://*.okta.com` any Okta tenant is acceptable to the realm | **Accepted:** by design (T2): such a server can say anything, so nobody is admitted unless the address is on a domain that organization proved by DNS. Operators who cannot accept that list the exact issuers |
+
+**Not done:** the manual checklist (`identity-providers-testing.md`) against real Google, Microsoft, Apple and GitHub accounts, a Keycloak and a verified domain needs accounts and a domain that the review did not have. It has to be run by hand before the release is tagged and the result recorded here.
+
 ## 12. Endpoints, errors, audit
 
 ### 12.1 Endpoints

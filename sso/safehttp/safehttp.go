@@ -93,15 +93,32 @@ func NewClient(allowed func(host string) bool, allowPrivate bool) *http.Client {
 
 // publicAddr reports whether ip is an address on the public internet.
 func publicAddr(ip netip.Addr) bool {
-	ip = ip.Unmap()
+	ip = embeddedV4(ip.Unmap())
 	return ip.IsValid() && !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsLinkLocalUnicast() && !ip.IsLinkLocalMulticast() &&
 		!ip.IsMulticast() && !ip.IsUnspecified() && !ip.IsInterfaceLocalMulticast() && !sharedAddr(ip) && !metadataAddr(ip)
+}
+
+// embeddedV4 returns the IPv4 address an IPv6 transition address carries (NAT64's 64:ff9b::/96 and 6to4's
+// 2002::/16), which is where a packet to it really goes: a name that resolves to 64:ff9b::a9fe:a9fe
+// reaches the metadata address on a network with a NAT64 gateway. Any other address is returned as it is.
+func embeddedV4(ip netip.Addr) netip.Addr {
+	if !ip.Is6() {
+		return ip
+	}
+	b := ip.As16()
+	switch {
+	case netip.MustParsePrefix("64:ff9b::/96").Contains(ip):
+		return netip.AddrFrom4([4]byte(b[12:16]))
+	case b[0] == 0x20 && b[1] == 0x02:
+		return netip.AddrFrom4([4]byte(b[2:6]))
+	}
+	return ip
 }
 
 // networkAddr reports whether ip is an address of a private network that an operator may mean: the
 // private ranges of RFC 1918 and RFC 4193, and the shared address space of carrier-grade NAT.
 func networkAddr(ip netip.Addr) bool {
-	ip = ip.Unmap()
+	ip = embeddedV4(ip.Unmap())
 	return ip.IsValid() && (ip.IsPrivate() || sharedAddr(ip)) && !ip.IsLoopback() && !ip.IsLinkLocalUnicast() && !ip.IsUnspecified() && !ip.IsMulticast() && !metadataAddr(ip)
 }
 

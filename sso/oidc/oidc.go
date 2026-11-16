@@ -31,6 +31,7 @@ const (
 	refetchEvery = time.Minute
 	microsoftMSA = "9188040d-6c67-4c5b-b112-36a304b66dad" // the tenant id of personal accounts
 	maxToken     = 16 << 10                               // the largest ID token read
+	maxCached    = 512                                    // key sets (and discovery documents) held at once
 )
 
 // Verifier checks ID tokens. The zero value needs HTTP set.
@@ -339,14 +340,15 @@ func (s *Verifier) verifySignature(ctx context.Context, p sso.Provider, jws *jos
 // keys returns the provider's published keys. force asks for a fresh copy, which is
 // given only when the cached one is at least a minute old.
 func (s *Verifier) keys(ctx context.Context, url string, force bool) (jose.JSONWebKeySet, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	now := s.now()
-	if e := s.jwks[url]; e != nil {
-		if (!force && now.Before(e.expires)) || (force && now.Sub(e.fetchedAt) < refetchEvery) {
-			return e.keys, nil
-		}
+	s.mu.Lock()
+	e := s.jwks[url]
+	s.mu.Unlock()
+	if e != nil && ((!force && now.Before(e.expires)) || (force && now.Sub(e.fetchedAt) < refetchEvery)) {
+		return e.keys, nil
 	}
+	// The lock is not held while the provider answers: a slow key endpoint (an organization's own
+	// server may be) must not hold up every other sign-in of the realm.
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return jose.JSONWebKeySet{}, err
@@ -367,8 +369,13 @@ func (s *Verifier) keys(ctx context.Context, url string, force bool) (jose.JSONW
 	if err != nil {
 		return s.staleKeys(url, err)
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.jwks == nil {
 		s.jwks = map[string]*jwksEntry{}
+	}
+	if _, held := s.jwks[url]; !held && len(s.jwks) >= maxCached {
+		evict(s.jwks, now, func(e *jwksEntry) time.Time { return e.expires })
 	}
 	s.jwks[url] = &jwksEntry{keys: set, fetchedAt: now, expires: now.Add(cacheTTL(resp.Header.Get("Cache-Control")))}
 	return set, nil
@@ -376,10 +383,33 @@ func (s *Verifier) keys(ctx context.Context, url string, force bool) (jose.JSONW
 
 // staleKeys falls back on the keys already held when the provider can't be reached.
 func (s *Verifier) staleKeys(url string, cause error) (jose.JSONWebKeySet, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if e := s.jwks[url]; e != nil {
 		return e.keys, nil
 	}
 	return jose.JSONWebKeySet{}, fmt.Errorf("%w: the signing keys: %v", sso.ErrUnavailable, cause)
+}
+
+// evict makes room in a cache: it drops what has expired and, when that is not enough, the entry
+// that expires first. Organizations name their own issuers (within the realm's list), so what is
+// held for them has to be bounded.
+func evict[E any](m map[string]E, now time.Time, expires func(E) time.Time) {
+	var oldest string
+	var oldestAt time.Time
+	for k, e := range m {
+		at := expires(e)
+		if now.After(at) {
+			delete(m, k)
+			continue
+		}
+		if oldest == "" || at.Before(oldestAt) {
+			oldest, oldestAt = k, at
+		}
+	}
+	if len(m) >= maxCached && oldest != "" {
+		delete(m, oldest)
+	}
 }
 
 // cacheTTL reads max-age from a Cache-Control header, within sane limits.

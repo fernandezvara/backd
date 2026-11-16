@@ -24,6 +24,8 @@ The sign-in code is reorganized (the `sso/` library, milestone 48, `design/sso.m
 
 - **The admin UI handles OpenID Connect connections and verified domains** (#1020). The organization page's *Sign-in* section connects `oidc` (issuer, domains, a note when a change of issuer left identities dormant), a new *Domains* section claims, checks, configures and releases domains, and a user's sign-in methods show the organization they came through and whether they are dormant. `admin.orgs.domains|addDomain|verifyDomain|updateDomain|removeDomain` in `backd-js`.
 
+- **Security review of the sign-in code** (#1022, closes #602). Three fixes: an address reached through a NAT64 or 6to4 IPv6 address is judged as the IPv4 address inside it (a name could reach the metadata address through a NAT64 gateway); a slow key endpoint no longer holds up the sign-ins of other providers; and the caches of provider keys and discovery documents are bounded. The findings, and what was accepted, are in `design/sso.md` §11.6.
+
 ### Changed
 
 - **Identities record the issuer that vouched for them** (#1013). A subject is only unique within one issuer, so an external provider's identity is now keyed by `(provider, org, issuer, subject)`: if an issuer changes, the old identities match nothing instead of matching a stranger with the same subject, and they show as `dormant` in `GET /_auth/me` (which also lists the `issuer`). A signed-in person who links the provider again replaces their dormant identity. **Run `backd-server provision` before starting the new version:** it records the issuer on existing identities of Google, Microsoft and Apple and replaces the unique index (`PROVISION_MODE=verify` refuses to start until then).

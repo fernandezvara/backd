@@ -28,6 +28,12 @@ func TestAddressClasses(t *testing.T) {
 		"0.0.0.0":         {false, false},
 		"224.0.0.1":       {false, false},
 		"::ffff:10.1.2.3": {false, true},
+		// Transition addresses go where the IPv4 address inside them goes.
+		"64:ff9b::a9fe:a9fe": {false, false}, // NAT64 to the metadata address
+		"64:ff9b::7f00:1":    {false, false}, // NAT64 to loopback
+		"64:ff9b::a00:5":     {false, true},  // NAT64 to 10.0.0.5
+		"64:ff9b::5db8:d822": {true, false},  // NAT64 to 93.184.216.34
+		"2002:a9fe:a9fe::1":  {false, false}, // 6to4 of the metadata address
 	} {
 		ip := netip.MustParseAddr(addr)
 		if got := publicAddr(ip); got != tc.public {

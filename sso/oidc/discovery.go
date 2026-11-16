@@ -94,6 +94,9 @@ func (d *Discoverer) Discover(ctx context.Context, issuer string, private bool) 
 	if d.cache == nil {
 		d.cache = map[string]*docEntry{}
 	}
+	if d.cache[issuer] == nil && len(d.cache) >= maxCached {
+		evict(d.cache, now, func(e *docEntry) time.Time { return e.expires })
+	}
 	d.cache[issuer] = &docEntry{doc: doc, expires: now.Add(ttl)}
 	d.mu.Unlock()
 	return doc, nil
