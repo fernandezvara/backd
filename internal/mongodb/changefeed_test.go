@@ -321,7 +321,8 @@ func TestConsumerContinuesAfterSetChange(t *testing.T) {
 	c := &changefeed.Consumer{Name: "test", Source: f.src, Backoff: func(int) time.Duration { return 50 * time.Millisecond }}
 	c.SetWatched(f.set)
 	got := make(chan changefeed.Change, 32)
-	go c.Run(ctx, nil, handlerFunc(func(ch changefeed.Change) { got <- ch })) //nolint:errcheck
+	opened := make(chan struct{}, 1)
+	go c.Run(ctx, nil, openedHandler{change: func(ch changefeed.Change) { got <- ch }, opened: opened}) //nolint:errcheck
 
 	insert := func(id string) {
 		t.Helper()
@@ -343,8 +344,12 @@ func TestConsumerContinuesAfterSetChange(t *testing.T) {
 			}
 		}
 	}
-	// A stream opens from now: give the consumer time to open before the first write.
-	time.Sleep(time.Second)
+	// A stream opens from now: a write before it opens is not read. The consumer says when it has.
+	select {
+	case <-opened:
+	case <-time.After(15 * time.Second):
+		t.Fatal("the stream never opened")
+	}
 	insert("before")
 	expect("before")
 
@@ -355,11 +360,22 @@ func TestConsumerContinuesAfterSetChange(t *testing.T) {
 	expect("after-set-change")
 }
 
-type handlerFunc func(changefeed.Change)
+// openedHandler passes the changes on and signals when a stream opened from now (Idle).
+type openedHandler struct {
+	change func(changefeed.Change)
+	opened chan struct{}
+}
 
-func (h handlerFunc) Change(_ context.Context, c changefeed.Change, _ changefeed.Position) { h(c) }
-func (handlerFunc) Idle(context.Context, changefeed.Position)                              {}
-func (handlerFunc) Gap(context.Context, changefeed.Gap)                                    {}
+func (h openedHandler) Change(_ context.Context, c changefeed.Change, _ changefeed.Position) {
+	h.change(c)
+}
+func (h openedHandler) Idle(context.Context, changefeed.Position) {
+	select {
+	case h.opened <- struct{}{}:
+	default:
+	}
+}
+func (openedHandler) Gap(context.Context, changefeed.Gap) {}
 
 func TestFeedOpensEncryptedFieldsWithTheDecryptHook(t *testing.T) {
 	f := newFeedFixture(t)

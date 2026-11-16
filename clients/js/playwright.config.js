@@ -8,6 +8,8 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: process.env.CI ? 1 : 0,
+  // A test that passes only on its retry fails the run, so a flaky test is seen and fixed.
+  failOnFlakyTests: !!process.env.CI,
   reporter: 'list',
   use: {
     launchOptions: process.env.PLAYWRIGHT_CHROMIUM ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM } : {},

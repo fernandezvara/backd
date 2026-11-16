@@ -631,7 +631,13 @@ func TestWindowMissedIsRecordedAndReadingContinues(t *testing.T) {
 	if g.Reason != GapWindow || time.Since(g.From) < time.Hour {
 		t.Errorf("gap = %+v", g)
 	}
-	waitFor(t, "a fresh position", func() bool { return st.position() == "0" })
+	// The stored position was "0" already, so it says nothing: wait for the stream that reads
+	// from now (the second open, with no position). A change added before it is not read.
+	waitFor(t, "the stream to reopen from now", func() bool {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		return len(h.opens) >= 2 && h.opens[len(h.opens)-1] == nil
+	})
 	h.add(change(changefeed.Created, "o1", 1, 1, nil, doc("o1", "paid", 1)))
 	waitFor(t, "reading to continue from now", func() bool { return q.size() == 1 })
 }

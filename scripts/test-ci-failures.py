@@ -79,6 +79,15 @@ class Names(unittest.TestCase):
     def test_a_test_has_one_name_whatever_its_timing(self):
         self.assertEqual(cf.clean("playwright", "e2e/a.spec.ts:1:1 › x (607ms)"), cf.clean("playwright", "e2e/a.spec.ts:1:1 › x (1.9s)"))
 
+    def test_a_retry_of_a_test_has_the_same_name(self):
+        self.assertEqual(cf.clean("playwright", "e2e/a.spec.ts:1:1 › x (30.1s)"), cf.clean("playwright", "e2e/a.spec.ts:1:1 › x (retry #1) (6.3s"))
+
+    def test_only_the_failed_lines_of_playwright_are_failures(self):
+        import re
+        rx = next(r for r, label in cf.TESTS if label == "playwright")
+        log = "  ✓   28 e2e/files.spec.ts:87:1 › passes (1.1s)\n  ✘   66 e2e/orgs.spec.ts:202:1 › fails (6.3s)\n"
+        self.assertEqual(re.findall(rx, log, re.M), ["e2e/orgs.spec.ts:202:1 › fails (6.3s)"])
+
     def test_a_whole_suite_failing_is_one_failure(self):
         found = {f"playwright: t{i}" for i in range(cf.WHOLE_SUITE)} | {"infrastructure: package mirror (apt)"}
         out = cf.collapse(found)

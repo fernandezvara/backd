@@ -187,19 +187,19 @@ func (a *adminAPI) listDataChecks(w http.ResponseWriter, r *http.Request) {
 	for _, rep := range reports {
 		byKey[rep.Database+"/"+rep.Collection] = rep
 	}
+	// At most one check is queued or running, and it is the newest check job: one question tells
+	// it. (Asking for the running ones and then the queued ones loses a job a worker claims
+	// between the two, and the panel takes "nothing" for "finished".)
 	var running any
-	for _, status := range []string{auth.JobRunning, auth.JobQueued} {
-		jobs, _, err := svc.Jobs(r.Context(), auth.JobFilter{Origin: auth.CheckOrigin, Status: status, Limit: 1})
-		if err != nil {
-			adminError(w, r, err)
-			return
-		}
-		if len(jobs) > 0 && running == nil {
-			j := jobs[0]
-			sum := jobSummaryJSON(j)
-			sum["collections"], sum["limit"] = j.Check.Collections, j.Check.Limit
-			running = sum
-		}
+	jobs, _, err := svc.Jobs(r.Context(), auth.JobFilter{Origin: auth.CheckOrigin, Limit: 1})
+	if err != nil {
+		adminError(w, r, err)
+		return
+	}
+	if len(jobs) > 0 && (jobs[0].Status == auth.JobRunning || jobs[0].Status == auth.JobQueued) {
+		sum := jobSummaryJSON(jobs[0])
+		sum["collections"], sum["limit"] = jobs[0].Check.Collections, jobs[0].Check.Limit
+		running = sum
 	}
 	keys, _ := a.checkCollections(realm, "", "")
 	items := make([]map[string]any, 0, len(keys))

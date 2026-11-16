@@ -159,3 +159,56 @@ func TestSchemaChecksNeedTheDataArea(t *testing.T) {
 		t.Errorf("cancelling the check: %d", rec.Code)
 	}
 }
+
+// movingJobs makes a job move from queued to running between the first and the second question
+// a handler asks of the store, as a worker claiming it would: the first read sees it queued and
+// every later read sees it running.
+type movingJobs struct {
+	auth.Store
+	reads int
+}
+
+func (m *movingJobs) ListJobs(ctx context.Context, f auth.JobFilter) ([]auth.Job, bool, error) {
+	want := f.Status
+	f.Status = ""
+	jobs, more, err := m.Store.ListJobs(ctx, f)
+	if err != nil {
+		return nil, false, err
+	}
+	status := auth.JobRunning
+	if m.reads == 0 {
+		status = auth.JobQueued
+	}
+	m.reads++
+	var out []auth.Job
+	for _, j := range jobs {
+		j.Status = status
+		if want == "" || want == status {
+			out = append(out, j)
+		}
+	}
+	return out, more, nil
+}
+
+// The listing of the schema checks says what runs now. A job a worker claims while the handler
+// is looking must not fall between the two states: the panel takes "nothing running" for "done"
+// and stops following it, and the report never shows.
+func TestDataChecksListingDoesNotLoseAJobThatIsBeingClaimed(t *testing.T) {
+	f := newRulesFixture(t)
+	f.svc.Realm = "acme"
+	ctx := context.Background()
+	_, adminKey, err := f.svc.CreateAPIKey(ctx, "check-admin", auth.KeyOptions{Role: auth.KeyRoleAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := bearer(adminKey)
+	seedNotes(f, 3, nil, nil)
+	if rec, _ := f.doH(t, "POST", admin+"/data-checks", `{"database": "app", "collection": "notes"}`, key); rec.Code != http.StatusAccepted {
+		t.Fatalf("start: %d", rec.Code)
+	}
+	f.svc.Store = &movingJobs{Store: f.svc.Store}
+	_, list := f.doH(t, "GET", admin+"/data-checks", "", key)
+	if run, _ := list["running"].(map[string]any); run == nil || run["function"] != "app/notes" {
+		t.Fatalf("a check being claimed disappeared from the listing: %v", list["running"])
+	}
+}

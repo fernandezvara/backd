@@ -113,11 +113,11 @@ func (s *Users) StartSchemaCheck(ctx context.Context, scope CheckJob, requestedB
 
 // runningCheck is the id of the realm's queued or running check, or "".
 func (s *Users) runningCheck(ctx context.Context) string {
-	for _, status := range []string{JobRunning, JobQueued} {
-		jobs, _, err := s.Store.ListJobs(ctx, JobFilter{Origin: CheckOrigin, Status: status, Limit: 1})
-		if err == nil && len(jobs) > 0 {
-			return jobs[0].ID
-		}
+	// One question: the check that is queued or running is the newest check job, and asking for
+	// each state in turn loses a job a worker claims in between.
+	jobs, _, err := s.Store.ListJobs(ctx, JobFilter{Origin: CheckOrigin, Limit: 1})
+	if err == nil && len(jobs) > 0 && (jobs[0].Status == JobRunning || jobs[0].Status == JobQueued) {
+		return jobs[0].ID
 	}
 	return ""
 }
