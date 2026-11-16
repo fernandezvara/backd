@@ -29,7 +29,8 @@ cleanup() {
 trap cleanup EXIT
 
 scripts/local-certs.sh
-docker compose build backd executor
+. scripts/retry.sh
+retry docker compose build backd executor
 docker compose up -d --no-deps mongo minio minio-setup
 mongo_ready() {
   docker compose exec -T mongo mongosh --quiet --eval "try { rs.status() } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo:27017'}]}) } if (!db.hello().isWritablePrimary) quit(1)" >/dev/null 2>&1
@@ -77,7 +78,7 @@ docker compose exec -T mongo mongosh --quiet --eval 'printjson(db.getSiblingDB("
 cd ui/admin
 (cd ../../clients/js && npm ci --no-audit --no-fund)
 npm ci --no-audit --no-fund
-[ -n "${PLAYWRIGHT_CHROMIUM:-}" ] || npx playwright install --with-deps chromium
+[ -n "${PLAYWRIGHT_CHROMIUM:-}" ] || retry npx playwright install --with-deps chromium
 export NODE_EXTRA_CA_CERTS=$PWD/../../$ca E2E_URL=$origin
 npx playwright test || {
   (cd "$root" && docker compose logs --tail 100 backd >&2)

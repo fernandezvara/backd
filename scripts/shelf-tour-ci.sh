@@ -10,6 +10,7 @@
 # Needs docker and node, and port 8080 free (the tutorial's own port).
 set -euo pipefail
 cd "$(dirname "$0")/.."
+. scripts/retry.sh
 root=$PWD
 
 command -v docker >/dev/null || { echo "needs 'docker' on your PATH" >&2; exit 1; }
@@ -31,8 +32,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-docker build -t backd:shelf-tour .
-docker build -f docker/executor/Dockerfile -t backd-executor:shelf-tour .
+retry docker build -t backd:shelf-tour .
+retry docker build -f docker/executor/Dockerfile -t backd-executor:shelf-tour .
 
 # The starter folder, as the Tutorial's "The starter" section builds it.
 mkdir -p "$dir/app/lib" "$dir/app/backd" "$dir/client" "$dir/config"

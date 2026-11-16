@@ -51,6 +51,6 @@ jobs:
         with:
           go-version-file: go.mod
       - name: The example's types match the config
-        run: go run ./cmd/backd types --realm shelf --lang python --out clients/python/examples/shelf/shelf_types --check
+        run: scripts/retry.sh go run ./cmd/backd types --realm shelf --lang python --out clients/python/examples/shelf/shelf_types --check
         env:
           CONFIG_DIR: examples/config

@@ -146,6 +146,10 @@ MONGO_TEST_URI='mongodb://localhost:27018/?replicaSet=rs0' go test ./...
 
 MongoDB must listen on the same port the replica set announces, which is why the container uses the host network and `--port 27018` instead of `-p 27018:27017`. With the port mapping, `rs.initiate` fails with `No host described in new configuration … for replica set rs0 maps to this node`, because inside the container the server listens on 27017, not on the 27018 named in `host`. Stop it with `docker rm -f backd-test-mongo`.
 
+### Failures of the infrastructure
+
+CI steps that depend on something outside the repository (a package mirror, the Go module proxy, an image registry) run through `scripts/retry.sh`: `scripts/retry.sh docker build …`, or `. scripts/retry.sh; retry <command>` in a script. It runs the command again, up to three times, **only** when what it printed matches a known infrastructure failure (`Failed to fetch`, `toomanyrequests`, a dropped connection, a proxy error…). A failure of the code is not run again, so a red check is never hidden by it, and every retry shows as a warning titled `infrastructure retry` on the run. `scripts/test-retry.sh` tests the helper. Add a pattern to `INFRA_PATTERN` when a new kind of infrastructure failure shows up in `scripts/ci-failures.py`.
+
 {{< hint warning >}}
 MongoDB 8.0 (and the current `latest` image) refuses to start on Linux kernel 6.19 or newer ([SERVER-121912](https://jira.mongodb.org/browse/SERVER-121912)). Use 8.2.
 {{< /hint >}}
