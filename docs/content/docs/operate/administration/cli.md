@@ -133,6 +133,19 @@ backd orgs invite --realm shop --id ORG_ID --open --uses 25      # an open link:
 backd orgs claims-set --realm shop --id ORG_ID --claims '{"plan": "pro"}'   # at most 1 KiB of JSON
 ```
 
+A company's sign-in connection and its proof of domain, from the command line (the client secret is asked for without echo, or read from standard input):
+
+```sh
+backd orgs domain-add --realm shop --id ORG_ID --domain acme.example     # prints the DNS record that proves it
+backd orgs domain-verify --realm shop --id ORG_ID --domain acme.example   # check now
+backd orgs sso-set --realm shop --id ORG_ID --provider oidc --issuer https://login.acme.example \
+  --client-id abc --domains acme.example --join-roles member
+backd orgs sso-set --realm shop --id ORG_ID --provider google --client-id abc --hosted-domain acme.example
+backd orgs sso-set --realm shop --id ORG_ID --provider microsoft --client-id abc --tenant 0d1f2a3b-0000-0000-0000-000000000000
+```
+
+`sso-set` also takes `--email-domains` (also require the verified address to be on one of these domains), `--native-client-ids` (extra client ids for the mobile ID-token endpoint), `--disabled` (keep the connection, refuse sign-ins through it) and `--keep-secret` (leave the stored client secret as it is); `--issuer` must match `organizations.sso.oidc.issuers`, and `--domains` (OpenID Connect) defaults to all of the organization's verified domains. `backd orgs revoke-invitation --invitation ID` revokes an invitation.
+
 An invitation's link and token are printed **once**. `--send` also emails the link (needs `email:` and the secrets key on the server); `--expires` is `7d` by default and at most `30d`. The sign-in connection commands (`sso`, `sso-set`, `sso-delete`, `sso-required-off`) and [verified domains](../../../build/organizations/verified-domains/) (`domains`, `domain-add`, `domain-verify`, `domain-remove`) are in [company sign-in](../../../build/organizations/sign-in/).
 
 ## Errors

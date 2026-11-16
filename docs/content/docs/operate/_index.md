@@ -151,6 +151,21 @@ Each realm with an `auth` section has a system database named `<realm>___system`
 | `mfa` | one document per user with a second factor: the TOTP secret (encrypted) and the recovery codes (keyed hashes) | `_id` is the user |
 | `passkeys` | one document per registered passkey: the authenticator's credential id, its public key and flags, the relying party id it was registered under (public data, no secret) | `_id` is backd's id; `credential_id` is unique |
 | `idempotency` | [`Idempotency-Key` claims](../build/functions/calling/#idempotency): scoped to the function and caller, a sync call's stored response or an async call's job id | `expires_at` (TTL) |
+| `orgs`, `org_members`, `org_teams`, `org_invitations`, `org_member_seq` | the realm's [organizations](../build/organizations/): the organizations, their memberships, teams and invitations, and the sequence number of the last membership event handed to a hook | `slug` (unique), `org` + `user` (unique) |
+| `org_connections` | the [sign-in connections](organization-sign-in/) organizations set up (the client secret is a sealed organization secret, never here) | `org` + `provider` (unique) |
+| `org_domains` | the [domains](../build/organizations/verified-domains/) organizations claim and prove | `org` + `domain` (unique), `domain` (unique among verified claims) |
+| `org_templates` | the [email templates](../build/organizations/email-templates/) organizations wrote | |
+| `email_tokens` | the hashes of the tokens sent in emails for an account (address verification, password reset, address change) | `user_id` + `purpose`, `expires_at` (TTL) |
+| `consent_records` | the append-only history of [consents](../build/auth/consents/) accepted and withdrawn, with the hash of the text shown | `user` + `at`, `expires_at` (TTL, set at erasure) |
+| `user_exports` | the records of [personal data exports](../build/auth/personal-data/): who asked, the state of the job that builds them, where the package is stored | |
+| `app_config`, `app_config_history` | the realm's [app configuration](../build/configuration/app-config/) (one document) and the versions that led to it | |
+| `data_keys` | the wrapped data keys of [encrypted fields](../build/encryption/), one per field and generation | |
+| `security_state` | the operator decisions that outlive deployments, such as the password epoch ([If credentials leak](if-credentials-leak/)) | |
+| `schedules` | the runtime state of [scheduled functions](../build/functions/cron/), such as whether an administrator paused one | |
+| `schema_checks` | the latest [schema check](../build/configuration/validation/#finding-documents-that-no-longer-match) report of each collection | |
+| `file_journal`, `file_deletions`, `storage_usage`, `image_declared` | the [files](../build/files/): every upload and what became of it, the objects queued for deletion from the bucket, the running totals of bytes and files (per realm and user), and the fingerprint of each declared image version | |
+| `push_sends`, `push_outbox` | [push](../build/push/): one record per send (totals, never a message), and what the capture provider took instead of sending (development only) | |
+| `trigger_state`, `trigger_gaps` | the [trigger dispatcher](change-feed/#the-trigger-dispatcher)'s position and the gaps it recorded | |
 
 Each collection has a `$jsonSchema` validator that checks its required fields and their types. The TTL indexes make MongoDB delete expired sessions, invitations, counters, audit records, invocation records, jobs and idempotency claims automatically. If one of these indexes exists with different options (for example `expires_at` without TTL, so sessions would never expire), `apply` and `verify` fail and name it; drop the index and let `backd` recreate it.
 

@@ -47,4 +47,6 @@ The app is plain JavaScript with [Alpine.js](https://alpinejs.dev/) and the [Jav
 | `app.js` | `signInWith` and `auth.ready` for the redirect flow, `linkProvider`/`unlinkProvider`, the `backd_error` messages |
 | `index.html`, `style.css` | The page |
 
+The example configures the three built-in providers that need a console visit with a company account. GitHub and OpenID Connect servers (Keycloak, Okta…) are declared the same way in `realm.yaml`; see [providers](../../auth/providers/#any-openid-connect-provider) and add a button for them in `app.js`.
+
 `native_client_ids` (Google, Microsoft) and `bundle_ids` (Apple) are only needed for native apps using the [ID-token sign-in](../../auth/providers/#native-apps-the-id-token); this example uses the redirect flow and leaves them empty.

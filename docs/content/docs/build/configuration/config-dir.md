@@ -520,7 +520,7 @@ personal_data:
 
 See what an export would take with `backd compliance scope --realm <r>` (or `GET /_admin/compliance/scope`): per collection what is included, which fields, and every exclusion with its reason, with a flag on organization collections that are exported whole, plus the system data an export adds (account, identities, sessions, devices, MFA status, consents, audit records about the user, invocations they made) and what it never holds (password hashes, tokens, secrets, function inputs, outputs and logs).
 
-Building and delivering the export package is a later step: today the scope is declared, checked and reported. Backd provides the mechanisms; legal bases, deadlines and texts are yours.
+The export itself (a zip the user or an administrator asks for) is built from this scope: see [Personal data export](../../auth/personal-data/) and [`backd user export`](../../../operate/administration/cli/). Backd provides the mechanisms; legal bases, deadlines and texts are yours.
 
 ### Files and erasure
 

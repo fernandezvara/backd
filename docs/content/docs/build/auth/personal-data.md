@@ -79,7 +79,7 @@ A syntax error stops `backd` at start, with the file, line and column. The user'
 For a formal request, an administrator produces the same package:
 
 ```
-backd user export --realm shop --email ada@example.com --ticket REQ-1042 --out ada.zip
+backd user export --realm shop --email ada@example.com --ticket REQ-1042 --out ada.zip   # --timeout 30m by default; --no-wait returns at once
 ```
 
 or `POST /_admin/users/{id}/export` with `{"ticket"}`. It needs **full admin access** and a fresh re-authentication (an admin API key needs no proof). The package goes **to the administrator**, through the API, never to the user: `GET /_admin/users/{id}/exports/{export}/download`, or the CLI, which waits for it and writes the file (never over one that exists). `backd user export --no-wait` prints the id and returns; `backd user export-download --email … --export <id>` fetches it later. A user's own export is theirs: an administrator does not download it.

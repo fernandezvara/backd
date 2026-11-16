@@ -22,7 +22,7 @@ The **methods** are:
 |---|---|---|
 | `password` | types their email and password | the first method |
 | `magic_link` | uses a link or code sent to their address ([Magic links](../magic-links/)) | the first method |
-| a provider's name (`google`, `microsoft`, `apple`) | signs in at the provider ([Sign in with a provider](../providers/)) | the first method |
+| a provider's name (`google`, `microsoft`, `apple`, `github`, or one you declared with `type: oidc` or `oauth2`) | signs in at the provider ([Sign in with a provider](../providers/)) | the first method |
 | `sso` | signs in through their organization's own connection ([Organization sign-in](../../../operate/organization-sign-in/)) | the first method |
 | `passkey` | uses a passkey on their device, a password manager or a security key ([Passkeys](../passkeys/)) | the first method |
 | `totp` | types the code of an authenticator app, or a recovery code ([Multi-factor authentication](../mfa/)) | a later method |
