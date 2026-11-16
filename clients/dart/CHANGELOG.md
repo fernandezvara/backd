@@ -1,6 +1,9 @@
-## 0.9.13
+## 0.9.14
 
 - `auth.verifyEmail(token, password: …)`: the server verifies an account that has a password only with it (a `ValidationError` naming `password` without it, an `AuthenticationError` for a wrong one; the token stays usable).
+
+## 0.9.13
+
 - `orgs.domains(org)` (`list`, `add`, `verify`, `update`, `remove`), `auth.discover(email)`, `orgs.sso(org)` with `oidc` connections (`issuer`, `domains`; `dormant_identities` in the answer), and the errors `DomainTakenError`, `DomainExistsError` and `DomainsLimitError`.
 
 ## 0.9.12

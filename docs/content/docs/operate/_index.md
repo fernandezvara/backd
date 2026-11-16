@@ -199,6 +199,15 @@ blog__main.posts
 shop__orders.items
 ```
 
+### Upgrading to v0.9.14
+
+A security release. Nothing to provision; images and clients move to v0.9.14.
+
+1. **Breaking: the verification link takes the account's password.** `POST /_auth/verify-email` verifies an account that has a password only with it (`password` in the JSON body or the form). Without it the answer is `400 validation_error`, a wrong one `401 invalid_credentials`, and the token stays usable. The hosted verification page asks for it; a custom page or an app that posts the token must send it. The four clients (`backd-js`, `package:backd`, `backd` on PyPI, `pkg/client`) know the new parameter; update them together with the server.
+2. **Proving a mailbox ends what was set on an unverified account.** A magic-link sign-in or a password reset by the owner of the address removes the sign-in methods, passkeys, second factor, linked providers, pending sign-ins and sessions that existed before the proof (`user.claimed` in the audit trail counts `passkeys` too). A verified account that resets its password keeps its passkeys and second factor.
+3. **Rules in a batch now see the app configuration.** If a rule allows a write unless a flag is off (`appConfig("maintenance") != true`), treat writes made through `_batch` while the switch was set as not having been stopped. Rules that allowed a write only while a flag was on stop refusing every batch.
+4. **Helm chart and compose files:** their image versions move to v0.9.14.
+
 ### Upgrading to v0.9.13
 
 The sign-in code moves into the `sso/` library (see [the development notes](../contribute/architecture/)) and identities record which issuer vouched for them. Run `backd-server provision` before you start the new binaries (`PROVISION_MODE=verify` refuses to start until you do):
