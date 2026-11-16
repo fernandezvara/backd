@@ -87,7 +87,7 @@ func TestKindsAreOneTable(t *testing.T) {
 		}
 	}
 	for _, name := range ReservedProviderNames {
-		if kindSpecs[name] != nil && name != kindOIDC {
+		if kindSpecs[name] != nil && name != kindOIDC && name != kindOAuth2 {
 			t.Errorf("%s is reserved and has a kind", name) // oidc is the kind any other name takes with type: oidc
 		}
 	}

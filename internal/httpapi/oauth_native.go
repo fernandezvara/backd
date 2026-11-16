@@ -60,7 +60,7 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Only the built-in providers have native apps whose audiences are configured.
-	if p.Kind == registry.ProviderTypeOIDC {
+	if p.Kind != registry.ProviderGoogle && p.Kind != registry.ProviderMicrosoft && p.Kind != registry.ProviderApple {
 		writeError(w, r, http.StatusNotFound, codeNotFound, "this provider has no native sign-in: use the redirect flow")
 		return
 	}

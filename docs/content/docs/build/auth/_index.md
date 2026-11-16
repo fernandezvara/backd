@@ -51,7 +51,7 @@ Whatever the first factor, a user with a second factor is still asked for it —
 | [Passkeys](passkeys/) | Signing in with a fingerprint, face, PIN or security key: how they work, `rp_id` and origins, native apps, a lost device |
 | [Re-authentication](reauth/) | A fresh proof of identity before sensitive actions |
 | [Multi-factor authentication](mfa/) | The TOTP second factor, recovery codes, roles that need it — applies to every first factor, remote providers included |
-| [Sign in with Google, Microsoft or Apple](providers/) | The redirect flow, native ID tokens, linking rules, `account.on_signup` |
+| [Sign in with Google, Microsoft, Apple, GitHub or OpenID Connect](providers/) | The redirect flow, native ID tokens, linking rules, `account.on_signup` |
 | [Access rules](rules/) | Per-collection `rules:` in `collection.yaml`: which callers may read, create, update and delete |
 | [Consents](consents/) | Versioned texts, records, re-acceptance, withdrawal, gating |
 | [API keys](api-keys/) | Server-side services, with full access to the realm's data |

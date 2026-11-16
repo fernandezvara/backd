@@ -986,8 +986,12 @@ func checkFunctions(reg *registry.Registry, cfg settings.Settings, log *slog.Log
 	}
 	for _, name := range reg.RealmNames() {
 		for _, pn := range slices.Sorted(maps.Keys(reg.Realms[name].Settings.Providers)) {
-			if p := reg.Realms[name].Settings.Providers[pn]; p.Insecure && !cfg.Dev {
-				return fmt.Errorf("realm %s: the provider %s has a plain http issuer (%s): only BACKD_DEV=true (local development) allows it; use https", name, pn, p.Issuer)
+			p := reg.Realms[name].Settings.Providers[pn]
+			if p.Insecure && !cfg.Dev {
+				return fmt.Errorf("realm %s: the provider %s uses a plain http address (%s): only BACKD_DEV=true (local development) allows it; use https", name, pn, p.Issuer)
+			}
+			if p.AllowPrivateNetwork {
+				log.Warn("a sign-in provider may be reached on the private network (allow_private_network)", "realm", name, "provider", pn)
 			}
 		}
 	}

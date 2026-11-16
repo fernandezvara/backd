@@ -208,9 +208,9 @@ func (e *Engine) Callback(ctx context.Context, in CallbackInput) Outcome {
 	if err != nil {
 		return fail(fmt.Errorf("the provider didn't give a token: %w", err), CodeProviderError)
 	}
-	claims, err := e.Protocol.Verify(ctx, p, tokens.IDToken, a.Nonce, false)
+	claims, err := e.Protocol.Identify(ctx, p, tokens, a.Nonce)
 	if err != nil {
-		return fail(fmt.Errorf("the provider's ID token is not valid: %w", err), CodeProviderError)
+		return fail(fmt.Errorf("the provider's answer is not valid: %w", err), CodeProviderError)
 	}
 	if p.Admit != nil && !p.Admit(claims) {
 		return fail(fmt.Errorf("%w: a person the connection does not admit", ErrNotAllowed), CodeNotAllowed)

@@ -30,6 +30,8 @@ const (
 type oauthFixture struct {
 	*rulesFixture
 	idp *ssotest.Provider
+	// o2 is the provider of the fixtures whose providers have no ID token (GitHub, plain OAuth 2).
+	o2 *ssotest.OAuth2
 }
 
 // providerClientFor is a protocol client that reaches the fake provider instead of the real ones.
@@ -101,7 +103,9 @@ type attempt struct {
 // signing the given person in: start, the provider, the callback.
 func (f *oauthFixture) signIn(t *testing.T, provider string, person map[string]any, extra url.Values) attempt {
 	t.Helper()
-	f.idp.SetUser(person)
+	if f.idp != nil {
+		f.idp.SetUser(person)
+	}
 	verifier, challenge, _ := auth.NewPKCE()
 	q := url.Values{"redirect_to": {appRedirect}, "code_challenge": {challenge}}
 	maps.Copy(q, extra)
@@ -115,9 +119,14 @@ func (f *oauthFixture) signIn(t *testing.T, provider string, person map[string]a
 // finish plays the browser from the provider's authorize URL on.
 func (f *oauthFixture) finish(t *testing.T, provider, authorizeURL, verifier string, deny bool) attempt {
 	t.Helper()
-	back := f.idp.Authorize(authorizeURL)
-	if deny {
+	var back string
+	switch {
+	case f.o2 != nil:
+		back = f.o2.Authorize(authorizeURL)
+	case deny:
 		back = f.idp.Deny(authorizeURL)
+	default:
+		back = f.idp.Authorize(authorizeURL)
 	}
 	return f.callback(t, provider, back, verifier)
 }

@@ -75,6 +75,20 @@ auth:
   #     key_id: XYZ9876543
   #     private_key: secret:APPLE_SIGN_IN_KEY    # the whole .p8 file
   #     revoke_on_delete: true         # revoke the user's Apple tokens when the account is deleted (default)
+  #   github:                          # github.com/settings/developers → OAuth Apps (callback: the address above)
+  #     client_id: Iv1.0123456789abcdef
+  #     client_secret: secret:GITHUB_CLIENT_SECRET
+  #   partner:                         # type: oauth2 is a plain OAuth 2 service (GitHub Enterprise, ...) with no ID token
+  #     type: oauth2
+  #     issuer: https://partner.example              # an identifier you choose, stored on every identity
+  #     client_id: backd
+  #     client_secret: secret:PARTNER_CLIENT_SECRET
+  #     authorize_url: https://partner.example/oauth/authorize
+  #     token_url: https://partner.example/oauth/token
+  #     userinfo_url: https://partner.example/api/me
+  #     scopes: [profile, email]
+  #     claims: {subject: id, email: email, email_verified: email_verified, name: name, picture: avatar}   # subject: a stable id, never a name
+  #     pkce: true                     # false: the service rejects a PKCE challenge
   #   keycloak:                        # any other name is a generic OpenID Connect provider (Keycloak, Okta, Auth0, Entra ID…)
   #     type: oidc
   #     issuer: https://sso.acme.example/realms/acme   # backd reads <issuer>/.well-known/openid-configuration

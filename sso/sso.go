@@ -25,6 +25,11 @@ const (
 	// OIDC is any OpenID Connect provider the operator names (type: oidc): its endpoints come from
 	// its issuer's discovery document.
 	OIDC Kind = "oidc"
+	// GitHub is GitHub: OAuth 2 without an ID token, the person read from its API.
+	GitHub Kind = "github"
+	// OAuth2 is a plain OAuth 2 service the operator describes (type: oauth2): its endpoints and the
+	// fields of its userinfo answer are configured.
+	OAuth2 Kind = "oauth2"
 )
 
 // Errors a provider's answers can lead to. None of them carries anything the provider said
@@ -42,6 +47,9 @@ var (
 // Endpoints are the URLs of a provider.
 type Endpoints struct {
 	Authorize, Token, JWKS, Revoke string
+	// UserInfo is where an OAuth 2 provider's person is read (GitHub: /user); Emails is GitHub's list
+	// of addresses.
+	UserInfo, Emails string
 }
 
 // Provider is a provider ready to be spoken to: what the protocol packages need and nothing
@@ -58,8 +66,14 @@ type Provider struct {
 	// Issuer is the issuer a generic OpenID Connect provider is configured with; its ID tokens must
 	// name exactly it. Built-in providers know theirs. Empty: unknown (Microsoft across tenants).
 	Issuer string
-	// Scopes are extra scopes asked for besides openid email profile (generic providers).
+	// Scopes are extra scopes asked for besides openid email profile (generic providers), or all of
+	// them for a plain OAuth 2 provider.
 	Scopes []string
+	// Claims maps the fields of an OAuth 2 provider's userinfo answer to the person: subject, email,
+	// email_verified, name, given_name, family_name, picture. A name is a field, or a dotted path.
+	Claims map[string]string
+	// NoPKCE: the provider takes no PKCE challenge (OAuth 2 providers that reject unknown parameters).
+	NoPKCE bool
 	// Hosts are the hosts the library may reach for this provider besides the built-in ones: the
 	// issuer's, and after discovery the endpoints' that share its registered domain.
 	Hosts []string
@@ -134,6 +148,13 @@ func BuiltinEndpoints(kind Kind, tenant string) Endpoints {
 			Token:     "https://appleid.apple.com/auth/token",
 			JWKS:      "https://appleid.apple.com/auth/keys",
 			Revoke:    "https://appleid.apple.com/auth/revoke",
+		}
+	case GitHub:
+		return Endpoints{
+			Authorize: "https://github.com/login/oauth/authorize",
+			Token:     "https://github.com/login/oauth/access_token",
+			UserInfo:  "https://api.github.com/user",
+			Emails:    "https://api.github.com/user/emails",
 		}
 	}
 	return Endpoints{}

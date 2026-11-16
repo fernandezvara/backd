@@ -140,7 +140,10 @@ type Events interface {
 
 // Tokens are what a code exchange gives back that the library keeps using.
 type Tokens struct {
-	IDToken      string
+	IDToken string
+	// AccessToken is what an OAuth 2 provider without an ID token gives; it is used once, to read the
+	// person, and never kept.
+	AccessToken  string
 	RefreshToken string
 }
 
@@ -163,6 +166,9 @@ type Protocol interface {
 	AuthorizeURL(p Provider, a AuthorizeParams) string
 	// Exchange trades the authorization code for the person's tokens.
 	Exchange(ctx context.Context, p Provider, code, redirectURI, verifier string) (Tokens, error)
+	// Identify says who the tokens of a code exchange are for: an OpenID Connect provider's ID token
+	// is verified against the nonce, an OAuth 2 provider's person is read with the access token.
+	Identify(ctx context.Context, p Provider, t Tokens, nonce string) (Claims, error)
 	// Verify checks an ID token and returns what it says; native admits the mobile apps' audiences
 	// and the hashed nonce.
 	Verify(ctx context.Context, p Provider, idToken, nonce string, native bool) (Claims, error)

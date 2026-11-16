@@ -70,7 +70,7 @@ A key pair made on a person's device, password manager or security key for the r
 
 ## Provider
 
-An outside sign-in service, such as Google, Microsoft or Apple, declared in the realm's `providers:`. For a company's own use of one, see [connection](#connection). See [Sign in with a provider](../auth/providers/).
+An outside sign-in service, such as Google, Microsoft, Apple, GitHub or an OpenID Connect server of your own, declared in the realm's `auth.providers`. For a company's own use of one, see [connection](#connection). See [Sign in with a provider](../auth/providers/).
 
 ## Realm
 
