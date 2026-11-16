@@ -122,6 +122,16 @@ url, err := auth.SignInWith(ctx, "google", client.OAuthOptions{RedirectTo: "http
 step, err = auth.CompleteSignIn(ctx, "http://localhost:9999/cb?backd_code=…")
 // …or with an identity token a native flow gave the program
 step, err = auth.SignInWithIDToken(ctx, "apple", client.IDTokenInput{IDToken: jwt, Nonce: nonce})
+
+// Which buttons to show, and linking or unlinking a provider (a fresh proof is needed; org "" is the realm's own)
+names, err := auth.Providers(ctx, "")
+url, err = auth.LinkProvider(ctx, "github", client.OAuthOptions{RedirectTo: "http://localhost:9999/cb"})
+err = auth.LinkProviderWithIDToken(ctx, "google", client.IDTokenInput{IDToken: jwt, Nonce: nonce})
+err = auth.UnlinkProvider(ctx, "github", "")
+
+// Which organization an address leads to, or an email with the person's organizations
+orgs, err := auth.DiscoverOrgs(ctx, "ada@acme.example")
+err = auth.FindOrgs(ctx, "ada@acme.example", "en")
 ```
 
 The PKCE verifier of a redirect sign-in is kept in an `OAuthStorage` (memory by default, `Options.OAuthStorage`) between the start and the end. The email flows (`VerifyEmail`, `RequestPasswordReset`, `ResetPassword`, `RequestEmailChange`, …) send no credentials and answer alike whether or not the address is known.

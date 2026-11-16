@@ -127,6 +127,23 @@ Every error uses the same JSON envelope. Success responses are never wrapped.
 | 503 | `config_not_loaded` | Dev mode only (`BACKD_DEV=true`): no config has loaded yet. Each detail is one problem of the report (`path` the file and line, `code` its kind: `config`, `rules` or `build`, `reason` what is wrong, the build output and what to do); the same report is on the server's root page ([Dev mode](../functions/testing/#dev-mode)) |
 | 504 | `function_timeout` | A [function](../functions/calling/#calling-a-function) didn't finish within its `timeout`; it was stopped |
 
+Codes of the calls around the data routes:
+
+| HTTP | `code` | When |
+|---|---|---|
+| 403 | `email_not_declared`, `push_not_declared` | A function sent an [email](../functions/email/) or a [push](../push/sending/) without declaring `email: true` or `push` in its `function.yaml` |
+| 429 | `email_limited` | An email send went over the [email limits](../functions/email/) |
+| 400 | `invalid_template`, `template_not_customizable` | An organization's [email template](../organizations/email-templates/) that can't be used, or for a kind that `email.customizable` doesn't list |
+| 429 | `template_test_limit` | Too many test sends of an organization's email template |
+| 400 | `invalid_locale` | A sign-in or sign-up asks for a language the realm doesn't offer |
+| 400 | `invalid_device` | A [push device](../push/devices/) registration with an invalid token |
+| 403 | `mfa_required_by_role` | Turning off the second factor of a user one of whose roles [requires it](../auth/mfa/) |
+| 409 | `migration_running`, `migration_unavailable` | A [schema data migration](../configuration/evolving-a-schema/) already runs for the collection, or the instance has no executor to run it |
+| 409 | `regenerate_running` | The [image versions](../files/file-fields/#image-versions) of a field are already being regenerated |
+| 409 | `export_running` | An [export or import](../../operate/administration/export-import/) of the realm is already running |
+| 422 | `import_refused` | An import package that can't be applied; the details say why |
+| 409 | `user_erased`, `already_erased` | An administrator's action on a user who was [erased](../../operate/administration/erasure/) already |
+
 The codes of the sign-in and account calls (`/_auth`), of organizations (`/_orgs`) and of the admin API are listed with their pages: [provider sign-in](../auth/providers/#errors), [sessions](../auth/sessions/), [organizations](../organizations/api/) and [verified domains](../organizations/verified-domains/).
 
 A function's own errors, thrown with `ctx.error(status, code, message)`, carry whatever 4xx status and lower-case code it chose — see [Calling a function](../functions/calling/#calling-a-function).

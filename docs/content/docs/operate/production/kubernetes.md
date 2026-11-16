@@ -69,6 +69,27 @@ Nothing is allowed unless a policy says so. The ingress controller reaches the A
 
 **Object storage inside a DigitalOcean VPC.** The cluster's resolver answers the Spaces names with a private address (the last host of the VPC range, `10.30.255.254` for `10.30.0.0/16`), which the HTTPS rule would otherwise exclude: uploads time out. Terraform keeps that address as `SPACES_PRIVATE_CIDR` in the `backd-install` ConfigMap and the chart opens port 443 to that single address. The `networkPolicy.storageCIDRs` value overrides it; `helm template` renders none. Run `helm upgrade` after `terraform apply`.
 
+## Values you may set
+
+`deploy/kubernetes/backd/values.yaml` is commented key by key; the ones an operator reaches for:
+
+| Value | Default | What it does |
+|---|---|---|
+| `image.pullPolicy`, `releaseImages.pullPolicy`, `imagePullSecrets` | `IfNotPresent`, `IfNotPresent`, none | How the configuration image and the release images (executor, egress) are pulled, and the secrets for a private registry |
+| `replicas.<component>` | `replicas.default` | Pods per component, including `backdRealtime` (2) and `backdAdmin` (1) |
+| `executor.maxProcesses`, `executor.runAsUser` | `10`, `1993` | Function processes at once per executor pod, and its user |
+| `logLevel`, `workerConcurrency`, `maxBodyBytes` | `info`, `10`, `1MiB` | `LOG_LEVEL`, worker concurrency and `MAX_BODY_BYTES` of every backd pod |
+| `trustedProxies` | the private ranges | Addresses `X-Forwarded-For` is believed from; safe because the network policy lets only the ingress controller reach backd |
+| `rateLimit.enabled` (and `rates`) | `true` | backd's [own request limits](../../rate-limiting/), per pod; the ingress limits are the exact ones |
+| `terminationGracePeriodSeconds` | `30` | Longer than `SHUTDOWN_TIMEOUT` (15s), so requests finish |
+| `networkPolicy.enabled`, `ingress.namespace`, `ingress.podLabels` | `true`, `traefik` | The policies, and where the ingress controller's pods are |
+| `networkPolicy.databaseCIDR`, `databasePort` | required, `27017` | The private network MongoDB is on |
+| `networkPolicy.storageCIDRs`, `monitoringNamespace`, `privateRanges` | none, none, the private ranges | Where object storage is reached, the namespace that scrapes `:9090`, and the ranges outbound rules never open |
+| `podDisruptionBudget.enabled`, `spreadOverNodes`, `nodeSelector`, `tolerations` | `true`, `true` | Keeping pods up during node maintenance, and where they run |
+| `ingress.enabled`, `ingress.clusterIssuer`, `ingress.hosts.api`, `ingress.hosts.admin` | `true`, `letsencrypt`, required | Traefik routes, the cert-manager issuer and the two hosts |
+| `ingress.admin.allowedCIDRs`, `ingress.hstsSeconds` | required, `63072000` | Who reaches the admin host, and HSTS |
+| `ingress.limits.api`, `auth`, `functions`, `concurrentRequests`, `maxBodyBytes` | `20/s`, `10/min`, `2/s`, `20`, `1 MiB` | Per-address limits at the edge |
+
 ## Verifying the files
 
 `scripts/check-chart.sh` runs `helm lint`, renders the chart with every values file in `ci/`, validates the result with `kubeconform` and checks the properties above (security contexts, which workload gets which secret, where the trigger lease is, that a rollback re-provisions). `scripts/check-terraform.sh` runs `terraform fmt`, `validate` and offline `terraform test` with the provider mocked. Both run in CI.
