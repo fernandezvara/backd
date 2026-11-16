@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/fernandezvara/backd/internal/registry"
 )
@@ -169,19 +170,49 @@ func bundle(ctx context.Context, dir string, fn *registry.Function, opts Options
 	}
 	args = append(args, mapArgs...)
 	args = append(args, "./"+fn.Entry)
-	cmd := exec.CommandContext(ctx, opts.Deno, args...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "NO_COLOR=1", "DENO_NO_UPDATE_CHECK=1")
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = err.Error()
-		}
+	if msg, err := runDeno(ctx, opts.Deno, dir, args); err != nil {
 		return nil, errors.New("deno bundle failed:\n" + msg)
 	}
 	return os.ReadFile(out.Name())
+}
+
+// bundleAttempts is how many times a bundle is tried when deno's own cache races (see runDeno).
+const bundleAttempts = 3
+
+// cacheRace is what deno says when two of its processes install the same npm binary (esbuild)
+// into the shared cache at once: one of them finds the temporary file gone. It is not about
+// the code being bundled, and the next try finds the binary installed.
+const cacheRace = "failed to copy esbuild binary"
+
+// runDeno runs deno in dir and returns what it printed on stderr when it fails. It tries
+// again, up to bundleAttempts times, only when the failure is the cache race: builds that
+// start together (two `backd-server functions build` in one pipeline, or the test packages
+// of one run) share the cache, and any other failure is the code's and is returned at once.
+func runDeno(ctx context.Context, deno, dir string, args []string) (string, error) {
+	var msg string
+	for attempt := 1; ; attempt++ {
+		cmd := exec.CommandContext(ctx, deno, args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "NO_COLOR=1", "DENO_NO_UPDATE_CHECK=1")
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		if err == nil {
+			return "", nil
+		}
+		msg = strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		if !strings.Contains(msg, cacheRace) || attempt >= bundleAttempts || ctx.Err() != nil {
+			return msg, err
+		}
+		select { // the other process is installing it: give it a moment
+		case <-ctx.Done():
+			return msg, err
+		case <-time.After(time.Duration(attempt) * 200 * time.Millisecond):
+		}
+	}
 }
 
 // prune removes bundles the manifest doesn't list.
