@@ -97,6 +97,12 @@ type Provider struct {
 	Secret string
 	// RevokeOnDelete: keep Apple's refresh token so a deleted account's tokens can be revoked.
 	RevokeOnDelete bool
+	// LinkDomains are, for LinkVerifiedDomain, the organization's verified domains that let a sign-in
+	// link accounts (verified, with link_accounts on), as of the moment the provider was resolved.
+	LinkDomains []string
+	// VerifiesEmail says whether the provider vouches for the address of the claims; nil: the claims'
+	// own EmailVerified. A Microsoft tenant vouches for an address on the domain of its account's name.
+	VerifiesEmail func(Claims) bool
 	// Admit says whether the place admits the person the provider vouched for (a connection's
 	// restriction); nil admits everyone.
 	Admit func(Claims) bool
@@ -115,6 +121,9 @@ const (
 	// LinkVerifiedEmail: a verified address the provider asserts links the account that has
 	// it, if the account's own address is verified too.
 	LinkVerifiedEmail
+	// LinkVerifiedDomain: an organization's connection: a verified address on one of the organization's
+	// verified domains links the account that has it, if the account's own address is verified.
+	LinkVerifiedDomain
 )
 
 // Audiences are the client ids an ID token may be issued to: the web client and, for the

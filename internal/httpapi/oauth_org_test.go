@@ -138,7 +138,8 @@ func TestOrganizationSignInChecksWhoComesIn(t *testing.T) {
 	if u, err := o.svc.Store.UserByEmail(ctx, "x@acme.example"); err == nil {
 		t.Errorf("a refused sign-in created a user: %+v", u)
 	}
-	// email_domains narrows further.
+	// email_domains narrows further (to domains the organization proved).
+	o.proveDomain(t, "staff.acme.example", auth.DomainVerified, true, false)
 	if _, err := o.svc.AdminSetOrgConnection(ctx, o.org, "google", auth.ConnectionInput{ClientID: "org-g-client", HostedDomain: "acme.example", EmailDomains: []string{"staff.acme.example"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -168,6 +169,7 @@ func TestOrganizationSignInWithMicrosoft(t *testing.T) {
 		t.Errorf("another tenant came in: %v", a.result)
 	}
 	// An address outside email_domains.
+	o.proveDomain(t, "staff.acme.example", auth.DomainVerified, true, false)
 	if _, err := o.svc.AdminSetOrgConnection(ctx, o.org, "microsoft", auth.ConnectionInput{ClientID: orgMSApp, Tenant: orgTenant, EmailDomains: []string{"staff.acme.example"}}); err != nil {
 		t.Fatal(err)
 	}

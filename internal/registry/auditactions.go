@@ -106,6 +106,7 @@ var AuditActions = []AuditAction{
 	{Name: "org.roles", Group: "organizations"},
 	{Name: "org.sso.deleted", Group: "organizations"},
 	{Name: "org.sso.disabled", Group: "organizations"},
+	{Name: "org.sso.linked", Group: "organizations"},
 	{Name: "org.sso.set", Group: "organizations"},
 	{Name: "org.sso_required", Group: "organizations"},
 	{Name: "org.team_create", Group: "organizations"},

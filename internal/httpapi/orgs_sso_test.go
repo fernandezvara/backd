@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fernandezvara/backd/internal/auth"
 )
@@ -86,7 +87,11 @@ func TestOrganizationConnectionsAsAManager(t *testing.T) {
 		t.Errorf("a provider organizations don't have: %d", rec.Code)
 	}
 
-	// Replacing keeps the secret when none is sent, and changes it when one is.
+	// Replacing keeps the secret when none is sent, and changes it when one is. A domain in email_domains
+	// has to be one the organization proved.
+	if err := f.svc.Store.PutOrgDomain(ctx, auth.OrgDomain{ID: org + ":acme.example", Org: org, Domain: "acme.example", State: auth.DomainVerified, Challenge: "backd-verify=x", LinkAccounts: true, CreatedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
 	body := `{"client_id": "123-abc.apps.googleusercontent.com", "hosted_domain": "acme.example", "email_domains": ["acme.example"], "enabled": false}`
 	if rec, out := f.doH(t, "PUT", url+"/google", body, f.withProof(t, f.ada)); rec.Code != 200 || out["enabled"] != false || out["client_secret_set"] != true {
 		t.Fatalf("replace: %d %v", rec.Code, out)

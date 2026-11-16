@@ -6,7 +6,7 @@ weight: 530
 toc: true
 ---
 
-A company can say its people have addresses on `acme.example`, but nothing proves the company owns the domain. A **verified domain** is that proof: the organization publishes a DNS record that backd gives it, and backd checks it. Other features then rely on the domain being the organization's (the linking, discovery and provisioning that come with [organization sign-in](../sign-in/) use it); on its own, a verified domain changes nothing for anybody.
+A company can say its people have addresses on `acme.example`, but nothing proves the company owns the domain. A **verified domain** is that proof: the organization publishes a DNS record that backd gives it, and backd checks it. Other features then rely on the domain being the organization's: an [organization sign-in](../sign-in/) can [link an existing account](#sign-in-through-a-verified-domain) on it, an application can [find the organization from an address](#find-an-organization-from-an-address), and the connection's `email_domains` may only name proved domains. On its own, a verified domain changes nothing for anybody.
 
 ## Turn it on
 
@@ -44,6 +44,34 @@ A verified domain is checked again every `recheck`. If the record is gone for `l
 ## One organization per domain
 
 A domain is verified for **one organization per realm**. Several may be waiting for it at once, and the first whose check passes holds it; the others get `409 domain_taken` until it is released (the holder removes the claim, its organization is deleted, or the domain lapses). The match is exact: `acme.example` does not cover `eng.acme.example`, which is proved on its own. A realm administrator can release any claim (`backd orgs domain-remove`, `DELETE /_admin/orgs/{org}/domains/{domain}`), which is how a dispute is settled.
+
+## Sign in through a verified domain
+
+An organization's [connection](../sign-in/) never links an existing account on its provider's word alone: the company's managers control that provider, so what it says about an address is not proof the address is theirs. A verified domain is the proof, so on it a sign-in **does** link, when all of this holds:
+
+1. the person signs in through a connection of the organization (which already restricts who may come in to its Workspace or tenant);
+2. the provider vouches for the address: Google says it is verified, and a Microsoft tenant's address is on the domain of its account's name, a domain the tenant verified;
+3. the address's domain is a **verified** domain of the organization (not pending, not lapsed) with `link_accounts` on;
+4. an account has that address and **its address is verified in backd** (an address nobody confirmed is not enough);
+5. that account has no identity of this connection yet.
+
+The identity is then added to the account, the person joins the organization as any person who signs in through the connection for the first time, `org.sso.linked` is audited, and **the account's owner gets an email** saying that company's sign-in was linked, so a hostile identity provider is seen. If any condition fails the answer is the usual `account_exists` and the person links explicitly. A session opened through a connection cannot change the account's credentials, second factor, email or API keys, or erase or export it: the link gives access to the organization's data, not to the person's other organizations or to the account itself. A domain that lapses stops linking at once; the identities already linked stay.
+
+Switch it off for a domain with `link_accounts: false`: the proof stays, and nothing links.
+
+`email_domains` of a connection (the extra restriction on the addresses it admits) can only name verified domains of the organization once the realm turns `organizations.domains` on. A list the connection already had is kept when the feature is turned on, and any domain added to it must be proved.
+
+## Find an organization from an address
+
+An application that asks for an email address first can send the person to their company's sign-in:
+
+```
+POST /v1/{realm}/_auth/orgs/discover
+{ "email": "ana@acme.example" }
+→ { "items": [ { "org": "cr3s0k5v1d9u2n8e7a0g", "name": "Acme", "providers": ["microsoft"] } ] }
+```
+
+The application then starts `/_auth/orgs/{org}/oauth/{provider}/start` (see [the sign-in experience](../sign-in-experience/)). It answers only for a domain that is **verified**, whose claim is `discoverable` (the organization's choice, off by default, because it tells the world the company uses your app) and whose organization has a usable connection. Every other case, an unknown address, a domain nobody proved, one that is not discoverable, an organization with no working connection, answers the same, `{"items": []}`, with the same status and shape, and it never says whether an account or a member exists. At most 10 requests an hour per address and 60 a minute per client address.
 
 ## What a claim carries
 

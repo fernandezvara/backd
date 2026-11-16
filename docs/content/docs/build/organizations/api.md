@@ -216,14 +216,14 @@ The people of the company sign in at the organization's own address, which is th
 - **A callback finishes only what it started.** The attempt remembers the organization, so a sign-in begun for one organization cannot be finished at another's callback or at the realm's, and the realm's cannot be finished at an organization's: those end at the error page.
 - **Erasing a user removes their identities through organizations too**, with every other sign-in method; nothing of theirs can sign in afterwards.
 - **Identities are keyed by organization.** The person's identity is `(provider, organization, subject)`: the same Google account at two organizations, or at an organization and at the realm, is separate identities, and a user holds one per provider per organization. `GET /_auth/me` lists them with the organization's id.
-- **It never links by address.** If an account already has the person's address, the flow ends at `backd_error=account_exists` even when Google says it is verified: an organization's managers control the connection, so their provider's word is not proof that an address is theirs. The person signs in the way they already do and links the connection with `intent: link`. Addresses from a connection are stored unverified.
+- **It links by address only through a verified domain.** If an account already has the person's address, the flow ends at `backd_error=account_exists` even when Google says it is verified: an organization's managers control the connection, so their provider's word is not proof that an address is theirs. The one exception is an address on a [verified domain](../verified-domains/#sign-in-through-a-verified-domain) of the organization, which links the account (the owner is told by email). Otherwise the person signs in the way they already do and links the connection with `intent: link`. Addresses from a connection are stored unverified.
 
 ### Joining
 
 | The person | What happens |
 |---|---|
 | Has no account, and the connection admits them | An account is made, **whatever the realm's `signup` mode** (`closed` and `invite` included: the connection's restriction is the gate and the realm switched the feature on), and they join the organization with the connection's `join_roles` |
-| Has an account with the same address | `account_exists`: they sign in the way they already do and link the connection with `intent: link`, which joins them |
+| Has an account with the same address | `account_exists`: they sign in the way they already do and link the connection with `intent: link`, which joins them. On a [verified domain](../verified-domains/#sign-in-through-a-verified-domain) of the organization, with both addresses verified, the account is linked at once |
 | Signs in again | Nothing changes: they are not made a member again, and keep the roles they have |
 | Was removed by a manager | Signed in, **not** joined, until an invitation to the organization is accepted. Leaving by oneself does not block |
 

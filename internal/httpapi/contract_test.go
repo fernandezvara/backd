@@ -3534,6 +3534,31 @@ func TestContract(t *testing.T) {
 		req("DELETE", dom+"/third.example", "", carl, 403)
 		req("DELETE", dom+"/nope.example", "", proof(), 404)
 		req("DELETE", dom+"/third.example", "", proof(), 204)
+
+		// Discovery: the organization of an address on a verified, discoverable domain with a working connection.
+		if f.svc.Cipher == nil {
+			f.svc.Cipher, _ = auth.NewSecretCipher([]byte("01234567890123456789012345678901"))
+		}
+		disc := "/v1/acme/_auth/orgs/discover"
+		if _, err := f.svc.SetOrgConnection(context.Background(), f.adaID, org, "google", auth.ConnectionInput{ClientID: "123-abc.apps.googleusercontent.com", ClientSecret: "s", HostedDomain: "acme.example"}); err != nil {
+			t.Fatal(err)
+		}
+		found := req("POST", disc, `{"email": "ceo@acme.example"}`, nil, 200)
+		if items, _ := found["items"].([]any); len(items) != 1 || items[0].(map[string]any)["org"] != org || items[0].(map[string]any)["providers"].([]any)[0] != "google" {
+			t.Errorf("discovery = %v", found)
+		}
+		if none := req("POST", disc, `{"email": "ceo@nobody.example"}`, nil, 200); len(none["items"].([]any)) != 0 {
+			t.Errorf("an unknown domain: %v", none)
+		}
+		req("POST", disc, `{}`, nil, 400)
+		for range 10 {
+			req("POST", disc, `{"email": "sweep@acme.example"}`, nil, 200)
+		}
+		req("POST", disc, `{"email": "sweep@acme.example"}`, nil, 429)
+		domains := f.svc.Settings.Organizations.Domains
+		f.svc.Settings.Organizations.Domains = nil
+		req("POST", disc, `{"email": "ceo@acme.example"}`, nil, 404)
+		f.svc.Settings.Organizations.Domains = domains
 	}
 
 	// Signing in to an organization.

@@ -61,6 +61,7 @@ func (a *authAPI) oauthRoutes(r chi.Router, json func(http.Handler) http.Handler
 	// A new person starts a company, and anyone can ask where they belong.
 	r.With(json).Post("/orgs", a.signUpWithOrg)
 	r.With(json).Post("/orgs/find", a.findOrgs)
+	r.With(json).Post("/orgs/discover", a.discoverOrgs)
 	r.With(json).Post("/token", a.loginCodeToken)
 }
 

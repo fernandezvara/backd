@@ -131,6 +131,9 @@ const (
 	EventRefused = "refused"
 	// EventAppleToken: keep this refresh token for revoking it when the account goes away.
 	EventAppleToken = "apple_token"
+	// EventLinkedByDomain: an account was linked to an organization's connection because the address is
+	// on a domain the organization proved; the person is to be told.
+	EventLinkedByDomain = "linked_by_domain"
 )
 
 // Events receives what happens because of sign-ins.

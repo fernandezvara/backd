@@ -31,6 +31,8 @@ type Facts struct {
 	Email string
 	// EmailVerified is the provider's word on it.
 	EmailVerified bool
+	// DomainOK: the address is on a verified domain of the organization that lets sign-ins link accounts.
+	DomainOK bool
 	// LinkUserID is the user an IntentLink attempt was started by.
 	LinkUserID string
 }
@@ -40,6 +42,8 @@ type Decision struct {
 	Action Action
 	// Err is set with Refuse.
 	Err error
+	// ByDomain, with LinkToExisting: the account was linked on the strength of a verified domain.
+	ByDomain bool
 	// Verified, with Create: the new user's address counts as verified (the provider is trusted
 	// and says it is).
 	Verified bool
@@ -66,10 +70,14 @@ func Decide(p Provider, f Facts) Decision {
 	}
 	trusted := p.Link == LinkVerifiedEmail
 	if f.ByEmail != nil {
-		if p.Org != "" || !trusted || !f.EmailVerified || !f.ByEmail.EmailVerified {
+		// An account is linked on the provider's word alone (a trusted provider, never a connection),
+		// or on a connection's word about an address on a domain its organization proved.
+		byWord := p.Org == "" && trusted
+		byDomain := p.Org != "" && p.Link == LinkVerifiedDomain && f.DomainOK
+		if (!byWord && !byDomain) || !f.EmailVerified || !f.ByEmail.EmailVerified {
 			return refuse(ErrAccountExists)
 		}
-		return Decision{Action: LinkToExisting}
+		return Decision{Action: LinkToExisting, ByDomain: byDomain}
 	}
 	return Decision{Action: Create, Verified: trusted && f.EmailVerified}
 }
