@@ -59,7 +59,7 @@ func TestVerifyGoogle(t *testing.T) {
 		t.Fatalf("claims = %+v, %v", c, err)
 	}
 	// The older issuer form is Google's too, and an audience may be a list.
-	if _, err := verify(t, p, google, googleClaims(map[string]any{"nonce": "n1", "iss": "accounts.google.com", "aud": []string{"other", "g-client"}}), "n1", false); err != nil {
+	if _, err := verify(t, p, google, googleClaims(map[string]any{"nonce": "n1", "iss": "accounts.google.com", "aud": []string{"other", "g-client"}, "azp": "g-client"}), "n1", false); err != nil {
 		t.Errorf("issuer without scheme, audience list: %v", err)
 	}
 	for name, claims := range map[string]map[string]any{

@@ -1,15 +1,15 @@
 ---
-title: "Sign in with Google, Microsoft or Apple"
-description: "Let users sign in with an external identity provider: configuration, the redirect flow, linking rules, errors and security."
+title: "Sign in with Google, Microsoft, Apple or any OpenID Connect provider"
+description: "Let users sign in with an external identity provider (Google, Microsoft, Apple or any OpenID Connect server): configuration, the redirect flow, linking rules, errors and security."
 icon: "sign-in"
 weight: 540
 toc: true
 ---
 
-A realm can let its users sign in with **Google**, **Microsoft** or **Apple**. backd runs the redirect flow with the provider, checks the answer, finds or creates the user, and gives your app a one-time code to trade for a session. A user can have a password and any number of providers at once (at most one of each): they are [sign-in methods](../sessions/#sign-in-methods) of the same user, so roles, rules and owned documents don't depend on how the user signed in.
+A realm can let its users sign in with **Google**, **Microsoft**, **Apple** or any **OpenID Connect** server of its own (Keycloak, Okta, Auth0, Microsoft Entra ID…). backd runs the redirect flow with the provider, checks the answer, finds or creates the user, and gives your app a one-time code to trade for a session. A user can have a password and any number of providers at once (at most one of each): they are [sign-in methods](../sessions/#sign-in-methods) of the same user, so roles, rules and owned documents don't depend on how the user signed in.
 
 {{< hint style="note" >}}
-To let a company's people sign in with **its own** Google Workspace or Microsoft tenant, see [Let a company sign in with its own account](../../organizations/sign-in/). This page covers the **redirect** sign-in and the **native** sign-in of mobile apps. Other OpenID Connect providers are **planned**. The [JavaScript client](../../clients/js/#sign-in-with-google-microsoft-or-apple) and the [Dart client](../../clients/dart/#sign-in-with-a-provider-on-desktop) do both flows for you (`signInWith`, `completeSignIn`, `signInWithIdToken`).
+To let a company's people sign in with **its own** Google Workspace or Microsoft tenant, see [Let a company sign in with its own account](../../organizations/sign-in/). This page covers the **redirect** sign-in and the **native** sign-in of mobile apps. GitHub and plain OAuth 2 services are **planned**.
 {{< /hint >}}
 
 ## Set it up
@@ -49,9 +49,43 @@ auth:
 | `auth.providers.google.native_client_ids` | Optional: the client ids of your mobile apps, accepted by the [ID-token sign-in](#native-apps-the-id-token) |
 | `auth.providers.microsoft.client_id`, `client_secret`, `tenant` | The application (client) id, its secret, and which accounts are accepted: `common` (any), `organizations` (work and school), `consumers` (personal) or one tenant id |
 | `auth.providers.apple.services_id`, `team_id`, `key_id`, `private_key` | The Services ID (web client id), the team and key that sign Apple's client secret, and the secret that holds the key. backd signs and renews the client secret itself |
+| `auth.providers.<name>.type: oidc`, `issuer`, `client_id`, `client_secret` | A [generic OpenID Connect provider](#any-openid-connect-provider), under any name you choose |
+| `auth.providers.<name>.scopes`, `link_by_email`, `allow_private_network` | Optional settings of a generic provider: extra scopes, whether its verified addresses link accounts, and whether its hosts may be on your private network |
 | `auth.providers.apple.bundle_ids`, `revoke_on_delete` | Optional: your iOS apps, and whether Apple's tokens are kept and [revoked](#apple-and-account-deletion) when an account is deleted (default `true`) |
 
-`google`, `microsoft` and `apple` are reserved names, and so are `password` and `email` (backd's own sign-in methods); any other name is not a provider yet. A provider whose secret is not set answers `503 provider_unavailable`, and `backd` warns about it at startup. A realm with providers needs `BACKD_URL` (or `email.public_url`): startup refuses without it.
+`google`, `microsoft` and `apple` are reserved names for the built-in providers, and so are `password`, `email` and `sso` (backd's own sign-in methods) and `github`, `oidc` and `oauth2` (kinds that are or will be built in); any other name is a generic provider and needs `type: oidc`. A provider whose secret is not set answers `503 provider_unavailable`, and `backd` warns about it at startup. A realm with providers needs `BACKD_URL` (or `email.public_url`): startup refuses without it.
+
+## Any OpenID Connect provider
+
+A server that speaks OpenID Connect (Keycloak, Okta, Auth0, Microsoft Entra ID, Authentik, Zitadel…) is a provider under a name you choose (`[a-z][a-z0-9-]{0,31}`, not one of the reserved names). Register backd as an application there (callback address as above, the *authorization code* flow), store its client secret as a realm secret, and declare it with `type: oidc`:
+
+```yaml
+auth:
+  providers:
+    keycloak:
+      type: oidc
+      issuer: https://sso.acme.example/realms/acme
+      client_id: backd
+      client_secret: secret:KEYCLOAK_CLIENT_SECRET
+      scopes: [groups]              # optional: asked for besides openid, email and profile
+      link_by_email: false          # default false
+      allow_private_network: false  # default false
+```
+
+| Key | Meaning |
+|---|---|
+| `issuer` | The URL of the server, exactly as its tokens name it in `iss`. backd reads `<issuer>/.well-known/openid-configuration` (cached, kept while the server is down) and refuses the provider if the document names another issuer, lacks an endpoint, or lists PKCE methods without `S256`. https only; `http` is accepted only with `BACKD_DEV=true` |
+| `client_id`, `client_secret` | The application's id and the realm secret that holds its secret |
+| `scopes` | Extra scopes, asked for besides `openid email profile` (at most 10), for example `groups` |
+| `link_by_email` | `false` (default): a person whose address matches an existing account is told `account_exists` and links explicitly; their new account is stored unverified. `true`: the provider's verified addresses link accounts and mark new ones verified, as Google's do. Set it only for a server you control or fully trust, because it decides who an address belongs to |
+| `allow_private_network` | `false` (default): the provider's hosts must resolve to public addresses. `true`: they may resolve to the ranges of a private network (10/8, 172.16/12, 192.168/16, fc00::/7, 100.64/10), for a server on your own network. Loopback, link-local and cloud metadata addresses are never allowed, and backd warns at startup for every provider that sets it |
+
+What backd checks, and why it is safe to point it at a server you name:
+
+- **Where it connects.** Only to the issuer's host and to the endpoints in the discovery document **that share the issuer's registered domain** (`login.acme.example` and `api.acme.example`, not `acme.cdn.example`); a document that names another host makes the provider unavailable. No redirect is followed, answers are size-capped, and an address is judged after the name is resolved.
+- **The tokens.** The signature is checked against the server's published keys (`RS256`, `PS256`, `ES256` or `EdDSA`; never `none` or `HS256`), the issuer must be the configured one exactly, the audience must contain `client_id` (and when it has several, `azp` must be `client_id`), `exp`, `nbf` and `iat` are enforced with a minute of leeway, and the `nonce` must match. If the server sends `iss` on the callback, it must be the issuer.
+- **The person.** The subject is `sub` and an identity is bound to the [issuer](#who-the-person-is). An address counts as verified only when `email_verified` is `true`.
+- A generic provider has **no native ID-token sign-in** (`404`): mobile apps use the redirect flow.
 
 ## Which providers to offer
 

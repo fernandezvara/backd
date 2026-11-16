@@ -45,7 +45,7 @@ func (s *Client) AuthorizeURL(p sso.Provider, a AuthorizeParams) string {
 		q.Set("scope", "name email")
 		q.Set("response_mode", "form_post")
 	default:
-		q.Set("scope", "openid email profile")
+		q.Set("scope", strings.Join(append([]string{"openid", "email", "profile"}, p.Scopes...), " "))
 	}
 	if a.CodeChallenge != "" && UsesPKCE(p) {
 		q.Set("code_challenge", a.CodeChallenge)

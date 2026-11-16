@@ -75,6 +75,14 @@ auth:
   #     key_id: XYZ9876543
   #     private_key: secret:APPLE_SIGN_IN_KEY    # the whole .p8 file
   #     revoke_on_delete: true         # revoke the user's Apple tokens when the account is deleted (default)
+  #   keycloak:                        # any other name is a generic OpenID Connect provider (Keycloak, Okta, Auth0, Entra ID…)
+  #     type: oidc
+  #     issuer: https://sso.acme.example/realms/acme   # backd reads <issuer>/.well-known/openid-configuration
+  #     client_id: backd
+  #     client_secret: secret:KEYCLOAK_CLIENT_SECRET
+  #     scopes: [groups]               # optional: asked for besides openid, email and profile
+  #     link_by_email: false           # true: its verified addresses link existing accounts (default false)
+  #     allow_private_network: false   # true: its hosts may be on your private network (never loopback or link-local)
 
   # Two-step sign-in. A strategy that lists `totp` after another method asks for the code
   # of an authenticator app (TOTP) before it gives a session; the person keeps ten

@@ -19,7 +19,7 @@ func Callback(r *http.Request, scope, provider string) (in sso.CallbackInput, ok
 	}
 	return sso.CallbackInput{
 		Scope: scope, Provider: provider,
-		State: r.Form.Get("state"), Code: r.Form.Get("code"), Error: r.Form.Get("error"), User: r.Form.Get("user"),
+		State: r.Form.Get("state"), Code: r.Form.Get("code"), Error: r.Form.Get("error"), Issuer: r.Form.Get("iss"), User: r.Form.Get("user"),
 	}, true
 }
 

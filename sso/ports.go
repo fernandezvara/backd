@@ -155,6 +155,9 @@ type AuthorizeParams struct {
 // Protocol speaks to a provider. sso/protocol implements it over the oidc, oauth2 and apple
 // packages; tests use a fake.
 type Protocol interface {
+	// Prepare completes a provider before it is used: a generic OpenID Connect provider's endpoints
+	// are read from its issuer's discovery document (cached). ErrUnavailable when they can't be.
+	Prepare(ctx context.Context, p Provider) (Provider, error)
 	// UsesPKCE says whether a PKCE challenge goes to the provider.
 	UsesPKCE(p Provider) bool
 	AuthorizeURL(p Provider, a AuthorizeParams) string

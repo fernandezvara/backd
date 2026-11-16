@@ -90,6 +90,11 @@ type StartInput struct {
 
 // Start remembers the attempt and returns the provider's authorize URL.
 func (e *Engine) Start(ctx context.Context, in StartInput) (string, error) {
+	prov, err := e.Protocol.Prepare(ctx, in.Provider)
+	if err != nil {
+		return "", err
+	}
+	in.Provider = prov
 	state, err := random()
 	if err != nil {
 		return "", err
@@ -125,8 +130,10 @@ type CallbackInput struct {
 	Provider string
 	State    string
 	Code     string
-	// Error is the provider's own error code, if it sent one.
-	Error string
+	// Error is the provider's own error code, if it sent one; Issuer the `iss` parameter some send
+	// (RFC 9207).
+	Error  string
+	Issuer string
 	// User is Apple's first-authorization form field.
 	User    string
 	Request Request
@@ -170,10 +177,18 @@ func (e *Engine) Callback(ctx context.Context, in CallbackInput) Outcome {
 	if err != nil {
 		return fail(err, CodeProviderError)
 	}
+	if p, err = e.Protocol.Prepare(ctx, p); err != nil {
+		return fail(err, CodeProviderError)
+	}
 	if a.Intent != IntentLink {
 		if code := e.Directory.Superseded(ctx, a, p); code != "" {
 			return fail(nil, code)
 		}
+	}
+	// A provider that names its issuer on the callback (RFC 9207) must name the one we sent the person
+	// to: otherwise the response may belong to another authorization server.
+	if in.Issuer != "" && p.Issuer != "" && in.Issuer != p.Issuer {
+		return fail(fmt.Errorf("the callback names the issuer %q, not %q", in.Issuer, p.Issuer), CodeProviderError)
 	}
 	if in.Error != "" {
 		if in.Error == "access_denied" || in.Error == "user_cancelled_authorize" {
@@ -321,7 +336,10 @@ type Native struct {
 // ErrNotFound (a connection that can't be used), ErrAuthorizationCodeRequired, ErrExchange (Apple's
 // code), or the rules' (CodeOf).
 func (e *Engine) IDToken(ctx context.Context, in IDTokenInput) (Native, error) {
-	p := in.Provider
+	p, err := e.Protocol.Prepare(ctx, in.Provider)
+	if err != nil {
+		return Native{}, err
+	}
 	claims, err := e.Protocol.Verify(ctx, p, in.IDToken, in.Nonce, true)
 	if err != nil {
 		return Native{}, err

@@ -34,7 +34,7 @@ type oauthFixture struct {
 
 // providerClientFor is a protocol client that reaches the fake provider instead of the real ones.
 func providerClientFor(idp *ssotest.Provider) *protocol.Client {
-	return (&protocol.Client{HTTP: idp.Client()}).Init()
+	return (&protocol.Client{HTTP: idp.Client(), Dev: true}).Init()
 }
 
 // fakeEndpoints points every provider at the fake.

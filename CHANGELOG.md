@@ -8,6 +8,10 @@ Until a stable release is declared, a minor release may have breaking changes; t
 
 The sign-in code is reorganized (the `sso/` library, milestone 48, `design/sso.md`) with no change to the API.
 
+### Added
+
+- **Generic OpenID Connect providers for the realm** (#1014, closes #157). Any other name in `auth.providers` with `type: oidc`, an `issuer`, a client id and a secret reference signs people in with Keycloak, Okta, Auth0, Entra ID and the like: backd reads the discovery document (https only; its endpoints must share the issuer's registered domain), checks the tokens (`RS256`/`PS256`/`ES256`/`EdDSA` only, the exact issuer, the audience and `azp`), binds identities to the issuer, and never links by address unless `link_by_email: true`. `allow_private_network: true` lets a server on your own network be reached (never loopback, link-local or metadata addresses). `scopes` asks for more than `openid email profile`. Redirect flow only: no native ID-token sign-in. The providers guide has the section.
+
 ### Changed
 
 - **Identities record the issuer that vouched for them** (#1013). A subject is only unique within one issuer, so an external provider's identity is now keyed by `(provider, org, issuer, subject)`: if an issuer changes, the old identities match nothing instead of matching a stranger with the same subject, and they show as `dormant` in `GET /_auth/me` (which also lists the `issuer`). A signed-in person who links the provider again replaces their dormant identity. **Run `backd-server provision` before starting the new version:** it records the issuer on existing identities of Google, Microsoft and Apple and replaces the unique index (`PROVISION_MODE=verify` refuses to start until then).

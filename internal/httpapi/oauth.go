@@ -378,6 +378,11 @@ func (a *authAPI) startOAuth(w http.ResponseWriter, r *http.Request, in startInp
 		Scope: auth.SSOScopeOf(p.Org), Provider: sp, CallbackURL: callback, Intent: sso.Intent(in.intent), Strategy: strategy,
 		Challenge: in.challenge, RedirectTo: in.redirectTo, LinkUserID: who.User.ID, Host: hd.Encode(),
 	})
+	if errors.Is(err, sso.ErrUnavailable) {
+		logger(r.Context()).Warn("a sign-in provider could not be read", "provider", p.Name, "error", err)
+		a.providerUnavailable(w, r, "the provider could not be reached or is not set up correctly")
+		return "", false
+	}
 	if err != nil {
 		authError(w, r, err)
 		return "", false

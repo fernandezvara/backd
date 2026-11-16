@@ -30,6 +30,7 @@ const (
 	defaultTTL   = time.Hour
 	refetchEvery = time.Minute
 	microsoftMSA = "9188040d-6c67-4c5b-b112-36a304b66dad" // the tenant id of personal accounts
+	maxToken     = 16 << 10                               // the largest ID token read
 )
 
 // Verifier checks ID tokens. The zero value needs HTTP set.
@@ -91,23 +92,24 @@ func normalizeIssuer(iss string) string {
 }
 
 type idClaims struct {
-	Issuer        string      `json:"iss"`
-	Subject       string      `json:"sub"`
-	Audience      audience    `json:"aud"`
-	Expires       numericDate `json:"exp"`
-	NotBefore     numericDate `json:"nbf"`
-	IssuedAt      numericDate `json:"iat"`
-	Nonce         string      `json:"nonce"`
-	Email         string      `json:"email"`
-	EmailVerified flexBool    `json:"email_verified"`
-	Name          string      `json:"name"`
-	GivenName     string      `json:"given_name"`
-	FamilyName    string      `json:"family_name"`
-	Picture       string      `json:"picture"`
-	TenantID      string      `json:"tid"`
-	HostedDomain  string      `json:"hd"`
-	Username      string      `json:"preferred_username"`
-	ObjectID      string      `json:"oid"`
+	Issuer          string      `json:"iss"`
+	Subject         string      `json:"sub"`
+	Audience        audience    `json:"aud"`
+	Expires         numericDate `json:"exp"`
+	NotBefore       numericDate `json:"nbf"`
+	IssuedAt        numericDate `json:"iat"`
+	AuthorizedParty string      `json:"azp"`
+	Nonce           string      `json:"nonce"`
+	Email           string      `json:"email"`
+	EmailVerified   flexBool    `json:"email_verified"`
+	Name            string      `json:"name"`
+	GivenName       string      `json:"given_name"`
+	FamilyName      string      `json:"family_name"`
+	Picture         string      `json:"picture"`
+	TenantID        string      `json:"tid"`
+	HostedDomain    string      `json:"hd"`
+	Username        string      `json:"preferred_username"`
+	ObjectID        string      `json:"oid"`
 }
 
 // audience is a string or a list of them.
@@ -217,7 +219,11 @@ func (s *Verifier) Subject(ctx context.Context, p sso.Provider, idToken string, 
 // check verifies an ID token's signature, expiry, issuer and audience.
 func (s *Verifier) check(ctx context.Context, p sso.Provider, idToken string, native bool) (idClaims, error) {
 	bad := func(why string) (idClaims, error) { return idClaims{}, fmt.Errorf("%w: %s", sso.ErrInvalidToken, why) }
-	jws, err := jose.ParseSignedCompact(idToken, []jose.SignatureAlgorithm{jose.RS256, jose.ES256})
+	// Only asymmetric algorithms: never `none`, and never HS256, which a client secret could forge.
+	if len(idToken) > maxToken {
+		return bad("too large")
+	}
+	jws, err := jose.ParseSignedCompact(idToken, []jose.SignatureAlgorithm{jose.RS256, jose.PS256, jose.ES256, jose.EdDSA})
 	if err != nil || len(jws.Signatures) != 1 {
 		return bad("not a signed token")
 	}
@@ -244,6 +250,10 @@ func (s *Verifier) check(ctx context.Context, p sso.Provider, idToken string, na
 	if !audienceOK(c.Audience, p.Audiences(native)) {
 		return bad("audience")
 	}
+	// With several audiences the token says whom it was issued to: it must be this client.
+	if len(c.Audience) > 1 && !audienceOK(audience{c.AuthorizedParty}, p.Audiences(native)) {
+		return bad("authorized party")
+	}
 	return c, nil
 }
 
@@ -253,6 +263,8 @@ func (s *Verifier) issuerOK(p sso.Provider, c idClaims) bool {
 		return c.Issuer == "https://accounts.google.com" || c.Issuer == "accounts.google.com"
 	case sso.Apple:
 		return c.Issuer == "https://appleid.apple.com"
+	case sso.OIDC:
+		return p.Issuer != "" && c.Issuer == p.Issuer
 	case sso.Microsoft:
 		if c.TenantID == "" || c.Issuer != "https://login.microsoftonline.com/"+c.TenantID+"/v2.0" {
 			return false

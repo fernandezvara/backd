@@ -299,6 +299,9 @@ type Protocol struct {
 	Nonces    []string // nonce each Verify was asked for
 }
 
+// Prepare implements sso.Protocol.
+func (f *Protocol) Prepare(_ context.Context, p sso.Provider) (sso.Provider, error) { return p, nil }
+
 // UsesPKCE implements sso.Protocol.
 func (f *Protocol) UsesPKCE(sso.Provider) bool { return !f.NoPKCE }
 

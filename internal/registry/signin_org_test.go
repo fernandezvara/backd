@@ -87,8 +87,8 @@ func TestKindsAreOneTable(t *testing.T) {
 		}
 	}
 	for _, name := range ReservedProviderNames {
-		if kindSpecs[name] != nil {
-			t.Errorf("%s is reserved and has a kind", name)
+		if kindSpecs[name] != nil && name != kindOIDC {
+			t.Errorf("%s is reserved and has a kind", name) // oidc is the kind any other name takes with type: oidc
 		}
 	}
 	apple := &Provider{Name: "apple", Kind: "apple"}

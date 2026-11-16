@@ -391,3 +391,10 @@ func TestNativeIDToken(t *testing.T) {
 		t.Errorf("events = %+v", f.ev.Events)
 	}
 }
+
+// fakeClock is a clock a test moves.
+type fakeClock struct{ t time.Time }
+
+func atomicNow() *fakeClock              { return &fakeClock{t: time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)} }
+func (c *fakeClock) get() time.Time      { return c.t }
+func (c *fakeClock) add(d time.Duration) { c.t = c.t.Add(d) }
