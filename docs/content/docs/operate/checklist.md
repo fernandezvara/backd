@@ -27,6 +27,15 @@ Go through this page before any realm faces the internet, and again after changi
 - [ ] **Operators' machines protect the CLI's sessions** (`~/.config/backd/credentials`): log out with `backd logout` on shared machines, and prefer short session lifetimes for realms with administrators.
 - [ ] **`BACKD_DEV` is not set**, nor `BACKD_DEV_ANY_ADDR`. Dev mode reloads config and function bundles as files change and serves a landing page at `/`; it turns off the guarantee that bundles are frozen and checked at startup, and `backd` refuses it on an address that isn't localhost unless `BACKD_DEV_ANY_ADDR` is set. See [Dev mode](../../build/functions/testing/#dev-mode).
 
+## Sign-in providers
+
+If no realm lists `auth.providers` or `organizations.sso`, skip this section.
+
+- [ ] **Client secrets are realm secrets** (`secret:NAME`), never written in `realm.yaml`; `BACKD_URL` (or `email.public_url`) is the public https address, because the callback addresses registered with the providers are built from it. See [Sign in with providers](../../build/auth/providers/#set-it-up).
+- [ ] **`link_by_email: true` is set only for a server you control or fully trust** (it lets that server's verified addresses link to existing accounts), and `allow_private_network` only for a provider on your own network.
+- [ ] **Organizations may connect OpenID Connect only to issuers you accept:** `organizations.sso.oidc.issuers` lists the narrowest patterns that fit (a wildcard such as `https://*.okta.com` accepts every customer of that service), and the [`domains`](../../build/organizations/verified-domains/) section's `blocked` list holds the domains nobody should be able to claim. See [Organization sign-in](../organization-sign-in/).
+- [ ] **Someone knows what a changed issuer does:** the identities it vouched for become dormant and sign in no more; they don't match a stranger with the same subject. See [Who the person is](../../build/auth/providers/#who-the-person-is).
+
 ## Credentials
 
 - [ ] **Every API key has an expiry** (`backd apikey create … --expires 90d`), is used by one service, lives in a secret store, and is rotated before it expires. See the [expiry and rotation policy](../../build/auth/api-keys/#expiry-and-rotation-policy). Startup warns about keys without an expiry.
