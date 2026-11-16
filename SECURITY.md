@@ -34,6 +34,7 @@ In scope: authentication (`/v1/{realm}/_auth`), sessions and API keys, access ru
 In scope:
 
 - **Authentication and sessions** — `/v1/{realm}/_auth`, sessions and API keys.
+- **Unverified accounts** — sign-up, `/_auth/verify-email`, a reset or a magic link on an account whose address was never verified: a way for whoever opened an account with someone else's address to keep a password, passkey, second factor, linked provider or session once the owner proves the mailbox, or to get the account verified without its password.
 - **Access rules** — the `rules:` section of `collection.yaml`: a route (a `_batch`, a function's callback, an expansion) on which a rule sees other values than on a single request, such as the app configuration, the caller's memberships or a parent document.
 - **Admin API** — `/v1/{realm}/_admin`.
 - **Admin web interface** — served at `/_ui/`: its CSP and headers, how it holds the admin token, and any way to run script in it or read that token.

@@ -774,9 +774,13 @@ func (a *Auth) ResendVerification(ctx context.Context, email, redirectTo string,
 	return a.accepted(ctx, path("_auth", "verify-email", "resend"), body{}.set("email", email).set("redirect_to", redirectTo), opts...)
 }
 
-// VerifyEmail confirms an address with the token of the link.
-func (a *Auth) VerifyEmail(ctx context.Context, token string, opts ...RequestOption) error {
-	return a.accepted(ctx, path("_auth", "verify-email"), body{"token": token}, opts...)
+// VerifyEmail confirms an address with the token of the link. An account that has a password is
+// verified only with it (the link proves who reads the mailbox, not who signed up): pass the
+// password the person types, "" for an account without one. Without it the answer is a
+// validation error whose details name `password`; a wrong one is ErrInvalidCredentials, and the
+// token stays usable.
+func (a *Auth) VerifyEmail(ctx context.Context, token, password string, opts ...RequestOption) error {
+	return a.accepted(ctx, path("_auth", "verify-email"), body{"token": token}.set("password", password), opts...)
 }
 
 // RequestPasswordReset emails a reset link; the answer is the same whether or not the address is known.

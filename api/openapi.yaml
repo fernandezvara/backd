@@ -392,6 +392,17 @@ paths:
         (`application/x-www-form-urlencoded`, answered with a page); an app
         with its own pages posts JSON. A token that is expired, used,
         unknown or for another purpose is `400 invalid_token`.
+
+        The link proves that whoever opens it reads the mailbox, not that
+        they made the account (anyone can sign up with someone else's
+        address). So an account that has a password is verified only with
+        that `password`: without it the answer is `400 validation_error`
+        with the detail `password`, and a wrong one is `401
+        invalid_credentials`, counted like a failed login (`429` once
+        throttled); the token stays usable in each case. An unverified
+        account with no password is claimed instead: the providers,
+        passkeys, second factor and sessions it had are removed. A token of
+        an account that is already verified needs no password.
       operationId: verifyEmail
       requestBody:
         required: true
@@ -403,17 +414,27 @@ paths:
               required: [token]
               properties:
                 token: { type: string }
+                password: { type: string, description: "The account's password, when it has one and its address is not verified yet." }
           application/x-www-form-urlencoded:
             schema:
               type: object
               required: [token]
               properties:
                 token: { type: string }
+                password: { type: string }
       responses:
         "200": { $ref: "#/components/responses/HostedPage" }
         "204": { description: The address is verified. }
         "400":
-          description: Invalid, expired or used token (`invalid_token`), or an invalid body.
+          description: Invalid, expired or used token (`invalid_token`), a missing `password` for an account that has one (`validation_error`), or an invalid body.
+          headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+            text/html:
+              schema: { type: string }
+        "401":
+          description: The `password` is not the account's (`invalid_credentials`); the form is shown again to a page.
           headers: { X-Request-ID: { $ref: "#/components/headers/RequestID" } }
           content:
             application/json:
@@ -421,6 +442,7 @@ paths:
             text/html:
               schema: { type: string }
         "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
         "415": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 

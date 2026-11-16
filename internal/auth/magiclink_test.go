@@ -3,6 +3,7 @@ package auth_test
 import (
 	"context"
 	"errors"
+	"github.com/fernandezvara/backd/internal/auth/passkey"
 	"strings"
 	"testing"
 	"time"
@@ -324,6 +325,9 @@ func TestMagicLinkClaimsAnUnverifiedAccount(t *testing.T) {
 	if err := f.store.PutIdentity(ctx, Identity{ID: "i1", UserID: u.ID, Provider: "google", Subject: "g-squatter"}); err != nil {
 		t.Fatal(err)
 	}
+	if err := f.store.Add(ctx, passkey.Credential{ID: "pk1", UserID: u.ID, CredentialID: []byte("squatter-key")}); err != nil {
+		t.Fatal(err)
+	}
 	verifier, challenge, _ := NewPKCE()
 	id, _, code := f.ask(t, "victim@example.com", challenge)
 	if _, err := f.svc.VerifyMagicLinkCode(ctx, id, code, verifier, ""); err != nil {
@@ -332,6 +336,9 @@ func TestMagicLinkClaimsAnUnverifiedAccount(t *testing.T) {
 	if _, _, err := f.svc.Login(ctx, "victim@example.com", mfaPassword, ""); !errors.Is(err, ErrInvalidCredentials) {
 		t.Errorf("the squatter's password still works: %v", err)
 	}
+	if n, _ := f.store.CountByUser(ctx, u.ID); n != 0 {
+		t.Errorf("the squatter's passkey survived: %d", n)
+	}
 	if _, err := f.store.IdentityOf(ctx, u.ID, "google"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("the squatter's provider is still linked: %v", err)
 	}
@@ -339,6 +346,166 @@ func TestMagicLinkClaimsAnUnverifiedAccount(t *testing.T) {
 		t.Error("the squatter's session survived")
 	}
 	if u, _ := f.svc.Find(ctx, "victim@example.com"); !u.EmailVerified {
+		t.Error("the address isn't verified")
+	}
+}
+
+// The same squatter, and a victim who resets the password instead: the reset link is the first
+// proof of the mailbox, so the passkey, the second factor, the provider and the sessions the
+// squatter set up go with the old password.
+func TestAResetClaimsAnUnverifiedAccount(t *testing.T) {
+	ctx := context.Background()
+	f := newLinkFixture(t)
+	if _, _, err := f.svc.Signup(ctx, "victim@example.com", mfaPassword, ""); err != nil {
+		t.Fatal(err)
+	}
+	_, squatterToken, err := f.svc.Login(ctx, "victim@example.com", mfaPassword, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, _ := f.svc.Find(ctx, "victim@example.com")
+	if err := f.store.PutIdentity(ctx, Identity{ID: "i1", UserID: u.ID, Provider: "google", Subject: "g-squatter"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.Add(ctx, passkey.Credential{ID: "pk1", UserID: u.ID, CredentialID: []byte("squatter-key")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.PutMFA(ctx, MFARecord{UserID: u.ID, Secret: "sealed", EnabledAt: *f.clock}); err != nil {
+		t.Fatal(err)
+	}
+	link, _, err := f.svc.CreateResetLink(ctx, u.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.ResetPassword(ctx, link, "dev-p4ssw0rd!2"); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := f.store.CountByUser(ctx, u.ID); n != 0 {
+		t.Errorf("the squatter's passkey survived the reset: %d", n)
+	}
+	if _, err := f.store.MFAOf(ctx, u.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("the squatter's second factor survived the reset: %v", err)
+	}
+	if _, err := f.store.IdentityOf(ctx, u.ID, "google"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("the squatter's provider is still linked: %v", err)
+	}
+	if _, err := f.svc.Authenticate(ctx, squatterToken); err == nil {
+		t.Error("the squatter's session survived the reset")
+	}
+	if _, _, err := f.svc.Login(ctx, "victim@example.com", mfaPassword, ""); !errors.Is(err, ErrInvalidCredentials) {
+		t.Errorf("the squatter's password still works: %v", err)
+	}
+	if _, _, err := f.svc.Login(ctx, "victim@example.com", "dev-p4ssw0rd!2", ""); err != nil {
+		t.Errorf("the new password doesn't work: %v", err)
+	}
+	if u, _ := f.svc.Find(ctx, "victim@example.com"); !u.EmailVerified {
+		t.Error("the address isn't verified")
+	}
+}
+
+// A verified account that resets its password keeps what it set up: the claim is only for an
+// address nobody had proved.
+func TestAResetOfAVerifiedAccountKeepsItsMethods(t *testing.T) {
+	ctx := context.Background()
+	f := newLinkFixture(t)
+	if _, _, err := f.svc.Signup(ctx, "ada2@example.com", mfaPassword, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.SetEmailVerified(ctx, "ada2@example.com", true); err != nil {
+		t.Fatal(err)
+	}
+	u, _ := f.svc.Find(ctx, "ada2@example.com")
+	if err := f.store.Add(ctx, passkey.Credential{ID: "pk1", UserID: u.ID, CredentialID: []byte("own-key")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.PutMFA(ctx, MFARecord{UserID: u.ID, Secret: "sealed", EnabledAt: *f.clock}); err != nil {
+		t.Fatal(err)
+	}
+	link, _, err := f.svc.CreateResetLink(ctx, u.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.ResetPassword(ctx, link, "dev-p4ssw0rd!2"); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := f.store.CountByUser(ctx, u.ID); n != 1 {
+		t.Errorf("passkeys after the reset = %d, want 1", n)
+	}
+	if _, err := f.store.MFAOf(ctx, u.ID); err != nil {
+		t.Errorf("the second factor after the reset: %v", err)
+	}
+}
+
+// The verification message of a squatter's sign-up goes to the victim. Pressing its link proves
+// the mailbox, not who made the account: without the squatter's password nothing is verified, so
+// the account never becomes one a provider links to.
+func TestAVerificationLinkNeedsTheAccountsPassword(t *testing.T) {
+	ctx := context.Background()
+	f := newLinkFixture(t)
+	if _, _, err := f.svc.Signup(ctx, "victim@example.com", mfaPassword, ""); err != nil {
+		t.Fatal(err)
+	}
+	u, _ := f.svc.Find(ctx, "victim@example.com")
+	token, _, err := f.svc.NewEmailToken(ctx, "verify-email", u.ID, "", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.VerifyEmail(ctx, token, "", ""); !errors.Is(err, ErrPasswordRequired) {
+		t.Errorf("without the password: %v", err)
+	}
+	if _, err := f.svc.VerifyEmail(ctx, token, "dev-p4ssw0rd!0", ""); !errors.Is(err, ErrInvalidCredentials) {
+		t.Errorf("with a wrong password: %v", err)
+	}
+	if u, _ := f.svc.Find(ctx, "victim@example.com"); u.EmailVerified {
+		t.Fatal("verified without the password")
+	}
+	// The person who signed up verifies, and keeps the account as it is.
+	if _, err := f.svc.VerifyEmail(ctx, token, mfaPassword, ""); err != nil {
+		t.Fatalf("with the password: %v", err)
+	}
+	if u, _ := f.svc.Find(ctx, "victim@example.com"); !u.EmailVerified {
+		t.Error("the address isn't verified")
+	}
+	if _, _, err := f.svc.Login(ctx, "victim@example.com", mfaPassword, ""); err != nil {
+		t.Errorf("the password after verifying: %v", err)
+	}
+}
+
+// An unverified account with no password can't prove who made it: the link claims it, so what
+// was linked before the mailbox was proved is removed.
+func TestAVerificationLinkClaimsAnAccountWithoutPassword(t *testing.T) {
+	ctx := context.Background()
+	f := newLinkFixture(t)
+	u, err := f.svc.Create(ctx, "victim@example.com", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.SetEmailVerified(ctx, u.Email, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.PutIdentity(ctx, Identity{ID: "i1", UserID: u.ID, Provider: "acme-sso", Subject: "squatter"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.Add(ctx, passkey.Credential{ID: "pk1", UserID: u.ID, CredentialID: []byte("squatter-key")}); err != nil {
+		t.Fatal(err)
+	}
+	token, _, err := f.svc.NewEmailToken(ctx, "verify-email", u.ID, "", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.svc.VerificationNeedsPassword(ctx, EmailToken{UserID: u.ID}) {
+		t.Error("an account with no password asks for one")
+	}
+	if _, err := f.svc.VerifyEmail(ctx, token, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.store.IdentityOf(ctx, u.ID, "acme-sso"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("the provider linked before is still there: %v", err)
+	}
+	if n, _ := f.store.CountByUser(ctx, u.ID); n != 0 {
+		t.Errorf("the passkey registered before is still there: %d", n)
+	}
+	if u, _ := f.svc.Find(ctx, u.Email); !u.EmailVerified {
 		t.Error("the address isn't verified")
 	}
 }

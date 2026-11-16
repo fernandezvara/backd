@@ -462,7 +462,7 @@ void main() {
         ..answer(respond(204));
       final client = testClient(t);
       await client.auth.resendVerification('a@b.c');
-      await client.auth.verifyEmail('tok');
+      await client.auth.verifyEmail('tok', password: 'pw');
       await client.auth.requestPasswordReset('a@b.c');
       await client.auth.resetPassword('tok', 'pw');
       await client.auth.updatePassword('a@b.c', 'pw', 'pw2', code: '123456');

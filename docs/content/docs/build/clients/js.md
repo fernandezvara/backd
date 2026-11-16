@@ -165,7 +165,7 @@ In a realm with [`email`](../../functions/email/), the links in the emails open 
 
 ```js
 await backd.auth.resendVerification({ email })                  // 202 whatever the address is
-await backd.auth.verifyEmail(token)                             // the token of the verification link
+await backd.auth.verifyEmail(token, password)                   // the token of the verification link, and the account's password
 await backd.auth.requestPasswordReset({ email, redirectTo })    // 202 whatever the address is
 await backd.auth.resetPassword({ token, password })             // ends every session, verifies the address
 await backd.auth.updatePassword({ email, password, newPassword, code })  // signed out, with the current one; ends every session

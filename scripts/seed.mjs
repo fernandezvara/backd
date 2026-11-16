@@ -146,6 +146,7 @@ const signIn = async (client, realm, email, pw) => {
 // reads it) verify an address the way a person would: the mail's link carries a
 // token, POSTed to verify-email. A worker delivers, so it may take a moment.
 const verifyEmail = async (client, realm, db, email) => {
+  const pw = password(realm); // the link alone isn't enough: the account's password goes with it
   const outbox = client.db(db).collection("outbox");
   for (let i = 0; i < 60; i++) {
     const page = await outbox.list({ orderBy: "-_meta.created_at", limit: 100 })
@@ -158,7 +159,7 @@ const verifyEmail = async (client, realm, db, email) => {
       const res = await fetch(`${api}/v1/${realm}/_auth/verify-email`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token, password: pw }),
       });
       if (res.ok) return true;
     }

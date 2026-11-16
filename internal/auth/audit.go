@@ -24,7 +24,7 @@ const (
 	AuditUserVerifyEmail   = "user.verify_email"      // details: verified
 	AuditPasswordReset     = "user.password_reset"    // by the link in an email; details: verified_address
 	AuditUserPurged        = "user.purged_unverified" // details: count; never addresses
-	AuditUserClaimed       = "user.claimed"           // an unverified account taken over by its mailbox's owner; details: methods, mfa
+	AuditUserClaimed       = "user.claimed"           // an unverified account taken over by its mailbox's owner; details: methods, passkeys, mfa
 	AuditSessionRevokeAll  = "session.revoke_all"     // an administrator ended every session of the realm; details: count
 	AuditPasswordResetLink = "password.reset_link"    // an administrator made a reset link for a user; never the token
 	AuditPasswordNotify    = "password.expire_notify" // the notification run ended; details: counts

@@ -754,11 +754,16 @@ class Auth:
         already verified), so it can't be used to find out who is registered."""
         self._accepted(["_auth", "verify-email", "resend"], {"email": email, "redirect_to": redirect_to})
 
-    def verify_email(self, token: str) -> None:
+    def verify_email(self, token: str, password: str | None = None) -> None:
         """Verifies an address with the token of the link in the email: for apps that host their own page
         (``email.links`` in ``realm.yaml``). Starts no session. An expired, used or unknown token raises a
-        ``ValidationError`` whose ``code`` is ``invalid_token``."""
-        self._accepted(["_auth", "verify-email"], {"token": token})
+        ``ValidationError`` whose ``code`` is ``invalid_token``.
+
+        An account that has a password is verified only with it (the link proves who reads the mailbox, not
+        who signed up): ask the person for ``password``. Without it the call raises a ``ValidationError``
+        whose details name ``password``; a wrong one raises an ``AuthenticationError``
+        (``invalid_credentials``), and the token stays usable."""
+        self._accepted(["_auth", "verify-email"], {"token": token, "password": password})
 
     def request_password_reset(
         self, email: str, *, redirect_to: str | None = None, org: str | None = None

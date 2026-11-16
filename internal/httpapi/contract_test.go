@@ -546,6 +546,20 @@ func TestContract(t *testing.T) {
 	req("POST", a+"/verify-email", "token="+verifyToken(), form, 200)
 	req("POST", a+"/verify-email", "token=nope", form, 400)
 	req("POST", a+"/verify-email", `{"token": "`+verifyToken()+`"}`, nil, 204)
+	// An account with a password whose address is not verified: the token alone is not enough.
+	if _, _, err := f.svc.Signup(context.Background(), "unproved@example.com", "dev-p4ssw0rd!", ""); err != nil {
+		t.Fatal(err)
+	}
+	unproved, _ := f.svc.Find(context.Background(), "unproved@example.com")
+	unprovedToken, _, err := f.svc.NewEmailToken(context.Background(), "verify-email", unproved.ID, "", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req("POST", a+"/verify-email", `{"token": "`+unprovedToken+`"}`, nil, 400)
+	for range 5 {
+		req("POST", a+"/verify-email", `{"token": "`+unprovedToken+`", "password": "dev-p4ssw0rd!0"}`, nil, 401)
+	}
+	req("POST", a+"/verify-email", `{"token": "`+unprovedToken+`", "password": "dev-p4ssw0rd!0"}`, nil, 429)
 	req("POST", a+"/verify-email", `{"token": "nope"}`, nil, 400)
 	req("POST", a+"/verify-email", `{"token": "x"}`, map[string]string{"Content-Type": "text/plain"}, 415)
 	req("POST", "/v1/nope/_auth/verify-email", `{"token": "x"}`, nil, 404)

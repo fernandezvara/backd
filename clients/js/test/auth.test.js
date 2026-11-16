@@ -282,7 +282,7 @@ test('the email flows send their bodies without a session and answer nothing', a
   const m = mockFetch([{ status: 202, body: { status: 'accepted' } }, { status: 204 }, { status: 202, body: { status: 'accepted' } }, { status: 204 }, { status: 204 }, { status: 204 }, { status: 204 }, { status: 204 }])
   const { c, events } = clientWith(m)
   assert.equal(await c.auth.resendVerification({ email: 'ada@example.com' }), undefined)
-  assert.equal(await c.auth.verifyEmail('tok1'), undefined)
+  assert.equal(await c.auth.verifyEmail('tok1', 'dev-p4ssw0rd!'), undefined)
   await c.auth.requestPasswordReset({ email: 'ada@example.com', redirectTo: 'https://app.example/signin' })
   await c.auth.resetPassword({ token: 'tok2', password: 'dev-p4ssw0rd!2' })
   await c.auth.updatePassword({ email: 'ada@example.com', password: 'dev-p4ssw0rd!', newPassword: 'dev-p4ssw0rd!2', code: '123456' })
@@ -292,7 +292,7 @@ test('the email flows send their bodies without a session and answer nothing', a
   const sent = m.calls.map((call) => [call.method, call.url.pathname, call.body])
   assert.deepEqual(sent, [
     ['POST', '/v1/acme/_auth/verify-email/resend', { email: 'ada@example.com' }],
-    ['POST', '/v1/acme/_auth/verify-email', { token: 'tok1' }],
+    ['POST', '/v1/acme/_auth/verify-email', { token: 'tok1', password: 'dev-p4ssw0rd!' }],
     ['POST', '/v1/acme/_auth/reset-password/request', { email: 'ada@example.com', redirect_to: 'https://app.example/signin' }],
     ['POST', '/v1/acme/_auth/reset-password', { token: 'tok2', password: 'dev-p4ssw0rd!2' }],
     ['POST', '/v1/acme/_auth/password/update', { email: 'ada@example.com', password: 'dev-p4ssw0rd!', new_password: 'dev-p4ssw0rd!2', code: '123456' }],

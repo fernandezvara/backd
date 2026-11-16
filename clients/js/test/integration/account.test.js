@@ -17,7 +17,10 @@ test('sign-up sends a verification email; its token verifies the address, resend
   assert.notEqual(second.token, first.token)
   await c.auth.resendVerification({ email: 'nobody.' + address }) // the same answer for an unknown address
 
-  await c.auth.verifyEmail(second.token)
+  // The link proves the mailbox, not who signed up: the account's password is needed too.
+  await assert.rejects(c.auth.verifyEmail(second.token), (/** @type {any} */ e) => e instanceof ValidationError && e.details.some((/** @type {any} */ d) => d.path === 'password'))
+  await assert.rejects(c.auth.verifyEmail(second.token, password + '0'), (/** @type {any} */ e) => e.code === 'invalid_credentials')
+  await c.auth.verifyEmail(second.token, password)
   assert.equal((await c.auth.me()).email_verified, true)
   await assert.rejects(c.auth.verifyEmail(second.token), (/** @type {any} */ e) => e instanceof ValidationError && e.code === 'invalid_token')
   await assert.rejects(c.auth.verifyEmail('nope'), (/** @type {any} */ e) => e.code === 'invalid_token')

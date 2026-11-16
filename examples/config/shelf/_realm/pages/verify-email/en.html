@@ -23,7 +23,9 @@
 {{if .Error}}<p class="error" role="alert">{{.Error}}</p>{{end}}
 <form method="post" action="{{.Action}}">
 <input type="hidden" name="token" value="{{.Token}}">
-<button type="submit">Confirm my email address</button>
+{{if .NeedPassword}}<label>The password you chose when you signed up <input type="password" name="password" required autocomplete="current-password"></label>
+<p class="muted">If you didn't sign up, someone used your address: close this page, and nothing happens.</p>
+{{end}}<button type="submit">Confirm my email address</button>
 </form>
 </main>
 </body>

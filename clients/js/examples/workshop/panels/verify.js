@@ -59,7 +59,7 @@ export function verifyPanel({ backd, fetch, realm }) {
     verifyWithToken() {
       return this.step('Verify the address with the token (POST /_auth/verify-email)', async () => {
         const token = new URL(this.vf.mail.link).searchParams.get('token')
-        await visitor.request({ method: 'POST', path: ['_auth', 'verify-email'], body: { token }, auth: false })
+        await visitor.request({ method: 'POST', path: ['_auth', 'verify-email'], body: { token, password: PASSWORD }, auth: false })
         this.vf = { ...this.vf, done: true }
       })
     },

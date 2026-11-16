@@ -29,7 +29,7 @@ Each realm with an `auth` section keeps an **audit trail**: one record per secur
 | `push.test` | An administrator sent a [test push](../../../build/push/records/#the-test-send) to a user | `send`, `kind` |
 | `device.removed` | An administrator removes a user's push device | `platform`, `device` |
 | `push.devices_removed` | An administrator removes every device of a platform at once, after rotating the [Web Push keys](../../providers/push/web-push/); the target is `realm:<realm>` | `platform`, `count` |
-| `user.claimed` | A link or code verified an address that was never verified, and took the account away from whoever made it: password, providers, second factor and sessions are removed | `methods`, `mfa` |
+| `user.claimed` | A magic link, a code or a password reset proved an address that was never verified, and took the account away from whoever made it: password, providers, passkeys, second factor and sessions are removed | `methods`, `passkeys`, `mfa` |
 | `user.mfa_enabled`, `user.mfa_disabled` | A user turns their [authenticator app](../../../build/auth/mfa/) (TOTP) on or off | |
 | `user.mfa_reset` | An administrator resets a user's second factor: the TOTP secret, the recovery codes and the passkeys go, and the sessions end. The actor is the administrator, or `instance` for `backd-server user mfa-reset` | `passkeys_removed` |
 | `user.recovery_codes_regenerated` | A user makes a new set of recovery codes; the earlier ones stop working | |

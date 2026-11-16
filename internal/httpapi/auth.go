@@ -685,6 +685,8 @@ func authError(w http.ResponseWriter, r *http.Request, err error, passwordField 
 	case errors.Is(err, auth.ErrReauthRequired):
 		w.Header().Set("WWW-Authenticate", `Bearer realm="`+chi.URLParam(r, "realm")+`", error="insufficient_user_authentication"`)
 		writeError(w, r, http.StatusUnauthorized, codeReauthRequired, "this action needs a fresh proof of identity: POST /_auth/reauth and send the token in "+reauthHeader)
+	case errors.Is(err, auth.ErrPasswordRequired):
+		writeError(w, r, http.StatusBadRequest, codeValidation, err.Error(), Detail{Path: "password", Reason: "is required: the account has a password, and only the person who signed up may confirm its address"})
 	case errors.Is(err, auth.ErrCodeRequired):
 		writeError(w, r, http.StatusBadRequest, codeValidation, err.Error(), Detail{Path: "code", Reason: "is required: the account uses a second factor"})
 	case errors.Is(err, auth.ErrReauthMethod):
