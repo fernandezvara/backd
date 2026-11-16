@@ -71,8 +71,8 @@ def main(out):
     for name in SERVING + ["worker"]:
         image = named(default, "Deployment", name)["spec"]["template"]["spec"]["containers"][0]["image"]
         check(image == config_image, f"{name} must run the configuration image, got {image}")
-    check(named(default, "Deployment", "executor")["spec"]["template"]["spec"]["containers"][0]["image"] == "ghcr.io/fernandezvara/backd-executor:v0.9.13", "the executor runs the released executor image")
-    check(named(default, "Deployment", "egress")["spec"]["template"]["spec"]["containers"][0]["image"] == "ghcr.io/fernandezvara/backd:v0.9.13", "egress runs the released backd image")
+    check(named(default, "Deployment", "executor")["spec"]["template"]["spec"]["containers"][0]["image"] == "ghcr.io/fernandezvara/backd-executor:v0.9.14", "the executor runs the released executor image")
+    check(named(default, "Deployment", "egress")["spec"]["template"]["spec"]["containers"][0]["image"] == "ghcr.io/fernandezvara/backd:v0.9.14", "egress runs the released backd image")
 
     # --- what each role is, from the environment
     def flag(name, key):
