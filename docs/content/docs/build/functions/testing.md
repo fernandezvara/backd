@@ -23,6 +23,7 @@ CONFIG_DIR=./config backd-server functions build
     -e CONFIG_DIR=/config docker.io/denoland/deno:alpine-2.9.8 backd-server functions build
   ```
 - Bundles go to `_functions/.build/`, one file per function named by its content hash, listed in `.build/manifest.json` with the Deno version and a hash of the project's sources. The same sources always give the same bundles.
+- Builds that start at the same time share Deno's cache, and Deno can fail one of them while two install its bundler (`failed to copy esbuild binary`). `backd-server functions build` tries that bundle again, up to three times, and only for that message; any other error is yours and is shown at once.
 - TypeScript is compiled, not type-checked; `backd-server functions build --check` type-checks too.
 - Dependencies are downloaded only at build time. When `deno.lock` exists, the build fails if it's out of date, so every build uses exactly the pinned versions.
 - If a function fails to bundle, the build stops and the previous bundles stay in place.

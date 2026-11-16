@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -604,5 +605,69 @@ func TestEvolvingASchemaExample(t *testing.T) {
 	}
 	if got := string(res.Outcomes[1].Fields); got != `{"title":"B","kind":"note","description":"new text","visibility":"team"}` {
 		t.Errorf("v2 document became %s", got)
+	}
+}
+
+// fakeDeno writes a script that stands for deno: it fails with the given message the first
+// `failures` times it is called and then writes "bundled" to the --output file.
+func fakeDeno(t *testing.T, failures int, message string) (bin string, calls func() int) {
+	t.Helper()
+	dir := t.TempDir()
+	counter := filepath.Join(dir, "calls")
+	script := `#!/bin/sh
+n=$(cat "` + counter + `" 2>/dev/null || echo 0)
+n=$((n+1))
+echo $n > "` + counter + `"
+if [ $n -le ` + strconv.Itoa(failures) + ` ]; then
+  echo "` + message + `" >&2
+  exit 1
+fi
+while [ $# -gt 0 ]; do
+  if [ "$1" = "--output" ]; then echo bundled > "$2"; fi
+  shift
+done
+`
+	bin = filepath.Join(dir, "deno")
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return bin, func() int {
+		b, _ := os.ReadFile(counter)
+		n, _ := strconv.Atoi(strings.TrimSpace(string(b)))
+		return n
+	}
+}
+
+// Two builds that start together install deno's esbuild into the same cache and one of them
+// fails with "failed to copy esbuild binary": that failure is the cache's, not the code's, so
+// the bundle is tried again.
+func TestBundleRetriesTheSharedCacheRace(t *testing.T) {
+	const race = "error: failed to copy esbuild binary from /deno-dir/npm/x/esbuild to /deno-dir/dl/.esbuild-1.tmp\n\nCaused by:\n    No such file or directory (os error 2)"
+	dir := t.TempDir()
+	write(t, dir, map[string]string{"main.ts": "export default 1\n"})
+	fn := &registry.Function{Entry: "main.ts"}
+
+	bin, calls := fakeDeno(t, 2, race)
+	out, err := bundle(context.Background(), dir, fn, Options{Deno: bin})
+	if err != nil {
+		t.Fatalf("bundle after two cache races: %v", err)
+	}
+	if strings.TrimSpace(string(out)) != "bundled" || calls() != 3 {
+		t.Errorf("out %q after %d calls, want the bundle after 3", out, calls())
+	}
+
+	// It does not retry for ever, and it says what failed.
+	bin, calls = fakeDeno(t, 99, race)
+	if _, err := bundle(context.Background(), dir, fn, Options{Deno: bin}); err == nil || !strings.Contains(err.Error(), "failed to copy esbuild binary") {
+		t.Fatalf("bundle that always races: %v", err)
+	}
+	if calls() != bundleAttempts {
+		t.Errorf("%d calls, want %d", calls(), bundleAttempts)
+	}
+
+	// An error of the code is not retried.
+	bin, calls = fakeDeno(t, 99, "error: Module not found")
+	if _, err := bundle(context.Background(), dir, fn, Options{Deno: bin}); err == nil || calls() != 1 {
+		t.Fatalf("a code error: %v after %d calls", err, calls())
 	}
 }
