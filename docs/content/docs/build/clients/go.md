@@ -318,7 +318,7 @@ if job != nil {                                   // async: poll, or wait
 
 ## Organizations, consents and push
 
-`c.Orgs()` has organizations (create, update, leave, delete), `Members`, `Teams` (with role grants and time windows), `Templates` (the organization's own emails), `Invitations` and `SSO` connections; `c.Consents()` reads texts and keeps what the user accepted; `c.Account()` asks for and downloads a copy of the user's data; `c.Push()` registers the device.
+`c.Orgs()` has organizations (create, update, leave, delete), `Members`, `Teams` (with role grants and time windows), `Templates` (the organization's own emails), `Invitations`, `SSO` connections (Google, Microsoft, OpenID Connect) and `Domains` (verified domains: `List`, `Add`, `Verify`, `Update`, `Remove`; `Auth().DiscoverOrgs` finds the organization of an address); `c.Consents()` reads texts and keeps what the user accepted; `c.Account()` asks for and downloads a copy of the user's data; `c.Push()` registers the device.
 
 ```go
 org, err := c.Orgs().Create(ctx, client.CreateOrgInput{Name: "Acme", Slug: "acme"})

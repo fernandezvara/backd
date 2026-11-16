@@ -239,3 +239,37 @@ async def test_sso_connections(mode: str) -> None:
     server.on("GET /_orgs/o1/sso/microsoft", lambda r: error_response(404, "not_found"))
     with pytest.raises(backd.NotFoundError):
         await go(sso.get("microsoft"))
+
+
+async def test_oidc_connection_domains_and_discover(mode: str) -> None:
+    c, server, _ = setup(mode)
+    claim = {"domain": "acme.test", "state": "pending", "record": {"type": "TXT", "name": "n", "value": "v"}}
+    c._proof = ("rt", 4e9)
+    server.on("PUT /_orgs/o1/sso/oidc", {"provider": "oidc", "issuer": "https://i.test", "dormant_identities": 2})
+    got = await go(c.orgs.sso("o1").set("oidc", client_id="b", issuer="https://i.test", domains=["acme.test"]))
+    assert got["dormant_identities"] == 2
+    assert server.body() == {"client_id": "b", "issuer": "https://i.test", "domains": ["acme.test"]}
+    d = c.orgs.domains("o1")
+    server.on("GET /_orgs/o1/domains", {"items": [claim], "max_domains": 10})
+    server.on("POST /_orgs/o1/domains", claim, 201)
+    server.on("POST /_orgs/o1/domains/acme.test/verify", {**claim, "reason": "record_not_found"})
+    server.on("PATCH /_orgs/o1/domains/acme.test", claim)
+    server.on("DELETE /_orgs/o1/domains/acme.test", None, 204)
+    assert (await go(d.list()))["max_domains"] == 10
+    await go(d.add("acme.test"))
+    assert server.body() == {"domain": "acme.test"} and server.last().headers["x-backd-reauth"] == "rt"
+    assert (await go(d.verify("acme.test")))["reason"] == "record_not_found"
+    await go(d.update("acme.test", discoverable=True, link_accounts=False))
+    assert server.body() == {"discoverable": True, "link_accounts": False}
+    await go(d.remove("acme.test"))
+    server.on("POST /_auth/orgs/discover", {"items": [{"org": "o1", "name": "Acme", "providers": ["oidc"]}]})
+    assert (await go(c.auth.discover("a@acme.test")))[0]["org"] == "o1"
+    assert server.body() == {"email": "a@acme.test"}
+    for code, exc in (
+        ("domain_taken", backd.DomainTakenError),
+        ("domain_exists", backd.DomainExistsError),
+        ("domains_limit", backd.DomainsLimitError),
+    ):
+        server.on("POST /_orgs/o1/domains/x.test/verify", lambda r, code=code: error_response(409, code))
+        with pytest.raises(exc):
+            await go(d.verify("x.test"))

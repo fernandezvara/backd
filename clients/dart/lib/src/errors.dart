@@ -488,6 +488,42 @@ final class IdTakenError extends ConflictError {
   });
 }
 
+/// 409 `domain_taken`: another organization has verified the domain.
+final class DomainTakenError extends ConflictError {
+  const DomainTakenError({
+    required super.status,
+    required super.code,
+    required super.message,
+    super.details,
+    super.requestId,
+    super.cause,
+  });
+}
+
+/// 409 `domain_exists`: the organization already claimed the domain.
+final class DomainExistsError extends ConflictError {
+  const DomainExistsError({
+    required super.status,
+    required super.code,
+    required super.message,
+    super.details,
+    super.requestId,
+    super.cause,
+  });
+}
+
+/// 409 `domains_limit`: the organization has the most domain claims the realm allows.
+final class DomainsLimitError extends ConflictError {
+  const DomainsLimitError({
+    required super.status,
+    required super.code,
+    required super.message,
+    super.details,
+    super.requestId,
+    super.cause,
+  });
+}
+
 /// 409 `last_org_manager`: the organization needs at least one member who can
 /// manage it.
 final class LastOrgManagerError extends ConflictError {
@@ -766,6 +802,30 @@ BackdException errorForStatus(
       );
     case 'not_org_member':
       return NotOrgMemberError(
+        status: status,
+        code: code,
+        message: message,
+        details: details,
+        requestId: requestId,
+      );
+    case 'domain_taken':
+      return DomainTakenError(
+        status: status,
+        code: code,
+        message: message,
+        details: details,
+        requestId: requestId,
+      );
+    case 'domain_exists':
+      return DomainExistsError(
+        status: status,
+        code: code,
+        message: message,
+        details: details,
+        requestId: requestId,
+      );
+    case 'domains_limit':
+      return DomainsLimitError(
         status: status,
         code: code,
         message: message,

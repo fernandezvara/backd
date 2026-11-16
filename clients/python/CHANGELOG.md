@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `orgs.domains(org)` (`list`, `add`, `verify`, `update`, `remove`), `auth.discover(email)`, `oidc` connections in `orgs.sso(org).set(..., issuer=, domains=)` (`dormant_identities` in the answer), the `OrgDomain` type and the errors `DomainTakenError`, `DomainExistsError` and `DomainsLimitError`.
+
 ## 0.9.12
 
 - `fields=` on `list`, `get`, `create`, `replace`, `patch` and `restore` returns only those paths (`id` always) as plain dicts: the type checker sees `PartialDoc`, not the collection's `TypedDict`. New `PartialDoc` export.

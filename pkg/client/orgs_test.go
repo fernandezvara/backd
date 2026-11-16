@@ -244,3 +244,44 @@ func TestSSOConnections(t *testing.T) {
 		t.Errorf("%v %q", err, r.proofs[3])
 	}
 }
+
+func TestOIDCConnectionAndDomains(t *testing.T) {
+	claim := `{"domain":"acme.example","state":"pending","discoverable":false,"link_accounts":true,"record":{"type":"TXT","name":"_backd-challenge.acme.example","value":"backd-verify=abc"},"created_at":"x"}`
+	c, r := recClient(t, map[string]string{
+		"PUT /_orgs/acme/sso/oidc":                     `{"provider":"oidc","client_id":"backd","issuer":"https://acme.okta.com","domains":["acme.example"],"dormant_identities":2,"enabled":true}`,
+		"GET /_orgs/acme/domains":                      `{"items":[` + claim + `],"max_domains":10}`,
+		"POST /_orgs/acme/domains":                     claim,
+		"POST /_orgs/acme/domains/acme.example/verify": `{"domain":"acme.example","state":"pending","reason":"record_not_found","record":{"type":"TXT","name":"n","value":"v"},"created_at":"x","discoverable":false,"link_accounts":true}`,
+		"PATCH /_orgs/acme/domains/acme.example":       claim,
+		"POST /_auth/orgs/discover":                    `{"items":[{"org":"o1","name":"Acme","providers":["microsoft"]}]}`,
+	})
+	v, err := c.Orgs().SSO("acme").Set(bg, "oidc", ConnectionInput{ClientID: "backd", ClientSecret: "s", Issuer: "https://acme.okta.com", Domains: []string{"acme.example"}})
+	if err != nil || v.Issuer != "https://acme.okta.com" || v.DormantIdentities != 2 || v.Domains[0] != "acme.example" {
+		t.Fatalf("%v %+v", err, v)
+	}
+	if r.bodies[0] != `{"client_id":"backd","client_secret":"s","domains":["acme.example"],"issuer":"https://acme.okta.com"}` {
+		t.Errorf("set sent %s", r.bodies[0])
+	}
+	d := c.Orgs().Domains("acme")
+	l, err := d.List(bg)
+	if err != nil || l.MaxDomains != 10 || l.Items[0].Record.Name != "_backd-challenge.acme.example" {
+		t.Fatalf("%v %+v", err, l)
+	}
+	if made, err := d.Add(bg, "acme.example"); err != nil || made.State != "pending" || r.bodies[2] != `{"domain":"acme.example"}` || r.proofs[2] != "proof" {
+		t.Errorf("%v %+v %s %q", err, made, r.bodies[2], r.proofs[2])
+	}
+	if got, err := d.Verify(bg, "acme.example"); err != nil || got.Reason != "record_not_found" || r.proofs[3] != "" {
+		t.Errorf("%v %+v proof %q", err, got, r.proofs[3])
+	}
+	yes, no := true, false
+	if _, err := d.Update(bg, "acme.example", DomainPatch{Discoverable: &yes, LinkAccounts: &no}); err != nil || r.bodies[4] != `{"discoverable":true,"link_accounts":false}` || r.proofs[4] != "proof" {
+		t.Errorf("%v %s %q", err, r.bodies[4], r.proofs[4])
+	}
+	if err := d.Remove(bg, "acme.example"); err != nil || r.log[len(r.log)-1] != "DELETE /_orgs/acme/domains/acme.example?" || r.proofs[len(r.proofs)-1] != "proof" {
+		t.Errorf("%v %v", err, r.log[len(r.log)-1])
+	}
+	found, err := c.Auth().DiscoverOrgs(bg, "ana@acme.example")
+	if err != nil || len(found) != 1 || found[0].Org != "o1" || found[0].Providers[0] != "microsoft" || r.bodies[len(r.bodies)-1] != `{"email":"ana@acme.example"}` {
+		t.Errorf("%v %+v", err, found)
+	}
+}

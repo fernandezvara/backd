@@ -158,6 +158,189 @@ final class Orgs {
 
   /// The invitations of an organization.
   OrgInvitations invitations(String org) => OrgInvitations(client, org);
+
+  /// The organization's own sign-in connections (`organizations.sso`):
+  /// `list`, `get`, `set` and `delete`, for holders of `manage: sso`.
+  OrgSso sso(String org) => OrgSso(client, org);
+
+  /// The domains the organization proves it owns (`organizations.domains`):
+  /// `list`, `add`, `verify`, `update` and `remove`, for holders of
+  /// `manage: domains`.
+  OrgDomains domains(String org) => OrgDomains(client, org);
+}
+
+/// The sign-in connections of one organization: its own Google Workspace,
+/// Microsoft Entra tenant (`google`, `microsoft`) or OpenID Connect server
+/// (`oidc`) as a provider for its people. The client secret is write-only.
+final class OrgSso {
+  OrgSso(this.client, this.org);
+
+  final BackdClient<Object?> client;
+  final String org;
+
+  /// The connections (`items`) with the `providers` and `max_connections` the
+  /// realm allows. A realm with organization sign-in off answers
+  /// [NotFoundError].
+  Future<Map<String, Object?>> list({RequestOptions? options}) async {
+    final res = await client.request(RequestInit(
+      method: 'GET',
+      path: ['_orgs', org, 'sso'],
+      headers: options?.headers,
+      retry: options?.retry,
+    ));
+    return Map<String, Object?>.from(res.data as Map);
+  }
+
+  /// One connection; a [NotFoundError] when there is none for the provider.
+  Future<Map<String, Object?>> get(String provider,
+      {RequestOptions? options}) async {
+    final res = await client.request(RequestInit(
+      method: 'GET',
+      path: ['_orgs', org, 'sso', provider],
+      headers: options?.headers,
+      retry: options?.retry,
+    ));
+    return Map<String, Object?>.from(res.data as Map);
+  }
+
+  /// Creates the connection or replaces every field of it. [clientSecret] is
+  /// required the first time; left out, the stored one is kept. Google needs
+  /// [hostedDomain], Microsoft [tenant], OpenID Connect [issuer] (one the
+  /// realm allows) and a verified domain of the organization ([domains]
+  /// narrows which). Needs a fresh proof of identity (`auth.reauth`). The
+  /// answer says in `dormant_identities` how many identities a change of
+  /// issuer left dormant.
+  Future<Map<String, Object?>> set(
+    String provider, {
+    required String clientId,
+    String? clientSecret,
+    String? tenant,
+    String? hostedDomain,
+    String? issuer,
+    List<String>? domains,
+    List<String>? emailDomains,
+    List<String>? nativeClientIds,
+    List<String>? joinRoles,
+    bool? enabled,
+    RequestOptions? options,
+  }) async {
+    final res = await client.request(RequestInit(
+      method: 'PUT',
+      path: ['_orgs', org, 'sso', provider],
+      body: {
+        'client_id': clientId,
+        if (clientSecret != null) 'client_secret': clientSecret,
+        if (tenant != null) 'tenant': tenant,
+        if (hostedDomain != null) 'hosted_domain': hostedDomain,
+        if (issuer != null) 'issuer': issuer,
+        if (domains != null) 'domains': domains,
+        if (emailDomains != null) 'email_domains': emailDomains,
+        if (nativeClientIds != null) 'native_client_ids': nativeClientIds,
+        if (joinRoles != null) 'join_roles': joinRoles,
+        if (enabled != null) 'enabled': enabled,
+      },
+      reauth: true,
+      headers: options?.headers,
+      retry: options?.retry,
+    ));
+    return Map<String, Object?>.from(res.data as Map);
+  }
+
+  /// Removes the connection and its client secret. Needs a fresh proof of
+  /// identity.
+  Future<void> delete(String provider, {RequestOptions? options}) async {
+    await client.request(RequestInit(
+      method: 'DELETE',
+      path: ['_orgs', org, 'sso', provider],
+      reauth: true,
+      headers: options?.headers,
+      retry: options?.retry,
+    ));
+  }
+}
+
+/// The verified domains of one organization: a domain is claimed, proved by
+/// publishing a DNS record, and checked again by backd from then on.
+final class OrgDomains {
+  OrgDomains(this.client, this.org);
+
+  final BackdClient<Object?> client;
+  final String org;
+
+  /// The claims (`items`) and the most the realm allows (`max_domains`). A
+  /// realm without `organizations.domains` answers [NotFoundError].
+  Future<Map<String, Object?>> list({RequestOptions? options}) async {
+    final res = await client.request(RequestInit(
+      method: 'GET',
+      path: ['_orgs', org, 'domains'],
+      headers: options?.headers,
+      retry: options?.retry,
+    ));
+    return Map<String, Object?>.from(res.data as Map);
+  }
+
+  /// Starts a claim: the answer holds the DNS `record` to publish. A free-mail
+  /// domain or a public suffix is a [ValidationError]; one already claimed a
+  /// [DomainExistsError]. Needs a fresh proof of identity.
+  Future<Map<String, Object?>> add(String domain,
+      {RequestOptions? options}) async {
+    final res = await client.request(RequestInit(
+      method: 'POST',
+      path: ['_orgs', org, 'domains'],
+      body: {'domain': domain},
+      reauth: true,
+      headers: options?.headers,
+      retry: options?.retry,
+    ));
+    return Map<String, Object?>.from(res.data as Map);
+  }
+
+  /// Checks the record now: `state` is `verified` when it is there, or stays
+  /// as it was with a `reason`. A domain another organization holds is a
+  /// [DomainTakenError]; at most six checks an hour per domain.
+  Future<Map<String, Object?>> verify(String domain,
+      {RequestOptions? options}) async {
+    final res = await client.request(RequestInit(
+      method: 'POST',
+      path: ['_orgs', org, 'domains', domain, 'verify'],
+      headers: options?.headers,
+      retry: options?.retry,
+    ));
+    return Map<String, Object?>.from(res.data as Map);
+  }
+
+  /// Changes what the domain may be used for. Needs a fresh proof of identity.
+  Future<Map<String, Object?>> update(
+    String domain, {
+    bool? discoverable,
+    bool? linkAccounts,
+    RequestOptions? options,
+  }) async {
+    final res = await client.request(RequestInit(
+      method: 'PATCH',
+      path: ['_orgs', org, 'domains', domain],
+      body: {
+        if (discoverable != null) 'discoverable': discoverable,
+        if (linkAccounts != null) 'link_accounts': linkAccounts,
+      },
+      reauth: true,
+      headers: options?.headers,
+      retry: options?.retry,
+    ));
+    return Map<String, Object?>.from(res.data as Map);
+  }
+
+  /// Releases the claim; a verified domain becomes free for another
+  /// organization. Needs a fresh proof of identity.
+  Future<void> remove(String domain, {RequestOptions? options}) async {
+    await client.request(RequestInit(
+      method: 'DELETE',
+      path: ['_orgs', org, 'domains', domain],
+      reauth: true,
+      headers: options?.headers,
+      retry: options?.retry,
+    ));
+  }
 }
 
 /// The members of one organization.

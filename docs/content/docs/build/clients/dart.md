@@ -265,7 +265,7 @@ await backd.orgs.signedIn();            // [(ref:, id:, expiresAt:, name:)]: wha
 
 `client.org` needs a storage that can keep a token per organization: `MemoryTokenStorage` and `FileTokenStorage` can (a custom `TokenStorage` implements `slot(name)` and `slots()`, or returns null from `slot` to say it cannot). The API never lists the organizations a person is in; the app remembers the ones it signed in to.
 
-A new person starts a company with `auth.signUpWithOrg(email, password, name:, slug:)`, `orgs.create(...)` opens a session for the organization it made, and `auth.findOrgs(email)` emails an address the companies it belongs to. See [Signing in to an organization](../../organizations/api/#signing-in-to-an-organization).
+A new person starts a company with `auth.signUpWithOrg(email, password, name:, slug:)`, `orgs.create(...)` opens a session for the organization it made, and `auth.findOrgs(email)` emails an address the companies it belongs to. `auth.discover(email)` answers which organization an address leads to, `orgs.sso(id)` keeps its connections (`oidc` included) and `orgs.domains(id)` its verified domains (`list`, `add`, `verify`, `update`, `remove`). See [Signing in to an organization](../../organizations/api/#signing-in-to-an-organization).
 
 ### Auth events
 

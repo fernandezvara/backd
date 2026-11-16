@@ -256,6 +256,18 @@ class IdTakenError(ConflictError):
     """409 ``id_taken``: a document with the id of a create exists. Nothing was overwritten."""
 
 
+class DomainTakenError(ConflictError):
+    """409 ``domain_taken``: another organization has verified the domain."""
+
+
+class DomainExistsError(ConflictError):
+    """409 ``domain_exists``: the organization already claimed the domain."""
+
+
+class DomainsLimitError(ConflictError):
+    """409 ``domains_limit``: the organization has the most domain claims the realm allows."""
+
+
 class LastOrgManagerError(ConflictError):
     """409 ``last_org_manager``: the organization needs at least one member who can manage it."""
 
@@ -337,6 +349,9 @@ _BY_CODE: dict[str, type[BackdError]] = {
     "not_allowed": NotAllowedError,
     "sso_required": SsoRequiredError,
     "sso_session": SsoSessionError,
+    "domain_taken": DomainTakenError,
+    "domain_exists": DomainExistsError,
+    "domains_limit": DomainsLimitError,
     "last_org_manager": LastOrgManagerError,
     "invalid_aggregate": InvalidAggregateError,
     "aggregate_not_enabled": AggregateNotEnabledError,

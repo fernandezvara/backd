@@ -130,11 +130,14 @@
  */
 
 /**
- * An organization's sign-in connection: its own Google Workspace or Microsoft Entra tenant as a
- * provider for its people. The client secret is write-only: only whether it is set comes back.
+  * An organization's sign-in connection: its own Google Workspace, Microsoft Entra tenant or OpenID Connect
+ * server as a provider for its people. The client secret is write-only: only whether it is set comes back.
  * @typedef {object} OrgConnection
- * @property {'google' | 'microsoft'} provider
+ * @property {'google' | 'microsoft' | 'oidc'} provider
  * @property {string} client_id
+ * @property {string} [issuer]         OpenID Connect: the server's issuer URL.
+ * @property {string[]} [domains]      OpenID Connect: the verified domains whose addresses it admits (all of the organization's when empty).
+ * @property {number} [dormant_identities]  After a change of `issuer`: identities that belong to the old issuer and match no sign-in until their people link again.
  * @property {string} [tenant]         Microsoft: the organization's tenant id.
  * @property {string} [hosted_domain]  Google: the Workspace domain.
  * @property {string[]} email_domains  When set, the verified address must also be in one of them.
@@ -155,6 +158,8 @@
  * @property {string} [clientSecret]    Required the first time; left out, the stored one is kept.
  * @property {string} [tenant]          Microsoft: required, a tenant id (never `common`, `organizations` or `consumers`).
  * @property {string} [hostedDomain]    Google: required, the Workspace domain.
+ * @property {string} [issuer]          OpenID Connect: required, the server's issuer (it must match one of the realm's `organizations.sso.oidc.issuers`).
+ * @property {string[]} [domains]       OpenID Connect: verified domains of the organization whose addresses it admits; empty admits all of them.
  * @property {string[]} [emailDomains]
  * @property {string[]} [nativeClientIds]
  * @property {string[]} [joinRoles]     Roles given on joining; nothing the setting manager could not give.
@@ -180,6 +185,8 @@ export function connectionBody(input) {
   if (input.clientSecret !== undefined) body.client_secret = input.clientSecret
   if (input.tenant !== undefined) body.tenant = input.tenant
   if (input.hostedDomain !== undefined) body.hosted_domain = input.hostedDomain
+  if (input.issuer !== undefined) body.issuer = input.issuer
+  if (input.domains !== undefined) body.domains = input.domains
   if (input.emailDomains !== undefined) body.email_domains = input.emailDomains
   if (input.nativeClientIds !== undefined) body.native_client_ids = input.nativeClientIds
   if (input.joinRoles !== undefined) body.join_roles = input.joinRoles
@@ -333,6 +340,99 @@ export class Orgs {
   sso(org) {
     return new OrgSso(this.client, org)
   }
+
+  /**
+   * The domains an organization proves it owns (`organizations.domains`): `list`, `add`, `verify`, `update`
+   * and `remove`, for holders of `manage: domains`.
+   * @param {string} org  The organization's id.
+   * @returns {OrgDomains}
+   */
+  domains(org) {
+    return new OrgDomains(this.client, org)
+  }
+}
+
+/**
+ * A domain an organization claimed: the DNS record to publish and where the proof stands.
+ * @typedef {object} OrgDomain
+ * @property {string} domain          Lower case, in ASCII (punycode).
+ * @property {'pending' | 'verified' | 'lapsed'} state
+ * @property {boolean} discoverable   The organization lets the domain be used to find it from an address.
+ * @property {boolean} link_accounts  A sign-in through its connection on this domain may link an existing account.
+ * @property {{ type: 'TXT', name: string, value: string }} record  The record to publish.
+ * @property {'record_not_found' | 'mismatch' | 'resolver_error'} [reason]  After a check that did not prove it.
+ * @property {string} created_at
+ * @property {string} [verified_at]
+ * @property {string} [last_checked_at]
+ */
+
+/** The verified domains of one organization. */
+export class OrgDomains {
+  /**
+   * @param {Client} client
+   * @param {string} org
+   */
+  constructor(client, org) {
+    /** @internal */
+    this.client = client
+    /** @internal */
+    this.org = org
+  }
+
+  /**
+   * The claims, with the most the realm allows. A realm without `organizations.domains` answers `NotFoundError`.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ items: OrgDomain[], max_domains: number }>}
+   */
+  async list(opts) {
+    return (await this.client.request({ method: 'GET', path: ['_orgs', this.org, 'domains'], ...opts })).data
+  }
+
+  /**
+   * Starts a claim: the answer holds the DNS record to publish. A free-mail domain or a public suffix is a
+   * `ValidationError`; a domain already claimed a `ConflictError` (`DomainExistsError`). Needs a fresh proof of identity.
+   * @param {string} domain
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgDomain>}
+   */
+  async add(domain, opts) {
+    return (await this.client.request({ method: 'POST', path: ['_orgs', this.org, 'domains'], body: { domain }, reauth: true, ...opts })).data
+  }
+
+  /**
+   * Checks the record now: `state` is `verified` when it is there, or stays as it was with the `reason`.
+   * Another organization that holds the domain is a `DomainTakenError`; at most six checks an hour per domain.
+   * @param {string} domain
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgDomain>}
+   */
+  async verify(domain, opts) {
+    return (await this.client.request({ method: 'POST', path: ['_orgs', this.org, 'domains', domain, 'verify'], ...opts })).data
+  }
+
+  /**
+   * Changes what the domain may be used for. Needs a fresh proof of identity.
+   * @param {string} domain
+   * @param {{ discoverable?: boolean, linkAccounts?: boolean }} patch
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<OrgDomain>}
+   */
+  async update(domain, patch, opts) {
+    const body = {}
+    if (patch.discoverable !== undefined) body.discoverable = patch.discoverable
+    if (patch.linkAccounts !== undefined) body.link_accounts = patch.linkAccounts
+    return (await this.client.request({ method: 'PATCH', path: ['_orgs', this.org, 'domains', domain], body, reauth: true, ...opts })).data
+  }
+
+  /**
+   * Releases the claim; a verified domain becomes free for another organization. Needs a fresh proof of identity.
+   * @param {string} domain
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async remove(domain, opts) {
+    await this.client.request({ method: 'DELETE', path: ['_orgs', this.org, 'domains', domain], reauth: true, ...opts })
+  }
 }
 
 /** The sign-in connections of one organization. */
@@ -360,7 +460,7 @@ export class OrgSso {
 
   /**
    * One connection; a `NotFoundError` when the organization has none with that provider.
-   * @param {'google' | 'microsoft'} provider
+   * @param {'google' | 'microsoft' | 'oidc'} provider
    * @param {RequestOptions} [opts]
    * @returns {Promise<OrgConnection>}
    */
@@ -371,7 +471,7 @@ export class OrgSso {
   /**
    * Creates the connection or replaces every field of it. The client secret goes in and never
    * comes out. Needs a fresh proof of identity: wrap the call in `client.auth.withProof`.
-   * @param {'google' | 'microsoft'} provider
+   * @param {'google' | 'microsoft' | 'oidc'} provider
    * @param {OrgConnectionInput} input
    * @param {RequestOptions} [opts]
    * @returns {Promise<OrgConnection>}
@@ -382,7 +482,7 @@ export class OrgSso {
 
   /**
    * Removes the connection and its client secret. Needs a fresh proof of identity.
-   * @param {'google' | 'microsoft'} provider
+   * @param {'google' | 'microsoft' | 'oidc'} provider
    * @param {RequestOptions} [opts]
    * @returns {Promise<void>}
    */

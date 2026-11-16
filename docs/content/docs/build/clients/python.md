@@ -321,6 +321,9 @@ The rest of the account-level surface, with the structure of `backd-js`.
   orgs.invitations("o1").create("email", email="ada@example.com", roles=["editor"], send=True)
   orgs.templates("o1").put("invite", "es", {"subject": "…", "text": "…", "html": "…"})
   orgs.sso("o1").set("google", client_id="…", client_secret="…", hosted_domain="acme.example")
+  orgs.sso("o1").set("oidc", client_id="…", client_secret="…", issuer="https://idp.example.com")
+  orgs.domains("o1").add("acme.example")      # the answer holds the DNS record; then .verify(...)
+  client.auth.discover("ada@acme.example")    # which organization an address leads to
   ```
 
   A team of the session's organization is reached from a collection with `collection.in_team("t1")`.

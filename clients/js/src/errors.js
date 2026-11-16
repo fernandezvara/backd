@@ -252,6 +252,15 @@ export class ConflictError extends BackdError {}
 /** 409 `id_taken`: a document with the id of a create exists. Nothing was overwritten. */
 export class IdTakenError extends ConflictError {}
 
+/** 409 `domain_taken`: another organization has verified the domain. */
+export class DomainTakenError extends ConflictError {}
+
+/** 409 `domain_exists`: the organization already claimed the domain. */
+export class DomainExistsError extends ConflictError {}
+
+/** 409 `domains_limit`: the organization has the most domain claims the realm allows. */
+export class DomainsLimitError extends ConflictError {}
+
 /** 409 `last_org_manager`: the organization needs at least one member who can manage it. */
 export class LastOrgManagerError extends ConflictError {}
 
@@ -347,6 +356,12 @@ function typedClass(code, fallback) {
       return SsoRequiredError
     case 'sso_session':
       return SsoSessionError
+    case 'domain_taken':
+      return DomainTakenError
+    case 'domain_exists':
+      return DomainExistsError
+    case 'domains_limit':
+      return DomainsLimitError
     case 'last_org_manager':
       return LastOrgManagerError
     case 'invalid_aggregate':

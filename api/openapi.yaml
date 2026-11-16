@@ -1558,7 +1558,7 @@ paths:
       description: |
         Starts a claim: the domain is normalized (lower case, punycode) and the answer holds the record to
         publish (`TXT` at `_backd-challenge.<domain>`). Free-mail domains, public suffixes and the realm's
-        `blocked` domains are refused (`422`). Needs `manage: domains`. Needs a fresh re-authentication. Audited as `org.domain.added`.
+        `blocked` domains are refused (`400`). Needs `manage: domains`. Needs a fresh re-authentication. Audited as `org.domain.added`.
       operationId: claimOrganizationDomain
       security: [{ session: [] }]
       requestBody:
@@ -1578,7 +1578,6 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
-        "422": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_orgs/{org}/domains/{domain}:
@@ -5337,7 +5336,7 @@ paths:
       description: |
         Starts a claim: the domain is normalized (lower case, punycode) and the answer holds the record to
         publish (`TXT` at `_backd-challenge.<domain>`). Free-mail domains, public suffixes and the realm's
-        `blocked` domains are refused (`422`). Needs the `users` area. Audited as `org.domain.added`.
+        `blocked` domains are refused (`400`). Needs the `users` area. Audited as `org.domain.added`.
       operationId: adminClaimOrganizationDomain
       security: [{ apiKey: [] }, { session: [] }]
       requestBody:
@@ -5357,7 +5356,6 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
-        "422": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_admin/orgs/{org}/domains/{domain}:
