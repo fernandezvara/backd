@@ -392,6 +392,31 @@ func registerRemote(cfg *kli.Config) {
 		cc.Define("provider").String().Flag("provider").Required().OneOf("google", "microsoft").Description("google or microsoft")
 	})
 
+	og.SubCommand("domains").ShortHelp("show the domains an organization claimed and their state").
+		LongHelp("Lists the claims of an organization (design: verified domains) with the DNS record to publish for the ones not proved. Needs organizations.domains in realm.yaml. " + clicore.AdminAPINote).
+		Func(cmdutil.Act("backd orgs domains", admin.OrgsDomains)).Config(func(cc *kli.CommandConfig) {
+		clicore.Remote(cc)
+		cmdutil.Required(cc, "id", "the organization's id")
+	})
+	og.SubCommand("domain-add").ShortHelp("claim a domain for an organization and print the DNS record that proves it").
+		Func(cmdutil.Act("backd orgs domain-add", admin.OrgsDomainAdd)).Config(func(cc *kli.CommandConfig) {
+		clicore.Remote(cc)
+		cmdutil.Required(cc, "id", "the organization's id")
+		cmdutil.Required(cc, "domain", "the domain to claim, such as acme.example")
+	})
+	og.SubCommand("domain-verify").ShortHelp("check the DNS record of a claim now").
+		Func(cmdutil.Act("backd orgs domain-verify", admin.OrgsDomainVerify)).Config(func(cc *kli.CommandConfig) {
+		clicore.Remote(cc)
+		cmdutil.Required(cc, "id", "the organization's id")
+		cmdutil.Required(cc, "domain", "the claimed domain")
+	})
+	og.SubCommand("domain-remove").ShortHelp("release a domain claim (an administrator can settle a dispute this way)").
+		Func(cmdutil.Act("backd orgs domain-remove", admin.OrgsDomainRemove)).Config(func(cc *kli.CommandConfig) {
+		clicore.Remote(cc)
+		cmdutil.Required(cc, "id", "the organization's id")
+		cmdutil.Required(cc, "domain", "the claimed domain")
+	})
+
 	og.SubCommand("sso-required-off").ShortHelp("let an organization's people sign in the other ways again (break glass, audited)").
 		LongHelp("For an organization that requires its connection (sso_required) and whose people can't reach their provider.").
 		Func(cmdutil.Act("backd orgs sso-required-off", admin.OrgsSSORequiredOff)).Config(func(cc *kli.CommandConfig) {

@@ -42,10 +42,15 @@ func (w *Worker) runOrgDelete(ctx context.Context, log *slog.Logger, realm strin
 	}
 	// A deleted organization's sign-in connections and their secrets go first: they were
 	// unavailable since it was deleted, and nothing about them is kept.
-	connections := 0
+	connections, domains := 0, 0
 	if team == "" {
 		var cerr error
 		if connections, cerr = svc.RemoveOrgConnections(ctx, org); cerr != nil {
+			w.retryOrFail(ctx, log, svc, job, scope.what, cerr)
+			return
+		}
+		// So are its claims on domains, which frees the verified ones for another organization.
+		if domains, cerr = svc.RemoveOrgDomains(ctx, org); cerr != nil {
 			w.retryOrFail(ctx, log, svc, job, scope.what, cerr)
 			return
 		}
@@ -60,7 +65,7 @@ func (w *Worker) runOrgDelete(ctx context.Context, log *slog.Logger, realm strin
 	if team != "" {
 		details["team"] = team
 	} else {
-		details["connections"] = connections
+		details["connections"], details["domains"] = connections, domains
 	}
 	svc.AuditAs(ctx, auth.ActorSystem, scope.audit, scope.target, details)
 	if err := svc.CompleteJob(ctx, job.ID, auth.JobResult{Status: executor.StatusOK, Output: output}); err != nil {

@@ -77,6 +77,8 @@ const (
 	OrgInvitationsCollection = "org_invitations"
 	// OrgConnectionsCollection holds the sign-in connections organizations set up (design/sso.md §9).
 	OrgConnectionsCollection = "org_connections"
+	// OrgDomainsCollection holds the domains organizations claim and prove (design/sso.md §10).
+	OrgDomainsCollection = "org_domains"
 	// OrgMemberSeqCollection holds, per organization and user, the sequence number of the last
 	// membership event handed to a hook (design/team-access.md §7).
 	OrgMemberSeqCollection = "org_member_seq"
@@ -118,6 +120,8 @@ type systemIndex struct {
 	unique bool
 	sparse bool // skip documents without the field
 	ttl    bool // expire documents at the date in the (single) key field
+	// partial restricts the index to the documents that match: a unique index then holds only among them.
+	partial bson.D
 }
 
 type systemCollection struct {
@@ -752,6 +756,31 @@ var systemCollections = []systemCollection{
 		},
 	},
 	{
+		name: OrgDomainsCollection,
+		validator: jsonSchema([]string{"_id", "org", "domain", "state", "challenge", "created_at"}, map[string]any{
+			"_id":             str(),
+			"org":             str(),
+			"domain":          str(),
+			"state":           map[string]any{"enum": bson.A{"pending", "verified", "lapsed"}},
+			"challenge":       str(),
+			"discoverable":    typ("bool"),
+			"link_accounts":   typ("bool"),
+			"failures":        map[string]any{"bsonType": bson.A{"int", "long"}},
+			"checks":          map[string]any{"bsonType": bson.A{"int", "long"}},
+			"created_by":      str(),
+			"created_at":      typ("date"),
+			"verified_at":     typ("date"),
+			"last_checked_at": typ("date"),
+			"next_check_at":   typ("date"),
+		}),
+		indexes: []systemIndex{
+			{keys: bson.D{{Key: "org", Value: 1}, {Key: "domain", Value: 1}}, unique: true},
+			// A verified domain belongs to one organization; any number may be pending for it.
+			{keys: bson.D{{Key: "domain", Value: 1}}, unique: true, partial: bson.D{{Key: "state", Value: "verified"}}},
+			{keys: bson.D{{Key: "next_check_at", Value: 1}}},
+		},
+	},
+	{
 		name: UserExportsCollection,
 		validator: jsonSchema([]string{"_id", "user", "status", "created_at"}, map[string]any{
 			"_id":         str(),
@@ -969,6 +998,9 @@ func (p *Provisioner) applySystem(ctx context.Context) error {
 				opts := options.Index().SetUnique(ix.unique).SetSparse(ix.sparse)
 				if ix.ttl {
 					opts.SetExpireAfterSeconds(0)
+				}
+				if ix.partial != nil {
+					opts.SetPartialFilterExpression(ix.partial)
 				}
 				name, err := coll.Indexes().CreateOne(ctx, mongo.IndexModel{Keys: ix.keys, Options: opts})
 				if err != nil {

@@ -133,7 +133,7 @@ backd orgs invite --realm shop --id ORG_ID --open --uses 25      # an open link:
 backd orgs claims-set --realm shop --id ORG_ID --claims '{"plan": "pro"}'   # at most 1 KiB of JSON
 ```
 
-An invitation's link and token are printed **once**. `--send` also emails the link (needs `email:` and the secrets key on the server); `--expires` is `7d` by default and at most `30d`. The sign-in connection commands (`sso`, `sso-set`, `sso-delete`, `sso-required-off`) are in [company sign-in](../../../build/organizations/sign-in/).
+An invitation's link and token are printed **once**. `--send` also emails the link (needs `email:` and the secrets key on the server); `--expires` is `7d` by default and at most `30d`. The sign-in connection commands (`sso`, `sso-set`, `sso-delete`, `sso-required-off`) and [verified domains](../../../build/organizations/verified-domains/) (`domains`, `domain-add`, `domain-verify`, `domain-remove`) are in [company sign-in](../../../build/organizations/sign-in/).
 
 ## Errors
 

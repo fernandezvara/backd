@@ -208,6 +208,7 @@ organizations:
 | `max_teams_per_org`, `max_teams_per_member`, `max_pending_invitations` | Caps for teams and invitations | `100`, `20`, `500` |
 | `allow_require_mfa` | Whether an organization may require a second factor of its members | `true` |
 | `members_visible_to` | Who sees other members' emails: `members`, or `managers` (holders of any role with a `manage` capability) | `members` |
+| `domains` | [Verified domains](../../organizations/verified-domains/): `enabled` (default `true` once the section is there), `max_per_org` (default `10`), `recheck` (default `7d`), `lapse_after` (default `3`), `blocked` and `resolvers`. Without the section the whole surface answers `404`. Needs a role with `manage: domains` | off |
 | `sso` | [Organization sign-in](../../organizations/api/#sign-in-connections): `enabled` (default `true` once the section is there), `providers` (`google`, `microsoft`; default both) and `max_per_org` (default and most: the number of providers). Without the section, or with `enabled: false`, the whole surface answers `404`. Needs a role with `manage: sso` | off |
 | `invitation_link` | Where invitation links point: an absolute URL with `{token}` once (and `{org}` if you want it) within `auth.sign_in.allowed_redirects` | none |
 | `signin_link` | Where an organization's sign-in page is, for the ["which companies am I in?" email](../../organizations/api/#which-companies-am-i-in): an absolute URL with `{slug}` (the organization's id when it has none; `{org}` is always the id) within `auth.sign_in.allowed_redirects`. Needs `email:`. Without it `POST /_auth/orgs/find` answers `404` | none |
@@ -221,6 +222,7 @@ The capabilities of `manage`:
 | `roles` | give and take away any role, including roles with capabilities |
 | `teams` | create and change teams |
 | `sso` | set up, replace and remove the organization's [sign-in connections](../../organizations/api/#sign-in-connections), when the realm turns `sso` on |
+| `domains` | claim, prove, change and release the organization's [verified domains](../../organizations/verified-domains/), when the realm turns `domains` on |
 
 Startup checks the section and names what is wrong: unknown capabilities, no role with `manage: org` (or `manage: sso` when `sso` is on), a `create` rule that doesn't compile, an `invitation_link` without `{token}` or `{org}`, or outside the allowed redirects. Organizations need an `auth` section. A role removed from this section stays in the stored memberships and grants nothing; `backd` logs it at startup. Which collections belong to organizations is declared in [`collection.yaml`](../config-dir/#organizations). Realm administrators with the `users` area manage organizations with [`backd orgs`](../../../operate/administration/cli/) and the [admin API](../../../operate/administration/admin/); people use the [organizations API](../../organizations/api/).
 

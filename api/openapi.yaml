@@ -1528,6 +1528,133 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_orgs/{org}/domains:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+    get:
+      tags: [organizations]
+      summary: The organization's domain claims
+      description: |
+        The domains the organization claimed, with their state and the DNS record to publish. `max_domains`
+        is the realm's `organizations.domains.max_per_org`. Needs `manage: domains`. With `organizations.domains` off in
+        `realm.yaml` the whole surface answers `404`.
+      operationId: listOrganizationDomains
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The claims, sorted by domain.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationDomains" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [organizations]
+      summary: Claim a domain
+      description: |
+        Starts a claim: the domain is normalized (lower case, punycode) and the answer holds the record to
+        publish (`TXT` at `_backd-challenge.<domain>`). Free-mail domains, public suffixes and the realm's
+        `blocked` domains are refused (`422`). Needs `manage: domains`. Needs a fresh re-authentication. Audited as `org.domain.added`.
+      operationId: claimOrganizationDomain
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationDomainClaim" }
+      responses:
+        "201":
+          description: The claim, pending.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationDomain" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/{org}/domains/{domain}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { $ref: "#/components/parameters/domainName" }
+    patch:
+      tags: [organizations]
+      summary: Change what a domain may be used for
+      description: |
+        `discoverable` lets an application find the organization from an address on the domain;
+        `link_accounts` lets an organization sign-in on the domain link existing accounts. Needs `manage: domains`. Needs a fresh re-authentication. Audited as `org.domain.settings`.
+      operationId: updateOrganizationDomain
+      security: [{ session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationDomainUpdate" }
+      responses:
+        "200":
+          description: The claim.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationDomain" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [organizations]
+      summary: Release a domain
+      description: |
+        Removes the claim; a verified domain becomes free for another organization. Needs a fresh re-authentication. Needs `manage: domains`. Audited as `org.domain.removed`.
+      operationId: removeOrganizationDomain
+      security: [{ session: [] }]
+      responses:
+        "204": { description: Released. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_orgs/{org}/domains/{domain}/verify:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { $ref: "#/components/parameters/domainName" }
+    post:
+      tags: [organizations]
+      summary: Check the DNS record now
+      description: |
+        Looks for the challenge at `_backd-challenge.<domain>`. When it is there the claim becomes `verified`
+        (unless another organization holds the domain: `409 domain_taken`); when it is not, the claim stays as it is
+        and `reason` says why: `record_not_found`, `mismatch` or `resolver_error`. Needs `manage: domains`. At most 6 checks an hour
+        per domain (`429`). backd also checks by itself: a pending claim at growing intervals, a verified domain every
+        `recheck`.
+      operationId: verifyOrganizationDomain
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: The claim, with `reason` when it is not proved.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationDomain" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_orgs/{org}/sso:
     parameters:
       - { $ref: "#/components/parameters/realm" }
@@ -5125,6 +5252,133 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}/domains:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+    get:
+      tags: [admin]
+      summary: The organization's domain claims (administrator)
+      description: |
+        The domains the organization claimed, with their state and the DNS record to publish. `max_domains`
+        is the realm's `organizations.domains.max_per_org`. Needs the `users` area. With `organizations.domains` off in
+        `realm.yaml` the whole surface answers `404`.
+      operationId: adminListOrganizationDomains
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The claims, sorted by domain.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationDomains" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [admin]
+      summary: Claim a domain (administrator)
+      description: |
+        Starts a claim: the domain is normalized (lower case, punycode) and the answer holds the record to
+        publish (`TXT` at `_backd-challenge.<domain>`). Free-mail domains, public suffixes and the realm's
+        `blocked` domains are refused (`422`). Needs the `users` area. Audited as `org.domain.added`.
+      operationId: adminClaimOrganizationDomain
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationDomainClaim" }
+      responses:
+        "201":
+          description: The claim, pending.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationDomain" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}/domains/{domain}:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { $ref: "#/components/parameters/domainName" }
+    patch:
+      tags: [admin]
+      summary: Change what a domain may be used for (administrator)
+      description: |
+        `discoverable` lets an application find the organization from an address on the domain;
+        `link_accounts` lets an organization sign-in on the domain link existing accounts. Needs the `users` area. Audited as `org.domain.settings`.
+      operationId: adminUpdateOrganizationDomain
+      security: [{ apiKey: [] }, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrganizationDomainUpdate" }
+      responses:
+        "200":
+          description: The claim.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationDomain" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      summary: Release a domain (administrator)
+      description: |
+        Removes the claim; a verified domain becomes free for another organization. A realm administrator can release any claim, which is how a dispute is settled. Needs the `users` area. Audited as `org.domain.removed`.
+      operationId: adminRemoveOrganizationDomain
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "204": { description: Released. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/orgs/{org}/domains/{domain}/verify:
+    parameters:
+      - { $ref: "#/components/parameters/realm" }
+      - { $ref: "#/components/parameters/org" }
+      - { $ref: "#/components/parameters/domainName" }
+    post:
+      tags: [admin]
+      summary: Check the DNS record now (administrator)
+      description: |
+        Looks for the challenge at `_backd-challenge.<domain>`. When it is there the claim becomes `verified`
+        (unless another organization holds the domain: `409 domain_taken`); when it is not, the claim stays as it is
+        and `reason` says why: `record_not_found`, `mismatch` or `resolver_error`. Needs the `users` area. At most 6 checks an hour
+        per domain (`429`). backd also checks by itself: a pending claim at growing intervals, a verified domain every
+        `recheck`.
+      operationId: adminVerifyOrganizationDomain
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The claim, with `reason` when it is not proved.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationDomain" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
 
   /v1/{realm}/_admin/orgs/{org}/sso:
@@ -10740,6 +10994,12 @@ components:
       required: true
       description: An organization id.
       schema: { type: string }
+    domainName:
+      name: domain
+      in: path
+      required: true
+      description: A domain the organization claimed, in lower case and ASCII (punycode for an international name).
+      schema: { type: string, maxLength: 253 }
     ssoProvider:
       name: provider
       in: path
@@ -11823,6 +12083,51 @@ components:
         redirect_path: { type: string, description: "The same address without backd's public address." }
         created_at: { $ref: "#/components/schemas/Timestamp" }
         updated_at: { $ref: "#/components/schemas/Timestamp" }
+
+    OrganizationDomains:
+      type: object
+      additionalProperties: false
+      required: [items, max_domains]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/OrganizationDomain" } }
+        max_domains: { type: integer, description: "The most claims an organization may have (`organizations.domains.max_per_org`)." }
+
+    OrganizationDomain:
+      type: object
+      additionalProperties: false
+      required: [domain, state, discoverable, link_accounts, record, created_at]
+      properties:
+        domain: { type: string, description: "Lower case, ASCII (punycode)." }
+        state: { type: string, enum: [pending, verified, lapsed], description: "`pending`: the record was not seen yet. `verified`: it was, and is checked again every `recheck`. `lapsed`: it was verified and the record is gone (after `lapse_after` failed checks)." }
+        discoverable: { type: boolean, description: "The organization lets the domain be used to find it from an address." }
+        link_accounts: { type: boolean, description: "An organization sign-in on the domain may link an existing account." }
+        record:
+          type: object
+          additionalProperties: false
+          required: [type, name, value]
+          description: The DNS record to publish.
+          properties:
+            type: { type: string, enum: [TXT] }
+            name: { type: string, description: "`_backd-challenge.<domain>`." }
+            value: { type: string, description: "`backd-verify=` and 128 random bits." }
+        reason: { type: string, enum: [record_not_found, mismatch, resolver_error], description: "After a check that did not prove the domain: why." }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        verified_at: { $ref: "#/components/schemas/Timestamp" }
+        last_checked_at: { $ref: "#/components/schemas/Timestamp" }
+
+    OrganizationDomainClaim:
+      type: object
+      additionalProperties: false
+      required: [domain]
+      properties:
+        domain: { type: string, description: "The domain to claim, such as `acme.example`." }
+
+    OrganizationDomainUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        discoverable: { type: boolean }
+        link_accounts: { type: boolean }
 
     OrganizationConnections:
       type: object

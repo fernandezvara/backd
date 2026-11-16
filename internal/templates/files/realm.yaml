@@ -335,6 +335,8 @@ audit:
 #   # Let organizations connect their own Google Workspace or Microsoft tenant (needs a role
 #   # with manage: sso, e.g. owner: { manage: [org, members, roles, teams, sso] }):
 #   sso: { providers: [google, microsoft] }   # also add a strategy that starts with sso, e.g. `sso: [sso]`
+#   # Let organizations prove the email domains they own with a DNS record (needs a role with manage: domains):
+#   domains: { max_per_org: 10, recheck: 7d, lapse_after: 3 }
 
 # Roles that access rules can check. `users` lists emails that get the role
 # at startup (seed assignments): plain emails, or objects with an `email`.

@@ -26,15 +26,16 @@ const (
 	CapRoles                       // grant or remove any role
 	CapTeams                       // create, change and delete teams and their members
 	CapSSO                         // set, replace and remove the organization's sign-in connections
+	CapDomains                     // claim, prove and release the domains the organization owns
 
 	// AllCaps is every capability.
-	AllCaps = CapOrg | CapMembers | CapRoles | CapTeams | CapSSO
+	AllCaps = CapOrg | CapMembers | CapRoles | CapTeams | CapSSO | CapDomains
 )
 
 var capNames = []struct {
 	name string
 	cap  OrgCaps
-}{{"org", CapOrg}, {"members", CapMembers}, {"roles", CapRoles}, {"teams", CapTeams}, {"sso", CapSSO}}
+}{{"org", CapOrg}, {"members", CapMembers}, {"roles", CapRoles}, {"teams", CapTeams}, {"sso", CapSSO}, {"domains", CapDomains}}
 
 // Has reports whether c includes every capability in want.
 func (c OrgCaps) Has(want OrgCaps) bool { return c&want == want }

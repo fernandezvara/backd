@@ -9,7 +9,7 @@ Hello,
 {{else if eq .Data.event "passkey-added"}}A passkey was added to {{.User.Email}} on {{.Realm}}.
 {{else if eq .Data.event "passkey-removed"}}A passkey was removed from {{.User.Email}} on {{.Realm}}.
 {{else if eq .Data.event "passkey-clone-suspected"}}A passkey of {{.User.Email}} on {{.Realm}} was used in a way that suggests it may have been copied. If you do not recognise this, remove it and add a new one.
-{{else if eq .Data.event "api-key-created"}}An API key was created for {{.Realm}} by {{.User.Email}}.
+{{else if eq .Data.event "domain-lapsed"}}A domain of {{.Data.org_name}} on {{.Realm}} is no longer proved: backd could not find its DNS record in the last checks. Publish the record again from the organization's domain settings to keep what depends on it.{{else if eq .Data.event "api-key-created"}}An API key was created for {{.Realm}} by {{.User.Email}}.
 {{else}}Something changed in the security of {{.User.Email}} on {{.Realm}}.
 {{end}}
 If it was you, nothing else is needed. If it wasn't, change your password now and contact the people who run this service.

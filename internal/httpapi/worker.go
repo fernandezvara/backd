@@ -137,6 +137,7 @@ func (w *Worker) scheduleLoop(ctx context.Context) {
 		w.PurgeDue(ctx)
 		w.SweepDevicesDue(ctx)
 		w.SweepTeamRolesDue(ctx)
+		w.CheckDomainsDue(ctx)
 		w.FilesDue(ctx)
 		w.ExportsDue(ctx)
 		select {
@@ -185,6 +186,28 @@ func (w *Worker) SweepDevicesDue(ctx context.Context) {
 		w.lastDevices[realm] = now
 		if _, _, err := svc.SweepDevices(ctx); err != nil {
 			w.log.Error("sweep devices", "realm", realm, "error", err)
+		}
+	}
+}
+
+// domainChecksPerRound bounds the DNS lookups one worker makes in one round of the schedule loop.
+const domainChecksPerRound = 20
+
+// CheckDomainsDue runs the checks of the verified domains that are due (design/sso.md §10.3): the
+// re-check of verified and lapsed ones and the growing-interval checks of claims not proved yet, in the
+// realms that let organizations prove domains. Running it in every worker is harmless: a check twice
+// finds the same record.
+func (w *Worker) CheckDomainsDue(ctx context.Context) {
+	for realm, rl := range w.reg.Realms {
+		if rl.Settings.Organizations == nil || rl.Settings.Organizations.Domains == nil {
+			continue
+		}
+		svc := w.fns.docs.users(realm)
+		if svc == nil {
+			continue
+		}
+		if _, err := svc.CheckOrgDomains(auth.WithAuditSource(ctx, func() auth.AuditSource { return auth.AuditSource{Actor: auth.ActorSystem} }), domainChecksPerRound); err != nil {
+			w.log.Error("check domains", "realm", realm, "error", err)
 		}
 	}
 }

@@ -460,7 +460,7 @@ A third scope of the existing secrets store: **organization**, owned by the real
 
 - **Organization deleted or not active:** connections, domains and secrets go with the deletion (the existing resumable job); an `orphaned` organization's connections answer unavailable. Identities bound to the organization stay (they are the user's) but cannot sign in once the connection is gone.
 - **User erased:** their organization identities go with them.
-- **Export and import:** `org_connections` and `org_domains` are auth parts (`--include auth`). Secrets never travel: after an import a connection answers unavailable until its secret is set. Domain claims travel as `pending` and must be proved again; anonymized packages blank client ids, issuers and domains. An import validates connections with the API's rules (a blank client id is allowed in anonymized packages).
+- **Export and import:** `org_connections` and `org_domains` are auth parts (`--include auth`). Secrets never travel: after an import a connection answers unavailable until its secret is set. Domain claims travel as `pending` and must be proved again; anonymized packages blank client ids and issuers, and carry no domain claims (a copy for staging proves nothing, and several blank domains would collide). An import validates connections with the API's rules (a blank client id is allowed in anonymized packages).
 
 ## 10. Verified domains
 

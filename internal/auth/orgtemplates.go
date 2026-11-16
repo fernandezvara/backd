@@ -288,6 +288,12 @@ func (s *Users) NotifyTemplateFailed(ctx context.Context, orgID, kind string) {
 // orgManagers are the members of an organization who can manage it (manage: org), directly or
 // through a team.
 func (s *Users) orgManagers(ctx context.Context, orgID string) ([]OrgMember, error) {
+	return s.orgHolders(ctx, orgID, registry.CapOrg)
+}
+
+// orgHolders are the members of an organization whose roles hold a capability, directly or
+// through a team.
+func (s *Users) orgHolders(ctx context.Context, orgID string, capability registry.OrgCaps) ([]OrgMember, error) {
 	o := s.Settings.Organizations
 	var teamIDs []string
 	teams, err := s.Store.ListOrgTeams(ctx, orgID)
@@ -295,11 +301,11 @@ func (s *Users) orgManagers(ctx context.Context, orgID string) ([]OrgMember, err
 		return nil, err
 	}
 	for _, t := range teams {
-		if o.CapsOf(t.Roles).Has(registry.CapOrg) {
+		if o.CapsOf(t.Roles).Has(capability) {
 			teamIDs = append(teamIDs, t.ID)
 		}
 	}
-	direct, err := s.Store.OrgMembersWithRoles(ctx, orgID, o.RolesWith(registry.CapOrg))
+	direct, err := s.Store.OrgMembersWithRoles(ctx, orgID, o.RolesWith(capability))
 	if err != nil {
 		return nil, err
 	}
