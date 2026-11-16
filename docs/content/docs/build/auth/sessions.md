@@ -104,6 +104,10 @@ All request bodies are JSON objects sent with `Content-Type: application/json`. 
 | `POST /_auth/email` | yes + [proof](../reauth/) | `{"new_email", "redirect_to"?}` | `202`; asks to [change the address](#changing-the-email-address), only in realms with `account.allow_email_change` |
 | `POST /_auth/confirm-email-change`, `POST /_auth/revert-email-change` | no | `{"token"}` | `204`; the links of an [email change](#changing-the-email-address) |
 | `POST /_auth/accept-invitation` | no | `{"token", "password", "locale"?}` | `204`; [accepts an emailed invitation](#accepting-an-invitation) |
+| `GET /_auth/providers` | no | none | `200 {"items": […]}`: the [providers](../providers/) that work now |
+| `GET /_auth/oauth/{provider}/start` (or `POST`), `GET …/callback`, `POST /_auth/oauth/{provider}/id-token` | no (a session to link) | see [providers](../providers/#the-flow) | the redirect flow, and the sign-in with a native app's ID token |
+| `POST /_auth/token` | no | `{"code", "code_verifier"}` | `200` with a session: trades the one-time code of a provider or magic-link sign-in |
+| `POST /_auth/password/update` | no | `{"email", "password", "new_password", "code"?}` | `204`; [changes the password signed out](#change-the-password-signed-out) |
 | `POST /_auth/reauth` | yes | `{"method", "code"? or "password"?}` | `200` with a `reauth_token`: a fresh [proof](../reauth/) for the sensitive actions |
 | `POST /_auth/reauth/email-code` | yes | none | `202`; emails the code that proves a user with no password and no second factor |
 | `POST /_auth/password` | yes + [proof](../reauth/) | `{"new_password"}` | `204`; ends all other sessions |
@@ -198,7 +202,7 @@ Behind a reverse proxy or load balancer, set [`TRUSTED_PROXIES`](../../../operat
 
 ### Sign-in methods
 
-`identities` lists the user's ways of signing in, oldest first: `provider` (`password` today), the `email` it reports (a password has none of its own, so it shows the user's), `email_verified`, when it was linked (`created_at`) and when it was last used (`last_used_at`, `null` until a use is recorded; a password's is set at each login). The provider's own user id, hashes and tokens are never shown.
+`identities` lists the user's ways of signing in, oldest first: `provider` (`password`, or a provider's name: `google`, `github`, one you declared…), the `email` it reports (a password has none of its own, so it shows the user's), `email_verified`, when it was linked (`created_at`) and when it was last used (`last_used_at`, `null` until a use is recorded; a password's is set at each login). An identity of an external provider also carries the `issuer` that vouched for it, `org` when it came through an [organization's connection](../../organizations/api/#signing-in-through-a-connection), and `dormant: true` when the provider's issuer changed since (it signs nobody in until the provider is linked again; see [Who the person is](../providers/#who-the-person-is)). The provider's own user id, hashes and tokens are never shown.
 
 `DELETE /_auth/identities/{provider}` removes one (`204`). The last one can't be removed (`409 last_sign_in_method`), so a user can't lock themselves out, and a provider the user doesn't have is `404`. Removing is audited as [`identity.unlinked`](../../../operate/administration/audit/).
 
