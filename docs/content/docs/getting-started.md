@@ -41,6 +41,7 @@ flowchart LR
 - **A schema can change over time without breaking old apps.** A collection can keep its schema as versions (`schema.v1.json`, `schema.v2.json`…) with a TypeScript migration between them: every document records the version it was written under, a background job brings stored documents up to the current one, apps declare the version they were built for, and a minimum version turns away apps too old to work. See [Evolving a schema](../build/configuration/evolving-a-schema/).
 - **A document is a JSON object** in a collection: your fields, plus a server-owned `id` and `_meta`, which carries the timestamps, the write `version`, the schema version, the owner, and the organization and team when they apply.
 - **Users, sessions, API keys and organizations belong to the realm:** one sign-in reaches every database in it, with brute-force protection, invitations, a second factor and consents.
+- **Clients** exist for JavaScript (`backd-js`, with the admin API), Dart and Flutter (`package:backd`), Go (`pkg/client`) and Python (`backd` on PyPI), and `backd types` writes the types of a realm for them; anything else uses the generated OpenAPI document.
 - **Functions are JS/TS in isolated Deno processes** — sync calls, background jobs, cron, webhooks and triggers — for the logic clients can't be trusted with.
 - **Email and push** use the realm's templates and send through delivery functions you write.
 - **Realtime streams** each caller the changes their rules let them read.

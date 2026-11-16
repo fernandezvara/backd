@@ -21,6 +21,7 @@
 
 The shortest path to a realm you can build against — see the [Quickstart](https://fernandezvara.github.io/backd/docs/build/quickstart/) for the full walkthrough. Get the `backd` command line from [GitHub Releases](https://github.com/fernandezvara/backd/releases) (Linux, macOS and Windows); `backd-server`, which runs the server (Linux only), comes in the image `ghcr.io/fernandezvara/backd` and as a release archive, then generate a project and run its compose stack:
 
+<!-- quickstart:start -->
 ```sh
 backd template project --dir ./my-app --realm demo --no-mfa && cd my-app
 docker compose up -d
@@ -32,6 +33,7 @@ curl -X POST http://127.0.0.1:8080/v1/demo/main/posts \
   -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
   -d '{"title": "Hello", "published": true}'
 ```
+<!-- quickstart:end -->
 
 These are the Quickstart's commands, word for word. Three of them ask for the password: `bootstrap` for a new one, then `backd login` and `apikey create`. `--no-mfa` makes a development realm whose administrator has no second factor (**for your own machine only**; drop the flag for the production shape, which asks for an authenticator app). The project's `.env` with the stack's secrets is written for you. The [Quickstart](https://fernandezvara.github.io/backd/docs/build/quickstart/) lists what you need and explains each step.
 

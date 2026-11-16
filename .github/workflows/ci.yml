@@ -97,6 +97,19 @@ jobs:
       - name: Test the production reference deployment
         run: deploy/production/test.sh
 
+  quickstart:
+    # The Quickstart's own commands against the released images: the template project (from this
+    # checkout) must reach a first document the way the page says. The README's copy is checked
+    # against the page by scripts/check-docs-front-door.py.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Run the Quickstart
+        run: scripts/quickstart-ci.sh
+
   example-attacks:
     # The examples' attack scripts against the local stack: fails when an
     # attack that must be stopped succeeds, or when a documented hole closes
@@ -144,5 +157,9 @@ jobs:
         run: scripts/check-docs-callouts.py
       - name: Check the audit actions are documented
         run: scripts/check-docs-audit.py
+      - name: Check the front door (README and Quickstart agree, plans link an issue, the client lists match)
+        run: |
+          python3 scripts/test-docs-front-door.py
+          scripts/check-docs-front-door.py
       - name: Check the Grafana dashboards
         run: scripts/check-dashboards.py

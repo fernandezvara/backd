@@ -42,7 +42,7 @@ Preview it first: `backd user owned --email …` (or [`GET /_admin/users/{id}/ow
 ## Before you erase: external clean-up
 
 {{< hint warning >}}
-**Clean up outside systems before calling erase.** If you must delete the customer at Stripe, or remove the address from a mailing list, do it first, in your own backend or runbook, **while the data still exists**: those calls often need ids stored in documents that a policy may delete or anonymize. `backd` has no clean-up hook yet (it is planned, together with erasing automatically after a deactivation period).
+**Clean up outside systems before calling erase.** If you must delete the customer at Stripe, or remove the address from a mailing list, do it first, in your own backend or runbook, **while the data still exists**: those calls often need ids stored in documents that a policy may delete or anonymize. `backd` has no clean-up hook yet (it is planned, [#1076](https://github.com/fernandezvara/backd/issues/1076), together with erasing automatically after a deactivation period).
 {{< /hint >}}
 
 A "delete my data" button belongs in your backend: it checks your own rules (no open orders, a cooling-off period), does the clean-up, then calls `DELETE /v1/{realm}/_admin/users/{id}` with an admin API key. `backd` stays out of your business rules.
