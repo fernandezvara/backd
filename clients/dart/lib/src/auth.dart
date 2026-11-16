@@ -1252,8 +1252,16 @@ final class Auth {
   /// that host their own page (`email.links` in `realm.yaml`). Starts no
   /// session. An expired, used or unknown token throws a [ValidationError]
   /// whose `code` is `invalid_token`.
-  Future<void> verifyEmail(String token, {RequestOptions? options}) =>
-      _accepted(const ['_auth', 'verify-email'], {'token': token}, options);
+  ///
+  /// An account that has a password is verified only with it (the link proves
+  /// who reads the mailbox, not who signed up): ask the person for [password].
+  /// Without it the call throws a [ValidationError] whose details name
+  /// `password`; a wrong one throws an [AuthenticationError]
+  /// (`invalid_credentials`), and the token stays usable.
+  Future<void> verifyEmail(String token,
+          {String? password, RequestOptions? options}) =>
+      _accepted(const ['_auth', 'verify-email'],
+          {'token': token, if (password != null) 'password': password}, options);
 
   /// Asks for a password reset email. Always resolves, whatever the address
   /// is. Throws a [RetryableError] once the realm's limits for reset requests

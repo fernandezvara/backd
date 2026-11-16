@@ -23,7 +23,7 @@ export async function signupVerified({ url, realm, email, password }) {
   const res = await fetch(`${url}/v1/${realm}/_auth/verify-email`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token }),
+    body: JSON.stringify({ token, password }), // the account's password: the link alone isn't enough
   })
   if (res.status !== 204) throw new Error(`verifying ${email}: ${res.status} ${await res.text()}`)
   await c.auth.login({ email, password })

@@ -100,6 +100,9 @@ type PageData struct {
 	Redirect     htmltemplate.URL
 	DelaySeconds int
 	BackURL      htmltemplate.URL
+	// NeedPassword says the form must ask for the account's password in a field named
+	// `password`: the verify-email page of an account that has one ({{if .NeedPassword}}).
+	NeedPassword bool
 	// App is what the realm's pages.data_hook returned for this page ({{.App.name}}): nil when
 	// there is no hook, or it failed. Pages that use it guard with {{if .App}}.
 	App map[string]any
@@ -134,6 +137,19 @@ var samplePage = PageData{
 	Kind: "verify-email", Redirect: "https://example.com/welcome", DelaySeconds: 3, BackURL: "https://example.com",
 }
 
+// asksForPassword reports whether a verify-email page has a field named `password` when it is
+// told to ask for one.
+func asksForPassword(tpl *htmltemplate.Template) bool {
+	d := samplePage
+	d.NeedPassword = true
+	var b strings.Builder
+	if err := tpl.Execute(&b, d); err != nil && !usesApp(err) {
+		return true // the render's own problem is reported apart
+	}
+	out := b.String()
+	return strings.Contains(out, `name="password"`) || strings.Contains(out, `name='password'`) || strings.Contains(out, "name=password")
+}
+
 // LoadPages reads <realm>/_realm/pages/ (dir): <kind>/<locale>.html for every kind
 // of PageKinds and every one of locales. It parses and test-renders each
 // page, and reports every problem together, naming the files.
@@ -163,6 +179,10 @@ func LoadPages(dir string, locales []string) (*Pages, []error) {
 			var b strings.Builder
 			if err := tpl.Execute(&b, samplePage); err != nil && !usesApp(err) {
 				errs = append(errs, fmt.Errorf("%s: %w", file, err))
+				continue
+			}
+			if kind == PageVerifyEmail && !asksForPassword(tpl) {
+				errs = append(errs, fmt.Errorf("%s: the page must ask for the account's password when {{.NeedPassword}} is set, in a field named `password` (without it nobody who signed up with a password can confirm their address): add `{{if .NeedPassword}}<input type=\"password\" name=\"password\" required>{{end}}` to its form", file))
 				continue
 			}
 			if p.byKind[kind] == nil {

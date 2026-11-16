@@ -281,7 +281,7 @@ async def test_email_and_password_flows_send_no_credentials(mode: str) -> None:
     ):
         server.on(route, None, 204)
     await go(c.auth.resend_verification("a@x.test", redirect_to="https://app.test/ok"))
-    await go(c.auth.verify_email("tok"))
+    await go(c.auth.verify_email("tok", "dev-p4ssw0rd!"))
     await go(c.auth.request_password_reset("a@x.test"))
     await go(c.auth.reset_password("tok", "dev-p4ssw0rd!"))
     await go(c.auth.update_password("a@x.test", "old", "dev-p4ssw0rd!", code="r", method="recovery"))
@@ -291,6 +291,7 @@ async def test_email_and_password_flows_send_no_credentials(mode: str) -> None:
     await go(c.auth.find_orgs("a@x.test"))
     assert all("authorization" not in r.headers for r in server.calls)
     assert server.body(0) == {"email": "a@x.test", "redirect_to": "https://app.test/ok"}
+    assert server.body(1) == {"token": "tok", "password": "dev-p4ssw0rd!"}
     assert server.body(4) == {
         "email": "a@x.test",
         "password": "old",

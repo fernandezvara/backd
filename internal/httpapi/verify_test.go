@@ -58,11 +58,24 @@ func TestVerifyEmailFlow(t *testing.T) {
 	}
 
 	// Opening the link (a scanner) changes nothing; posting the page does.
-	f.page(t, "GET", "/v1/acme/_auth/verify-email?token="+token, "", "", "")
+	if rec = f.page(t, "GET", "/v1/acme/_auth/verify-email?token="+token, "", "", ""); !strings.Contains(rec.Body.String(), `name="password"`) {
+		t.Errorf("the page of an account with a password doesn't ask for it: %s", rec.Body)
+	}
 	if u, _ = f.svc.Find(ctx, "new@example.com"); u.EmailVerified {
 		t.Fatal("GET verified the address")
 	}
-	rec = f.page(t, "POST", "/v1/acme/_auth/verify-email", formType, url.Values{"token": {token}}.Encode(), "")
+	// The link went to the mailbox's owner, who may not be who signed up: without the account's
+	// password, or with a wrong one, nothing is verified and the link still works.
+	for password, want := range map[string]int{"": 400, "dev-p4ssw0rd!0": 401} {
+		rec = f.page(t, "POST", "/v1/acme/_auth/verify-email", formType, url.Values{"token": {token}, "password": {password}}.Encode(), "")
+		if rec.Code != want || !strings.Contains(rec.Body.String(), `name="password"`) {
+			t.Errorf("verify with password %q: %d %s", password, rec.Code, rec.Body)
+		}
+		if u, _ = f.svc.Find(ctx, "new@example.com"); u.EmailVerified {
+			t.Fatalf("verified with password %q", password)
+		}
+	}
+	rec = f.page(t, "POST", "/v1/acme/_auth/verify-email", formType, url.Values{"token": {token}, "password": {"dev-p4ssw0rd!"}}.Encode(), "")
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "url=https://app.acme.example/welcome") {
 		t.Fatalf("verify: %d %s", rec.Code, rec.Body)
 	}
@@ -73,7 +86,7 @@ func TestVerifyEmailFlow(t *testing.T) {
 		t.Error("verification issued a session")
 	}
 	// The same link again, and the welcome email.
-	if rec = f.page(t, "POST", "/v1/acme/_auth/verify-email", formType, url.Values{"token": {token}}.Encode(), ""); rec.Code != 400 {
+	if rec = f.page(t, "POST", "/v1/acme/_auth/verify-email", formType, url.Values{"token": {token}, "password": {"dev-p4ssw0rd!"}}.Encode(), ""); rec.Code != 400 {
 		t.Errorf("a used link: %d", rec.Code)
 	}
 	if in = deliver(t, f, w); in.Kind != "welcome" || in.To[0].Email != "new@example.com" {
@@ -125,7 +138,17 @@ func TestRequireVerifiedEmail(t *testing.T) {
 	}
 
 	token := tokenOf(t, deliver(t, f, w))
-	if rec := f.page(t, "POST", "/v1/acme/_auth/verify-email", "application/json", `{"token": "`+token+`"}`, ""); rec.Code != 204 {
+	// An app with its own page posts JSON: the token alone is not enough for an account with a password.
+	if rec := f.page(t, "POST", "/v1/acme/_auth/verify-email", "application/json", `{"token": "`+token+`"}`, ""); rec.Code != 400 || !strings.Contains(rec.Body.String(), `"path":"password"`) {
+		t.Fatalf("verify without the password: %d %s", rec.Code, rec.Body)
+	}
+	if rec := f.page(t, "POST", "/v1/acme/_auth/verify-email", "application/json", `{"token": "`+token+`", "password": "dev-p4ssw0rd!0"}`, ""); rec.Code != 401 {
+		t.Fatalf("verify with a wrong password: %d %s", rec.Code, rec.Body)
+	}
+	if got := login("dev-p4ssw0rd!"); got != 403 {
+		t.Errorf("still unverified after two refused attempts: %d", got)
+	}
+	if rec := f.page(t, "POST", "/v1/acme/_auth/verify-email", "application/json", `{"token": "`+token+`", "password": "dev-p4ssw0rd!"}`, ""); rec.Code != 204 {
 		t.Fatalf("verify: %d %s", rec.Code, rec.Body)
 	}
 	if got := login("dev-p4ssw0rd!"); got != 200 {

@@ -129,11 +129,35 @@ func (s *Users) ResendVerification(ctx context.Context, address, redirectTo, ip,
 	return nil
 }
 
+// ErrPasswordRequired means a verification link was used without the password of the account it
+// verifies.
+var ErrPasswordRequired = errors.New("the account's password is required to confirm the address")
+
+// VerificationNeedsPassword says whether using the verification token t takes the account's
+// password: the account is not verified yet and has one. A page asks for it then.
+func (s *Users) VerificationNeedsPassword(ctx context.Context, t EmailToken) bool {
+	u, err := s.Store.UserByID(ctx, t.UserID)
+	if err != nil || u.EmailVerified {
+		return false
+	}
+	id, err := s.Store.Identity(ctx, ProviderPassword, u.ID)
+	return err == nil && id.PasswordHash != ""
+}
+
 // VerifyEmail uses a verification token: it marks the address verified and,
 // if the realm wants it, asks for the welcome email. It never starts a
 // session. Every way the token can be wrong is ErrInvalidToken.
-func (s *Users) VerifyEmail(ctx context.Context, token string) (EmailToken, error) {
-	t, err := s.RedeemEmailToken(ctx, token, string(email.TokenPurpose(email.VerifyEmail)))
+//
+// The link proves that whoever opens it reads the mailbox, not that they made the account:
+// anyone can sign up with someone else's address, and the message goes to its owner. So the
+// account's password is asked for (ErrPasswordRequired without one, ErrInvalidCredentials for
+// a wrong one, counted like a failed login; the token stays usable), and only the person who
+// signed up can verify it. An account with no password can't prove that: it is claimed
+// (claimUnverified), like at a magic link, so nothing set before the mailbox was proved works
+// afterwards. A verified account's token needs nothing.
+func (s *Users) VerifyEmail(ctx context.Context, token, password, ip string) (EmailToken, error) {
+	purpose := string(email.TokenPurpose(email.VerifyEmail))
+	t, err := s.PeekEmailToken(ctx, token, purpose)
 	if err != nil {
 		return EmailToken{}, err
 	}
@@ -144,7 +168,38 @@ func (s *Users) VerifyEmail(ctx context.Context, token string) (EmailToken, erro
 	if err != nil {
 		return EmailToken{}, err
 	}
+	claim := false
 	if !u.EmailVerified {
+		id, err := s.Store.Identity(ctx, ProviderPassword, u.ID)
+		switch {
+		case errors.Is(err, ErrNotFound) || (err == nil && id.PasswordHash == ""):
+			claim = true
+		case err != nil:
+			return EmailToken{}, err
+		case password == "":
+			return EmailToken{}, ErrPasswordRequired
+		default:
+			err := s.throttled(ctx, u.Email, ip, func() error {
+				ok, err := s.Hasher.Verify(ctx, password, id.PasswordHash)
+				if err == nil && !ok {
+					err = ErrInvalidCredentials
+				}
+				return err
+			})
+			if err != nil {
+				return EmailToken{}, err
+			}
+		}
+	}
+	if t, err = s.RedeemEmailToken(ctx, token, purpose); err != nil {
+		return EmailToken{}, err
+	}
+	if !u.EmailVerified {
+		if claim {
+			if err := s.claimUnverified(ctx, u); err != nil {
+				return EmailToken{}, err
+			}
+		}
 		yes := true
 		if err := s.Store.UpdateUser(ctx, u.ID, UserUpdate{EmailVerified: &yes}, s.now()); err != nil {
 			return EmailToken{}, err

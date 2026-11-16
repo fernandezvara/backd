@@ -842,12 +842,23 @@ export class Auth {
    * that host their own page (`email.links` in `realm.yaml`). Starts no
    * session. An expired, used or unknown token rejects with a
    * `ValidationError` whose `code` is `invalid_token`.
+   *
+   * An account that has a password is verified only with it (the link proves
+   * who reads the mailbox, not who signed up): ask the person for `password`.
+   * Without it the call rejects with a `ValidationError` whose `details` name
+   * `password`; a wrong one rejects with an `AuthenticationError`
+   * (`invalid_credentials`), and the token stays usable.
    * @param {string} token
+   * @param {string | RequestOptions} [password] the account's password; request options are accepted here too
    * @param {RequestOptions} [opts]
    * @returns {Promise<void>}
    */
-  async verifyEmail(token, opts) {
-    await this.accepted(['_auth', 'verify-email'], { token }, opts)
+  async verifyEmail(token, password, opts) {
+    if (password !== undefined && typeof password !== 'string') {
+      opts = password
+      password = undefined
+    }
+    await this.accepted(['_auth', 'verify-email'], { token, password }, opts)
   }
 
   /**

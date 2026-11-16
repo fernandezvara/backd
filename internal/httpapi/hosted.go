@@ -26,8 +26,9 @@ import (
 // hostedInput is what a POST carries.
 type hostedInput struct {
 	Token    string
-	Password string // only for actions with Password
+	Password string // only for actions with Password or Proof
 	Locale   string // only for actions with Locale; may be empty
+	IP       string // the client's address, for the actions that count wrong passwords
 }
 
 // hostedAction is one flow behind a link.
@@ -36,6 +37,9 @@ type hostedAction struct {
 	Page     string // the page kind its form uses (email.Page…)
 	Password bool   // the form and the JSON body have a password
 	Locale   bool   // the JSON body may carry a locale
+	// Proof: the action may take the account's current password (not a new one: no confirmation
+	// field, optional in JSON). The page is told whether to ask for it (PageData.NeedPassword).
+	Proof bool
 	// Run does the work. It redeems the token itself (auth.Users.RedeemEmailToken)
 	// at the point it can't be undone, and returns it for its redirect_to. A
 	// token that doesn't work is auth.ErrInvalidToken; a password the policy
@@ -49,8 +53,8 @@ type hostedAction struct {
 // the feature it belongs to (verifying an address, resetting a password, ...).
 func hostedActions() []hostedAction {
 	return []hostedAction{
-		{Purpose: "verify-email", Page: email.PageVerifyEmail, Run: func(ctx context.Context, svc *auth.Users, in hostedInput) (auth.EmailToken, error) {
-			return svc.VerifyEmail(ctx, in.Token)
+		{Purpose: "verify-email", Page: email.PageVerifyEmail, Proof: true, Run: func(ctx context.Context, svc *auth.Users, in hostedInput) (auth.EmailToken, error) {
+			return svc.VerifyEmail(ctx, in.Token, in.Password, in.IP)
 		}},
 		{Purpose: email.TokenPurpose(email.ChangeEmail), Page: email.PageConfirmEmailChange,
 			Enabled: func(svc *auth.Users) bool { return svc.Settings.Account.AllowEmailChange },
@@ -197,6 +201,7 @@ func (a *authAPI) hostedGet(act hostedAction) http.HandlerFunc {
 		}
 		d.Token = token
 		d.Email = tok.Address
+		d.NeedPassword = act.Proof && usersOf(r).VerificationNeedsPassword(r.Context(), tok)
 		p.org, p.address = tok.Org, tok.Address
 		p.write(w, r, http.StatusOK, act.Page, d)
 	}
@@ -209,6 +214,9 @@ func (a *authAPI) hostedPost(act hostedAction, jsonOnly func(http.Handler) http.
 		if act.Password {
 			want["password"] = "string"
 		}
+		if act.Proof {
+			want["password"] = "string?"
+		}
 		if act.Locale {
 			want["locale"] = "string?"
 		}
@@ -220,7 +228,7 @@ func (a *authAPI) hostedPost(act hostedAction, jsonOnly func(http.Handler) http.
 		if !ok {
 			return
 		}
-		in := hostedInput{}
+		in := hostedInput{IP: clientIP(r)}
 		in.Token, _ = f["token"].(string)
 		in.Password, _ = f["password"].(string)
 		in.Locale, _ = f["locale"].(string)
@@ -250,10 +258,11 @@ func (a *authAPI) hostedPost(act hostedAction, jsonOnly func(http.Handler) http.
 			return
 		}
 		d := p.data(r)
-		in := hostedInput{Token: r.PostForm.Get("token"), Password: r.PostForm.Get("password"), Locale: p.locale}
+		in := hostedInput{Token: r.PostForm.Get("token"), Password: r.PostForm.Get("password"), Locale: p.locale, IP: clientIP(r)}
 		d.Token = in.Token
 		if tok, err := usersOf(r).PeekEmailToken(r.Context(), in.Token, string(act.Purpose)); err == nil {
 			d.Email = tok.Address // for the form shown again
+			d.NeedPassword = act.Proof && usersOf(r).VerificationNeedsPassword(r.Context(), tok)
 			p.org, p.address = tok.Org, tok.Address
 		}
 		if act.Password && in.Password != r.PostForm.Get("password_confirm") {
@@ -263,10 +272,21 @@ func (a *authAPI) hostedPost(act hostedAction, jsonOnly func(http.Handler) http.
 		}
 		tok, err := act.Run(r.Context(), usersOf(r), in)
 		var pe *auth.PolicyError
+		var te *auth.ThrottledError
 		switch {
 		case errors.Is(err, auth.ErrInvalidToken):
 			d.Token = ""
 			p.write(w, r, http.StatusBadRequest, email.PageInvalidToken, d)
+		case errors.Is(err, auth.ErrPasswordRequired):
+			d.Error, d.ErrorCode = "enter the password you chose when you signed up", "password_required"
+			p.write(w, r, http.StatusBadRequest, act.Page, d)
+		case errors.Is(err, auth.ErrInvalidCredentials):
+			d.Error, d.ErrorCode = "that is not the password of this account", "invalid_password"
+			p.write(w, r, http.StatusUnauthorized, act.Page, d)
+		case errors.As(err, &te):
+			retryAfter(w, te.RetryAfter)
+			d.Error, d.ErrorCode = "too many attempts: wait a moment and try again", "too_many_requests"
+			p.write(w, r, http.StatusTooManyRequests, act.Page, d)
 		case errors.As(err, &pe):
 			d.Error, d.ErrorCode = pe.Reason, "password_policy"
 			p.write(w, r, http.StatusBadRequest, act.Page, d)

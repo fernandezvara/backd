@@ -289,7 +289,7 @@ func TestEmailFlowsSendNoCredentialsAndOmitEmptyFields(t *testing.T) {
 	c.store.Set(bg, "tok")
 	a := c.Auth()
 	for _, err := range []error{
-		a.VerifyEmail(bg, "t"), a.ResendVerification(bg, "a@b.c", ""), a.RequestPasswordReset(bg, "a@b.c", "", ""), a.ResetPassword(bg, "t", "p"),
+		a.VerifyEmail(bg, "t", ""), a.ResendVerification(bg, "a@b.c", ""), a.RequestPasswordReset(bg, "a@b.c", "", ""), a.ResetPassword(bg, "t", "p"),
 		a.UpdatePassword(bg, UpdatePasswordInput{Email: "a@b.c", Password: "p", NewPassword: "n"}), a.ConfirmEmailChange(bg, "t"),
 		a.RevertEmailChange(bg, "t"), a.AcceptInvitation(bg, "t", "", ""), a.FindOrgs(bg, "a@b.c", ""),
 	} {
