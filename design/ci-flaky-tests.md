@@ -1,6 +1,6 @@
 # CI failures and flaky tests
 
-Status: first survey, 2026-11-16 (issue #1059). The window is the 15 days before it; the
+Status: done, 2026-11-16 (issue #1059 and #1061 to #1065). The window is the 15 days before it; the
 period had an unusual amount of work pushed, so numbers are higher than usual.
 
 Reproduce with `scripts/ci-failures.py --days 15` (needs the authenticated `gh`). It reads the
@@ -71,7 +71,20 @@ Lint failures, type errors, invalid configurations in fixtures, `unknown strateg
 Shelf tour and the Trivy findings were real: they failed again on the next attempt or were
 fixed by a commit.
 
-## Next steps (tracked in #1059 and its children)
+## What was done
 
-- Finding 1: #1061. Finding 2: #1062. Finding 3: #1063. Finding 4: #1064.
-- The ones marked "to read": #1065. Each fixed test runs 200 times locally and 20 times in CI.
+| Finding | Issue | Result |
+|---|---|---|
+| `ready` before the change stream was open | #1061 | Fixed in the product (`Lazy.WaitOpen`, `Hub.Open` waits; `503` when the database does not accept the stream). A Go test with the real change stream creates a document right after Open 200 times; it fails on the second run without the fix |
+| Parallel `deno bundle` share one cache | #1062 | `runDeno` tries again, up to three times, only for that message |
+| Infrastructure failures need a retry | #1063 | `scripts/retry.sh`: only for known infrastructure messages; the production stack prints why it did not come up |
+| A retried pass is invisible | #1064 | Daily **Flaky tests** workflow opens one issue per failure (label `flaky-test`); the pull request template asks for it |
+| The unexplained ones | #1065 | The schema-check listing race (a real bug), `TestWindowMissed…`, `TestConsumerContinuesAfterSetChange`; Playwright `failOnFlakyTests`; the production refusal check was not flaky |
+
+The repaired tests run 20 times in every CI run (`make test-repeat`, which lists them in
+`FLAKY_TESTS`) and 200 times locally. Add a test to that list when you fix a flaky one.
+
+## Still open
+
+- Nothing known. The daily report opens an issue for the next failure that passes on a re-run;
+  read it with `scripts/ci-failures.py --days 15`.
