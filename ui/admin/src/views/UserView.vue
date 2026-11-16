@@ -162,14 +162,16 @@ async function loadIdentities() {
 }
 const unlinkOpen = ref(false)
 const unlinking = ref('') // the provider being asked about; kept after the dialog closes, for the confirmation
-function askUnlink(provider: string) {
+const unlinkingOrg = ref('')
+function askUnlink(provider: string, org = '') {
+  unlinkingOrg.value = org
   unlinking.value = provider
   unlinkOpen.value = true
 }
 async function unlink() {
   const provider = unlinking.value
   try {
-    await admin.users.unlinkIdentity(props.id, provider)
+    await admin.users.unlinkIdentity(props.id, provider, unlinkingOrg.value ? { org: unlinkingOrg.value } : undefined)
     toasts.push(t('user.identities.unlinked', { provider }))
     await loadIdentities()
   } catch (e) {
@@ -420,13 +422,17 @@ onMounted(async () => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="i in identities" :key="i.provider" class="border-b border-slate-100 last:border-0 dark:border-slate-800">
-                <td class="px-3 py-2 font-mono text-xs">{{ i.provider }}</td>
+              <tr v-for="i in identities" :key="`${i.org ?? ''}/${i.provider}`" :data-testid="`identity-${i.provider}`" class="border-b border-slate-100 last:border-0 dark:border-slate-800">
+                <td class="px-3 py-2 font-mono text-xs">
+                  {{ i.provider }}
+                  <div v-if="i.org" class="text-slate-600 dark:text-slate-400" data-testid="identity-org">{{ t('user.identities.viaOrg', { org: i.org }) }}</div>
+                  <div v-if="i.dormant" class="text-amber-800 dark:text-amber-300" data-testid="identity-dormant">{{ t('user.identities.dormant') }}</div>
+                </td>
                 <td class="px-3 py-2">{{ i.email }} <span class="text-xs text-slate-600 dark:text-slate-400">({{ i.email_verified ? t('user.identities.verified') : t('user.identities.unverified') }})</span></td>
                 <td class="px-3 py-2">{{ formatDate(i.created_at) }}</td>
                 <td class="px-3 py-2">{{ i.last_used_at ? formatDate(i.last_used_at) : t('user.identities.never') }}</td>
                 <td v-if="canWrite" class="px-3 py-2 text-right">
-                  <button type="button" class="underline" @click="askUnlink(i.provider)">{{ t('user.identities.unlink') }}</button>
+                  <button type="button" class="underline" @click="askUnlink(i.provider, i.org)">{{ t('user.identities.unlink') }}</button>
                 </td>
               </tr>
             </tbody>

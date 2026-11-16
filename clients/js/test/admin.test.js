@@ -659,3 +659,22 @@ test('admin.users lists a user\'s passkeys and removes one', async () => {
   assert.equal(m.calls[1].url.pathname, '/v1/acme/_admin/users/u1/passkeys/p1')
   await assert.rejects(admin.users.removePasskey('u1', 'nope'), NotFoundError)
 })
+
+test('an administrator keeps an organization\'s domains and unlinks an identity through its connection', async () => {
+  const claim = { domain: 'acme.example', state: 'pending', discoverable: false, link_accounts: true, record: { type: 'TXT', name: '_backd-challenge.acme.example', value: 'v' }, created_at: 'x' }
+  const m = mockFetch([{ body: { items: [claim], max_domains: 10 } }, { status: 201, body: claim }, { body: claim }, { body: claim }, { status: 204 }, { status: 204 }])
+  const a = adminOf(m)
+  assert.equal((await a.orgs.domains('o1')).max_domains, 10)
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/orgs/o1/domains')
+  await a.orgs.addDomain('o1', 'acme.example')
+  assert.deepEqual(m.calls[1].body, { domain: 'acme.example' })
+  await a.orgs.verifyDomain('o1', 'acme.example')
+  assert.equal(m.calls[2].url.pathname, '/v1/acme/_admin/orgs/o1/domains/acme.example/verify')
+  await a.orgs.updateDomain('o1', 'acme.example', { discoverable: true, linkAccounts: false })
+  assert.equal(m.calls[3].method, 'PATCH')
+  assert.deepEqual(m.calls[3].body, { discoverable: true, link_accounts: false })
+  await a.orgs.removeDomain('o1', 'acme.example')
+  assert.equal(m.calls[4].method, 'DELETE')
+  await a.users.unlinkIdentity('u1', 'oidc', { org: 'o1' })
+  assert.equal(m.calls[5].url.searchParams.get('org'), 'o1')
+})

@@ -148,6 +148,7 @@ export { parseReturn as parseOAuthReturn } from './oauth.js'
  * @typedef {import('./orgs.js').OrgConnection} OrgConnection
  * @typedef {import('./orgs.js').OrgConnectionInput} OrgConnectionInput
  * @typedef {import('./orgs.js').OrgConnections} OrgConnections
+ * @typedef {import('./orgs.js').OrgDomain} OrgDomain
  * @typedef {import('./admin.js').OwnedReport} OwnedReport
  * @typedef {import('./admin.js').APIKeyInfo} APIKeyInfo
  * @typedef {import('./admin.js').NewAPIKey} NewAPIKey
