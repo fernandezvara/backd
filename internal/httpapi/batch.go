@@ -128,17 +128,6 @@ func (d *documents) batch(w http.ResponseWriter, r *http.Request) {
 		}
 		ops[i] = op
 	}
-	// Memberships, once, when a collection of the batch has rules that read them.
-	if a.ruled && caller.User != nil {
-		for _, op := range ops {
-			if op.collection.Rules.UsesOrgs() {
-				orgs := d.userOrgs(r, realm, caller)
-				a.values.Orgs, a.values.User.Orgs = orgs, orgs
-				break
-			}
-		}
-	}
-
 	for _, op := range ops {
 		if op.kind == "create" && op.id != "" && d.dupBlocked(w, r, op.collection) {
 			return

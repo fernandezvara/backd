@@ -6,6 +6,9 @@ import (
 	"github.com/fernandezvara/backd/internal/appconfig"
 	"net/http"
 	"strings"
+	"sync"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/registry"
@@ -220,11 +223,30 @@ type access struct {
 	// parents reaches the parent documents of a collection's rules (parent()), for the
 	// requests that address several collections (a batch).
 	parents func(c *registry.Collection) rules.Parents
+	// config and orgs read the app configuration and the caller's memberships, once for the
+	// request and only when a rule asks for them (see valuesIn).
+	config func() map[string]any
+	orgs   func() map[string]*rules.UserOrg
 }
 
-// valuesIn are the values rules of collection c are evaluated with.
+// valuesIn are the values rules of collection c are evaluated with: the request's, completed
+// with what c's rules (and the reveal rules of its encrypted fields) read. It is the one place
+// that does so, for the requests that address one collection and those that address several
+// (a batch): a rule sees the same configuration, memberships and parents on every route.
 func (a access) valuesIn(c *registry.Collection) rules.Values {
 	v := a.values
+	if c == nil {
+		return v
+	}
+	if v.Config == nil && a.config != nil && (c.Rules.UsesConfig() || c.RevealUsesConfig()) {
+		v.Config = a.config()
+	}
+	if v.Orgs == nil && a.orgs != nil && v.User != nil && (c.Rules.UsesOrgs() || c.RevealUsesOrgs()) {
+		orgs := a.orgs()
+		u := *v.User // a copy: the request's values are shared between collections
+		u.Orgs = orgs
+		v.Orgs, v.User = orgs, &u
+	}
 	if v.Parents == nil && a.parents != nil && c.Rules.UsesParents() {
 		v.Parents = a.parents(c)
 	}
@@ -238,35 +260,28 @@ func (d *documents) accessFor(r *http.Request) access {
 }
 
 // accessIn returns how rules apply to the request in collection c, which may not be the one
-// the request addresses (a reference's target): the configuration and the memberships are
-// read only when c's rules use them.
+// the request addresses (a reference's target) and is nil for a request that addresses several
+// (a batch, which asks valuesIn for each): the configuration and the memberships are read only
+// when a rule uses them, and once.
 func (d *documents) accessIn(r *http.Request, c *registry.Collection) access {
 	caller, ok := callerOf(r)
 	if !ok || caller.BypassesRules() || adminData(r) {
 		return access{}
 	}
+	realm := chi.URLParam(r, "realm")
+	if c != nil {
+		realm = c.Realm
+	}
 	a := access{ruled: true, caller: caller, values: rules.Values{Now: d.now().UTC()}, parents: func(c *registry.Collection) rules.Parents { return d.parentsOf(r, c) }}
+	a.config = sync.OnceValue(func() map[string]any { return d.configValues(r, realm) })
 	if caller.User != nil {
 		u := caller.User.User
 		mfa, methods := caller.SignInMethods()
 		a.values.User = &rules.User{ID: u.ID, Email: u.Email, EmailVerified: u.EmailVerified, Roles: u.Roles, MFA: mfa, Methods: methods, Strategy: caller.SignInStrategy(), PasskeySynced: caller.SignInPasskeySynced(), Consents: u.Consents}
+		a.orgs = sync.OnceValue(func() map[string]*rules.UserOrg { return d.userOrgs(r, realm, caller) })
 	}
-	// appConfig() in the collection's rules: the configuration is read once for the request,
-	// and only when a rule asks for it.
-	if c != nil && (c.Rules.UsesConfig() || c.RevealUsesConfig()) {
-		a.values.Config = d.configValues(r, c.Realm)
-	}
-	// The organization helpers and user.orgs: the memberships are read once for the request,
-	// and only when a rule asks for them.
-	if c != nil && caller.User != nil && (c.Rules.UsesOrgs() || c.RevealUsesOrgs()) {
-		orgs := d.userOrgs(r, c.Realm, caller)
-		a.values.Orgs = orgs
-		a.values.User.Orgs = orgs
-	}
-	// parent(): rules that follow a reference read the parent documents.
-	if c != nil && c.Rules.UsesParents() {
-		a.values.Parents = d.parentsOf(r, c)
-	}
+	// A request to one collection carries that collection's values from the start.
+	a.values = a.valuesIn(c)
 	return a
 }
 
@@ -438,7 +453,7 @@ func restoreFilter(w http.ResponseWriter, r *http.Request, a access, c *registry
 		deny(w, r, a, c, rules.Restore, "no restore rule")
 		return nil, false
 	}
-	f, err := rule.Filter(a.values)
+	f, err := rule.Filter(a.valuesIn(c))
 	if err != nil {
 		deny(w, r, a, c, rules.Restore, "rule error: "+err.Error())
 		return nil, false

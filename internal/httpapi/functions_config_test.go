@@ -116,6 +116,53 @@ func TestAppConfigInCollectionRules(t *testing.T) {
 	}
 }
 
+// A batch reads the configuration like a single write does: a switch stops both, however the
+// rule is written. A rule that allows "unless the flag is off" used to see null in a batch, and
+// let the write through.
+func TestAppConfigInBatchRules(t *testing.T) {
+	f := newRulesFixture(t)
+	doc := `{"title": "q3", "published": true}`
+	batch := func(collection, op string) int {
+		t.Helper()
+		rec, _ := f.doH(t, "POST", "/v1/acme/app/_batch", `{"operations":[`+strings.ReplaceAll(op, "COLL", collection)+`]}`, jsonHdr(f.ada))
+		return rec.Code
+	}
+	create := `{"op":"create","collection":"COLL","document":` + doc + `}`
+
+	// The flag is on (its default): both collections take a batch, as they take a POST.
+	for _, coll := range []string{"exports", "drafts"} {
+		if code := batch(coll, create); code != 200 {
+			t.Errorf("%s: batch create with the flag on = %d", coll, code)
+		}
+	}
+	rec, out := f.doH(t, "POST", "/v1/acme/app/drafts", doc, jsonHdr(f.ada))
+	if rec.Code != 201 {
+		t.Fatalf("create a draft = %d %v", rec.Code, out)
+	}
+	id := out["id"].(string)
+
+	code, body, _ := f.configDo(t, "PATCH", "/app-config", `{"set": {"features.export.enabled": false}}`, f.key, map[string]string{"If-Match": `"c0"`})
+	if code != 200 {
+		t.Fatalf("PATCH = %d %v", code, body)
+	}
+	if rec, _ := f.doH(t, "POST", "/v1/acme/app/drafts", doc, jsonHdr(f.ada)); rec.Code != 403 {
+		t.Errorf("single create with the flag off = %d", rec.Code)
+	}
+	for _, coll := range []string{"exports", "drafts"} {
+		if code := batch(coll, create); code != 403 {
+			t.Errorf("%s: batch create with the flag off = %d, want 403", coll, code)
+		}
+	}
+	for _, op := range []string{
+		`{"op":"patch","collection":"COLL","id":"` + id + `","patch":{"title":"changed"}}`,
+		`{"op":"replace","collection":"COLL","id":"` + id + `","document":` + doc + `}`,
+	} {
+		if code := batch("drafts", op); code != 403 {
+			t.Errorf("batch %s with the flag off = %d, want 403", op[:16], code)
+		}
+	}
+}
+
 // An invoke rule reads the configuration too: a function behind a switch.
 func TestAppConfigInInvokeRule(t *testing.T) {
 	f := newRulesFixture(t)
