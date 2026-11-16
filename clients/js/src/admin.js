@@ -1652,7 +1652,7 @@ class AdminOrgs {
    * Creates or replaces an organization's connection with `google` or `microsoft`, whatever roles
    * it gives on joining. The client secret goes in and never comes out.
    * @param {string} id
-   * @param {'google' | 'microsoft'} provider
+   * @param {'google' | 'microsoft' | 'oidc'} provider
    * @param {OrgConnectionInput} input
    * @param {RequestOptions} [opts]
    * @returns {Promise<OrgConnection>}
@@ -1664,7 +1664,7 @@ class AdminOrgs {
   /**
    * Removes an organization's connection and its client secret.
    * @param {string} id
-   * @param {'google' | 'microsoft'} provider
+   * @param {'google' | 'microsoft' | 'oidc'} provider
    * @param {RequestOptions} [opts]
    * @returns {Promise<void>}
    */
