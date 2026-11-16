@@ -477,7 +477,7 @@ async function claim() {
 async function verifyDomain(d: OrgDomain) {
   try {
     const got = await admin.orgs.verifyDomain(props.id, d.domain)
-    toasts.push(got.state === 'verified' ? t('orgs.domains.nowVerified', { domain: d.domain }) : t('orgs.domains.notYet', { reason: got.reason ? t(`orgs.domains.reasons.${got.reason}`) : '' }), got.state === 'verified' ? 'info' : 'error')
+    toasts.push(got.state === 'verified' ? t('orgs.domains.nowVerified', { domain: d.domain }) : t('orgs.domains.notYet', { reason: got.reason ? t(`orgs.domains.reasons.${got.reason}`) : '' }), 'info')
     await loadDomains()
   } catch (e) {
     toasts.push(errorText(e, t('common.unexpected')), 'error')
