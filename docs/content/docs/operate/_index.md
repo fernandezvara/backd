@@ -155,7 +155,7 @@ Each realm with an `auth` section has a system database named `<realm>___system`
 | `org_connections` | the [sign-in connections](organization-sign-in/) organizations set up (the client secret is a sealed organization secret, never here) | `org` + `provider` (unique) |
 | `org_domains` | the [domains](../build/organizations/verified-domains/) organizations claim and prove | `org` + `domain` (unique), `domain` (unique among verified claims) |
 | `org_templates` | the [email templates](../build/organizations/email-templates/) organizations wrote | |
-| `email_tokens` | the hashes of the tokens sent in emails (verification, reset, change of address, invitation) | `user_id` + `purpose`, `expires_at` (TTL) |
+| `email_tokens` | the hashes of the tokens sent in emails for an account (address verification, password reset, address change) | `user_id` + `purpose`, `expires_at` (TTL) |
 | `consent_records` | the append-only history of [consents](../build/auth/consents/) accepted and withdrawn, with the hash of the text shown | `user` + `at`, `expires_at` (TTL, set at erasure) |
 | `user_exports` | the records of [personal data exports](../build/auth/personal-data/): who asked, the state of the job that builds them, where the package is stored | |
 | `app_config`, `app_config_history` | the realm's [app configuration](../build/configuration/app-config/) (one document) and the versions that led to it | |
