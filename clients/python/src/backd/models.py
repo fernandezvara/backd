@@ -33,6 +33,7 @@ __all__ = [
     "MfaChallenge",
     "Org",
     "OrgConnection",
+    "OrgDomain",
     "OrgInvitation",
     "OrgMember",
     "OrgTeam",
@@ -643,12 +644,40 @@ class OrgInvitation(TypedDict, total=False):
     link: str | None
 
 
+class OrgDomainRecord(TypedDict):
+    """The DNS record to publish to prove a domain."""
+
+    type: Literal["TXT"]
+    name: str
+    value: str
+
+
+class OrgDomain(TypedDict, total=False):
+    """A domain an organization claimed and where the proof stands."""
+
+    domain: str
+    state: Literal["pending", "verified", "lapsed"]
+    discoverable: bool
+    link_accounts: bool
+    record: OrgDomainRecord
+    #: After a check that did not prove it: record_not_found, mismatch or resolver_error.
+    reason: str
+    created_at: str
+    verified_at: str
+    last_checked_at: str
+
+
 class OrgConnection(TypedDict, total=False):
     """An organization's sign-in connection: its own Google Workspace or Microsoft Entra tenant as a provider for
     its people. The client secret is write-only: only whether it is set comes back."""
 
-    provider: Literal["google", "microsoft"]
+    provider: Literal["google", "microsoft", "oidc"]
     client_id: str
+    #: OpenID Connect: the server's issuer URL, and the verified domains whose addresses it admits.
+    issuer: str
+    domains: list[str]
+    #: After a change of issuer: identities of the old one that match no sign-in until their people link again.
+    dormant_identities: int
     #: Microsoft: the organization's tenant id.
     tenant: str
     #: Google: the Workspace domain.

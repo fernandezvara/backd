@@ -630,6 +630,26 @@ final class Auth {
       _accepted(const ['_auth', 'orgs', 'find'],
           {'email': email, 'locale': locale}, options);
 
+  /// Which organization an address leads to, for an app that asks for the
+  /// address first: a list of `{org, name, providers}` holding the one whose
+  /// verified, discoverable domain the address is on (start one of its
+  /// `providers` with `signInWith(provider)` on `client.org(org).auth`). Every
+  /// other address answers an empty list, and it never says whether an account
+  /// exists. A realm without `organizations.domains` answers [NotFoundError].
+  Future<List<Map<String, Object?>>> discover(String email,
+      {RequestOptions? options}) async {
+    final res = await client.request(RequestInit(
+      method: 'POST',
+      path: const ['_auth', 'orgs', 'discover'],
+      body: {'email': email},
+      auth: false,
+      headers: options?.headers,
+      retry: options?.retry,
+    ));
+    final items = (res.data as Map)['items'] as List;
+    return [for (final i in items) Map<String, Object?>.from(i as Map)];
+  }
+
   /// What an invitation to an organization offers, before the person has
   /// signed in: the organization (`org` with `id` and `name`), `roles`,
   /// `teams`, `binding` and `expires_at`, so the app can ask "Join Acme as

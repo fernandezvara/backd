@@ -459,6 +459,27 @@ func (a *Auth) FindOrgs(ctx context.Context, email, locale string, opts ...Reque
 	return a.accepted(ctx, path("_auth", "orgs", "find"), body{}.set("email", email).set("locale", locale), opts...)
 }
 
+// DiscoveredOrg is an organization an address leads to.
+type DiscoveredOrg struct {
+	Org       string   `json:"org"`
+	Name      string   `json:"name"`
+	Providers []string `json:"providers"`
+}
+
+// DiscoverOrgs asks which organization an address leads to, for an app that asks for the address first:
+// the one whose verified, discoverable domain it is on, with its usable connections (start one with
+// SignInWith on the organization's client). Every other address answers an empty list, and it never says
+// whether an account exists. A realm without organizations.domains answers ErrNotFound.
+func (a *Auth) DiscoverOrgs(ctx context.Context, email string, opts ...RequestOption) ([]DiscoveredOrg, error) {
+	var out struct {
+		Items []DiscoveredOrg `json:"items"`
+	}
+	if _, err := a.c.Do(ctx, "POST", path("_auth", "orgs", "discover"), body{}.set("email", email), &out, append([]RequestOption{WithoutAuth()}, opts...)...); err != nil {
+		return nil, err
+	}
+	return out.Items, nil
+}
+
 // InvitationPreview is what an invitation to an organization offers.
 type InvitationPreview struct {
 	Org struct {

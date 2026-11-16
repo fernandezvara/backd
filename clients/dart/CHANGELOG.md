@@ -1,3 +1,7 @@
+## Unreleased
+
+- `orgs.domains(org)` (`list`, `add`, `verify`, `update`, `remove`), `auth.discover(email)`, `orgs.sso(org)` with `oidc` connections (`issuer`, `domains`; `dormant_identities` in the answer), and the errors `DomainTakenError`, `DomainExistsError` and `DomainsLimitError`.
+
 ## 0.9.12
 
 - `fields:` on `list`, `get`, `create`, `replace`, `patch` and `restore` of a collection returns only those paths (`id` always), as a `Doc` in which what was not selected is absent. The typed collections do not take it; use `raw`.

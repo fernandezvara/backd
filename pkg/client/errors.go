@@ -73,6 +73,9 @@ var (
 
 	kIDTaken         = &kind{"id taken", kConflict}
 	kLastOrgManager  = &kind{"last organization manager", kConflict}
+	kDomainTaken     = &kind{"domain taken", kConflict}
+	kDomainExists    = &kind{"domain already claimed", kConflict}
+	kDomainsLimit    = &kind{"domains limit", kConflict}
 	kIndexBuilding   = &kind{"index building", kRetryable}
 	kAggregateCost   = &kind{"aggregate too expensive", kBackd}
 	kSearchCost      = &kind{"search too expensive", kBackd}
@@ -119,6 +122,9 @@ var (
 	ErrNotOrgMember          = &Error{kind: kNotOrgMember}
 	ErrIDTaken               = &Error{kind: kIDTaken}
 	ErrLastOrgManager        = &Error{kind: kLastOrgManager}
+	ErrDomainTaken           = &Error{kind: kDomainTaken}
+	ErrDomainExists          = &Error{kind: kDomainExists}
+	ErrDomainsLimit          = &Error{kind: kDomainsLimit}
 	ErrIndexBuilding         = &Error{kind: kIndexBuilding}
 	ErrAggregateTooExpensive = &Error{kind: kAggregateCost}
 	ErrSearchTooExpensive    = &Error{kind: kSearchCost}
@@ -229,7 +235,8 @@ var codeKinds = map[string]*kind{
 	"team_required":   kTeam, "team_not_allowed": kTeam,
 	"not_org_member": kNotOrgMember, "not_allowed": kNotAllowed,
 	"sso_required": kSsoRequired, "sso_session": kSsoSession,
-	"last_org_manager":  kLastOrgManager,
+	"last_org_manager": kLastOrgManager,
+	"domain_taken":     kDomainTaken, "domain_exists": kDomainExists, "domains_limit": kDomainsLimit,
 	"invalid_aggregate": kInvalidAggregate, "aggregate_not_enabled": kAggregateNotOn,
 	"aggregate_too_expensive": kAggregateCost,
 	"search_not_enabled":      kSearchNotOn, "search_too_expensive": kSearchCost,

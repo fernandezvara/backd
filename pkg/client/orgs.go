@@ -249,6 +249,9 @@ func (o *Orgs) Invitations(org string) *OrgInvitations { return &OrgInvitations{
 // SSO returns the sign-in connections of an organization.
 func (o *Orgs) SSO(org string) *OrgSSO { return &OrgSSO{c: o.c, org: org} }
 
+// Domains returns the verified domains of an organization.
+func (o *Orgs) Domains(org string) *OrgDomains { return &OrgDomains{c: o.c, org: org} }
+
 // PageParams page the lists of members.
 type PageParams struct {
 	Limit int
@@ -655,8 +658,15 @@ type OrgSSO struct {
 
 // OrgConnection is an organization's sign-in provider.
 type OrgConnection struct {
-	Provider string `json:"provider"` // "google" or "microsoft"
+	Provider string `json:"provider"` // "google", "microsoft" or "oidc"
 	ClientID string `json:"client_id"`
+	// Issuer and Domains are an OpenID Connect connection's: the server's issuer URL, and the verified
+	// domains whose addresses it admits (all of the organization's when empty).
+	Issuer  string   `json:"issuer,omitempty"`
+	Domains []string `json:"domains,omitempty"`
+	// DormantIdentities, after a change of issuer: identities that belong to the old issuer and match no
+	// sign-in until their people link again.
+	DormantIdentities int `json:"dormant_identities,omitempty"`
 	// Tenant is the Microsoft tenant id; HostedDomain the Google Workspace domain.
 	Tenant       string `json:"tenant,omitempty"`
 	HostedDomain string `json:"hosted_domain,omitempty"`
@@ -692,7 +702,11 @@ type ConnectionInput struct {
 	// Tenant: Microsoft, required, a tenant id (never common, organizations or consumers).
 	Tenant string
 	// HostedDomain: Google, required, the Workspace domain.
-	HostedDomain    string
+	HostedDomain string
+	// Issuer: OpenID Connect, required, the server's issuer (one the realm allows). Domains: verified domains
+	// of the organization whose addresses it admits; empty admits all of them.
+	Issuer          string
+	Domains         []string
 	EmailDomains    []string
 	NativeClientIDs []string
 	JoinRoles       []string
@@ -710,6 +724,12 @@ func (in ConnectionInput) body() map[string]any {
 	}
 	if in.HostedDomain != "" {
 		b["hosted_domain"] = in.HostedDomain
+	}
+	if in.Issuer != "" {
+		b["issuer"] = in.Issuer
+	}
+	if in.Domains != nil {
+		b["domains"] = in.Domains
 	}
 	if in.EmailDomains != nil {
 		b["email_domains"] = in.EmailDomains
@@ -756,5 +776,96 @@ func (s *OrgSSO) Set(ctx context.Context, provider string, in ConnectionInput, o
 // Delete removes a connection; it needs a recent proof.
 func (s *OrgSSO) Delete(ctx context.Context, provider string, opts ...RequestOption) error {
 	_, err := s.c.Do(ctx, http.MethodDelete, []string{"_orgs", s.org, "sso", provider}, nil, nil, append(opts, WithReauth())...)
+	return err
+}
+
+// OrgDomains are the verified domains of an organization: a domain is claimed, proved by publishing a DNS
+// record and checked again by backd from then on.
+type OrgDomains struct {
+	c   *Client
+	org string
+}
+
+// DomainRecord is the DNS record to publish.
+type DomainRecord struct {
+	Type  string `json:"type"` // "TXT"
+	Name  string `json:"name"` // _backd-challenge.<domain>
+	Value string `json:"value"`
+}
+
+// OrgDomain is a claim and where the proof stands.
+type OrgDomain struct {
+	Domain       string       `json:"domain"` // lower case, ASCII (punycode)
+	State        string       `json:"state"`  // pending, verified or lapsed
+	Discoverable bool         `json:"discoverable"`
+	LinkAccounts bool         `json:"link_accounts"`
+	Record       DomainRecord `json:"record"`
+	// Reason, after a check that did not prove it: record_not_found, mismatch or resolver_error.
+	Reason        string `json:"reason,omitempty"`
+	CreatedAt     string `json:"created_at"`
+	VerifiedAt    string `json:"verified_at,omitempty"`
+	LastCheckedAt string `json:"last_checked_at,omitempty"`
+}
+
+// OrgDomainList are the claims of an organization with the most the realm allows.
+type OrgDomainList struct {
+	Items      []OrgDomain `json:"items"`
+	MaxDomains int         `json:"max_domains"`
+}
+
+// DomainPatch changes what a domain may be used for; nil leaves a setting.
+type DomainPatch struct {
+	Discoverable *bool
+	LinkAccounts *bool
+}
+
+// List returns the organization's claims; a realm without organizations.domains answers ErrNotFound.
+func (d *OrgDomains) List(ctx context.Context, opts ...RequestOption) (*OrgDomainList, error) {
+	var out OrgDomainList
+	if _, err := d.c.Do(ctx, http.MethodGet, []string{"_orgs", d.org, "domains"}, nil, &out, opts...); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// Add starts a claim; the answer holds the DNS record to publish. A free-mail domain or a public suffix
+// is ErrValidation, one already claimed ErrDomainExists. It needs a recent proof.
+func (d *OrgDomains) Add(ctx context.Context, domain string, opts ...RequestOption) (*OrgDomain, error) {
+	var out OrgDomain
+	if _, err := d.c.Do(ctx, http.MethodPost, []string{"_orgs", d.org, "domains"}, map[string]string{"domain": domain}, &out, append(opts, WithReauth())...); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// Verify checks the record now: State is "verified" when it is there, or stays as it was with a Reason.
+// A domain another organization holds is ErrDomainTaken; at most six checks an hour per domain.
+func (d *OrgDomains) Verify(ctx context.Context, domain string, opts ...RequestOption) (*OrgDomain, error) {
+	var out OrgDomain
+	if _, err := d.c.Do(ctx, http.MethodPost, []string{"_orgs", d.org, "domains", domain, "verify"}, nil, &out, opts...); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// Update changes what a domain may be used for; it needs a recent proof.
+func (d *OrgDomains) Update(ctx context.Context, domain string, patch DomainPatch, opts ...RequestOption) (*OrgDomain, error) {
+	b := map[string]any{}
+	if patch.Discoverable != nil {
+		b["discoverable"] = *patch.Discoverable
+	}
+	if patch.LinkAccounts != nil {
+		b["link_accounts"] = *patch.LinkAccounts
+	}
+	var out OrgDomain
+	if _, err := d.c.Do(ctx, http.MethodPatch, []string{"_orgs", d.org, "domains", domain}, b, &out, append(opts, WithReauth())...); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// Remove releases the claim; a verified domain becomes free for another organization. It needs a recent proof.
+func (d *OrgDomains) Remove(ctx context.Context, domain string, opts ...RequestOption) error {
+	_, err := d.c.Do(ctx, http.MethodDelete, []string{"_orgs", d.org, "domains", domain}, nil, nil, append(opts, WithReauth())...)
 	return err
 }

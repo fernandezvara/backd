@@ -3457,7 +3457,7 @@ func TestContract(t *testing.T) {
 		req("POST", dom, `{"domain": "acme.example"}`, nil, 401)
 		req("POST", dom, `{"domain": "acme.example"}`, with(carl, "Content-Type", "application/json"), 403)
 		req("POST", dom, `{}`, proof(), 400)
-		req("POST", dom, `{"domain": "gmail.com"}`, proof(), 422)
+		req("POST", dom, `{"domain": "gmail.com"}`, proof(), 400)
 		claim := req("POST", dom, `{"domain": "Acme.Example"}`, proof(), 201)
 		rec, _ := claim["record"].(map[string]any)
 		if claim["domain"] != "acme.example" || claim["state"] != "pending" || rec["name"] != "_backd-challenge.acme.example" || !strings.HasPrefix(rec["value"].(string), "backd-verify=") {
@@ -3507,7 +3507,7 @@ func TestContract(t *testing.T) {
 		req("POST", adom, `{"domain": "acme.example"}`, json(ada), 403)
 		req("POST", adom, `{}`, json(key), 400)
 		req("POST", adm+"/nope/domains", `{"domain": "x.example"}`, json(key), 404)
-		req("POST", adom, `{"domain": "co.uk"}`, json(key), 422)
+		req("POST", adom, `{"domain": "co.uk"}`, json(key), 400)
 		req("POST", adom, `{"domain": "acme.example"}`, json(key), 409)
 		req("POST", adom, `{"domain": "second.example"}`, json(key), 201)
 		req("POST", adom, `{"domain": "third.example"}`, json(key), 201)

@@ -34,6 +34,9 @@ function authBase(org) {
  * @property {string} provider        `password`, `google`, `microsoft`, `apple` or a configured provider's name.
  * @property {string} email           The address the provider reported (the user's own for a password).
  * @property {boolean} email_verified
+ * @property {string} [org]           The organization whose connection it came through.
+ * @property {string} [issuer]        The issuer that vouched for it (an external provider's identity).
+ * @property {boolean} [dormant]      The provider's issuer is not that one any more: it signs nobody in until the person links again.
  * @property {string} created_at      RFC3339 timestamp: when it was linked.
  * @property {string | null} last_used_at   RFC3339 timestamp of the last sign-in with it, null if none is recorded.
  */
@@ -396,6 +399,20 @@ export class Auth {
    */
   async findOrgs({ email, locale }, opts) {
     await this.accepted(['_auth', 'orgs', 'find'], compact({ email, locale }), opts)
+  }
+
+  /**
+   * Which organization an address leads to, for an app that asks for the address first: the one whose
+   * verified, `discoverable` domain it is on, with the names of its usable connections (start one with
+   * `signInWith(provider, { org })`). Every other address answers an empty list, and it never says
+   * whether an account exists. A realm without `organizations.domains` answers `NotFoundError`.
+   * @param {{ email: string }} input
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<Array<{ org: string, name: string, providers: string[] }>>}
+   */
+  async discover({ email }, opts) {
+    const { data } = await this.client.request({ method: 'POST', path: ['_auth', 'orgs', 'discover'], body: { email }, auth: false, ...opts })
+    return data.items
   }
 
   /**

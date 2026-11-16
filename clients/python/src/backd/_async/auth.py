@@ -402,6 +402,14 @@ class AsyncAuth:
         whatever the address is; the realm needs ``organizations.signin_link``."""
         await self._accepted(["_auth", "orgs", "find"], _compact(email=email, locale=locale))
 
+    async def discover(self, email: str) -> list[dict[str, Any]]:
+        """Which organization an address leads to, for an app that asks for the address first: a list of
+        ``{org, name, providers}`` holding the one whose verified, discoverable domain it is on (start one of its
+        ``providers`` with ``sign_in_with``). Every other address answers an empty list, and it never says whether an
+        account exists. A realm without ``organizations.domains`` answers :class:`NotFoundError`."""
+        res = await self._client.request("POST", ["_auth", "orgs", "discover"], body={"email": email}, auth=False)
+        return cast(list[dict[str, Any]], cast(dict[str, Any], res.data)["items"])
+
     async def preview_invitation(self, token: str, *, org: str | None = None) -> dict[str, Any]:
         """What an invitation to an organization offers, before the person has signed in: the ``org`` (id and
         name), the ``roles`` and the ``teams``, so the app can ask "Join Acme as editor?". Every token that does

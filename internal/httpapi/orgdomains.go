@@ -46,7 +46,7 @@ func domainError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, auth.ErrDomainsLimit):
 		writeError(w, r, http.StatusConflict, "domains_limit", err.Error())
 	case errors.As(err, &refused):
-		writeError(w, r, http.StatusUnprocessableEntity, codeValidation, "that domain can't be claimed", Detail{Path: "domain", Reason: refused.Reason})
+		writeError(w, r, http.StatusBadRequest, codeValidation, "that domain can't be claimed", Detail{Path: "domain", Reason: refused.Reason})
 	default:
 		orgError(w, r, err)
 	}

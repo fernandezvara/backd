@@ -6,6 +6,7 @@ import 'package:test/test.dart';
 import 'helpers.dart';
 
 void main() {
+  domainsAndConnections();
   group('orgs', () {
     test('create and get hit the _orgs routes', () async {
       final t = FakeTransport()
@@ -233,6 +234,115 @@ void main() {
       expect(t.requests[3].method, 'POST');
       await consents.withdraw('terms');
       expect(t.requests[4].url.path, '/v1/shelf/_auth/consents/terms');
+    });
+  });
+}
+
+void domainsAndConnections() {
+  group('organization domains, connections and discovery', () {
+    const claim = {
+      'domain': 'acme.example',
+      'state': 'pending',
+      'record': {
+        'type': 'TXT',
+        'name': '_backd-challenge.acme.example',
+        'value': 'backd-verify=abc'
+      }
+    };
+
+    test('domains are listed, claimed, checked, changed and released',
+        () async {
+      final t = FakeTransport()
+        ..answer(respond(200, {
+          'items': [claim],
+          'max_domains': 10
+        }))
+        ..answer(respond(201, claim))
+        ..answer(respond(200, {...claim, 'reason': 'record_not_found'}))
+        ..answer(respond(200, {...claim, 'discoverable': true}))
+        ..answer(respond(204));
+      final d = testClient(t, apiKey: 'k').orgs.domains('o1');
+      expect((await d.list())['max_domains'], 10);
+      expect(t.requests[0].url.path, '/v1/shelf/_orgs/o1/domains');
+      final made = await d.add('acme.example');
+      expect((made['record'] as Map)['name'], '_backd-challenge.acme.example');
+      expect(jsonDecode(utf8.decode(t.requests[1].body!)),
+          {'domain': 'acme.example'});
+      expect((await d.verify('acme.example'))['reason'], 'record_not_found');
+      expect(t.requests[2].method, 'POST');
+      expect(t.requests[2].url.path,
+          '/v1/shelf/_orgs/o1/domains/acme.example/verify');
+      await d.update('acme.example', discoverable: true, linkAccounts: false);
+      expect(t.requests[3].method, 'PATCH');
+      expect(jsonDecode(utf8.decode(t.requests[3].body!)),
+          {'discoverable': true, 'link_accounts': false});
+      await d.remove('acme.example');
+      expect(t.requests[4].method, 'DELETE');
+    });
+
+    test('the errors of the domains are typed', () async {
+      Map<String, Object?> err(String code) => {
+            'error': {'code': code, 'message': code, 'request_id': 'r'}
+          };
+      final t = FakeTransport()
+        ..answer(respond(409, err('domain_taken')))
+        ..answer(respond(409, err('domain_exists')))
+        ..answer(respond(409, err('domains_limit')))
+        ..answer(respond(400, err('validation_error')))
+        ..answer(respond(404, err('not_found')));
+      final d = testClient(t, apiKey: 'k').orgs.domains('o1');
+      await expectLater(
+          d.verify('acme.example'), throwsA(isA<DomainTakenError>()));
+      await expectLater(
+          d.add('acme.example'), throwsA(isA<DomainExistsError>()));
+      await expectLater(d.add('b.example'), throwsA(isA<DomainsLimitError>()));
+      await expectLater(d.add('gmail.com'), throwsA(isA<ValidationError>()));
+      await expectLater(d.list(), throwsA(isA<NotFoundError>()));
+    });
+
+    test('a connection takes an issuer and domains', () async {
+      final t = FakeTransport()
+        ..answer(respond(200, {
+          'provider': 'oidc',
+          'client_id': 'backd',
+          'issuer': 'https://acme.okta.com',
+          'dormant_identities': 2
+        }));
+      final sso = testClient(t, apiKey: 'k').orgs.sso('o1');
+      final v = await sso.set('oidc',
+          clientId: 'backd',
+          clientSecret: 's',
+          issuer: 'https://acme.okta.com',
+          domains: ['acme.example']);
+      expect(t.requests[0].method, 'PUT');
+      expect(t.requests[0].url.path, '/v1/shelf/_orgs/o1/sso/oidc');
+      expect(jsonDecode(utf8.decode(t.requests[0].body!)), {
+        'client_id': 'backd',
+        'client_secret': 's',
+        'issuer': 'https://acme.okta.com',
+        'domains': ['acme.example']
+      });
+      expect(v['dormant_identities'], 2);
+    });
+
+    test('discover asks which organization an address leads to', () async {
+      final t = FakeTransport()
+        ..answer(respond(200, {
+          'items': [
+            {
+              'org': 'o1',
+              'name': 'Acme',
+              'providers': ['microsoft']
+            }
+          ]
+        }))
+        ..answer(respond(200, {'items': <Object?>[]}));
+      final auth = testClient(t).auth;
+      final found = await auth.discover('ana@acme.example');
+      expect(found.single['org'], 'o1');
+      expect(t.requests[0].url.path, '/v1/shelf/_auth/orgs/discover');
+      expect(t.requests[0].headers['authorization'], isNull);
+      expect(await auth.discover('x@nowhere.example'), isEmpty);
     });
   });
 }

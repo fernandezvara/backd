@@ -244,6 +244,8 @@ await backd.auth.withProof(() => sso.set('google', { clientId, clientSecret, hos
 await backd.auth.withProof(() => sso.delete('google'))
 ```
 
+An OpenID Connect connection takes `provider: 'oidc'`, an `issuer` the realm allows and, optionally, `domains` (the answer's `dormant_identities` counts what a change of issuer left dormant). The organization's verified domains are kept with `backd.orgs.domains(orgId)`: `list()`, `add(domain)` (the answer holds the DNS `record`), `verify(domain)`, `update(domain, { discoverable, linkAccounts })` and `remove(domain)`, with `DomainTakenError`, `DomainExistsError` and `DomainsLimitError` for the 409s; `auth.discover(email)` answers which organization an address leads to. See [Verified domains](../../organizations/verified-domains/).
+
 `list()` and `get(provider)` need `manage: sso`; `set` and `delete` also a fresh proof. Leave `clientSecret` out of a `set` to keep the stored one. Administrators use `backd.admin.orgs.sso(id)`, `setSso(id, provider, input)` and `deleteSso(id, provider)`.
 
 For a signed-in user:

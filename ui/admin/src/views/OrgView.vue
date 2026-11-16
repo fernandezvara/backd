@@ -370,7 +370,7 @@ function askRevoke(i: OrgInvitation) {
 const invWho = (i: OrgInvitation) => i.email ?? i.user ?? t('orgs.invitations.anyone')
 
 // ---- Sign-in connections ----
-type Provider = 'google' | 'microsoft'
+type Provider = 'google' | 'microsoft' | 'oidc'
 const connecting = ref(false)
 const conn = ref({ provider: 'google' as Provider, clientId: '', clientSecret: '', tenant: '', hostedDomain: '', emailDomains: '', joinRoles: '', enabled: true, existing: false })
 const connError = ref('')

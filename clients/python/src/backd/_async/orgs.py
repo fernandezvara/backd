@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from ..models import (
     Org,
     OrgConnection,
+    OrgDomain,
     OrgInvitation,
     OrgMember,
     OrgTeam,
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
     from .client import AsyncClient
 
 __all__ = [
+    "AsyncOrgDomains",
     "AsyncOrgInvitations",
     "AsyncOrgMembers",
     "AsyncOrgSso",
@@ -31,7 +33,7 @@ __all__ = [
     "connection_body",
 ]
 
-Provider = Literal["google", "microsoft"]
+Provider = Literal["google", "microsoft", "oidc"]
 
 
 def connection_body(
@@ -40,6 +42,8 @@ def connection_body(
     client_secret: str | None = None,
     tenant: str | None = None,
     hosted_domain: str | None = None,
+    issuer: str | None = None,
+    domains: Sequence[str] | None = None,
     email_domains: Sequence[str] | None = None,
     native_client_ids: Sequence[str] | None = None,
     join_roles: Sequence[str] | None = None,
@@ -48,6 +52,7 @@ def connection_body(
     """The body of a connection call: what is left out is not sent."""
     given = {
         "client_secret": client_secret, "tenant": tenant, "hosted_domain": hosted_domain,
+        "issuer": issuer, "domains": domains,
         "email_domains": email_domains, "native_client_ids": native_client_ids, "join_roles": join_roles,
         "enabled": enabled,
     }  # fmt: skip
@@ -161,6 +166,11 @@ class AsyncOrgs:
         ``client.auth.sign_in_with(provider, org=...)``."""
         return AsyncOrgSso(self._client, org)
 
+    def domains(self, org: str) -> AsyncOrgDomains:
+        """The domains the organization proves it owns (``organizations.domains``): ``list``, ``add``, ``verify``,
+        ``update`` and ``remove``, for holders of ``manage: domains``."""
+        return AsyncOrgDomains(self._client, org)
+
     def invitations(self, org: str) -> AsyncOrgInvitations:
         """Invitations of an organization: ``client.orgs.invitations(id).create(...)``. The person who got a link
         previews it with ``client.auth.preview_invitation(token, org=...)`` and takes it by signing in to the
@@ -193,6 +203,8 @@ class AsyncOrgSso:
         client_secret: str | None = None,
         tenant: str | None = None,
         hosted_domain: str | None = None,
+        issuer: str | None = None,
+        domains: Sequence[str] | None = None,
         email_domains: Sequence[str] | None = None,
         native_client_ids: Sequence[str] | None = None,
         join_roles: Sequence[str] | None = None,
@@ -200,7 +212,9 @@ class AsyncOrgSso:
     ) -> OrgConnection:
         """Creates the connection or replaces every field of it. The client secret goes in and never comes out
         (required the first time; left out, the stored one is kept). Microsoft needs a ``tenant`` id (never
-        ``common``, ``organizations`` or ``consumers``), Google a ``hosted_domain``. ``join_roles`` are given to
+        ``common``, ``organizations`` or ``consumers``), Google a ``hosted_domain``, OpenID Connect an ``issuer`` (one
+        the realm allows) and a verified domain of the organization (``domains`` narrows which; the answer's
+        ``dormant_identities`` counts what a change of issuer left dormant). ``join_roles`` are given to
         people who join through it, nothing the setting manager could not give. Needs a fresh proof of identity:
         wrap the call in ``client.auth.with_proof``."""
         body = connection_body(
@@ -208,6 +222,8 @@ class AsyncOrgSso:
             client_secret=client_secret,
             tenant=tenant,
             hosted_domain=hosted_domain,
+            issuer=issuer,
+            domains=domains,
             email_domains=email_domains,
             native_client_ids=native_client_ids,
             join_roles=join_roles,
@@ -219,6 +235,46 @@ class AsyncOrgSso:
     async def delete(self, provider: Provider) -> None:
         """Removes the connection and its client secret. Needs a fresh proof of identity."""
         await self._client.request("DELETE", ["_orgs", self._org, "sso", provider], reauth=True)
+
+
+class AsyncOrgDomains:
+    """The verified domains of one organization: a domain is claimed, proved by publishing a DNS record, and
+    checked again by backd from then on."""
+
+    def __init__(self, client: AsyncClient, org: str) -> None:
+        self._client = client
+        self._org = org
+
+    async def list(self) -> dict[str, Any]:
+        """The claims (``items``) and the most the realm allows (``max_domains``). A realm without
+        ``organizations.domains`` answers :class:`NotFoundError`."""
+        return cast(dict[str, Any], (await self._client.request("GET", ["_orgs", self._org, "domains"])).data)
+
+    async def add(self, domain: str) -> OrgDomain:
+        """Starts a claim: the answer holds the DNS ``record`` to publish. A free-mail domain or a public suffix is
+        a :class:`ValidationError`; one already claimed a :class:`DomainExistsError`. Needs a fresh proof of
+        identity."""
+        res = await self._client.request("POST", ["_orgs", self._org, "domains"], body={"domain": domain}, reauth=True)
+        return cast(OrgDomain, res.data)
+
+    async def verify(self, domain: str) -> OrgDomain:
+        """Checks the record now: ``state`` is ``verified`` when it is there, or stays as it was with a ``reason``. A
+        domain another organization holds is a :class:`DomainTakenError`; at most six checks an hour per domain."""
+        res = await self._client.request("POST", ["_orgs", self._org, "domains", domain, "verify"])
+        return cast(OrgDomain, res.data)
+
+    async def update(
+        self, domain: str, *, discoverable: bool | None = None, link_accounts: bool | None = None
+    ) -> OrgDomain:
+        """Changes what the domain may be used for. Needs a fresh proof of identity."""
+        body = _compact(discoverable=discoverable, link_accounts=link_accounts)
+        res = await self._client.request("PATCH", ["_orgs", self._org, "domains", domain], body=body, reauth=True)
+        return cast(OrgDomain, res.data)
+
+    async def remove(self, domain: str) -> None:
+        """Releases the claim; a verified domain becomes free for another organization. Needs a fresh proof of
+        identity."""
+        await self._client.request("DELETE", ["_orgs", self._org, "domains", domain], reauth=True)
 
 
 class AsyncOrgMembers:

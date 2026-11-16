@@ -203,3 +203,15 @@ test('a company in an invite-only realm starts with the realm invitation', async
   await root.auth.signUpWithOrg({ email: 'f@example.com', password: 'dev-p4ssw0rd!', name: 'S', slug: 's-inc', invitation: 'bdi_x' })
   assert.equal(m.calls[0].body.invitation, 'bdi_x')
 })
+
+test('discover asks which organization an address leads to, with no session', async () => {
+  const m = mockFetch([{ body: { items: [{ org: 'o1', name: 'Acme', providers: ['microsoft'] }] } }, { body: { items: [] } }])
+  const c = createClient({ url: 'http://api.test', realm: 'acme', fetch: m.fetch })
+  const found = await c.auth.discover({ email: 'ana@acme.example' })
+  assert.deepEqual(found, [{ org: 'o1', name: 'Acme', providers: ['microsoft'] }])
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_auth/orgs/discover')
+  assert.equal(m.calls[0].method, 'POST')
+  assert.equal(m.calls[0].headers.Authorization, undefined)
+  assert.deepEqual(m.calls[0].body, { email: 'ana@acme.example' })
+  assert.deepEqual(await c.auth.discover({ email: 'nobody@nowhere.example' }), [])
+})
