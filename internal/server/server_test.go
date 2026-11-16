@@ -89,6 +89,32 @@ func TestUnprotectedAdminRoles(t *testing.T) {
 	}
 }
 
+// A realm whose administrator needs no second factor is never silent about it: a warning on an
+// instance that serves anyone, an explicit info line in dev mode (the development realm of
+// `backd template project --no-mfa`), nothing when the second factor is there.
+func TestStartupSaysWhenAnAdminNeedsNoSecondFactor(t *testing.T) {
+	open := registry.RealmSettings{Roles: map[string]registry.Role{"admin": {Admin: registry.AllRights}}}
+	safe := registry.RealmSettings{Roles: map[string]registry.Role{"admin": {Admin: registry.AllRights}}}
+	secondStep(&safe, "admin")
+	run := func(dev bool, s registry.RealmSettings) string {
+		var buf bytes.Buffer
+		app := &App{log: slog.New(slog.NewTextHandler(&buf, nil)), cfg: settings.Settings{Dev: dev}}
+		app.logAdminsWithoutSecondFactor("shop", s)
+		return buf.String()
+	}
+	if out := run(false, open); !strings.Contains(out, "level=WARN") || !strings.Contains(out, "realm=shop") {
+		t.Errorf("production: %q", out)
+	}
+	if out := run(true, open); !strings.Contains(out, "level=INFO") || !strings.Contains(out, "development") || !strings.Contains(out, "your own machine only") {
+		t.Errorf("dev mode: %q", out)
+	}
+	for _, dev := range []bool{false, true} {
+		if out := run(dev, safe); out != "" {
+			t.Errorf("a realm with the second factor logs %q (dev=%v)", out, dev)
+		}
+	}
+}
+
 func TestStartupRefusesAFieldWithoutItsKey(t *testing.T) {
 	ctx := context.Background()
 	root := cmdtest.Write(t, map[string]string{

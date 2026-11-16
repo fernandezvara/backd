@@ -75,10 +75,13 @@ func TemplateCollectionPolicy(c *kli.CommandContext) error {
 
 func TemplateProject(c *kli.CommandContext) error {
 	dir := cmdutil.Str(c, "dir")
-	files, err := templates.Project(dir, cmdutil.Str(c, "realm"))
+	files, err := templates.Project(dir, cmdutil.Str(c, "realm"), templates.ProjectOptions{NoMFA: cmdutil.Flag(c, "no-mfa")})
 	printTemplateFiles(c.Stdout(), files)
 	if err != nil {
 		return err
+	}
+	if cmdutil.Flag(c, "no-mfa") {
+		fmt.Fprintln(c.Stdout(), "\nnote: the administrator of this realm has no second factor: local development only (the README says how to put it back)")
 	}
 	fmt.Fprintf(c.Stdout(), "\nnext: cd %s && cat README.md\n", dir)
 	return nil

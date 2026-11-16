@@ -48,7 +48,7 @@ These docs describe the current `main`. If a released image refuses a configurat
 
 ## Commands ask for more than you gave
 
-- **`this account must use two-step verification: set up an authenticator app`**: the template's `admin` role requires a second factor, so `backd login --strategy admin_password` enrolls an authenticator the first time. To skip it while developing, remove `strategies` from the `admin` role in `realm.yaml` and sign in with `--strategy password` (or take the `totp` step out of its strategy).
+- **`this account must use two-step verification: set up an authenticator app`**: the template's `admin` role requires a second factor, so `backd login --strategy admin_password` enrolls an authenticator the first time. To work without it on your own machine, create the project with `backd template project --no-mfa` (a development realm whose administrator signs in with a password alone), or, in a realm you already have, comment the `totp` strategy and the `admin` role's `strategies:` out of `realm.yaml` and sign in without `--strategy`.
 - **`no password on standard input`**: some commands (creating an API key, for one) ask for your password again as a fresh proof. In a terminal they prompt; in a script, pipe the password to the command's standard input.
 
 ## What an HTTP error means

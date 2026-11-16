@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -98,6 +99,7 @@ func TestRunTemplateProject(t *testing.T) {
 		"created   config/shop/main/posts/schema.json",
 		"created   config/shop/main/_functions/stats/index.ts",
 		"created   compose.yaml",
+		"created   .env",
 		"created   .github/workflows/backd.yml",
 		"created   README.md",
 		"created   AGENTS.md",
@@ -109,6 +111,19 @@ func TestRunTemplateProject(t *testing.T) {
 	}
 	if _, err := registry.Load(filepath.Join(dir, "config")); err != nil {
 		t.Errorf("generated config doesn't load: %v", err)
+	}
+
+	// --no-mfa: a development realm, and the command says so.
+	devDir := filepath.Join(root, "dev-app")
+	code, out = cli("template", "project", "--dir", devDir, "--realm", "shop", "--no-mfa")
+	if code != 0 || !strings.Contains(out, "no second factor: local development only") {
+		t.Errorf("template project --no-mfa: %d\n%s", code, out)
+	}
+	if b, _ := os.ReadFile(filepath.Join(devDir, "config", "shop", "realm.yaml")); !strings.Contains(string(b), "LOCAL DEVELOPMENT ONLY") {
+		t.Error("the development realm doesn't say what it is")
+	}
+	if _, out := cli("template", "project", "--dir", filepath.Join(root, "plain"), "--realm", "shop"); strings.Contains(out, "no second factor") {
+		t.Errorf("the default project must not say it has no second factor:\n%s", out)
 	}
 
 	// A second run over the same (now non-empty) directory is refused.

@@ -14,31 +14,31 @@ This page is the shortest honest path to a `backd` you can build against: instal
 
 - **Docker with Compose** (Docker Desktop, or Docker Engine and the Compose plugin; rootless Podman with `podman-compose` also works). The first `up` pulls the images for MongoDB, MinIO and `backd`, so allow for a download; later runs start from the local copies.
 - **The `backd` command line**, from the [release archives](https://github.com/fernandezvara/backd/releases) (Linux, macOS, Windows). The server itself runs in the containers.
-- **A shell with `openssl` and `curl`** (on Windows, WSL2).
-- **An authenticator app on your phone** (any TOTP app). The template's `admin` role accepts only the `admin_password` strategy (the password, then a code), so `backd login --strategy admin_password` asks you to enroll an authenticator before you see a document. A development realm without that step is planned ([#889](https://github.com/fernandezvara/backd/issues/889)); until then, a realm of your own for local work can use `auth: { strategies: { dev: [password] } }`, a single password strategy that nobody has to name.
+- **A shell with `curl`** (on Windows, WSL2).
+
+No authenticator app and no secrets to invent: the project this page creates is a **development realm** whose administrator signs in with a password alone, and `backd template project` writes the secrets of its stack itself. [The same realm with a second factor](#with-a-second-factor) is one flag away.
 
 ## The short version
 
-From an empty directory. Two commands ask you for something: `backd-server bootstrap` asks for a new password, and `backd login` asks for that password and then a code from your authenticator app. `apikey create` asks for the password once more, as a fresh proof for a sensitive action.
+From an empty directory. Two commands ask you for something: `backd-server bootstrap` asks for a new password, and `backd login` and `backd apikey create` ask for it again.
 
 ```sh
-backd template project --dir ./my-app --realm demo && cd my-app
-cat > .env <<EOF
-EXECUTOR_TOKEN=$(openssl rand -base64 32)
-CALLBACK_KEY=$(openssl rand -base64 32)
-EGRESS_KEY=$(openssl rand -base64 32)
-EOF
+backd template project --dir ./my-app --realm demo --no-mfa && cd my-app
 docker compose up -d
 until curl -sf http://127.0.0.1:8080/readyz >/dev/null; do sleep 2; done   # MongoDB takes a moment
 docker compose exec backd backd-server bootstrap --realm demo --email me@example.com
-backd login --realm demo --url http://127.0.0.1:8080 --email me@example.com --strategy admin_password
+backd login --realm demo --url http://127.0.0.1:8080 --email me@example.com
 KEY=$(backd apikey create --realm demo --name local --expires 1d)
 curl -X POST http://127.0.0.1:8080/v1/demo/main/posts \
   -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
   -d '{"title": "Hello", "published": true}'
 ```
 
-The last command answers `201` with the new document. On Docker (not rootless Podman) also add `DEV_UID` and `DEV_GID` to `.env`, as step 3 explains. If a command is refused, see [Troubleshooting](../../troubleshooting/).
+{{< hint style="warning" >}}
+`--no-mfa` makes a realm **for working on your own machine**: its administrator has no second factor, so a stolen password would open everything. The generated `realm.yaml` says so on its first lines, backd says so in its log at startup, and the second step is a line away (see [With a second factor](#with-a-second-factor)). Never deploy it as it is.
+{{< /hint >}}
+
+The last command answers `201` with the new document. On Docker (not rootless Podman) also add `DEV_UID` and `DEV_GID` to the `.env` the project wrote, as step 3 explains. If a command is refused, see [Troubleshooting](../../troubleshooting/).
 
 The rest of the page explains each step, then the Docker-free setup and the commands you will use.
 
@@ -62,7 +62,7 @@ Checksums, SBOMs and signature verification are an operations concern: [Deployin
 `backd template project` creates a complete config repository in one step — a realm with a sample database (a `posts` collection and a `stats` function with tests), a local development stack on the released images (nothing is built), a check-only GitHub workflow and an `AGENTS.md` for AI coding assistants:
 
 ```sh
-backd template project --dir ./my-app --realm demo
+backd template project --dir ./my-app --realm demo --no-mfa
 cd my-app
 ```
 
@@ -74,6 +74,7 @@ config/demo/
     posts/                 a sample collection: schema, rules, indexes
     _functions/stats/      a sample function, with a deno test
 compose.yaml               MongoDB, backd, the executor, egress and MinIO
+.env                       the three random secrets of the stack (gitignored)
 .github/workflows/backd.yml  "Backd config check" on every push
 AGENTS.md                  the repo guide AI coding assistants read
 ```
@@ -86,19 +87,11 @@ The generated `compose.yaml` runs MongoDB 8.2 (a single-node replica set), `back
 
 **Docker Desktop** (macOS, Windows): it ships the Compose plugin, so the same commands below work in any terminal where `docker` is on the path. Once started, the stack appears in the Dashboard under **Compose** — one project per `compose.yaml` — where you can watch each service's logs, restart a service or stop the whole stack. On Linux, plain Docker Engine plus the Compose plugin does the same.
 
-Write the three secrets the stack needs to a `.env` file next to `compose.yaml` — once; compose reads it automatically on every run (and it's gitignored):
-
-```sh
-cat > .env <<EOF
-EXECUTOR_TOKEN=$(openssl rand -base64 32)
-CALLBACK_KEY=$(openssl rand -base64 32)
-EGRESS_KEY=$(openssl rand -base64 32)
-EOF
-```
+`backd template project` already wrote the three secrets the stack needs to `.env` next to `compose.yaml` (random, different for every project, readable by you only; the project's `.gitignore` keeps the file out of git), and compose reads it on every run.
 
 On Docker (a rootful daemon, e.g. Docker Desktop) also add `DEV_UID=$(id -u)` and `DEV_GID=$(id -g)` to `.env`, so files backd generates into `config/` belong to you; on rootless podman the default already maps to your user.
 
-Then bring it up — the three are required, so a missing one stops compose before anything starts and names it:
+Bring it up (a missing secret would stop compose before anything starts and name it):
 
 ```sh
 docker compose up
@@ -110,10 +103,10 @@ docker compose up
 docker compose exec backd backd-server bootstrap --realm demo --email me@example.com
 ```
 
-Sign in with the CLI. The template's `admin` role requires a second factor, so this first login enrolls an authenticator app (see [Multi-factor authentication](../auth/mfa/) for what it shows and asks). Then create an API key for calls:
+Sign in with the CLI, then create an API key for calls:
 
 ```sh
-backd login --realm demo --url http://127.0.0.1:8080 --email me@example.com --strategy admin_password
+backd login --realm demo --url http://127.0.0.1:8080 --email me@example.com
 KEY=$(backd apikey create --realm demo --name local --expires 1d)
 ```
 
@@ -139,6 +132,10 @@ backd functions invoke --function demo/main/stats --url http://127.0.0.1:8080
 ```
 
 The generated `README.md` in the project covers the same steps, plus MinIO and how to point a realm's `storage:` at it.
+
+### With a second factor
+
+Without `--no-mfa` the project's `admin` role is the production shape: it accepts only the `admin_password` strategy (the password, then a code from an authenticator app). Create it with `backd template project --dir ./my-app --realm demo` and sign in with `backd login --realm demo --url http://127.0.0.1:8080 --email me@example.com --strategy admin_password`: the first login makes you enroll an authenticator (any TOTP app; see [Multi-factor authentication](../auth/mfa/) for what it shows and asks). To turn a `--no-mfa` project into this one, uncomment the `admin_password` strategy and the role's `strategies:` line in `config/demo/realm.yaml`.
 
 ### The iterate loop
 

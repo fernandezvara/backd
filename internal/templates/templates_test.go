@@ -2,6 +2,7 @@ package templates
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io/fs"
 	"os"
@@ -134,7 +135,7 @@ func TestDatabase(t *testing.T) {
 func TestProject(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "my-app")
-	files, err := Project(dir, "shop")
+	files, err := Project(dir, "shop", ProjectOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,6 +153,7 @@ func TestProject(t *testing.T) {
 		"config/shop/_realm/email/verify-email/en.txt",
 		"config/shop/_realm/email/invitation/en.html",
 		"compose.yaml",
+		".env",
 		".gitignore",
 		".github/workflows/backd.yml",
 		"README.md",
@@ -192,10 +194,10 @@ func TestProject(t *testing.T) {
 	}
 
 	// Refuses a non-empty target, and an invalid realm name.
-	if _, err := Project(dir, "shop"); err == nil || !strings.Contains(err.Error(), "already exists and isn't an empty directory") {
+	if _, err := Project(dir, "shop", ProjectOptions{}); err == nil || !strings.Contains(err.Error(), "already exists and isn't an empty directory") {
 		t.Errorf("existing dir: %v", err)
 	}
-	if _, err := Project(filepath.Join(root, "other"), "Shop"); err == nil || !strings.Contains(err.Error(), `invalid realm name "Shop"`) {
+	if _, err := Project(filepath.Join(root, "other"), "Shop", ProjectOptions{}); err == nil || !strings.Contains(err.Error(), `invalid realm name "Shop"`) {
 		t.Errorf("bad realm name: %v", err)
 	}
 }
@@ -214,7 +216,7 @@ func TestProjectBuildsAndChecks(t *testing.T) {
 	}
 	root := t.TempDir()
 	dir := filepath.Join(root, "my-app")
-	if _, err := Project(dir, "shop"); err != nil {
+	if _, err := Project(dir, "shop", ProjectOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	reg, err := registry.Load(filepath.Join(dir, "config"))
@@ -407,5 +409,95 @@ func TestRealmTemplateListsEveryAuditAction(t *testing.T) {
 	s := reg.Realms["demo"].Settings
 	if s.AuditEnabled("user.login") || !s.AuditEnabled("user.login_failed") || !s.AuditEnabled("role.add") {
 		t.Errorf("the template changes the defaults: %v", s.AuditEntries)
+	}
+}
+
+// The project writes the secrets of its stack itself: nobody has to invent three random values to
+// start it, and the file is the owner's alone and not committed.
+func TestProjectWritesTheSecretsOfItsStack(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "my-app")
+	if _, err := Project(dir, "shop", ProjectOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, ".env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := map[string]string{}
+	for _, line := range strings.Split(string(data), "\n") {
+		if k, v, ok := strings.Cut(line, "="); ok && !strings.HasPrefix(line, "#") {
+			values[k] = v
+		}
+	}
+	for _, name := range []string{"EXECUTOR_TOKEN", "CALLBACK_KEY", "EGRESS_KEY"} {
+		raw, err := base64.StdEncoding.DecodeString(values[name])
+		if err != nil || len(raw) != 32 {
+			t.Errorf("%s = %q: want 32 random bytes in base64 (%v)", name, values[name], err)
+		}
+	}
+	if values["EXECUTOR_TOKEN"] == values["CALLBACK_KEY"] || values["CALLBACK_KEY"] == values["EGRESS_KEY"] {
+		t.Error("the three secrets must differ")
+	}
+	if fi, _ := os.Stat(filepath.Join(dir, ".env")); fi.Mode().Perm() != 0o600 {
+		t.Errorf(".env mode = %v, want 0600", fi.Mode().Perm())
+	}
+	if ignore, _ := os.ReadFile(filepath.Join(dir, ".gitignore")); !strings.Contains(string(ignore), "\n.env\n") {
+		t.Error(".gitignore doesn't ignore .env")
+	}
+	// Another project gets other secrets.
+	other := filepath.Join(t.TempDir(), "other")
+	if _, err := Project(other, "shop", ProjectOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if o, _ := os.ReadFile(filepath.Join(other, ".env")); string(o) == string(data) {
+		t.Error("two projects share their secrets")
+	}
+}
+
+// --no-mfa: a development realm whose administrator signs in with a password alone, so the first
+// request needs no authenticator app. It says so where it is read, and the default stays safe.
+func TestProjectWithoutMFAIsForLocalDevelopmentOnly(t *testing.T) {
+	safe := filepath.Join(t.TempDir(), "safe")
+	dev := filepath.Join(t.TempDir(), "dev")
+	if _, err := Project(safe, "shop", ProjectOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Project(dev, "shop", ProjectOptions{NoMFA: true}); err != nil {
+		t.Fatal(err)
+	}
+	read := func(dir string) string {
+		b, err := os.ReadFile(filepath.Join(dir, "config", "shop", "realm.yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	if !strings.Contains(read(safe), "admin_password: [password, totp]") || strings.Contains(read(safe), "LOCAL DEVELOPMENT ONLY") {
+		t.Error("the default project must keep the second factor for the administrator")
+	}
+	d := read(dev)
+	if strings.Contains(d, "totp]") && strings.Contains(strings.ReplaceAll(d, "\n#", "\n"), "\n    admin_password: [password, totp]") {
+		t.Error("the development realm still lists the totp strategy")
+	}
+	if !strings.Contains(d, "LOCAL DEVELOPMENT ONLY") {
+		t.Error("the development realm doesn't say what it is")
+	}
+	reg, err := registry.Load(filepath.Join(dev, "config"))
+	if err != nil {
+		t.Fatalf("the development realm doesn't load: %v", err)
+	}
+	s := reg.Realms["shop"].Settings
+	if s.TOTPRequired(s.AdminRoles()) {
+		t.Error("the administrator of the development realm still needs a second factor")
+	}
+	// One strategy starts with the password: nobody has to name it when signing in.
+	if len(s.Strategies) != 1 {
+		t.Errorf("strategies = %d, want one", len(s.Strategies))
+	}
+	for _, name := range []string{"README.md", "AGENTS.md"} {
+		b, _ := os.ReadFile(filepath.Join(dev, name))
+		if !strings.Contains(string(b), "second factor") && name == "README.md" {
+			t.Error("the README doesn't say the realm has no second factor")
+		}
 	}
 }

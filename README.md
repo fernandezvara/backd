@@ -22,23 +22,18 @@
 The shortest path to a realm you can build against — see the [Quickstart](https://fernandezvara.github.io/backd/docs/build/quickstart/) for the full walkthrough. Get the `backd` command line from [GitHub Releases](https://github.com/fernandezvara/backd/releases) (Linux, macOS and Windows); `backd-server`, which runs the server (Linux only), comes in the image `ghcr.io/fernandezvara/backd` and as a release archive, then generate a project and run its compose stack:
 
 ```sh
-backd template project --dir ./my-app --realm demo && cd my-app
-cat > .env <<EOF
-EXECUTOR_TOKEN=$(openssl rand -base64 32)
-CALLBACK_KEY=$(openssl rand -base64 32)
-EGRESS_KEY=$(openssl rand -base64 32)
-EOF
+backd template project --dir ./my-app --realm demo --no-mfa && cd my-app
 docker compose up -d
 until curl -sf http://127.0.0.1:8080/readyz >/dev/null; do sleep 2; done   # MongoDB takes a moment
 docker compose exec backd backd-server bootstrap --realm demo --email me@example.com
-backd login --realm demo --url http://127.0.0.1:8080 --email me@example.com --strategy admin_password
+backd login --realm demo --url http://127.0.0.1:8080 --email me@example.com
 KEY=$(backd apikey create --realm demo --name local --expires 1d)
 curl -X POST http://127.0.0.1:8080/v1/demo/main/posts \
   -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
   -d '{"title": "Hello", "published": true}'
 ```
 
-These are the Quickstart's commands, word for word. Three of them ask for something: `bootstrap` for a new password, `backd login` for that password and a code from an authenticator app (the template's `admin` role requires a second factor), and `apikey create` for the password again. The [Quickstart](https://fernandezvara.github.io/backd/docs/build/quickstart/) lists what you need and explains each step.
+These are the Quickstart's commands, word for word. Three of them ask for the password: `bootstrap` for a new one, then `backd login` and `apikey create`. `--no-mfa` makes a development realm whose administrator has no second factor (**for your own machine only**; drop the flag for the production shape, which asks for an authenticator app). The project's `.env` with the stack's secrets is written for you. The [Quickstart](https://fernandezvara.github.io/backd/docs/build/quickstart/) lists what you need and explains each step.
 
 To explore instead, this checkout ships example realms and applications on a local HTTPS stack:
 

@@ -58,12 +58,14 @@ With `--sample`, the command adds a `posts` collection (title, body, published, 
 
 The command prints each file it created and each one it left unchanged because it already existed.
 
-For a complete config repository in one step — the realm and sample database above, a sample function with tests, a local development stack on the released images (MongoDB, backd in dev mode, the functions executor, egress and MinIO), a check-only `Backd config check` workflow and an `AGENTS.md` — use `backd template project --dir <directory> --realm <realm>` instead. Unlike the commands above, `<directory>` must not exist yet: it creates the whole tree, not just a piece of it. See [Deploying config](../../../operate/deploying/) for how a config repo is packaged for production (the template's stack is for development) and [Unit testing a function's logic](../../functions/testing/#unit-testing-a-functions-logic) for the testing helper it vendors.
+For a complete config repository in one step — the realm and sample database above, a sample function with tests, a local development stack on the released images (MongoDB, backd in dev mode, the functions executor, egress and MinIO), a check-only `Backd config check` workflow, an `AGENTS.md` and a `.env` with the three random secrets the stack needs (not committed) — use `backd template project --dir <directory> --realm <realm>` instead. Unlike the commands above, `<directory>` must not exist yet: it creates the whole tree, not just a piece of it. See [Deploying config](../../../operate/deploying/) for how a config repo is packaged for production (the template's stack is for development) and [Unit testing a function's logic](../../functions/testing/#unit-testing-a-functions-logic) for the testing helper it vendors.
 
 ```sh
 backd template project --dir ./my-app --realm demo
 cd my-app && cat README.md
 ```
+
+The realm it writes is the production shape: its `admin` role needs a second factor. Add `--no-mfa` for a **development realm** whose administrator signs in with a password alone, so the first request needs no authenticator app: the generated `realm.yaml` starts with a banner that says so, backd logs it at startup in dev mode, and the commented lines to put the second step back are in the file. It is for working on your own machine; never deploy it as it is.
 
 ## Names
 

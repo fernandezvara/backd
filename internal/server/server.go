@@ -860,6 +860,22 @@ func checkPasskeys(ctx context.Context, log *slog.Logger, rl *registry.Realm, st
 	return nil
 }
 
+// logAdminsWithoutSecondFactor says at startup which admin roles of a realm need no second
+// factor: a warning when the instance serves anyone, and in dev mode (where it is the point of a
+// development realm) an info line that says so, so that it is never silent.
+func (a *App) logAdminsWithoutSecondFactor(realm string, s registry.RealmSettings) {
+	open := unprotectedAdminRoles(s)
+	switch {
+	case len(open) == 0:
+	case a.cfg.Dev:
+		a.log.Info("development: the admin roles of this realm sign in without a second factor. That is for working on your own machine only: a realm that serves anyone else needs a strategy with a totp step",
+			"realm", realm, "roles", open)
+	default:
+		a.log.Warn("admin roles that don't require a second factor: give them strategies with a totp step in realm.yaml so that a stolen password is not enough",
+			"realm", realm, "roles", open)
+	}
+}
+
 // unprotectedAdminRoles lists the realm's admin roles that accept a strategy without a
 // totp step. A realm that turned MFA off is not warned: it chose not to have it.
 func unprotectedAdminRoles(s registry.RealmSettings) []string {
@@ -934,12 +950,7 @@ func (a *App) syncRoles(ctx context.Context) error {
 			a.log.Error("the realm requires a second factor but this instance has no BACKD_SECRETS_KEY: those users can't sign in (503 mfa_unavailable) until it is set",
 				"realm", rl.Name, "roles", roles, "all", everyone)
 		}
-		if !a.cfg.Dev {
-			if open := unprotectedAdminRoles(rl.Settings); len(open) > 0 {
-				a.log.Warn("admin roles that don't require a second factor: give them strategies with a totp step in realm.yaml so that a stolen password is not enough",
-					"realm", rl.Name, "roles", open)
-			}
-		}
+		a.logAdminsWithoutSecondFactor(rl.Name, rl.Settings)
 		if len(rep.Undeclared) > 0 {
 			a.log.Warn("users have roles that realm.yaml no longer declares; rules can't use them",
 				"realm", rl.Name, "users", len(rep.Undeclared))
