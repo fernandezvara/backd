@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/fernandezvara/backd/internal/executor"
 	"maps"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -3432,6 +3433,109 @@ func TestContract(t *testing.T) {
 		req("PUT", asso+"/google", google, json(key), 409)
 	}
 
+	// Verified domains (design/sso.md §10).
+	{
+		orgs, adm := "/v1/acme/_orgs", "/v1/acme/_admin/orgs"
+		made, err := f.svc.AdminCreateOrg(context.Background(), "Domains Inc", "domains-inc", f.adaID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		org := made.Org.ID
+		other, err := f.svc.AdminCreateOrg(context.Background(), "Rival Inc", "rival-inc", f.adaID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dns := &fakeDNS{}
+		f.svc.DNS = dns
+		defer func() { f.svc.DNS = nil }()
+		proof := func() map[string]string { return with(ada, reauthHeader, f.freshProof(t, f.ada)) }
+		dom, adom := orgs+"/"+org+"/domains", adm+"/"+org+"/domains"
+		req("GET", dom, "", nil, 401)
+		req("GET", dom, "", carl, 403)
+		req("GET", "/v1/nope/_orgs/"+org+"/domains", "", ada, 404)
+		req("GET", dom, "", ada, 200)
+		req("POST", dom, `{"domain": "acme.example"}`, nil, 401)
+		req("POST", dom, `{"domain": "acme.example"}`, with(carl, "Content-Type", "application/json"), 403)
+		req("POST", dom, `{}`, proof(), 400)
+		req("POST", dom, `{"domain": "gmail.com"}`, proof(), 422)
+		claim := req("POST", dom, `{"domain": "Acme.Example"}`, proof(), 201)
+		rec, _ := claim["record"].(map[string]any)
+		if claim["domain"] != "acme.example" || claim["state"] != "pending" || rec["name"] != "_backd-challenge.acme.example" || !strings.HasPrefix(rec["value"].(string), "backd-verify=") {
+			t.Errorf("claim = %v", claim)
+		}
+		req("POST", dom, `{"domain": "acme.example"}`, proof(), 409)
+		// Not proved yet: the claim stays pending and says why.
+		if out := req("POST", dom+"/acme.example/verify", "", ada, 200); out["state"] != "pending" || out["reason"] != "record_not_found" {
+			t.Errorf("verify without a record: %v", out)
+		}
+		req("POST", dom+"/acme.example/verify", "", nil, 401)
+		req("POST", dom+"/acme.example/verify", "", carl, 403)
+		req("POST", dom+"/nope.example/verify", "", ada, 404)
+		dns.set("_backd-challenge.acme.example", rec["value"].(string))
+		if out := req("POST", dom+"/acme.example/verify", "", ada, 200); out["state"] != "verified" || out["verified_at"] == nil {
+			t.Errorf("verify with the record: %v", out)
+		}
+		req("PATCH", dom+"/acme.example", `{"discoverable": true}`, nil, 401)
+		req("PATCH", dom+"/acme.example", `{"discoverable": true}`, with(carl, "Content-Type", "application/json"), 403)
+		req("PATCH", dom+"/acme.example", `{"colour": "red"}`, with(proof(), "Content-Type", "application/json"), 400)
+		req("PATCH", dom+"/nope.example", `{"discoverable": true}`, with(proof(), "Content-Type", "application/json"), 404)
+		if out := req("PATCH", dom+"/acme.example", `{"discoverable": true, "link_accounts": false}`, with(proof(), "Content-Type", "application/json"), 200); out["discoverable"] != true || out["link_accounts"] != false {
+			t.Errorf("patch = %v", out)
+		}
+		// Another organization claims it and proves the same record: the first to be verified holds it.
+		rival := adm + "/" + other.Org.ID + "/domains"
+		stolen := req("POST", rival, `{"domain": "acme.example"}`, json(key), 201)
+		dns.set("_backd-challenge.acme.example", stolen["record"].(map[string]any)["value"].(string))
+		req("POST", rival+"/acme.example/verify", "", key, 409)
+		req("POST", orgs+"/"+other.Org.ID+"/domains/acme.example/verify", "", ada, 409)
+		req("POST", "/v1/nope/_orgs/"+org+"/domains", `{"domain": "x.example"}`, proof(), 404)
+		req("POST", dom, `{"domain": "slow.example"}`, proof(), 201)
+		for range auth.DomainVerifyPerHour {
+			req("POST", dom+"/slow.example/verify", "", ada, 200)
+		}
+		req("POST", dom+"/slow.example/verify", "", ada, 429)
+		req("DELETE", dom+"/slow.example", "", proof(), 204)
+
+		// The administrator's side.
+		req("GET", adom, "", nil, 401)
+		req("GET", adom, "", ada, 403)
+		req("GET", adm+"/nope/domains", "", key, 404)
+		if out := req("GET", adom, "", key, 200); len(out["items"].([]any)) != 1 {
+			t.Errorf("admin list = %v", out)
+		}
+		req("POST", adom, `{"domain": "acme.example"}`, nil, 401)
+		req("POST", adom, `{"domain": "acme.example"}`, json(ada), 403)
+		req("POST", adom, `{}`, json(key), 400)
+		req("POST", adm+"/nope/domains", `{"domain": "x.example"}`, json(key), 404)
+		req("POST", adom, `{"domain": "co.uk"}`, json(key), 422)
+		req("POST", adom, `{"domain": "acme.example"}`, json(key), 409)
+		req("POST", adom, `{"domain": "second.example"}`, json(key), 201)
+		req("POST", adom, `{"domain": "third.example"}`, json(key), 201)
+		req("POST", adom, `{"domain": "fourth.example"}`, json(key), 409) // organizations.domains.max_per_org is 3
+		req("POST", adom+"/second.example/verify", "", nil, 401)
+		req("POST", adom+"/second.example/verify", "", ada, 403)
+		req("POST", adom+"/nope.example/verify", "", key, 404)
+		req("POST", adom+"/second.example/verify", "", key, 200)
+		req("PATCH", adom+"/second.example", `{"link_accounts": false}`, nil, 401)
+		req("PATCH", adom+"/second.example", `{"link_accounts": false}`, json(ada), 403)
+		req("PATCH", adom+"/second.example", `{"x": 1}`, json(key), 400)
+		req("PATCH", adom+"/nope.example", `{"link_accounts": false}`, json(key), 404)
+		req("PATCH", adom+"/second.example", `{"link_accounts": false}`, json(key), 200)
+		// Checks are limited per domain.
+		for range auth.DomainVerifyPerHour {
+			req("POST", adom+"/third.example/verify", "", key, 200)
+		}
+		req("POST", adom+"/third.example/verify", "", key, 429)
+		req("DELETE", adom+"/second.example", "", nil, 401)
+		req("DELETE", adom+"/second.example", "", ada, 403)
+		req("DELETE", adom+"/second.example", "", key, 204)
+		req("DELETE", adom+"/second.example", "", key, 404)
+		req("DELETE", dom+"/third.example", "", nil, 401)
+		req("DELETE", dom+"/third.example", "", carl, 403)
+		req("DELETE", dom+"/nope.example", "", proof(), 404)
+		req("DELETE", dom+"/third.example", "", proof(), 204)
+	}
+
 	// Signing in to an organization.
 	{
 		// The checks above have used up the limits of this client address; the ones tested here
@@ -3672,4 +3776,28 @@ func mustExport(t *testing.T, svc *auth.Users, userID, id string) auth.UserExpor
 		t.Fatal(err)
 	}
 	return e
+}
+
+// fakeDNS answers the TXT lookups of the domain checks from a table.
+type fakeDNS struct {
+	mu      sync.Mutex
+	records map[string][]string
+}
+
+func (d *fakeDNS) set(name string, values ...string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.records == nil {
+		d.records = map[string][]string{}
+	}
+	d.records[name] = values
+}
+
+func (d *fakeDNS) LookupTXT(_ context.Context, name string) ([]string, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if v, ok := d.records[name]; ok {
+		return v, nil
+	}
+	return nil, &net.DNSError{Err: "no such host", Name: name, IsNotFound: true}
 }

@@ -35,6 +35,10 @@ type Users struct {
 	// Metrics counts sessions and limits; nil turns it off.
 	Metrics *metrics.Metrics
 
+	// DNS reads the TXT records that prove a domain; nil: the host's resolver, or the realm's
+	// organizations.domains.resolvers. Tests give a fake.
+	DNS DomainResolver
+
 	// noLocalLock skips the in-process lock of password checks, so a test with
 	// several Users on one store can show that the store's lock alone holds.
 	noLocalLock bool

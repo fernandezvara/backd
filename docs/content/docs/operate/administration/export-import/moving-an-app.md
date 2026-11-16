@@ -89,6 +89,7 @@ A package holds documents only: the users who own them stay behind unless you as
 | `users`, `identities` | Accounts and their sign-in methods, **password hashes included** |
 | `orgs`, `org_members`, `org_teams` | Organizations, memberships (with their roles) and teams |
 | `org_connections` | The [sign-in connections](../../../../build/organizations/api/#sign-in-connections) of organizations, **without their client secrets**: after an import a connection is there but unavailable until a manager or an administrator sets its secret again |
+| `org_domains` | The [domains](../../../../build/organizations/verified-domains/) organizations claimed, **as pending**: they are proved again in the new realm. Anonymized packages carry none |
 | `mfa` | Second-factor enrollments (authenticator apps) |
 | `devices` | Push notification devices |
 

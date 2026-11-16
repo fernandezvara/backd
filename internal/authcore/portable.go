@@ -7,7 +7,7 @@ import (
 
 // The realm's authentication data that moves with an app (design/export-import.md §7): the
 // system collections an export package can hold, in the order an import writes them.
-var PortableCollections = []string{"users", "identities", "orgs", "org_members", "org_teams", "org_connections", "mfa", "devices"}
+var PortableCollections = []string{"users", "identities", "orgs", "org_members", "org_teams", "org_connections", "org_domains", "mfa", "devices"}
 
 // PortableSealed names, per collection, the fields sealed with the realm's secrets cipher. An
 // export opens them and seals them again under the one-time export key; an import (after the

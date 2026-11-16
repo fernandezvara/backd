@@ -20,6 +20,7 @@ type memOrgs struct {
 	seq     map[string]int64 // org + "\x00" + user → the last membership event number
 	tpls    map[string]auth.OrgTemplate
 	conns   map[string]auth.OrgConnection // org + "\x00" + provider
+	domains map[string]auth.OrgDomain
 }
 
 func (m *MemStore) org() *memOrgs {

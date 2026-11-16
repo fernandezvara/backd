@@ -49,6 +49,7 @@ func TestProvisionSystemDatabase(t *testing.T) {
 		"api_keys":       {"name:1 unique"},
 		"invitations":    {"token_hash:1 unique", "expires_at:1 ttl"},
 		"login_attempts": {"expires_at:1 ttl"},
+		"org_domains":    {"org:1,domain:1 unique", "domain:1 unique", "next_check_at:1"},
 	}
 	for coll, want := range wantIdx {
 		got := describeIndexes(t, client.Database(sys).Collection(coll))

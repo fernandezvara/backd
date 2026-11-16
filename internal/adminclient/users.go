@@ -220,3 +220,27 @@ func (x *Orgs) SSODelete(ctx context.Context, id, provider string, opts ...Opt) 
 	_, err := x.call(ctx, "DELETE", s("orgs", id, "sso", provider), nil, nil, nil, opts)
 	return err
 }
+
+// DomainsList lists an organization's domain claims.
+func (x *Orgs) DomainsList(ctx context.Context, id string, out any, opts ...Opt) error {
+	_, err := x.call(ctx, "GET", s("orgs", id, "domains"), nil, nil, out, opts)
+	return err
+}
+
+// DomainClaim starts a claim on a domain.
+func (x *Orgs) DomainClaim(ctx context.Context, id string, body, out any, opts ...Opt) error {
+	_, err := x.call(ctx, "POST", s("orgs", id, "domains"), nil, body, out, opts)
+	return err
+}
+
+// DomainVerify checks the DNS record of a claim now.
+func (x *Orgs) DomainVerify(ctx context.Context, id, domain string, out any, opts ...Opt) error {
+	_, err := x.call(ctx, "POST", s("orgs", id, "domains", domain, "verify"), nil, nil, out, opts)
+	return err
+}
+
+// DomainRemove releases a claim.
+func (x *Orgs) DomainRemove(ctx context.Context, id, domain string, opts ...Opt) error {
+	_, err := x.call(ctx, "DELETE", s("orgs", id, "domains", domain), nil, nil, nil, opts)
+	return err
+}

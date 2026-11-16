@@ -460,6 +460,18 @@ type Store interface {
 	// Organization sign-in connections (design/sso.md §9): one per organization and provider.
 	// PutOrgConnection creates or replaces it, keeping Blocked, CreatedAt and the id of an
 	// existing one. OrgConnection and DeleteOrgConnection return ErrNotFound for none.
+	// OrgDomain claims (design/sso.md §10): PutOrgDomain creates or replaces one by its id and
+	// ErrDomainTaken when it would make a second organization hold a verified domain; the finders
+	// return ErrNotFound for none; DueOrgDomains are those whose next check is due; DeleteOrgDomains
+	// drops an organization's claims and counts them.
+	PutOrgDomain(ctx context.Context, d OrgDomain) error
+	OrgDomain(ctx context.Context, org, domain string) (OrgDomain, error)
+	OrgDomains(ctx context.Context, org string) ([]OrgDomain, error)
+	VerifiedOrgDomain(ctx context.Context, domain string) (OrgDomain, error)
+	DueOrgDomains(ctx context.Context, now time.Time, limit int) ([]OrgDomain, error)
+	DeleteOrgDomain(ctx context.Context, org, domain string) error
+	DeleteOrgDomains(ctx context.Context, org string) (int, error)
+
 	PutOrgConnection(ctx context.Context, c OrgConnection) error
 	OrgConnection(ctx context.Context, org, provider string) (OrgConnection, error)
 	// OrgConnections lists an organization's connections, sorted by provider.

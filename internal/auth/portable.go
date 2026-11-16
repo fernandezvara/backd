@@ -130,6 +130,9 @@ func (s *Users) ExportAuthDocs(ctx context.Context, collection, afterID string, 
 			continue
 		}
 		maps.Copy(d, PortableReset(collection))
+		if collection == "org_domains" {
+			asPendingClaim(d)
+		}
 		carry := true
 		for _, f := range PortableSealed[collection] {
 			sealed, _ := d[f].(string)
@@ -180,6 +183,9 @@ func (s *Users) ImportAuthDocs(ctx context.Context, collection string, docs []ma
 		bad := ""
 		if collection == "org_connections" {
 			bad = importedConnectionProblem(d)
+		}
+		if collection == "org_domains" {
+			bad = importedDomainProblem(d)
 		}
 		for _, f := range PortableSealed[collection] {
 			if bad != "" {
@@ -286,6 +292,34 @@ func importedConnectionProblem(d map[string]any) string {
 		if msg := registry.DomainProblem(dom); msg != "" {
 			return "email_domains " + msg
 		}
+	}
+	return ""
+}
+
+// asPendingClaim turns a domain claim into what travels: a claim to prove again in the new realm.
+// What was proved in one place proves nothing in another (the DNS may have moved, and the domain
+// may be someone else's there), so the state, the failures and the check times are reset.
+func asPendingClaim(d map[string]any) {
+	d["state"], d["failures"], d["checks"] = DomainPending, 0, 0
+	delete(d, "verified_at")
+	delete(d, "last_checked_at")
+	delete(d, "next_check_at")
+}
+
+// importedDomainProblem says what is wrong with a domain claim in an import package, or "": it must
+// be a well-formed claim, and arrive pending.
+func importedDomainProblem(d map[string]any) string {
+	str := func(k string) string { v, _ := d[k].(string); return v }
+	org, domain := str("org"), str("domain")
+	switch {
+	case org == "" || domain == "" || str("id") != org+":"+domain:
+		return "id must be <org>:<domain>"
+	case registry.DomainProblem(domain) != "":
+		return "domain " + registry.DomainProblem(domain)
+	case str("challenge") == "":
+		return "challenge is missing"
+	case str("state") != DomainPending:
+		return "a claim travels as pending: it is proved again in the new realm"
 	}
 	return ""
 }
