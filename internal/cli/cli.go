@@ -65,11 +65,12 @@ func newCLI(getenv func(string) string, stdin io.Reader, stdout, stderr io.Write
 			cmdutil.Required(cc, "collection", "the collection to add the file to")
 		})
 	tpl.SubCommand("project").ShortHelp("create a complete config repository").
-		LongHelp("Creates a complete config repository at --dir (which must not exist yet): the\nrealm and sample database, a sample function with tests, a compose stack on the\nreleased images for local development (nothing is built), the check-only\nBackd config check workflow, an AGENTS.md and a README.\nSee the generated README.md.").
+		LongHelp("Creates a complete config repository at --dir (which must not exist yet): the\nrealm and sample database, a sample function with tests, a compose stack on the\nreleased images for local development (nothing is built), the check-only\nBackd config check workflow, an AGENTS.md and a README, and a .env with the three\nrandom secrets the stack needs (not committed). The administrator of the realm\nneeds a second factor; --no-mfa makes a development realm without one.\nSee the generated README.md.").
 		Func(cmdutil.Act("backd template project", project.TemplateProject)).
 		Config(func(cc *kli.CommandConfig) {
 			cmdutil.Required(cc, "dir", "the directory to create")
 			cmdutil.Required(cc, "realm", "the realm of the project")
+			cmdutil.Boolean(cc, "no-mfa", "a development realm: the administrator signs in with a password alone, no authenticator app (local development only)")
 		})
 
 	cfg.Command("databases").

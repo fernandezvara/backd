@@ -25,17 +25,7 @@ AGENTS.md                      repo guide for AI coding assistants
 
 ## Develop locally
 
-1. Create a `.env` file next to `compose.yaml` with the three secrets it needs — once; compose reads `.env` automatically on every run, so it survives new terminals and sessions (`.env` is gitignored):
-
-   ```sh
-   cat > .env <<EOF
-   EXECUTOR_TOKEN=$(openssl rand -base64 32)
-   CALLBACK_KEY=$(openssl rand -base64 32)
-   EGRESS_KEY=$(openssl rand -base64 32)
-   EOF
-   ```
-
-   The three are required: if one is missing, `docker compose` stops before starting anything and names it.
+1. The three secrets the stack needs are in `.env` next to `compose.yaml`: `backd template project` generated them (random, different for every project, readable by you only) and `.gitignore` keeps the file out of git. Compose reads it on every run. To make a new set, delete the file and write three random values for `EXECUTOR_TOKEN`, `CALLBACK_KEY` and `EGRESS_KEY` (`openssl rand -base64 32` each).
 
    On Docker (a rootful daemon, e.g. Docker Desktop) also add `DEV_UID=$(id -u)` and `DEV_GID=$(id -g)` to `.env`, so files backd generates into `config/` belong to you; on rootless podman the default already maps to your user.
 
@@ -51,11 +41,14 @@ AGENTS.md                      repo guide for AI coding assistants
 
    Install the `backd` command line on this machine, from the [release archives](https://github.com/fernandezvara/backd/releases) (Linux, macOS and Windows): `backd login`, `backd types`, `backd functions invoke` and the other admin commands run from here against <http://127.0.0.1:8080>. Without it, every image has it too: `docker compose exec backd backd <command>`.
 
-3. Create the first administrator, once the realm is provisioned (a server tool, so it runs in the container):
+3. Create the first administrator, once the realm is provisioned (a server tool, so it runs in the container), and sign in:
 
    ```sh
    docker compose exec backd backd-server bootstrap --realm __REALM__ --email ops@example.com
+   __LOGIN__
    ```
+
+__LOGIN_NOTE__
 
 4. Test a function's own logic without any of the above — no MongoDB, no running backd:
 
