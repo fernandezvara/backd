@@ -221,8 +221,8 @@ shelf-tour-ci:
 # Checks the release configuration and builds every release artifact into
 # dist/, without publishing (the release workflow runs on version tags).
 release-check:
-	docker run --rm -v "$(CURDIR)":/src:Z -w /src docker.io/goreleaser/goreleaser:v2.18.2 check
-	docker run --rm -v "$(CURDIR)":/src:Z -w /src docker.io/goreleaser/goreleaser:v2.18.2 release --snapshot --clean --skip=publish
+	docker run --rm -v "$(CURDIR)":/src:Z -w /src docker.io/goreleaser/goreleaser:v2.20.2 check
+	docker run --rm -v "$(CURDIR)":/src:Z -w /src docker.io/goreleaser/goreleaser:v2.20.2 release --snapshot --clean --skip=publish
 
 # Starts its own local stack and runs every attack script against it (what CI
 # does); stops the stack afterwards. Stop `make example` first.
