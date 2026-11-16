@@ -10,7 +10,8 @@ compose() { docker compose -f "$root/docker-compose.js.yml" "$@"; }
 trap 'compose down -v >/dev/null 2>&1 || echo "could not tear the stack down: docker compose -f docker-compose.js.yml down -v" >&2' EXIT
 compose down -v >/dev/null 2>&1 || true # a stack left by an earlier run would hold the ports
 
-compose up -d --build
+. "$root/scripts/retry.sh"
+retry compose up -d --build
 for _ in $(seq 1 90); do
   curl -sf http://127.0.0.1:18080/readyz >/dev/null && break
   sleep 1
