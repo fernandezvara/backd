@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -563,4 +564,11 @@ func TestRealtimeFollowsAParentRule(t *testing.T) {
 	if ev := next(t, evs); ev.Event != "created" || !strings.Contains(ev.Data, `"e3"`) {
 		t.Fatalf("after joining: %+v", ev)
 	}
+}
+
+// failingFeed is a change source whose database never accepts the stream.
+type failingFeed struct{}
+
+func (failingFeed) Open(context.Context, changefeed.WatchSet, changefeed.Position) (changefeed.Stream, error) {
+	return nil, errors.New("database unreachable")
 }

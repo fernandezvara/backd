@@ -79,7 +79,13 @@ var (
 	ErrTooManyStreams = errors.New("realtime: this instance has too many open streams")
 	ErrUserStreams    = errors.New("realtime: too many open streams for this caller")
 	ErrOpenTooFast    = errors.New("realtime: streams are opened too fast")
+	// ErrFeedUnavailable means the instance's change stream did not open in time (the database
+	// is unreachable): a stream told "ready" then could miss changes, so none is opened.
+	ErrFeedUnavailable = errors.New("realtime: the change stream is not available")
 )
+
+// DefaultOpenWait is how long Open waits for the instance's change stream to open.
+const DefaultOpenWait = 10 * time.Second
 
 // Observer receives the realtime metrics; every method may be called on a nil receiver by
 // its implementation.
@@ -98,6 +104,8 @@ type Observer interface {
 type Hub struct {
 	// Feed is the instance's shared consumer; every stream is a handler of it.
 	Feed *changefeed.Lazy
+	// OpenWait is how long Open waits for the Feed's stream to open; 0 is DefaultOpenWait.
+	OpenWait time.Duration
 	// Replay makes a consumer that reads from a resume position, over the same set the Feed
 	// reads. Nil disables resuming: a token is taken as expired history.
 	Replay func() *changefeed.Consumer
@@ -154,6 +162,8 @@ type Request struct {
 	Access *Access
 	// Config follows the realm's app configuration, which needs no collection; nil for none.
 	Config *ConfigSub
+	// Context ends the wait for the change stream when the caller goes away; nil is none.
+	Context context.Context
 }
 
 // ErrTooManySubscriptions is returned when a request has more subscriptions than allowed.
@@ -218,6 +228,12 @@ func (h *Hub) Open(req Request) (*Stream, error) {
 		h.Observer.StreamOpened(req.Realm)
 	}
 	h.attach(s)
+	// The caller writes `ready` next, which promises that what is written from now on is
+	// delivered: the stream must be open for that to hold.
+	if err := h.waitFeed(req.Context); err != nil {
+		s.Close()
+		return nil, ErrFeedUnavailable
+	}
 	s.startExpiry()
 	s.startRefresh()
 	switch {
@@ -227,6 +243,19 @@ func (h *Hub) Open(req Request) (*Stream, error) {
 		s.startReplay(*tok)
 	}
 	return s, nil
+}
+
+func (h *Hub) waitFeed(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	wait := h.OpenWait
+	if wait <= 0 {
+		wait = DefaultOpenWait
+	}
+	ctx, cancel := context.WithTimeout(ctx, wait)
+	defer cancel()
+	return h.Feed.WaitOpen(ctx)
 }
 
 func (h *Hub) pruneOpens() {

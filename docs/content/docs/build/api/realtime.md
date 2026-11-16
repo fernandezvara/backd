@@ -54,7 +54,7 @@ data: {"subs":["mine"],"reason":"slow_consumer"}
 
 | Event | Meaning |
 |---|---|
-| `ready` | The stream is open. Always first. |
+| `ready` | The stream is open, and everything written from now on is delivered to it. Always first. |
 | `created` | A document entered the subscription: it was created, or an update made it match `where` and the read rule. |
 | `updated` | A document that was in the subscription changed. |
 | `removed` | A document left it: it was deleted, or an update made it invisible to this caller. Carries only the `id` and the last `version`. |
@@ -142,6 +142,7 @@ The last event of every change carries an SSE `id`: a **resume token**. After a 
 | `403` | `forbidden` | The caller can read nothing of that collection. `details` name the subscription. |
 | `429` | `too_many_requests` | Too many streams or too fast; honor `Retry-After`. |
 | `503` | `realtime_unavailable` | This instance serves no realtime (`BACKD_EVENTS=false`): route streams to one that does. |
+| `503` | `unavailable` | The instance's change stream did not open within 10 seconds (the database is unreachable). Nothing was opened, so nothing can be missed: retry after `Retry-After`. |
 
 ## Limits
 

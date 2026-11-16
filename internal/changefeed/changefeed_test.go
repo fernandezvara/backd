@@ -390,3 +390,63 @@ func TestDocVersion(t *testing.T) {
 		}
 	}
 }
+
+// A subscriber is told it is live only when the stream is open: whatever is written after
+// WaitOpen returns is read.
+func TestLazyWaitOpenReturnsOnceTheStreamIsOpen(t *testing.T) {
+	var opened atomic.Bool
+	src := &fakeSource{script: []func(openCall) (Stream, error){func(openCall) (Stream, error) {
+		time.Sleep(150 * time.Millisecond) // the database takes a while to accept the watch
+		opened.Store(true)
+		return &fakeStream{pos: Position("p0")}, nil
+	}}}
+	c := &Consumer{Name: "t", Source: src, Backoff: fastBackoff}
+	c.SetWatched(set("items"))
+	l := NewLazy(c, time.Hour)
+	defer l.Close()
+
+	rel := l.Acquire(newRecorder())
+	defer rel()
+	if err := l.WaitOpen(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !opened.Load() {
+		t.Fatal("WaitOpen returned before the stream was open")
+	}
+	// A second subscriber finds it open already.
+	rel2 := l.Acquire(newRecorder())
+	defer rel2()
+	if err := l.WaitOpen(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLazyWaitOpenGivesUpWhenTheContextEnds(t *testing.T) {
+	src := &fakeSource{script: []func(openCall) (Stream, error){func(openCall) (Stream, error) {
+		return nil, errors.New("database unreachable")
+	}}}
+	c := &Consumer{Name: "t", Source: src, Backoff: fastBackoff}
+	c.SetWatched(set("items"))
+	l := NewLazy(c, time.Hour)
+	defer l.Close()
+	rel := l.Acquire(newRecorder())
+	defer rel()
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if err := l.WaitOpen(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("WaitOpen = %v, want the deadline", err)
+	}
+}
+
+func TestLazyWaitOpenHasNothingToWaitForWithoutAWatchedSet(t *testing.T) {
+	c := &Consumer{Name: "t", Source: &fakeSource{script: []func(openCall) (Stream, error){func(openCall) (Stream, error) { return &fakeStream{pos: Position("p0")}, nil }}}, Backoff: fastBackoff}
+	l := NewLazy(c, time.Hour)
+	defer l.Close()
+	rel := l.Acquire(newRecorder())
+	defer rel()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := l.WaitOpen(ctx); err != nil {
+		t.Fatalf("WaitOpen = %v, want nil: nothing is read", err)
+	}
+}

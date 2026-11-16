@@ -15,7 +15,7 @@ Realtime subscriptions and function triggers are built on one piece: the **chang
 | `BACKD_EVENTS` | `true` | This instance may read the change stream for realtime subscribers. `false` on API replicas keeps stream work off request-serving instances. |
 | `BACKD_TRIGGERS` | `true` | This instance may hold the lease of the [trigger dispatcher](#the-trigger-dispatcher). Run `false` on instances that should only serve requests. |
 
-Turning the setting on reads nothing by itself. An instance opens its stream **when its first subscriber arrives**, from that moment on, and closes it shortly after the last one leaves. An instance without subscribers does not connect for it and does not scan MongoDB's change history, however many replicas you run.
+Turning the setting on reads nothing by itself. An instance opens its stream **when its first subscriber arrives**, from that moment on, and closes it shortly after the last one leaves. A stream is told `ready` only once the instance's stream is open, so the first subscriber misses nothing; if the database does not accept it within 10 seconds the request answers `503 unavailable` with `Retry-After`. An instance without subscribers does not connect for it and does not scan MongoDB's change history, however many replicas you run.
 
 ## What it watches, and what it never reads
 
