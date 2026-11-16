@@ -184,14 +184,15 @@ blog__main.posts
 shop__orders.items
 ```
 
-### Upgrading to the next release (unreleased)
+### Upgrading to v0.9.13
 
 The sign-in code moves into the `sso/` library (see [the development notes](../contribute/architecture/)) and identities record which issuer vouched for them. Run `backd-server provision` before you start the new binaries (`PROVISION_MODE=verify` refuses to start until you do):
 
 1. **Identities gain `issuer`.** `provision` records it on every identity of Google, Microsoft and Apple (Google's and Apple's are fixed; a Microsoft one names its tenant, taken from the subject), replaces the unique index with `(provider, org, issuer, subject)` and drops the old one. Nothing is rewritten otherwise and no sign-in breaks. `GET /_auth/me` and the admin view of a user's identities show `issuer` and `dormant`.
 2. **The provider names `sso`, `github`, `oidc` and `oauth2` are reserved** in `auth.providers`. A realm that used one of them refuses to start with a message that names it.
 3. **New settings, all optional and off unless you add them:** providers of `type: oidc` or `oauth2` and the built-in `github` in `auth.providers`; `organizations.sso.providers: [oidc]` with `organizations.sso.oidc.issuers`; and `organizations.domains` with `manage: domains` on a role. Without them nothing changes.
-4. **API change:** `POST /_orgs/{org}/domains` answers a refused domain (a free-mail provider or a public suffix) with `400 validation_error`. The four clients, `backd-js`, `package:backd`, `backd` on PyPI and `pkg/client`, know the new surface.
+4. **The clients are released with it** (`backd-js`, `package:backd`, `pkg/client` and `backd` on PyPI, all 0.9.13): domains, discovery and `oidc` connections need them. Older clients keep working against this server. If you deploy with the Helm chart or the compose files, their image versions move to v0.9.13.
+5. **API change:** `POST /_orgs/{org}/domains` answers a refused domain (a free-mail provider or a public suffix) with `400 validation_error`. The four clients, `backd-js`, `package:backd`, `backd` on PyPI and `pkg/client`, know the new surface.
 
 ### Upgrading to v0.9.12
 

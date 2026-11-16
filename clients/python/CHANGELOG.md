@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.13
 
 - `orgs.domains(org)` (`list`, `add`, `verify`, `update`, `remove`), `auth.discover(email)`, `oidc` connections in `orgs.sso(org).set(..., issuer=, domains=)` (`dormant_identities` in the answer), the `OrgDomain` type and the errors `DomainTakenError`, `DomainExistsError` and `DomainsLimitError`.
 

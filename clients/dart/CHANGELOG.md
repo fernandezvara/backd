@@ -1,4 +1,4 @@
-## Unreleased
+## 0.9.13
 
 - `orgs.domains(org)` (`list`, `add`, `verify`, `update`, `remove`), `auth.discover(email)`, `orgs.sso(org)` with `oidc` connections (`issuer`, `domains`; `dormant_identities` in the answer), and the errors `DomainTakenError`, `DomainExistsError` and `DomainsLimitError`.
 

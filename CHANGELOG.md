@@ -4,9 +4,9 @@ All notable changes to `backd` and to its JavaScript client `backd-js`, which ar
 
 Until a stable release is declared, a minor release may have breaking changes; they are listed first.
 
-## Unreleased
+## 0.9.13
 
-The sign-in code is reorganized (the `sso/` library, milestone 48, `design/sso.md`) with no change to the API.
+The **sign-in** release: any OpenID Connect server, GitHub and plain OAuth 2 services as providers for the realm; organizations connect their own OpenID Connect server and prove the domains they own; accounts link and organizations are found by verified domain; and the sign-in code moves into its own `sso/` library. **Run `backd-server provision` before starting the new binaries** (identities gain `issuer`; see [Upgrading to v0.9.13](https://fernandezvara.github.io/backd/docs/operate/#upgrading-to-v0913)). Nothing else needs editing, and every new setting is off unless you add it. The Go, JavaScript, Dart and Python clients are released with it.
 
 ### Added
 
