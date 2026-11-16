@@ -37,6 +37,6 @@ jobs:
         working-directory: .
         run: docker compose -f docker-compose.js.yml config -q
       - name: The browser for the passkey test
-        run: scripts/retry.sh npx playwright install --with-deps chromium
+        run: ../../scripts/retry.sh npx playwright install --with-deps chromium
       - name: Integration tests (backd + MongoDB in Docker)
         run: ./test/integration/run.sh
