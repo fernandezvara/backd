@@ -8,11 +8,11 @@ toc: true
 
 This page is the shortest honest path to a `backd` you can build against: install the command line, generate a project, run it with Docker, call it.
 
-**Quickstart or Tutorial?** This page gets one realm running and ends with a few `curl` calls. The [Tutorial](../../tutorial/) builds a whole application, chapter by chapter, on its own stack (it needs only Docker, not this setup), and is the better start if you want to learn by building. An unfamiliar word? The [glossary](../glossary/) has it.
+**Quickstart or Tutorial?** This page gets one [realm](../glossary/#realm) running and ends with a few `curl` calls. The [Tutorial](../../tutorial/) builds a whole application, chapter by chapter, on its own stack (it needs only Docker, not this setup), and is the better start if you want to learn by building. An unfamiliar word? The [glossary](../glossary/) has it.
 
 ## What you need
 
-- **Docker with Compose** (Docker Desktop, or Docker Engine and the Compose plugin; rootless Podman with `podman-compose` also works). The first `up` pulls the images for MongoDB, MinIO and `backd`, so allow for a download; later runs start from the local copies.
+- **Docker with Compose** (Docker Desktop, or Docker Engine and the Compose plugin; rootless Podman with `podman-compose` also works). The first `up` pulls the images for MongoDB, MinIO and `backd`: about **1.3 GB on disk** (MongoDB 951 MB, `backd` 180 MB, MinIO 170 MB). Pulled on a fast connection that took 23 seconds in total (measured on 2026-11-16); on a slower one it is the longest step. Later runs start from the local copies.
 - **The `backd` command line**, from the [release archives](https://github.com/fernandezvara/backd/releases) (Linux, macOS, Windows). The server itself runs in the containers.
 - **A shell with `curl`** (on Windows, WSL2).
 
@@ -38,7 +38,7 @@ curl -X POST http://127.0.0.1:8080/v1/demo/main/posts \
 `--no-mfa` makes a realm **for working on your own machine**: its administrator has no second factor, so a stolen password would open everything. The generated `realm.yaml` says so on its first lines, backd says so in its log at startup, and the second step is a line away (see [With a second factor](#with-a-second-factor)). Never deploy it as it is.
 {{< /hint >}}
 
-The last command answers `201` with the new document. On Docker (not rootless Podman) also add `DEV_UID` and `DEV_GID` to the `.env` the project wrote, as step 3 explains. If a command is refused, see [Troubleshooting](../../troubleshooting/).
+The last command answers `201` with the new [document](../glossary/#document). On Docker (not rootless Podman) also add `DEV_UID` and `DEV_GID` to the `.env` the project wrote, as step 3 explains. If a command is refused, see [Troubleshooting](../../troubleshooting/).
 
 The rest of the page explains each step, then the Docker-free setup and the commands you will use.
 
@@ -59,7 +59,7 @@ Checksums, SBOMs and signature verification are an operations concern: [Deployin
 
 ## 2. Start a project
 
-`backd template project` creates a complete config repository in one step — a realm with a sample database (a `posts` collection and a `stats` function with tests), a local development stack on the released images (nothing is built), a check-only GitHub workflow and an `AGENTS.md` for AI coding assistants:
+`backd template project` creates a complete config repository in one step — a realm with a sample [database](../glossary/#database) (a `posts` [collection](../glossary/#collection) and a `stats` [function](../glossary/#function) with tests), a local development stack on the released images (nothing is built), a check-only GitHub workflow and an `AGENTS.md` for AI coding assistants:
 
 ```sh
 backd template project --dir ./my-app --realm demo --no-mfa
@@ -83,7 +83,7 @@ AGENTS.md                  the repo guide AI coding assistants read
 
 ## 3. Run it
 
-The generated `compose.yaml` runs MongoDB 8.2 (a single-node replica set), `backd-server serve --with-worker` (the API plus the worker that runs async jobs and schedules) in dev mode, the functions executor, egress and MinIO. All backd services run the released `backd-executor` image — it ships Deno, which dev mode needs to re-bundle functions on save; nothing is compiled or built.
+The generated `compose.yaml` runs MongoDB 8.2 (a single-node replica set), `backd-server serve --with-worker` (the API plus the [worker](../glossary/#worker) that runs async [jobs](../glossary/#job) and [cron schedules](../glossary/#cron-schedule)) in dev mode, the functions [executor](../glossary/#executor), [egress](../glossary/#egress) and MinIO. All backd services run the released `backd-executor` image — it ships Deno, which dev mode needs to re-bundle functions on save; nothing is compiled or built.
 
 **Docker Desktop** (macOS, Windows): it ships the Compose plugin, so the same commands below work in any terminal where `docker` is on the path. Once started, the stack appears in the Dashboard under **Compose** — one project per `compose.yaml` — where you can watch each service's logs, restart a service or stop the whole stack. On Linux, plain Docker Engine plus the Compose plugin does the same.
 
@@ -103,7 +103,7 @@ docker compose up
 docker compose exec backd backd-server bootstrap --realm demo --email me@example.com
 ```
 
-Sign in with the CLI, then create an API key for calls:
+Sign in with the CLI, then create an [API key](../glossary/#api-key) for calls:
 
 ```sh
 backd login --realm demo --url http://127.0.0.1:8080 --email me@example.com
@@ -135,7 +135,7 @@ The generated `README.md` in the project covers the same steps, plus MinIO and h
 
 ### With a second factor
 
-Without `--no-mfa` the project's `admin` role is the production shape: it accepts only the `admin_password` strategy (the password, then a code from an authenticator app). Create it with `backd template project --dir ./my-app --realm demo` and sign in with `backd login --realm demo --url http://127.0.0.1:8080 --email me@example.com --strategy admin_password`: the first login makes you enroll an authenticator (any TOTP app; see [Multi-factor authentication](../auth/mfa/) for what it shows and asks). To turn a `--no-mfa` project into this one, uncomment the `admin_password` strategy and the role's `strategies:` line in `config/demo/realm.yaml`.
+Without `--no-mfa` the project's `admin` role is the production shape: it accepts only the `admin_password` [strategy](../glossary/#strategy) (the password, then a [second factor](../glossary/#second-factor): a code from an authenticator app). Create it with `backd template project --dir ./my-app --realm demo` and sign in with `backd login --realm demo --url http://127.0.0.1:8080 --email me@example.com --strategy admin_password`: the first login makes you enroll an authenticator (any TOTP app; see [Multi-factor authentication](../auth/mfa/) for what it shows and asks). To turn a `--no-mfa` project into this one, uncomment the `admin_password` strategy and the role's `strategies:` line in `config/demo/realm.yaml`.
 
 ### The iterate loop
 

@@ -96,6 +96,10 @@ The number of the `schema.v<N>.json` a document was written under, kept in its `
 
 A restriction on an [API key](#api-key): the operations it may use and, in a realm with organizations, the one organization it counts. See [API keys](../auth/api-keys/).
 
+## Second factor
+
+A second proof after the first [method](#method) of a [strategy](#strategy): a code from an authenticator app (`totp`), or a passkey. A role can require it. See [Multi-factor authentication](../auth/mfa/).
+
 ## Session
 
 What signing in creates: a token for one user (and, in a realm with organizations, one organization), with an idle timeout and a maximum lifetime. See [Sign-up, login and sessions](../auth/sessions/).
