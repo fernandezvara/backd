@@ -15,6 +15,7 @@ root=$PWD
 work=$(mktemp -d)
 export HOME=$work/home
 mkdir -p "$HOME" "$work/bin"
+export GOFLAGS=-modcacherw   # the module cache under $HOME can then be removed with the rest
 export QUICKSTART_PASSWORD='dev-p4ssw0rd!1'
 . "$root/scripts/retry.sh"
 

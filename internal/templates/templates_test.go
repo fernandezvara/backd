@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	yamlv3 "gopkg.in/yaml.v3"
+
 	"github.com/fernandezvara/backd/internal/email"
 	"github.com/fernandezvara/backd/internal/functions"
 	"github.com/fernandezvara/backd/internal/registry"
@@ -499,5 +501,26 @@ func TestProjectWithoutMFAIsForLocalDevelopmentOnly(t *testing.T) {
 		if !strings.Contains(string(b), "second factor") && name == "README.md" {
 			t.Error("the README doesn't say the realm has no second factor")
 		}
+	}
+}
+
+// Docker Compose refuses a mapping that defines a key twice ("mapping key already defined"); other
+// tools let the second win, so a duplicate went unseen until the Quickstart ran on Docker. The
+// project's compose.yaml is read with the strict decoder Compose uses, and its anchors resolved.
+func TestProjectComposeFileHasNoDuplicateKeys(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "my-app")
+	if _, err := Project(dir, "shop", ProjectOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "compose.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := yamlv3.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("compose.yaml is not valid for Docker Compose: %v", err)
+	}
+	if _, ok := doc["services"]; !ok {
+		t.Error("compose.yaml has no services")
 	}
 }

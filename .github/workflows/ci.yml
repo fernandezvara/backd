@@ -51,6 +51,8 @@ jobs:
         run: scripts/retry.sh make shelf-types
       - name: Build the test image (retried when the registry or a mirror fails)
         run: scripts/retry.sh docker compose -f docker-compose.test.yml build tests
+      - name: Download the Go modules for the tests (retried when the proxy fails)
+        run: scripts/retry.sh docker compose -f docker-compose.test.yml run --rm --no-deps tests go mod download
       - name: Test (dockerized)
         run: make test
       - name: The tests that were flaky, 20 times each
