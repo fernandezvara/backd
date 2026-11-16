@@ -28,10 +28,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
+. scripts/retry.sh
 scripts/local-certs.sh
 # Step by step and without dependencies: the docs site, which nginx would
 # pull in, isn't needed (nginx resolves its upstreams per request).
-docker compose build backd executor egress
+retry docker compose build backd executor egress
 docker compose up -d --no-deps mongo
 # A single-node replica set: initiate it (the compose health check does the
 # same) and wait for the primary.

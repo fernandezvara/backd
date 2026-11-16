@@ -40,11 +40,14 @@ jobs:
           channel: stable
           cache: true
       - name: The demo's types match the config
-        run: go run ./cmd/backd types --realm shelf --lang dart --out clients/dart-examples/lib/backd --check
+        run: scripts/retry.sh go run ./cmd/backd types --realm shelf --lang dart --out clients/dart-examples/lib/backd --check
         env:
           CONFIG_DIR: examples/config
       - name: Linux build toolchain
-        run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+        run: |
+          . scripts/retry.sh
+          retry sudo apt-get -o Acquire::Retries=5 update
+          retry sudo apt-get -o Acquire::Retries=5 install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
       - name: Dependencies
         run: flutter pub get
         working-directory: clients/dart-examples

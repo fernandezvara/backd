@@ -64,7 +64,12 @@ wait_ready() {
 }
 
 echo "building and starting the stack ($project)..."
-compose up -d --build >/dev/null 2>&1
+. ../../scripts/retry.sh
+if ! retry compose up -d --build >"$work/up.log" 2>&1; then
+  echo "the stack did not come up; the end of its output:"
+  tail -n 40 "$work/up.log"
+  exit 1
+fi
 wait_ready
 
 echo "--- TLS"
