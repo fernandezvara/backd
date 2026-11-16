@@ -61,7 +61,7 @@ js-package:
 	cd clients/js && npm ci --silent
 	scripts/check-js-package.sh
 
-# JavaScript client against a real backd + MongoDB (docker-compose.js.yml).
+# JavaScript client against a real backd + MongoDB (docker-compose.client.yml).
 js-integration:
 	cd clients/js && npm ci --silent
 	clients/js/test/integration/run.sh
@@ -71,7 +71,7 @@ dart-package:
 	cd clients/dart && dart pub get
 	scripts/check-dart-package.sh
 
-# Dart client against a real backd + MongoDB (docker-compose.dart.yml).
+# Dart client against a real backd + MongoDB (docker-compose.client.yml).
 dart-integration:
 	clients/dart/test/integration/run.sh
 
@@ -82,7 +82,7 @@ python-test:
 		&& .venv/bin/python scripts/unasync.py --check && .venv/bin/ruff check . && .venv/bin/ruff format --check . \
 		&& .venv/bin/mypy && .venv/bin/pytest
 
-# Python client against a real backd + MongoDB + MinIO (docker-compose.python.yml); uses the clients/python/.venv of python-test.
+# Python client against a real backd + MongoDB + MinIO (docker-compose.client.yml); uses the clients/python/.venv of python-test.
 python-integration:
 	cd clients/python && python3 -m venv .venv && .venv/bin/pip install -q -e '.[dev]'
 	PYTHON=$(CURDIR)/clients/python/.venv/bin/python clients/python/tests/integration/run.sh
