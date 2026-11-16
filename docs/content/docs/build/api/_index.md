@@ -76,6 +76,9 @@ Every error uses the same JSON envelope. Success responses are never wrapped.
 | 400 | `invalid_aggregate` | An aggregate request whose `group_by`, `metrics`, `order_by`, `limit`, `tz` or `where` is wrong; the details name each one. See [Aggregations](aggregations/) |
 | 400 | `aggregate_not_enabled` | An aggregate request to a collection that declares no [`aggregate:`](../configuration/config-dir/#aggregations) |
 | 400 | `search_not_enabled` | A `$search` in a collection that declares no [text index](../configuration/config-dir/#a-text-index) |
+| 400 | `org_required` | A create or a move in a collection whose documents [must belong to an organization](../configuration/config-dir/#organizations) without saying which (`?org=`) |
+| 400 | `immutable_field` | A write that changes the organization or team of a document: an administrator [moves it](../organizations/where-documents-live/) |
+| 400 | `invalid_path` | An [app configuration](../configuration/app-config/) read that names a key or group the realm doesn't declare |
 | 400 | `invalid_query` | Bad `where`, `order_by`, `limit`, `skip` or `count`, or unknown query parameter |
 | 400 | `invalid_schema_version` | A malformed [`X-Backd-Schema-Version`](documents/#the-schema-version-an-app-declares) header |
 | 400 | `schema_version_unknown` | The header declares a version of a versioned collection above its current one: deploy the server before the apps |
@@ -94,6 +97,7 @@ Every error uses the same JSON envelope. Success responses are never wrapped.
 | 409 | `request_in_progress` | A [function](../functions/calling/#idempotency) call with this `Idempotency-Key` is still running |
 | 426 | `upgrade_required` | The header declares a version below the collection's [`min_schema_version`](../configuration/config-dir/#versioned-schemas); the error also carries `collection`, `min` and `declared` |
 | 412 | `version_mismatch` | `If-Match` doesn't match the current version |
+| 428 | `precondition_required` | An administrator's change of the [app configuration](../configuration/app-config/) without `If-Match` |
 | 403 | `invalid_file_link` | A [file link](../files/transfers/#links-for-apps) that was changed, has expired or whose key was rotated |
 | 404 | `file_missing` | The document holds a [file](../files/transfers/#downloading) the storage no longer has |
 | 404 | `version_unavailable` | `?version=` names an [image version](../files/file-fields/#image-versions) that isn't ready, with its `status` and `reason` in `details` |
@@ -122,6 +126,8 @@ Every error uses the same JSON envelope. Success responses are never wrapped.
 | 503 | `unavailable` | Not ready, MongoDB unreachable, `MONGO_OP_TIMEOUT` exceeded, too many password operations at once, or the [functions](../../operate/functions-runtime/#running-the-executor) executor isn't configured, doesn't answer, or is at capacity (all with `Retry-After` where the caller can usefully retry) |
 | 503 | `config_not_loaded` | Dev mode only (`BACKD_DEV=true`): no config has loaded yet. Each detail is one problem of the report (`path` the file and line, `code` its kind: `config`, `rules` or `build`, `reason` what is wrong, the build output and what to do); the same report is on the server's root page ([Dev mode](../functions/testing/#dev-mode)) |
 | 504 | `function_timeout` | A [function](../functions/calling/#calling-a-function) didn't finish within its `timeout`; it was stopped |
+
+The codes of the sign-in and account calls (`/_auth`), of organizations (`/_orgs`) and of the admin API are listed with their pages: [provider sign-in](../auth/providers/#errors), [sessions](../auth/sessions/), [organizations](../organizations/api/) and [verified domains](../organizations/verified-domains/).
 
 A function's own errors, thrown with `ctx.error(status, code, message)`, carry whatever 4xx status and lower-case code it chose — see [Calling a function](../functions/calling/#calling-a-function).
 
