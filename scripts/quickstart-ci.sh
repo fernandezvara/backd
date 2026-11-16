@@ -29,7 +29,9 @@ cleanup() {
     fi
     docker compose down -v >/dev/null 2>&1 || true
   fi
-  rm -rf "$work"
+  # The containers write root-owned files into the project (the README tells Docker users to set
+  # DEV_UID for that): they cannot be removed here, and the runner is thrown away anyway.
+  rm -rf "$work" 2>/dev/null || true
   exit "$status"
 }
 trap cleanup EXIT
