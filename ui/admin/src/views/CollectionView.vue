@@ -14,6 +14,7 @@ import { useAdmin } from '@/lib/admin'
 import { errorText, formatDate } from '@/lib/format'
 import { buildWhere, operatorsFor, orderBy, queryFields, QueryError, type Condition } from '@/lib/query'
 import { resolve, type Schema } from '@/lib/schema'
+import { latestOnly } from '@/lib/latest'
 import { useRealmConfig } from '@/stores/config'
 import { useSession } from '@/stores/session'
 import { useToasts } from '@/stores/toasts'
@@ -92,6 +93,7 @@ const sortField = ref('')
 const sortDir = ref<'asc' | 'desc'>('asc')
 const limit = ref(20)
 const view = ref<'live' | 'trash'>('live')
+const latest = latestOnly()
 const asJson = ref(false)
 
 const docs = ref<Doc[]>([])
@@ -127,6 +129,7 @@ async function load() {
   }
   loading.value = true
   error.value = ''
+  const current = latest.begin()
   const start = starts.value[pageIndex.value]
   try {
     const page = await admin.data(props.database, props.collection).list({
@@ -138,14 +141,15 @@ async function load() {
       count: true,
       deleted: view.value === 'trash' ? 'only' : undefined,
     })
+    if (!current()) return // a newer load started (Trash, a page, a filter): this answer is stale
     docs.value = page.items
     hasMore.value = page.has_more
     total.value = page.total
     nextStart = page.has_more ? (page.next_cursor ? { after: page.next_cursor, skip: 0 } : { skip: start.skip + limit.value }) : undefined
   } catch (e) {
-    error.value = errorText(e, t('data.collection.loadFailed'))
+    if (current()) error.value = errorText(e, t('data.collection.loadFailed'))
   } finally {
-    loading.value = false
+    if (current()) loading.value = false
   }
 }
 function apply() {

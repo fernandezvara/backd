@@ -22,6 +22,7 @@ No authenticator app and no secrets to invent: the project this page creates is 
 
 From an empty directory. Two commands ask you for something: `backd-server bootstrap` asks for a new password, and `backd login` and `backd apikey create` ask for it again.
 
+<!-- quickstart:start -->
 ```sh
 backd template project --dir ./my-app --realm demo --no-mfa && cd my-app
 docker compose up -d
@@ -33,6 +34,7 @@ curl -X POST http://127.0.0.1:8080/v1/demo/main/posts \
   -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
   -d '{"title": "Hello", "published": true}'
 ```
+<!-- quickstart:end -->
 
 {{< hint style="warning" >}}
 `--no-mfa` makes a realm **for working on your own machine**: its administrator has no second factor, so a stolen password would open everything. The generated `realm.yaml` says so on its first lines, backd says so in its log at startup, and the second step is a line away (see [With a second factor](#with-a-second-factor)). Never deploy it as it is.

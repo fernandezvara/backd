@@ -211,7 +211,8 @@ GitHub Actions runs on every push and pull request:
 - the JavaScript client (`.github/workflows/js.yml`): type-check, unit tests and integration tests against `backd` and MongoDB;
 - the admin UI (`.github/workflows/ui.yml`): type-check, lint, unit tests, build and `npm audit` of what ships in the bundle, and its Playwright tests against the example stack (the Go jobs build the UI first, so the binary embeds it);
 - the [production reference](../operate/production/) test (`deploy/production/test.sh`);
-- a build of this documentation site.
+- the **Quickstart** (`scripts/quickstart-ci.sh`): the commands of the [Quickstart](../build/quickstart/), as written on the page, run against the released images, ending with a first document read back;
+- a build of this documentation site, with its checks (below).
 
 ## Releasing
 
@@ -280,6 +281,19 @@ A published version can't be changed or reused. Fix a mistake with a new version
 - **Vulnerabilities in the image:** CI builds the image and scans it with [Trivy](https://trivy.dev/) on every push, failing on critical or high findings that have a fix. Releases scan again before publishing.
 - **Updates:** Dependabot (`.github/dependabot.yml`) opens grouped weekly pull requests for Go modules (the server and the docs theme), the JavaScript client's dev dependencies, GitHub Actions, and the Dockerfiles' base images. CI checks each one.
 - **Releases** publish SBOMs and a signed image (see [Releasing](#releasing)).
+
+## Checks on the documentation
+
+The docs job runs these on every push, next to the Hugo build, and they can be run by hand from the repository root:
+
+| Check | What fails it |
+|---|---|
+| `scripts/check-docs-links.py` | A broken link or anchor in the built site |
+| `scripts/check-docs-callouts.py` | A callout of the wrong kind, too many on a page or stacked |
+| `scripts/check-docs-audit.py` | An audit action the code records and the audit page does not list, or the reverse |
+| `scripts/check-docs-front-door.py` | The README's quick start differs from the Quickstart's (the block between `<!-- quickstart:start -->` and `<!-- quickstart:end -->`); a line that announces a plan or a feature that is not built (a status word such as the ones the limits page uses) without linking an issue; a client list (README, documentation home, Getting started, Clients) that leaves out one of the four clients |
+
+`scripts/test-docs-front-door.py` tests the last one, with a seeded error for each check. Change the Quickstart's commands in the marked block of `quickstart.md` and the README together: both the check and the Quickstart job read it.
 
 ## Building the docs
 

@@ -63,9 +63,6 @@ x-backd-env: &backd-env
   # Encrypts the realms' secrets (TOTP for the admin role the sample realm
   # requires). Dev-only default: set your own for anything that matters.
   BACKD_SECRETS_KEY: ${BACKD_SECRETS_KEY:-local-dev-secrets-key-not-a-secret-0123456789abc}
-  # Deno (bundling) and its cache run as your user, which has no home in the image.
-  HOME: /tmp
-  DENO_DIR: /tmp/deno
 
 services:
   # A single-node replica set (backd refuses standalone servers); the
