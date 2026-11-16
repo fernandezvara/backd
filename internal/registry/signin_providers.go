@@ -70,20 +70,27 @@ var kindSpecs = map[string]*kindSpec{
 	ProviderMicrosoft: {fields: []string{"client_id", "client_secret", "native_client_ids", "tenant"}, orgs: true, parse: parseGoogleLike},
 	ProviderGitHub:    {fields: []string{"client_id", "client_secret"}, trustsEmail: true, parse: parseGitHub},
 	kindOAuth2:        {fields: []string{"type", "issuer", "client_id", "client_secret", "authorize_url", "token_url", "userinfo_url", "claims", "scopes", "pkce", "link_by_email", "allow_private_network"}, parse: parseOAuth2},
-	kindOIDC:          {fields: []string{"type", "issuer", "client_id", "client_secret", "scopes", "link_by_email", "allow_private_network"}, parse: parseOIDC},
+	kindOIDC:          {fields: []string{"type", "issuer", "client_id", "client_secret", "scopes", "link_by_email", "allow_private_network"}, orgs: true, parse: parseOIDC},
 	ProviderApple:     {fields: []string{"services_id", "bundle_ids", "team_id", "key_id", "private_key", "revoke_on_delete"}, trustsEmail: true, parse: parseApple},
 }
 
-// SSOProviders are the providers an organization may connect, sorted.
+// SSOProviders are the providers an organization may connect, sorted: the built-in providers that can
+// tell a company's people from anyone else's (Google by Workspace, Microsoft by tenant) and generic
+// OpenID Connect, which a verified domain does.
 var SSOProviders = func() []string {
 	var out []string
-	for _, name := range BuiltinProviders {
+	for _, name := range append(slices.Clone(BuiltinProviders), kindOIDC) {
 		if kindSpecs[name].orgs {
 			out = append(out, name)
 		}
 	}
+	slices.Sort(out)
 	return out
 }()
+
+// DefaultSSOProviders are the ones organization sign-in offers when organizations.sso names none:
+// generic OpenID Connect needs the realm's list of issuers, so it is asked for.
+var DefaultSSOProviders = []string{ProviderGoogle, ProviderMicrosoft}
 
 // providerDoc mirrors one entry of providers: in realm.yaml.
 type providerDoc struct {

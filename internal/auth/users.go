@@ -35,6 +35,9 @@ type Users struct {
 	// Metrics counts sessions and limits; nil turns it off.
 	Metrics *metrics.Metrics
 
+	// Dev is BACKD_DEV: an organization may connect an OpenID Connect server on this machine.
+	Dev bool
+
 	// DNS reads the TXT records that prove a domain; nil: the host's resolver, or the realm's
 	// organizations.domains.resolvers. Tests give a fake.
 	DNS DomainResolver

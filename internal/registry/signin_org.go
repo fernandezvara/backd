@@ -3,9 +3,13 @@ package registry
 import (
 	"fmt"
 	"maps"
+	"net"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
+
+	"golang.org/x/net/publicsuffix"
 
 	"github.com/fernandezvara/backd/internal/strutil"
 )
@@ -19,6 +23,9 @@ type orgSSODoc struct {
 	Enabled   *bool    `yaml:"enabled"`
 	Providers []string `yaml:"providers"`
 	MaxPerOrg *int     `yaml:"max_per_org"`
+	OIDC      *struct {
+		Issuers []string `yaml:"issuers"`
+	} `yaml:"oidc"`
 }
 
 // OrgSSOSettings is organizations.sso: the realm's switch for organization sign-in.
@@ -27,6 +34,9 @@ type OrgSSOSettings struct {
 	Providers []string
 	// MaxPerOrg caps the connections of one organization.
 	MaxPerOrg int
+	// OIDCIssuers are the patterns an organization's OpenID Connect issuer must match
+	// (organizations.sso.oidc.issuers); none: organizations cannot use OpenID Connect.
+	OIDCIssuers []IssuerPattern
 }
 
 // Allows reports whether organizations may connect the provider.
@@ -41,7 +51,7 @@ func parseOrgSSO(d *orgSSODoc, o *OrgSettings, add func(format string, args ...a
 	}
 	sso := &OrgSSOSettings{Providers: d.Providers}
 	if len(sso.Providers) == 0 {
-		sso.Providers = slices.Clone(SSOProviders)
+		sso.Providers = slices.Clone(DefaultSSOProviders)
 	}
 	seen := map[string]bool{}
 	for i, name := range sso.Providers {
@@ -60,6 +70,26 @@ func parseOrgSSO(d *orgSSODoc, o *OrgSettings, add func(format string, args ...a
 		} else {
 			sso.MaxPerOrg = *m
 		}
+	}
+	if d.OIDC != nil {
+		for i, raw := range d.OIDC.Issuers {
+			p, msg := ParseIssuerPattern(raw)
+			if msg != "" {
+				add("sso.oidc.issuers[%d]: %s", i, msg)
+				continue
+			}
+			sso.OIDCIssuers = append(sso.OIDCIssuers, p)
+		}
+	}
+	if slices.Contains(sso.Providers, kindOIDC) {
+		if len(sso.OIDCIssuers) == 0 {
+			add("sso.providers: oidc needs organizations.sso.oidc.issuers: the issuers organizations may connect (without it they cannot use OpenID Connect)")
+		}
+		if o.Domains == nil {
+			add("sso.providers: oidc needs organizations.domains: a company's OpenID Connect server is admitted by an address on a domain it proved")
+		}
+	} else if d.OIDC != nil && len(d.OIDC.Issuers) > 0 {
+		add("sso.oidc: lists issuers, but oidc is not one of sso.providers")
 	}
 	if !slices.ContainsFunc(slices.Collect(maps.Values(o.Roles)), func(r OrgRole) bool { return r.Manage.Has(CapSSO) }) {
 		add("sso: needs a role with manage: sso, or no member of an organization could set up its sign-in (realm administrators still could)")
@@ -175,4 +205,88 @@ func resolverProblem(r string) string {
 		return fmt.Sprintf("%q must be an address or host:port", r)
 	}
 	return ""
+}
+
+// IssuerPattern is one entry of organizations.sso.oidc.issuers: an https origin, with `*.` for the first
+// label ("https://*.okta.com" matches one label only: https://acme.okta.com, never a.b.okta.com and never
+// https://evil.okta.com.attacker.example).
+type IssuerPattern struct {
+	Host     string // the host, or the suffix after `*.`
+	Wildcard bool
+}
+
+func (p IssuerPattern) String() string {
+	if p.Wildcard {
+		return "https://*." + p.Host
+	}
+	return "https://" + p.Host
+}
+
+// ParseIssuerPattern reads a pattern. msg says what is wrong with it, or "".
+func ParseIssuerPattern(raw string) (p IssuerPattern, msg string) {
+	rest, ok := strings.CutPrefix(raw, "https://")
+	if !ok || rest == "" {
+		return p, fmt.Sprintf("%q must start with https://", raw)
+	}
+	rest = strings.TrimSuffix(rest, "/")
+	if strings.ContainsAny(rest, "/?#@") {
+		return p, fmt.Sprintf("%q must be an origin: no path, query, fragment or credentials", raw)
+	}
+	host := rest
+	if h, port, found := strings.Cut(rest, ":"); found {
+		if port != "443" {
+			return p, fmt.Sprintf("%q: only the port 443 is allowed", raw)
+		}
+		host = h
+	}
+	host = strings.ToLower(host)
+	if suffix, ok := strings.CutPrefix(host, "*."); ok {
+		p.Wildcard, host = true, suffix
+	}
+	if strings.Contains(host, "*") {
+		return p, fmt.Sprintf("%q: a * is only allowed as the first label (https://*.okta.com)", raw)
+	}
+	if net.ParseIP(host) != nil {
+		return p, fmt.Sprintf("%q must name a domain such as https://sso.partner.example, not an address", raw)
+	}
+	if s, _ := publicsuffix.PublicSuffix(host); s == host {
+		return p, fmt.Sprintf("%q is a public suffix: it would admit anybody's server", raw)
+	}
+	if DomainProblem(host) != "" {
+		return p, fmt.Sprintf("%q must name a domain such as https://sso.partner.example", raw)
+	}
+	p.Host = host
+	return p, ""
+}
+
+// Matches says whether an issuer URL is one the pattern allows: https, no credentials, port 443 or none.
+func (p IssuerPattern) Matches(issuer string) bool {
+	u, err := url.Parse(issuer)
+	if err != nil || u.Scheme != "https" || u.User != nil || (u.Port() != "" && u.Port() != "443") {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	if !p.Wildcard {
+		return host == p.Host
+	}
+	label, found := strings.CutSuffix(host, "."+p.Host)
+	return found && label != "" && !strings.Contains(label, ".")
+}
+
+// AllowsIssuer says whether an organization may connect an OpenID Connect server with this issuer: one that
+// matches a pattern of the realm. In development (BACKD_DEV) a server on this machine (localhost or a
+// loopback address, any port, http too) is allowed as well, so a local Keycloak can be tried without
+// a public name.
+func (s *OrgSSOSettings) AllowsIssuer(issuer string, dev bool) bool {
+	if s == nil {
+		return false
+	}
+	if dev {
+		if u, err := url.Parse(issuer); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
+			if h := u.Hostname(); h == "localhost" || net.ParseIP(h).IsLoopback() {
+				return true
+			}
+		}
+	}
+	return slices.ContainsFunc(s.OIDCIssuers, func(p IssuerPattern) bool { return p.Matches(issuer) })
 }

@@ -15,16 +15,19 @@ import (
 
 // connectionRow is a connection as the admin API returns it.
 type connectionRow struct {
-	Provider        string   `json:"provider"`
-	ClientID        string   `json:"client_id"`
-	Tenant          string   `json:"tenant"`
-	HostedDomain    string   `json:"hosted_domain"`
-	EmailDomains    []string `json:"email_domains"`
-	JoinRoles       []string `json:"join_roles"`
-	Enabled         bool     `json:"enabled"`
-	ClientSecretSet bool     `json:"client_secret_set"`
-	RedirectURI     string   `json:"redirect_uri"`
-	RedirectPath    string   `json:"redirect_path"`
+	Provider          string   `json:"provider"`
+	ClientID          string   `json:"client_id"`
+	Issuer            string   `json:"issuer"`
+	Domains           []string `json:"domains"`
+	DormantIdentities int      `json:"dormant_identities"`
+	Tenant            string   `json:"tenant"`
+	HostedDomain      string   `json:"hosted_domain"`
+	EmailDomains      []string `json:"email_domains"`
+	JoinRoles         []string `json:"join_roles"`
+	Enabled           bool     `json:"enabled"`
+	ClientSecretSet   bool     `json:"client_secret_set"`
+	RedirectURI       string   `json:"redirect_uri"`
+	RedirectPath      string   `json:"redirect_path"`
 }
 
 func OrgsSSO(c *kli.CommandContext) error {
@@ -47,6 +50,12 @@ func OrgsSSO(c *kli.CommandContext) error {
 	fmt.Fprintln(w, "PROVIDER\tCLIENT ID\tLIMITED TO\tJOIN ROLES\tENABLED\tSECRET\tREGISTER THIS REDIRECT ADDRESS")
 	for _, r := range out.Items {
 		limit := r.Tenant + r.HostedDomain
+		if r.Issuer != "" {
+			limit = r.Issuer
+			if len(r.Domains) > 0 {
+				limit += " (" + strings.Join(r.Domains, ",") + ")"
+			}
+		}
 		if len(r.EmailDomains) > 0 {
 			limit += " (" + strings.Join(r.EmailDomains, ",") + ")"
 		}
@@ -69,12 +78,12 @@ func OrgsSSOSet(c *kli.CommandContext) error {
 		return err
 	}
 	body := map[string]any{"client_id": cmdutil.Str(c, "client-id")}
-	for flagName, key := range map[string]string{"tenant": "tenant", "hosted-domain": "hosted_domain"} {
+	for flagName, key := range map[string]string{"tenant": "tenant", "hosted-domain": "hosted_domain", "issuer": "issuer"} {
 		if v := cmdutil.Str(c, flagName); v != "" {
 			body[key] = v
 		}
 	}
-	for flagName, key := range map[string]string{"email-domains": "email_domains", "native-client-ids": "native_client_ids", "join-roles": "join_roles"} {
+	for flagName, key := range map[string]string{"email-domains": "email_domains", "native-client-ids": "native_client_ids", "join-roles": "join_roles", "domains": "domains"} {
 		if list := splitList(cmdutil.Str(c, flagName)); list != nil {
 			body[key] = list
 		}
@@ -98,6 +107,9 @@ func OrgsSSOSet(c *kli.CommandContext) error {
 	}
 	io := cmdutil.IOOf(c)
 	fmt.Fprintf(io.Stdout, "%s connection of %s saved\n", row.Provider, cmdutil.Str(c, "id"))
+	if row.DormantIdentities > 0 {
+		fmt.Fprintf(io.Stdout, "%d identities belong to another issuer now: their people link the connection again\n", row.DormantIdentities)
+	}
 	if row.RedirectURI != "" {
 		fmt.Fprintf(io.Stdout, "register this redirect address with the provider: %s\n", row.RedirectURI)
 	} else {

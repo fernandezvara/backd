@@ -77,7 +77,7 @@ func TestOrganizationDomainsSettingsRefusals(t *testing.T) {
 // The kinds are one table: what an organization may connect is derived from it, and a name that is
 // reserved can't be a provider.
 func TestKindsAreOneTable(t *testing.T) {
-	if got := strings.Join(SSOProviders, ","); got != "google,microsoft" {
+	if got := strings.Join(SSOProviders, ","); got != "google,microsoft,oidc" {
 		t.Errorf("organizations may connect %s", got)
 	}
 	for _, name := range BuiltinProviders {
@@ -123,6 +123,86 @@ func TestIssuerMatches(t *testing.T) {
 	} {
 		if got := tc.p.IssuerMatches(tc.iss); got != tc.want {
 			t.Errorf("%s: %v", name, got)
+		}
+	}
+}
+
+func TestIssuerPatterns(t *testing.T) {
+	for _, tc := range []struct {
+		pattern, issuer string
+		want            bool
+	}{
+		{"https://*.okta.com", "https://acme.okta.com", true},
+		{"https://*.okta.com", "https://acme.okta.com/oauth2/default", true},
+		{"https://*.okta.com", "https://ACME.okta.com:443/x", true},
+		{"https://*.okta.com", "https://okta.com", false},
+		{"https://*.okta.com", "https://a.b.okta.com", false},
+		{"https://*.okta.com", "https://evil.okta.com.attacker.example", false},
+		{"https://*.okta.com", "https://attacker.example/.okta.com", false},
+		{"https://*.okta.com", "https://notokta.com", false},
+		{"https://*.okta.com", "https://acme.okta.com:8443", false},
+		{"https://*.okta.com", "http://acme.okta.com", false},
+		{"https://*.okta.com", "https://user:pw@acme.okta.com", false},
+		{"https://sso.partner.example", "https://sso.partner.example/realms/x", true},
+		{"https://sso.partner.example", "https://other.partner.example", false},
+		{"https://sso.partner.example", "https://sso.partner.example.evil.example", false},
+		{"https://login.microsoftonline.com", "https://login.microsoftonline.com/11111111-2222-3333-4444-555555555555/v2.0", true},
+	} {
+		p, msg := ParseIssuerPattern(tc.pattern)
+		if msg != "" {
+			t.Fatalf("%q: %s", tc.pattern, msg)
+		}
+		if got := p.Matches(tc.issuer); got != tc.want {
+			t.Errorf("%s matches %s = %v", tc.pattern, tc.issuer, got)
+		}
+	}
+	for _, bad := range []string{"", "http://sso.example", "sso.example", "https://", "https://*.com", "https://*.co.uk", "https://com", "https://*", "https://a.*.example", "https://*.*.example", "https://sso.example/path", "https://sso.example:8443", "https://user@sso.example", "https://10.0.0.1", "https://sso.example?x=1", "https://*sso.example"} {
+		if _, msg := ParseIssuerPattern(bad); msg == "" {
+			t.Errorf("%q was accepted", bad)
+		}
+	}
+}
+
+const oidcOrgRealm = `auth:
+  strategies:
+    password: [password]
+  signup: open
+organizations:
+  domains: { enabled: true }
+  sso:
+    providers: PROVIDERS
+    oidc: OIDC
+  roles:
+    owner: { manage: [org, members, roles, teams, sso, domains] }
+    member: {}
+  default_roles: [member]
+`
+
+func TestOrganizationsMayConnectOIDCOnlyWithIssuersAndDomains(t *testing.T) {
+	yaml := func(providers, oidc string) string {
+		return strings.Replace(strings.Replace(oidcOrgRealm, "PROVIDERS", providers, 1), "OIDC", oidc, 1)
+	}
+	s, errs := parseRealmSettings([]byte(yaml("[google, microsoft, oidc]", "{ issuers: [\"https://*.okta.com\", \"https://sso.partner.example\"] }")))
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	sso := s.Organizations.SSO
+	if !sso.Allows("oidc") || !sso.AllowsIssuer("https://acme.okta.com", false) || !sso.AllowsIssuer("https://sso.partner.example/realms/a", false) || sso.AllowsIssuer("https://evil.example", false) || sso.MaxPerOrg != 3 {
+		t.Errorf("sso = %+v", sso)
+	}
+	// Left out by default: the default providers are the two that need no issuer.
+	s, errs = parseRealmSettings([]byte(strings.Replace(ssoRealm, "SSO", "{ enabled: true }", 1)))
+	if len(errs) > 0 || s.Organizations.SSO.Allows("oidc") || s.Organizations.SSO.AllowsIssuer("https://acme.okta.com", false) {
+		t.Errorf("default: %v %+v", errs, s.Organizations.SSO)
+	}
+	for name, tc := range map[string]struct{ y, want string }{
+		"no issuers":           {yaml("[oidc]", "{ issuers: [] }"), "oidc needs organizations.sso.oidc.issuers"},
+		"a bad pattern":        {yaml("[oidc]", "{ issuers: [\"https://*.com\"] }"), "public suffix"},
+		"issuers without oidc": {yaml("[google]", "{ issuers: [\"https://*.okta.com\"] }"), "oidc is not one of sso.providers"},
+		"no domains":           {strings.Replace(yaml("[oidc]", "{ issuers: [\"https://sso.example.com\"] }"), "  domains: { enabled: true }\n", "", 1), "oidc needs organizations.domains"},
+	} {
+		if _, errs := parseRealmSettings([]byte(tc.y)); len(errs) == 0 || !strings.Contains(errors.Join(errs...).Error(), tc.want) {
+			t.Errorf("%s: %v, want %q", name, errs, tc.want)
 		}
 	}
 }

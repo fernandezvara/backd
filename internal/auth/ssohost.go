@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -119,6 +120,23 @@ func (h *SSOHost) ProviderOf(ctx context.Context, p *registry.Provider, conn *Or
 		h.linkByDomain(ctx, &sp, c)
 		sp.Admit = func(cl sso.Claims) bool {
 			return c.Admits(SignInClaims{Email: cl.Email, EmailVerified: cl.EmailVerified, HostedDomain: cl.HostedDomain, Tenant: cl.Tenant, Username: cl.Username})
+		}
+		if c.Provider == registry.ProviderTypeOIDC {
+			// What admits a person of an OpenID Connect server is the domain of a verified address: the
+			// server vouches for the person, the DNS proof ties the address to the company. Everything is
+			// looked at each time, so a pattern removed from the realm's list or a domain that lapsed stops
+			// the connection at once.
+			proved, err := h.Users.provedDomains(ctx, c.Org, c.Domains)
+			if err != nil {
+				return sso.Provider{}, false, err
+			}
+			if !h.Users.AllowsIssuer(c.Issuer) || len(proved) == 0 {
+				ok = false
+			}
+			sp.Admit = func(cl sso.Claims) bool {
+				addr := domainOf(cl.Email)
+				return cl.Email != "" && cl.EmailVerified && addr != "" && slices.Contains(proved, addr)
+			}
 		}
 		sp.Authority = func(ctx context.Context) error { return h.Users.CheckConnectionAuthority(ctx, c) }
 	}
@@ -263,7 +281,7 @@ func (c ssoCatalog) Provider(ctx context.Context, scope, name string) (sso.Provi
 			return sso.Provider{}, sso.ErrNotFound
 		}
 		oc, err := u.Store.OrgConnection(ctx, orgID, name)
-		if err != nil || !oc.Enabled {
+		if err != nil || !oc.Enabled || (oc.Provider == registry.ProviderTypeOIDC && !u.AllowsIssuer(oc.Issuer)) {
 			return sso.Provider{}, sso.ErrNotFound
 		}
 		conn = &oc
@@ -284,7 +302,7 @@ func (c ssoCatalog) Provider(ctx context.Context, scope, name string) (sso.Provi
 // ConnectionProvider is the provider an organization's connection stands for.
 func ConnectionProvider(c OrgConnection) *registry.Provider {
 	return &registry.Provider{
-		Name: c.Provider, Kind: c.Provider, ClientID: c.ClientID, ClientSecret: SSOSecretName(c.Provider),
+		Name: c.Provider, Kind: c.Provider, Issuer: c.Issuer, ClientID: c.ClientID, ClientSecret: SSOSecretName(c.Provider),
 		NativeClientIDs: c.NativeClientIDs, Tenant: c.Tenant, Org: c.Org,
 	}
 }

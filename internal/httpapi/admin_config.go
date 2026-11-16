@@ -151,7 +151,18 @@ func realmConfig(s registry.RealmSettings, seesUsers bool) map[string]any {
 		}
 		if o.SSO != nil {
 			// What organizations may connect (design/sso.md §9); absent when the feature is off.
-			orgs["sso"] = map[string]any{"providers": orStrings(o.SSO.Providers), "max_per_org": o.SSO.MaxPerOrg}
+			issuers := make([]string, len(o.SSO.OIDCIssuers))
+			for i, p := range o.SSO.OIDCIssuers {
+				issuers[i] = p.String()
+			}
+			orgs["sso"] = map[string]any{"providers": orStrings(o.SSO.Providers), "max_per_org": o.SSO.MaxPerOrg, "oidc_issuers": issuers}
+		}
+		if d := o.Domains; d != nil {
+			// What organizations may prove (design/sso.md §10); absent when the feature is off.
+			orgs["domains"] = map[string]any{
+				"max_per_org": d.MaxPerOrg, "recheck": d.Recheck.String(), "lapse_after": d.LapseAfter,
+				"blocked": orStrings(d.Blocked), "resolvers": orStrings(d.Resolvers),
+			}
 		}
 		out["organizations"] = orgs
 	}

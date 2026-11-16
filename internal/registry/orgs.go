@@ -475,8 +475,9 @@ func (d *orgsDoc) apply(s *RealmSettings) []error {
 			add("signin_link: %q must be an absolute URL within auth.sign_in.allowed_redirects (or email.allowed_redirects when it has none)", o.SigninLink)
 		}
 	}
-	o.SSO = parseOrgSSO(d.SSO, o, add)
+	// Domains first: the OpenID Connect of organizations needs them.
 	o.Domains = parseOrgDomains(d.Domains, add)
+	o.SSO = parseOrgSSO(d.SSO, o, add)
 	if len(errs) == 0 {
 		s.Organizations = o
 	}

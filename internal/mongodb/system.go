@@ -737,8 +737,10 @@ var systemCollections = []systemCollection{
 		validator: jsonSchema([]string{"_id", "org", "provider", "client_id", "enabled", "created_at", "updated_at"}, map[string]any{
 			"_id":               str(),
 			"org":               str(),
-			"provider":          map[string]any{"enum": bson.A{"google", "microsoft"}},
+			"provider":          map[string]any{"enum": bson.A{"google", "microsoft", "oidc"}},
 			"client_id":         str(),
+			"issuer":            str(),
+			"domains":           map[string]any{"bsonType": "array", "items": str()},
 			"tenant":            str(),
 			"hosted_domain":     str(),
 			"email_domains":     map[string]any{"bsonType": "array", "items": str()},

@@ -18,6 +18,8 @@ type orgConnectionDoc struct {
 	Org             string    `bson:"org"`
 	Provider        string    `bson:"provider"`
 	ClientID        string    `bson:"client_id"`
+	Issuer          string    `bson:"issuer,omitempty"`
+	Domains         []string  `bson:"domains,omitempty"`
 	Tenant          string    `bson:"tenant,omitempty"`
 	HostedDomain    string    `bson:"hosted_domain,omitempty"`
 	EmailDomains    []string  `bson:"email_domains"`
@@ -33,7 +35,7 @@ type orgConnectionDoc struct {
 
 func (d orgConnectionDoc) connection() auth.OrgConnection {
 	return auth.OrgConnection{
-		ID: d.ID, Org: d.Org, Provider: d.Provider, ClientID: d.ClientID, Tenant: d.Tenant, HostedDomain: d.HostedDomain,
+		ID: d.ID, Org: d.Org, Provider: d.Provider, ClientID: d.ClientID, Issuer: d.Issuer, Domains: d.Domains, Tenant: d.Tenant, HostedDomain: d.HostedDomain,
 		EmailDomains: d.EmailDomains, NativeClientIDs: d.NativeClientIDs, JoinRoles: d.JoinRoles, Enabled: d.Enabled, Blocked: d.Blocked,
 		CreatedBy: d.CreatedBy, UpdatedBy: d.UpdatedBy, CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC(),
 	}
@@ -54,6 +56,8 @@ func (s *AuthStore) PutOrgConnection(ctx context.Context, c auth.OrgConnection) 
 			{Key: "org", Value: c.Org},
 			{Key: "provider", Value: c.Provider},
 			{Key: "client_id", Value: c.ClientID},
+			{Key: "issuer", Value: c.Issuer},
+			{Key: "domains", Value: nonNilStrings(c.Domains)},
 			{Key: "tenant", Value: c.Tenant},
 			{Key: "hosted_domain", Value: c.HostedDomain},
 			{Key: "email_domains", Value: nonNilStrings(c.EmailDomains)},
@@ -116,4 +120,10 @@ func (s *AuthStore) BlockOrgMember(ctx context.Context, org, user string) error 
 func (s *AuthStore) UnblockOrgMember(ctx context.Context, org, user string) error {
 	_, err := s.orgConnections().UpdateMany(ctx, bson.D{{Key: "org", Value: org}}, bson.D{{Key: "$pull", Value: bson.D{{Key: "blocked", Value: user}}}})
 	return err
+}
+
+// CountDormantIdentities implements auth.Store.
+func (s *AuthStore) CountDormantIdentities(ctx context.Context, org, provider, issuer string) (int, error) {
+	n, err := s.identities().CountDocuments(ctx, bson.D{{Key: "org", Value: org}, {Key: "provider", Value: provider}, {Key: "issuer", Value: bson.D{{Key: "$ne", Value: issuer}}}})
+	return int(n), err
 }

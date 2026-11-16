@@ -124,7 +124,7 @@ func (a *authAPI) scope(r *http.Request) (*signInScope, bool) {
 		return sc, true
 	}
 	for _, c := range list {
-		if !c.Enabled || !o.SSO.Allows(c.Provider) {
+		if !c.Enabled || !o.SSO.Allows(c.Provider) || (c.Provider == registry.ProviderTypeOIDC && !svc.AllowsIssuer(c.Issuer)) {
 			continue
 		}
 		sc.providers[c.Provider] = auth.ConnectionProvider(c)
