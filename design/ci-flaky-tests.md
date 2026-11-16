@@ -65,8 +65,5 @@ fixed by a commit.
 
 ## Next steps (tracked in #1059 and its children)
 
-- Fix 1 as its own bug.
-- Fix 2 and 3 in the test setup and the workflows.
-- Read the ones marked "to read" and fix them, then run each fixed test 200 times locally and
-  20 times in CI.
-- A CI step that reports jobs that needed more than one attempt.
+- Finding 1: #1061. Finding 2: #1062. Finding 3: #1063. Finding 4: #1064.
+- The ones marked "to read": #1065. Each fixed test runs 200 times locally and 20 times in CI.
