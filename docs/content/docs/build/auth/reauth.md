@@ -55,7 +55,7 @@ API keys are **never** asked for a second factor, by design: they are for server
 
 ## From a client
 
-The [JavaScript client](../../clients/js/#sign-in-with-google-microsoft-or-apple) keeps the proof for you:
+The [JavaScript client](../../clients/js/#sign-in-with-a-provider) keeps the proof for you:
 
 ```js
 const me = await backd.auth.me()                 // me.reauth_methods: ['totp', 'recovery_code']

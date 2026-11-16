@@ -1,19 +1,19 @@
 ---
-title: "Let a company sign in with its own Google or Microsoft account"
-description: "A guide for B2B apps: an organization connects its Google Workspace or Microsoft Entra tenant, its people sign in with it and join automatically, and nobody outside the company gets in."
+title: "Let a company sign in with its own identity provider"
+description: "A guide for B2B apps: an organization connects its Google Workspace, Microsoft Entra tenant or OpenID Connect server (Okta, Keycloak…), its people sign in with it and join automatically, and nobody outside the company gets in."
 icon: "sign-in"
 weight: 529
 toc: true
 ---
 
-A company that uses your app usually has its own identity provider already: a Google Workspace or a Microsoft Entra tenant. With **organization sign-in** its people click "Continue with Google" or "Continue with Microsoft", land in **its** organization with the roles you chose, and nobody from another company can come in, without you editing files or handling the company's secrets. The company's managers set it up themselves.
+A company that uses your app usually has its own identity provider already: a Google Workspace, a Microsoft Entra tenant or an OpenID Connect server such as Okta or Keycloak. With **organization sign-in** its people click "Continue with Google", "Continue with Microsoft" or the company's own button, land in **its** organization with the roles you chose, and nobody from another company can come in, without you editing files or handling the company's secrets. The company's managers set it up themselves.
 
 This page is the guide, in the order you do it. The routes and the rules behind it are in [the organizations API](../api/#sign-in-connections); the realm's switch and limits are in [Organization sign-in for operators](../../../operate/organization-sign-in/).
 
 ## What you get
 
-- **A connection per provider.** An organization has at most one Google and one Microsoft connection: the application the company registered with the provider, a client secret, and who may come in.
-- **The restriction is cryptographic.** A Google connection names the Workspace domain and backd checks the `hd` of the verified ID token; a Microsoft connection names the company's tenant id and backd checks the token's `tid` and issuer. Not a list of email domains a manager could claim: a person from another company, or with a personal account, is refused and nothing is created.
+- **A connection per provider.** An organization has at most one Google, one Microsoft and one OpenID Connect connection: the application the company registered with the provider, a client secret, and who may come in.
+- **The restriction is cryptographic.** A Google connection names the Workspace domain and backd checks the `hd` of the verified ID token; a Microsoft connection names the company's tenant id and backd checks the token's `tid` and issuer; an OpenID Connect connection names the server's issuer and admits only addresses the server says are verified and that are on a [domain the organization proved](../verified-domains/). Not a list of email domains a manager could claim: a person from another company, or with a personal account, is refused and nothing is created.
 - **People join by signing in.** The first time someone the connection admits signs in, they get an account and become a member with the connection's `join_roles`, even when the realm's `signup` is `closed`.
 - **No account takeover.** Signing in through a connection links to an existing account by email address only when the address is on a [domain the organization proved](../verified-domains/#sign-in-through-a-verified-domain) it owns. Otherwise someone who already has an account links the connection explicitly.
 

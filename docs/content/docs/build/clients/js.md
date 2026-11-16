@@ -195,7 +195,7 @@ try {
 
 The rules behind each flow are in [Sign-up, login and sessions](../../auth/sessions/).
 
-### Sign in with Google, Microsoft or Apple
+### Sign in with a provider
 
 In a realm that lists [providers](../../auth/providers/), signing in is one call on the page with the buttons. backd sends the user back to a page of your app (the current one by default, so no return route is needed), and the client finishes the sign-in when it is created there.
 

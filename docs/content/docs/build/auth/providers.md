@@ -9,7 +9,7 @@ toc: true
 A realm can let its users sign in with **Google**, **Microsoft**, **Apple**, **GitHub**, any **OpenID Connect** server of its own (Keycloak, Okta, Auth0, Microsoft Entra ID…) or a plain **OAuth 2** service. backd runs the redirect flow with the provider, checks the answer, finds or creates the user, and gives your app a one-time code to trade for a session. A user can have a password and any number of providers at once (at most one of each): they are [sign-in methods](../sessions/#sign-in-methods) of the same user, so roles, rules and owned documents don't depend on how the user signed in.
 
 {{< hint style="note" >}}
-To let a company's people sign in with **its own** Google Workspace or Microsoft tenant, see [Let a company sign in with its own account](../../organizations/sign-in/). This page covers the **redirect** sign-in and the **native** sign-in of mobile apps. 
+To let a company's people sign in with **its own** Google Workspace, Microsoft tenant or OpenID Connect server, see [Let a company sign in with its own identity provider](../../organizations/sign-in/). This page covers the **redirect** sign-in and the **native** sign-in of mobile apps. 
 {{< /hint >}}
 
 ## Set it up

@@ -1,12 +1,12 @@
 ---
 title: "Organization sign-in for operators"
-description: "The realm switch, the limits, the secrets and the checks for letting organizations sign in with their own Google Workspace or Microsoft tenant."
+description: "The realm switch, the limits, the secrets and the checks for letting organizations sign in with their own Google Workspace, Microsoft tenant or OpenID Connect server."
 icon: "sign-in"
 weight: 355
 toc: true
 ---
 
-Organization sign-in lets the companies that use a B2B app connect their own Google Workspace or Microsoft Entra tenant, so their people sign in with it and join their organization. Its managers set it up; this page is for the person who runs the instance. The guide for the app's developer is [Let a company sign in with its own Google or Microsoft account](../../build/organizations/sign-in/).
+Organization sign-in lets the companies that use a B2B app connect their own Google Workspace, Microsoft Entra tenant or OpenID Connect server, so their people sign in with it and join their organization. Its managers set it up; this page is for the person who runs the instance. The guide for the app's developer is [Let a company sign in with its own identity provider](../../build/organizations/sign-in/).
 
 ## The switch
 
