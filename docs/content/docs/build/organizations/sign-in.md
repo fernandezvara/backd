@@ -15,7 +15,7 @@ This page is the guide, in the order you do it. The routes and the rules behind 
 - **A connection per provider.** An organization has at most one Google and one Microsoft connection: the application the company registered with the provider, a client secret, and who may come in.
 - **The restriction is cryptographic.** A Google connection names the Workspace domain and backd checks the `hd` of the verified ID token; a Microsoft connection names the company's tenant id and backd checks the token's `tid` and issuer. Not a list of email domains a manager could claim: a person from another company, or with a personal account, is refused and nothing is created.
 - **People join by signing in.** The first time someone the connection admits signs in, they get an account and become a member with the connection's `join_roles`, even when the realm's `signup` is `closed`.
-- **No account takeover.** Signing in through a connection never links to an existing account by email address. Someone who already has an account links the connection explicitly.
+- **No account takeover.** Signing in through a connection links to an existing account by email address only when the address is on a [domain the organization proved](../verified-domains/#sign-in-through-a-verified-domain) it owns. Otherwise someone who already has an account links the connection explicitly.
 
 ## 1. Switch it on
 
@@ -97,7 +97,7 @@ When everybody should come in through the company's provider, a manager turns on
 | The person | Result |
 |---|---|
 | Has no account | Made, signed in, joined with `joinRoles` |
-| Has an account with that address | `backd_error=account_exists`. They sign in the way they already do, then `backd.auth.linkProvider('google', { org })`: that links the connection and joins them |
+| Has an account with that address | On a [verified domain](../verified-domains/#sign-in-through-a-verified-domain) of the organization: linked, and they are told by email. Otherwise `backd_error=account_exists`: they sign in the way they already do, then `backd.auth.linkProvider('google', { org })`, which links the connection and joins them |
 | Signs in again later | The same user; nothing changes, not even their roles |
 | Was removed from the organization by a manager | Signed in but **not joined**, until they accept an invitation to the organization. Leaving by oneself does not block |
 

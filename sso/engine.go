@@ -9,6 +9,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/fernandezvara/backd/sso/pkce"
@@ -388,6 +390,12 @@ func (e *Engine) Resolve(ctx context.Context, l Login) (Result, error) {
 	email := d.NormalizeEmail(l.Claims.Email)
 	key := IdentityKey{Provider: l.Provider.Name, Org: l.Provider.Org, Issuer: l.Claims.Issuer, Subject: l.Claims.Subject}
 	f := Facts{Intent: l.Intent, Email: email, EmailVerified: l.Claims.EmailVerified, LinkUserID: l.LinkUserID}
+	if l.Provider.VerifiesEmail != nil {
+		f.EmailVerified = l.Provider.VerifiesEmail(l.Claims)
+	}
+	if at := strings.LastIndex(email, "@"); at >= 0 {
+		f.DomainOK = slices.Contains(l.Provider.LinkDomains, email[at+1:])
+	}
 	find := func(get func() (Account, error)) (*Account, error) {
 		a, err := get()
 		if errors.Is(err, ErrNotFound) {
@@ -433,6 +441,9 @@ func (e *Engine) Resolve(ctx context.Context, l Login) (Result, error) {
 		}
 		if err := d.Link(ctx, *f.ByEmail, l, email); err != nil {
 			return Result{}, err
+		}
+		if dec.ByDomain {
+			e.emit(ctx, Event{Kind: EventLinkedByDomain, Provider: l.Provider, UserID: f.ByEmail.ID})
 		}
 		return Result{Account: *f.ByEmail, Linked: true}, nil
 	case Create:

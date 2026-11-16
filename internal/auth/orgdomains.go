@@ -506,3 +506,66 @@ func (s *Users) VerifiedDomainOf(ctx context.Context, domain string) (OrgDomain,
 	d, err := s.Store.VerifiedOrgDomain(ctx, strings.ToLower(domain))
 	return d, err == nil
 }
+
+// DiscoveredOrg is an organization a domain leads to: what an application needs to send the person to its
+// sign-in.
+type DiscoveredOrg struct {
+	Org       string
+	Name      string
+	Providers []string // the names of the organization's usable connections
+}
+
+// Limits of discovery: an application asks when a sign-in page takes an address, so the per-address one
+// is the one that matters against someone sweeping addresses.
+const (
+	discoverPerIPPerMinute      = 60
+	discoverPerAddressPerHour   = 10
+	discoverAddressWindow       = time.Hour
+	discoverIPWindow            = time.Minute
+	discoverUnknownOrgReadsOnly = "0" // an id no organization has: the reads of a miss look like the reads of a hit
+)
+
+// DiscoverOrgs answers "which organization is this address?" (design/sso.md §10.5): the one whose
+// verified, discoverable domain it is on, if that organization has a connection people can use. Every
+// other case (an unknown address, a domain nobody proved, one that does not let itself be found, an
+// organization with no working connection) answers the same: nothing, and the same reads are made, so
+// neither the answer nor its time says which. The person is never told whether an account exists.
+func (s *Users) DiscoverOrgs(ctx context.Context, address, ip string) ([]DiscoveredOrg, error) {
+	if _, err := s.domainSettings(); err != nil {
+		return nil, err
+	}
+	if err := s.RateLimit(ctx, "discover-ip:"+ip, discoverPerIPPerMinute, discoverIPWindow); err != nil {
+		return nil, err
+	}
+	addr, err := registry.NormalizeEmail(address)
+	if err != nil {
+		addr = ""
+	}
+	if err := s.RateLimit(ctx, "discover-address:"+addr, discoverPerAddressPerHour, discoverAddressWindow); err != nil {
+		return nil, err
+	}
+	claim, found := s.VerifiedDomainOf(ctx, domainOf(addr))
+	org, orgID := Org{}, discoverUnknownOrgReadsOnly
+	if found && claim.Discoverable {
+		orgID = claim.Org
+	}
+	org, orgErr := s.Store.OrgByID(ctx, orgID)
+	conns, connErr := s.Store.OrgConnections(ctx, orgID)
+	if !found || !claim.Discoverable || orgErr != nil || connErr != nil || org.Status != OrgActive {
+		return []DiscoveredOrg{}, nil
+	}
+	sso := s.Settings.Organizations.SSO
+	var providers []string
+	for _, c := range conns {
+		if !c.Enabled || !sso.Allows(c.Provider) {
+			continue
+		}
+		if _, err := s.Store.SecretByScope(ctx, OrgScope(org.ID), SSOSecretName(c.Provider)); err == nil {
+			providers = append(providers, c.Provider)
+		}
+	}
+	if len(providers) == 0 {
+		return []DiscoveredOrg{}, nil
+	}
+	return []DiscoveredOrg{{Org: org.ID, Name: org.Name, Providers: providers}}, nil
+}

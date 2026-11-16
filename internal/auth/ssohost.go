@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/fernandezvara/backd/internal/email"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/sso"
 )
@@ -115,12 +116,43 @@ func (h *SSOHost) ProviderOf(ctx context.Context, p *registry.Provider, conn *Or
 	}
 	if conn != nil {
 		c := *conn
+		h.linkByDomain(ctx, &sp, c)
 		sp.Admit = func(cl sso.Claims) bool {
 			return c.Admits(SignInClaims{Email: cl.Email, EmailVerified: cl.EmailVerified, HostedDomain: cl.HostedDomain, Tenant: cl.Tenant, Username: cl.Username})
 		}
 		sp.Authority = func(ctx context.Context) error { return h.Users.CheckConnectionAuthority(ctx, c) }
 	}
 	return sp, ok, nil
+}
+
+// linkByDomain lets a connection link existing accounts for the addresses on the verified domains of
+// its organization that allow it (design/sso.md §10.4). The domains are read each time the provider
+// is resolved, so one that lapsed stops linking at once.
+func (h *SSOHost) linkByDomain(ctx context.Context, sp *sso.Provider, c OrgConnection) {
+	if h.Users.Settings.Organizations == nil || h.Users.Settings.Organizations.Domains == nil {
+		return
+	}
+	list, err := h.Users.Store.OrgDomains(ctx, c.Org)
+	if err != nil {
+		return
+	}
+	for _, d := range list {
+		if d.State == DomainVerified && d.LinkAccounts {
+			sp.LinkDomains = append(sp.LinkDomains, d.Domain)
+		}
+	}
+	if len(sp.LinkDomains) == 0 {
+		return
+	}
+	sp.Link = sso.LinkVerifiedDomain
+	// Google says whether an address is verified; a Microsoft tenant only vouches for an address on the
+	// domain of its account's name, a domain the tenant has verified (Admits has checked that already).
+	sp.VerifiesEmail = func(cl sso.Claims) bool {
+		if c.Provider == registry.ProviderMicrosoft {
+			return cl.Username != "" && domainOf(cl.Username) == domainOf(cl.Email)
+		}
+		return cl.EmailVerified
+	}
 }
 
 // UserOf returns a user the engine returned as an account (or reads it).
@@ -494,6 +526,15 @@ func (e ssoEvents) Emit(ctx context.Context, ev sso.Event) {
 	switch ev.Kind {
 	case sso.EventRefused:
 		e.h.Users.Audit(ctx, AuditSignInRefused, "user:"+ev.UserID, map[string]any{"provider": ev.Provider.Name, "reason": ev.Reason})
+	case sso.EventLinkedByDomain:
+		u, err := e.h.user(ctx, ev.UserID)
+		if err != nil {
+			return
+		}
+		e.h.Users.Audit(ctx, AuditOrgSSOLinked, orgTarget(ev.Provider.Org), map[string]any{"user": u.ID, "provider": ev.Provider.Name, "by": "domain"})
+		if e.h.Users.Settings.Email != nil {
+			e.h.Users.queueNotice(ctx, EmailRequest{Kind: email.SecurityNotice, UserID: u.ID, Address: u.Email, Locale: e.h.Users.LocaleOf(u), Org: ev.Provider.Org, Notice: true, Event: "sso-linked"})
+		}
 	case sso.EventAppleToken:
 		if err := e.h.Users.SaveAppleToken(ctx, ev.UserID, ev.Audience, ev.Token); err != nil && e.h.Users.Log != nil {
 			e.h.Users.Log.Error("keep Apple's refresh token for revocation", "error", err)

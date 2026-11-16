@@ -17,6 +17,7 @@ func TestDecide(t *testing.T) {
 	realm := sso.Provider{Name: "google", Kind: sso.Google, Link: sso.LinkVerifiedEmail}
 	untrusted := sso.Provider{Name: "microsoft", Kind: sso.Microsoft}
 	conn := sso.Provider{Name: "google", Kind: sso.Google, Org: "o1", Link: sso.LinkVerifiedEmail}
+	domainConn := sso.Provider{Name: "google", Kind: sso.Google, Org: "o1", Link: sso.LinkVerifiedDomain}
 	ada := &sso.Account{ID: "u1", Email: "ada@example.com", EmailVerified: true}
 	unverified := &sso.Account{ID: "u1", Email: "ada@example.com"}
 	me := &sso.Account{ID: "me"}
@@ -34,6 +35,12 @@ func TestDecide(t *testing.T) {
 		{"backd account unverified (pre-hijacking)", realm, sso.Facts{Intent: sso.IntentSignIn, ByEmail: unverified, Email: "ada@example.com", EmailVerified: true}, sso.Refuse, sso.ErrAccountExists, false},
 		{"untrusted provider", untrusted, sso.Facts{Intent: sso.IntentSignIn, ByEmail: ada, Email: "ada@example.com", EmailVerified: true}, sso.Refuse, sso.ErrAccountExists, false},
 		{"a connection never links by email", conn, sso.Facts{Intent: sso.IntentSignIn, ByEmail: ada, Email: "ada@example.com", EmailVerified: true}, sso.Refuse, sso.ErrAccountExists, false},
+		{"a connection links by a verified domain", domainConn, sso.Facts{Intent: sso.IntentSignIn, ByEmail: ada, Email: "ada@acme.example", EmailVerified: true, DomainOK: true}, sso.LinkToExisting, nil, false},
+		{"a connection, a domain not proved", domainConn, sso.Facts{Intent: sso.IntentSignIn, ByEmail: ada, Email: "ada@acme.example", EmailVerified: true}, sso.Refuse, sso.ErrAccountExists, false},
+		{"a connection, the provider doesn't vouch", domainConn, sso.Facts{Intent: sso.IntentSignIn, ByEmail: ada, Email: "ada@acme.example", DomainOK: true}, sso.Refuse, sso.ErrAccountExists, false},
+		{"a connection, the account is not verified", domainConn, sso.Facts{Intent: sso.IntentSignIn, ByEmail: unverified, Email: "ada@acme.example", EmailVerified: true, DomainOK: true}, sso.Refuse, sso.ErrAccountExists, false},
+		{"a connection never marks a new user verified", domainConn, sso.Facts{Intent: sso.IntentSignIn, Email: "new@acme.example", EmailVerified: true, DomainOK: true}, sso.Create, nil, false},
+		{"a realm provider ignores domains", realm, sso.Facts{Intent: sso.IntentSignIn, ByEmail: ada, Email: "ada@example.com", EmailVerified: true, DomainOK: true}, sso.LinkToExisting, nil, false},
 		{"new person, trusted and verified", realm, sso.Facts{Intent: sso.IntentSignIn, Email: "new@example.com", EmailVerified: true}, sso.Create, nil, true},
 		{"new person, untrusted provider", untrusted, sso.Facts{Intent: sso.IntentSignIn, Email: "new@example.com", EmailVerified: true}, sso.Create, nil, false},
 		{"new person, provider says unverified", realm, sso.Facts{Intent: sso.IntentSignIn, Email: "new@example.com"}, sso.Create, nil, false},

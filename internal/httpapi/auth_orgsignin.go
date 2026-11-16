@@ -179,6 +179,32 @@ func (a *authAPI) findOrgs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]any{"status": "accepted"})
 }
 
+// discoverOrgs answers POST /_auth/orgs/discover: which organization an address leads to, for an
+// application that wants to send the person to their company's sign-in. Public (no session) and
+// uniform: whatever the address, the answer is a list that is empty unless the domain was proved,
+// is discoverable and its organization has a connection.
+func (a *authAPI) discoverOrgs(w http.ResponseWriter, r *http.Request) {
+	obj, ok := readObject(w, r)
+	if !ok {
+		return
+	}
+	f, ok := fields(w, r, obj, map[string]string{"email": "string"})
+	if !ok {
+		return
+	}
+	list, err := usersOf(r).DiscoverOrgs(r.Context(), f["email"].(string), clientIP(r))
+	if err != nil {
+		domainError(w, r, err)
+		return
+	}
+	items := make([]map[string]any, len(list))
+	for i, d := range list {
+		items[i] = map[string]any{"org": d.Org, "name": d.Name, "providers": nonNil(d.Providers)}
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
 // signInToAnOrg answers 404 to a sign-in that names no organization in a realm that has them: the
 // person signs in to an organization (/_auth/orgs/{org}/…), and only the operators have a door of
 // their own (POST /_auth/login). It returns false when it answered.

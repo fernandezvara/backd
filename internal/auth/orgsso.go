@@ -20,6 +20,7 @@ const (
 	AuditOrgSSODeleted  = "org.sso.deleted"  // details: provider
 	AuditOrgSSOLogin    = "org.sso.login"    // a person signed in through a connection; details: user, provider, joined
 	AuditOrgSSODisabled = "org.sso.disabled" // backd disabled a connection; details: provider, reason
+	AuditOrgSSOLinked   = "org.sso.linked"   // an account was linked through a connection by a verified domain; details: user, provider, by
 )
 
 var (
@@ -271,6 +272,9 @@ func (s *Users) setConnection(ctx context.Context, org Org, callerCaps registry.
 	if err := s.checkConnection(&c, callerCaps); err != nil {
 		return ConnectionView{}, err
 	}
+	if err := s.checkEmailDomainsProved(ctx, org.ID, c.EmailDomains, have.EmailDomains); err != nil {
+		return ConnectionView{}, err
+	}
 	secretSet := false
 	if _, err := s.Store.SecretByScope(ctx, OrgScope(org.ID), SSOSecretName(provider)); err == nil {
 		secretSet = true
@@ -309,6 +313,30 @@ func (s *Users) setConnection(ctx context.Context, org Org, callerCaps registry.
 		s.releaseSSORequired(ctx, org.ID, "the connection was disabled")
 	}
 	return ConnectionView{OrgConnection: c, SecretSet: secretSet}, nil
+}
+
+// checkEmailDomainsProved holds the email_domains of a connection to the domains its organization has
+// proved, once the realm has verified domains (design/sso.md §10): a list of addresses an organization
+// may let in is a claim about whose they are, and only a verified domain is a proof. Domains the
+// connection already had are grandfathered, so a realm that turns the feature on does not break a
+// working connection; any other is refused unless it is verified for the organization.
+func (s *Users) checkEmailDomainsProved(ctx context.Context, orgID string, domains, had []string) error {
+	if s.Settings.Organizations == nil || s.Settings.Organizations.Domains == nil {
+		return nil
+	}
+	for i, d := range domains {
+		if slices.Contains(had, d) {
+			continue
+		}
+		claim, err := s.Store.OrgDomain(ctx, orgID, d)
+		if errors.Is(err, ErrNotFound) || (err == nil && claim.State != DomainVerified) {
+			return &OrgInvalidError{fmt.Sprintf("email_domains[%d]", i), fmt.Sprintf("%q isn't a verified domain of the organization: prove it first (verified domains)", d)}
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // checkConnection applies the rules of a connection's fields: the provider-field rules of

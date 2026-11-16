@@ -2592,6 +2592,59 @@ paths:
         "429": { $ref: "#/components/responses/TooManyRequests" }
         default: { $ref: "#/components/responses/Error" }
 
+  /v1/{realm}/_auth/orgs/discover:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    post:
+      tags: [auth, organizations]
+      summary: "Which organization is this address?"
+      description: |
+        For an application that takes an email address and wants to send the person to their company's sign-in. The
+        answer lists the organization whose **verified, discoverable domain** the address is on, with the
+        names of its usable sign-in connections (the application then starts `…/orgs/{org}/oauth/{provider}/start`).
+        Everything else answers the same, `{"items": []}` with the same status and shape: an unknown address, a domain
+        nobody proved, one that does not let itself be found (`discoverable`), an organization with no working
+        connection. It never says whether an account or a member exists.
+
+        At most 10 requests an hour per address and 60 a minute per client address (`429`). `404` in a realm
+        without `organizations.domains`.
+      operationId: discoverOrganization
+      security: [{}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email]
+              properties:
+                email: { type: string }
+      responses:
+        "200":
+          description: The organization the address leads to, or none.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [org, name, providers]
+                      properties:
+                        org: { type: string, description: "The organization's id." }
+                        name: { type: string }
+                        providers: { type: array, items: { type: string, enum: [google, microsoft] } }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        default: { $ref: "#/components/responses/Error" }
+
   /v1/{realm}/_auth/orgs/{org}/passkey/login/options:
     parameters:
       - { $ref: "#/components/parameters/realm" }
