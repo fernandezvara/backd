@@ -1,6 +1,6 @@
 COMPOSE_TEST = docker compose -f docker-compose.test.yml
 
-.PHONY: perf-queries dev dev-examples dev-build dev-down dev-reset dev-logs dev-backd dev-server lint build ui ui-test ui-e2e test test-local perf vet lint-api openapi-clients shelf-types shelf-types-update js-test js-package js-integration dart-package dart-integration python-test python-integration python-package functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour shelf-tour-ci example-attacks release-check release-tag
+.PHONY: perf-queries dev dev-examples dev-build dev-down dev-reset dev-logs dev-backd dev-server lint build ui ui-test ui-e2e test test-local perf vet lint-api openapi-clients shelf-types shelf-types-update js-test js-package js-integration dart-package dart-integration python-test python-integration python-package functions-testing-test docs docs-serve example prod-test egress-test hack-expenses hack-expenses-functions workshop-tour shelf-tour shelf-tour-ci example-attacks release-check release-tag test-repeat
 
 build:
 	go build -o bin/backd ./cmd/backd
@@ -9,6 +9,14 @@ build:
 # Full test suite in the dockerized environment (same as CI).
 test:
 	$(COMPOSE_TEST) run --rm --build tests
+	$(COMPOSE_TEST) down -v
+
+# The tests that once failed at random (design/ci-flaky-tests.md), run many times in the dockerized
+# environment: a fix is proven by many runs, not by one. N sets how many (CI uses 20; 200 locally).
+# Add a test here when you fix a flaky one.
+FLAKY_TESTS = TestWindowMissedIsRecordedAndReadingContinues|TestHandoffContinuesFromTheStoredPosition|TestConsumerContinuesAfterSetChange|TestFirstSubscriberMissesNothingAfterOpen|TestDataChecksListingDoesNotLoseAJobThatIsBeingClaimed|TestAdminSchemaChecks|TestBundleRetriesTheSharedCacheRace|TestLazyWaitOpen
+test-repeat:
+	$(COMPOSE_TEST) run --rm --build tests go test -count=$(or $(N),20) -run '$(FLAKY_TESTS)' ./internal/triggers ./internal/mongodb ./internal/realtime ./internal/changefeed ./internal/httpapi ./internal/functions
 	$(COMPOSE_TEST) down -v
 
 # Quick local run of the tests that need no external services.

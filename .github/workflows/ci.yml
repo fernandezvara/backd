@@ -53,6 +53,8 @@ jobs:
         run: scripts/retry.sh docker compose -f docker-compose.test.yml build tests
       - name: Test (dockerized)
         run: make test
+      - name: The tests that were flaky, 20 times each
+        run: make test-repeat
       - name: "@backd/functions-testing tests (dockerized)"
         run: make functions-testing-test
       - name: Check the release configuration
