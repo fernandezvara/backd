@@ -51,7 +51,9 @@ func (s *Users) RequestPasswordReset(ctx context.Context, address, redirectTo, i
 // ResetPassword uses a reset token to set a new password. The password is
 // checked first, so a refused one (*PolicyError) leaves the token usable.
 // Success ends every session of the user, marks the address verified (the
-// token proves the person reads that mailbox) and sends password-changed.
+// token proves the person reads that mailbox) and sends password-changed. An
+// account that was not verified yet is claimed first (claimUnverified): its
+// passkeys, second factor and linked providers go with the old password.
 // It never starts a session. Every way the token can be wrong is
 // ErrInvalidToken.
 func (s *Users) ResetPassword(ctx context.Context, token, password string) (EmailToken, error) {
@@ -71,6 +73,14 @@ func (s *Users) ResetPassword(ctx context.Context, token, password string) (Emai
 		return EmailToken{}, err
 	}
 	now := s.now()
+	if !u.EmailVerified {
+		// The link is the first proof that the person reads the mailbox: whatever the account
+		// holds was set by whoever made it, who may be someone else. A new password alone would
+		// leave their passkeys, second factor and linked providers working.
+		if err := s.claimUnverified(ctx, u); err != nil {
+			return EmailToken{}, err
+		}
+	}
 	if err := s.putPassword(ctx, u.ID, hash, now); err != nil {
 		return EmailToken{}, err
 	}

@@ -3,6 +3,7 @@ package auth_test
 import (
 	"context"
 	"errors"
+	"github.com/fernandezvara/backd/internal/auth/passkey"
 	"strings"
 	"testing"
 	"time"
@@ -324,6 +325,9 @@ func TestMagicLinkClaimsAnUnverifiedAccount(t *testing.T) {
 	if err := f.store.PutIdentity(ctx, Identity{ID: "i1", UserID: u.ID, Provider: "google", Subject: "g-squatter"}); err != nil {
 		t.Fatal(err)
 	}
+	if err := f.store.Add(ctx, passkey.Credential{ID: "pk1", UserID: u.ID, CredentialID: []byte("squatter-key")}); err != nil {
+		t.Fatal(err)
+	}
 	verifier, challenge, _ := NewPKCE()
 	id, _, code := f.ask(t, "victim@example.com", challenge)
 	if _, err := f.svc.VerifyMagicLinkCode(ctx, id, code, verifier, ""); err != nil {
@@ -331,6 +335,9 @@ func TestMagicLinkClaimsAnUnverifiedAccount(t *testing.T) {
 	}
 	if _, _, err := f.svc.Login(ctx, "victim@example.com", mfaPassword, ""); !errors.Is(err, ErrInvalidCredentials) {
 		t.Errorf("the squatter's password still works: %v", err)
+	}
+	if n, _ := f.store.CountByUser(ctx, u.ID); n != 0 {
+		t.Errorf("the squatter's passkey survived: %d", n)
 	}
 	if _, err := f.store.IdentityOf(ctx, u.ID, "google"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("the squatter's provider is still linked: %v", err)
@@ -340,5 +347,91 @@ func TestMagicLinkClaimsAnUnverifiedAccount(t *testing.T) {
 	}
 	if u, _ := f.svc.Find(ctx, "victim@example.com"); !u.EmailVerified {
 		t.Error("the address isn't verified")
+	}
+}
+
+// The same squatter, and a victim who resets the password instead: the reset link is the first
+// proof of the mailbox, so the passkey, the second factor, the provider and the sessions the
+// squatter set up go with the old password.
+func TestAResetClaimsAnUnverifiedAccount(t *testing.T) {
+	ctx := context.Background()
+	f := newLinkFixture(t)
+	if _, _, err := f.svc.Signup(ctx, "victim@example.com", mfaPassword, ""); err != nil {
+		t.Fatal(err)
+	}
+	_, squatterToken, err := f.svc.Login(ctx, "victim@example.com", mfaPassword, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, _ := f.svc.Find(ctx, "victim@example.com")
+	if err := f.store.PutIdentity(ctx, Identity{ID: "i1", UserID: u.ID, Provider: "google", Subject: "g-squatter"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.Add(ctx, passkey.Credential{ID: "pk1", UserID: u.ID, CredentialID: []byte("squatter-key")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.PutMFA(ctx, MFARecord{UserID: u.ID, Secret: "sealed", EnabledAt: *f.clock}); err != nil {
+		t.Fatal(err)
+	}
+	link, _, err := f.svc.CreateResetLink(ctx, u.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.ResetPassword(ctx, link, "dev-p4ssw0rd!2"); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := f.store.CountByUser(ctx, u.ID); n != 0 {
+		t.Errorf("the squatter's passkey survived the reset: %d", n)
+	}
+	if _, err := f.store.MFAOf(ctx, u.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("the squatter's second factor survived the reset: %v", err)
+	}
+	if _, err := f.store.IdentityOf(ctx, u.ID, "google"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("the squatter's provider is still linked: %v", err)
+	}
+	if _, err := f.svc.Authenticate(ctx, squatterToken); err == nil {
+		t.Error("the squatter's session survived the reset")
+	}
+	if _, _, err := f.svc.Login(ctx, "victim@example.com", mfaPassword, ""); !errors.Is(err, ErrInvalidCredentials) {
+		t.Errorf("the squatter's password still works: %v", err)
+	}
+	if _, _, err := f.svc.Login(ctx, "victim@example.com", "dev-p4ssw0rd!2", ""); err != nil {
+		t.Errorf("the new password doesn't work: %v", err)
+	}
+	if u, _ := f.svc.Find(ctx, "victim@example.com"); !u.EmailVerified {
+		t.Error("the address isn't verified")
+	}
+}
+
+// A verified account that resets its password keeps what it set up: the claim is only for an
+// address nobody had proved.
+func TestAResetOfAVerifiedAccountKeepsItsMethods(t *testing.T) {
+	ctx := context.Background()
+	f := newLinkFixture(t)
+	if _, _, err := f.svc.Signup(ctx, "ada2@example.com", mfaPassword, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.SetEmailVerified(ctx, "ada2@example.com", true); err != nil {
+		t.Fatal(err)
+	}
+	u, _ := f.svc.Find(ctx, "ada2@example.com")
+	if err := f.store.Add(ctx, passkey.Credential{ID: "pk1", UserID: u.ID, CredentialID: []byte("own-key")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.PutMFA(ctx, MFARecord{UserID: u.ID, Secret: "sealed", EnabledAt: *f.clock}); err != nil {
+		t.Fatal(err)
+	}
+	link, _, err := f.svc.CreateResetLink(ctx, u.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.ResetPassword(ctx, link, "dev-p4ssw0rd!2"); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := f.store.CountByUser(ctx, u.ID); n != 1 {
+		t.Errorf("passkeys after the reset = %d, want 1", n)
+	}
+	if _, err := f.store.MFAOf(ctx, u.ID); err != nil {
+		t.Errorf("the second factor after the reset: %v", err)
 	}
 }

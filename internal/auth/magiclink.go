@@ -11,6 +11,7 @@ import (
 
 	"github.com/rs/xid"
 
+	"github.com/fernandezvara/backd/internal/auth/passkey"
 	"github.com/fernandezvara/backd/internal/email"
 	"github.com/fernandezvara/backd/internal/registry"
 )
@@ -399,11 +400,11 @@ func (s *Users) magicLinkUser(ctx context.Context, c AuthChallenge, ip string) (
 }
 
 // claimUnverified takes an account whose address was never verified away from whoever made it:
-// the owner of the mailbox is now signing in by a link, and the password, the linked providers,
-// the second factor and the sessions that exist were all set before the mailbox was proved
-// (a squatter's, if anyone's). Only the address's own sign-in method is left. It is the
-// counterpart of a provider refusing to link to such an account, and of a password reset
-// ending a squatter's access.
+// the owner of the mailbox is now proving it (signing in by a link, or resetting the password),
+// and the password, the linked providers, the passkeys, the second factor and the sessions that
+// exist were all set before the mailbox was proved (a squatter's, if anyone's). Only the
+// address's own sign-in method is left. It is the counterpart of a provider refusing to link to
+// such an account.
 func (s *Users) claimUnverified(ctx context.Context, u User) error {
 	ids, err := s.Store.ListIdentities(ctx, u.ID)
 	if err != nil {
@@ -414,10 +415,20 @@ func (s *Users) claimUnverified(ctx context.Context, u User) error {
 		if i.Provider == ProviderEmail {
 			continue
 		}
-		if err := s.Store.DeleteIdentity(ctx, u.ID, i.Provider); err != nil && !errors.Is(err, ErrNotFound) {
+		if err := s.Store.DeleteIdentityIn(ctx, u.ID, i.Provider, i.Org); err != nil && !errors.Is(err, ErrNotFound) {
 			return err
 		}
 		removed = append(removed, i.Provider)
+	}
+	// Passkeys are not identities: a squatter's would open the account after the claim.
+	keys, err := s.Store.ListByUser(ctx, u.ID)
+	if err != nil {
+		return err
+	}
+	for _, k := range keys {
+		if err := s.Store.Delete(ctx, u.ID, k.ID); err != nil && !errors.Is(err, ErrNotFound) && !errors.Is(err, passkey.ErrUnknownCredential) {
+			return err
+		}
 	}
 	hadMFA := false
 	if _, err := s.Store.MFAOf(ctx, u.ID); err == nil {
@@ -428,17 +439,16 @@ func (s *Users) claimUnverified(ctx context.Context, u User) error {
 	} else if !errors.Is(err, ErrNotFound) {
 		return err
 	}
-	if len(removed) == 0 && !hadMFA {
-		// A bare account: its sessions can only be the squatter's too.
-		return s.endSessions(ctx, u.ID, "claimed")
-	}
+	// A sign-in or a ceremony that was waiting for its second step ends with the rest.
 	if err := s.Store.DeleteChallengesOfUser(ctx, u.ID); err != nil {
 		return err
 	}
 	if err := s.endSessions(ctx, u.ID, "claimed"); err != nil {
 		return err
 	}
-	s.Audit(ctx, AuditUserClaimed, userTarget(u.ID), map[string]any{"methods": removed, "mfa": hadMFA})
+	if len(removed) > 0 || len(keys) > 0 || hadMFA {
+		s.Audit(ctx, AuditUserClaimed, userTarget(u.ID), map[string]any{"methods": removed, "passkeys": len(keys), "mfa": hadMFA})
+	}
 	return nil
 }
 
