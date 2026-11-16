@@ -219,7 +219,7 @@ Run a worker (`backd-server worker`, or `serve --with-worker`) for this: without
 | Situation | Result |
 |---|---|
 | The provider account is already linked | Signs in as that user. The identity's address is updated; the user's own never is |
-| Its address matches an account, the provider is **Google or Apple**, says the address is verified, and the backd account's is verified too | Linked automatically, signed in |
+| Its address matches an account, the provider is **Google, Apple or GitHub** (or a generic one with `link_by_email: true`) and says the address is verified, and the backd account's is verified too | Linked automatically, signed in |
 | Its address matches an account and any of those is not true | `backd_error=account_exists`: sign in another way and link explicitly |
 | No account has the address | A user is created if the realm's `signup` allows it |
 
@@ -227,7 +227,7 @@ Run a worker (`backd-server worker`, or `serve --with-worker`) for this: without
 - **An identity is bound to the issuer that vouched for it.** A provider's subject is only unique within one issuer, so backd keeps the issuer next to it (`issuer` in `GET /_auth/me`) and matches on both. If an issuer ever changes (a Microsoft tenant, and later a provider's `issuer`), the old identities stay in the table but match nothing: a different person with the same subject at the new issuer is a new user, never the old one. Such an identity shows `"dormant": true`; the person signs in another way and links the provider again, which replaces it.
 - **Pre-hijacking is closed:** an account made with someone's address, never verified, does not absorb that person's Google identity.
 - **Sign-up modes** apply to the realm's providers (an [organization's connection](../../organizations/api/#joining) is let in whatever the mode): `open`; `invite` needs the invitation token passed to `start` (`invitation=…`, bound to an address it must match); `closed` is `backd_error=signup_closed`.
-- New users from Google or Apple with a verified address are marked verified; an Apple private-relay address counts. A user needs an address: a provider that gives none ends with `backd_error=email_required`.
+- New users from Google, Apple or GitHub (or a `link_by_email` provider) with a verified address are marked verified; an Apple private-relay address counts. A user needs an address: a provider that gives none ends with `backd_error=email_required`.
 - **Linking a provider to a signed-in user** is `POST …/start` with the session in `Authorization` and `"intent": "link"`; it ends at `redirect_to?backd_linked=<provider>`. A provider account that belongs to another user, or a second one of the same provider, is `link_conflict`.
 - Remove a method with `DELETE /_auth/identities/{provider}`; the last one can't be removed. A method that came through an [organization's connection](../../organizations/api/#signing-in-through-a-connection) is removed with `?org=<id>`: a user holds one identity per provider **per organization**.
 
