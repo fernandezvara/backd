@@ -91,7 +91,17 @@ func (c *Client) Exchange(ctx context.Context, p sso.Provider, code, redirectURI
 		return sso.Tokens{}, err
 	}
 	t, err := c.oauth2.Exchange(reach(ctx, p), p, p.ClientID, secret, code, redirectURI, verifier)
-	return sso.Tokens{IDToken: t.IDToken, RefreshToken: t.RefreshToken}, err
+	return sso.Tokens{IDToken: t.IDToken, AccessToken: t.AccessToken, RefreshToken: t.RefreshToken}, err
+}
+
+// Identify says who the tokens of a code exchange are for: an OpenID Connect provider's ID token is
+// verified, and the person of an OAuth 2 provider (GitHub, a plain service) is read with the access
+// token, once.
+func (c *Client) Identify(ctx context.Context, p sso.Provider, t sso.Tokens, nonce string) (sso.Claims, error) {
+	if p.Kind == sso.GitHub || p.Kind == sso.OAuth2 {
+		return c.oauth2.Who(reach(ctx, p), p, t.AccessToken)
+	}
+	return c.Verify(ctx, p, t.IDToken, nonce, false)
 }
 
 // Verify checks an ID token and returns what it says.

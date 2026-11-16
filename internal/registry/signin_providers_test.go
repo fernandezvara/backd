@@ -77,8 +77,19 @@ func TestSignInRedirectsFallBackToEmail(t *testing.T) {
 func TestProviderErrors(t *testing.T) {
 	cases := []struct{ name, yaml, want string }{
 		{"unknown provider", "auth:\n  strategies:\n    password: [password]\n    facebook: [facebook]\n  providers:\n    facebook: {client_id: x}\n", "isn't a provider backd knows"},
-		{"a kind not built yet", "auth:\n  strategies:\n    password: [password]\n    github: [github]\n  providers:\n    github: {client_id: x}\n", "isn't available yet"},
+		{"github with a tenant", "auth:\n  strategies:\n    password: [password]\n    github: [github]\n  providers:\n    github: {client_id: x, client_secret: secret:S, tenant: common}\n", "tenant: doesn't apply to github"},
+		{"github without a secret", "auth:\n  strategies:\n    password: [password]\n    github: [github]\n  providers:\n    github: {client_id: x}\n", "client_secret: is required"},
 		{"reserved name sso", "auth:\n  strategies:\n    password: [password]\n  providers:\n    sso: {client_id: abc}\n", "is reserved"},
+		{"oauth2 subject is a login", "auth:\n  strategies:\n    password: [password]\n    partner: [partner]\n  providers:\n    partner:\n      type: oauth2\n      issuer: https://partner.example\n      client_id: backd\n      client_secret: secret:P\n      authorize_url: https://partner.example/authorize\n      token_url: https://partner.example/token\n      userinfo_url: https://partner.example/me\n      claims: {subject: login, email: mail}\n", "is a name a person can change"},
+		{"oauth2 subject is a nested username", "auth:\n  strategies:\n    password: [password]\n    partner: [partner]\n  providers:\n    partner:\n      type: oauth2\n      issuer: https://partner.example\n      client_id: backd\n      client_secret: secret:P\n      authorize_url: https://partner.example/authorize\n      token_url: https://partner.example/token\n      userinfo_url: https://partner.example/me\n      claims: {subject: data.username}\n", "is a name a person can change"},
+		{"oauth2 no subject", "auth:\n  strategies:\n    password: [password]\n    partner: [partner]\n  providers:\n    partner:\n      type: oauth2\n      issuer: https://partner.example\n      client_id: backd\n      client_secret: secret:P\n      authorize_url: https://partner.example/authorize\n      token_url: https://partner.example/token\n      userinfo_url: https://partner.example/me\n      claims: {email: mail}\n", "claims.subject: is required"},
+		{"oauth2 unknown claim", "auth:\n  strategies:\n    password: [password]\n    partner: [partner]\n  providers:\n    partner:\n      type: oauth2\n      issuer: https://partner.example\n      client_id: backd\n      client_secret: secret:P\n      authorize_url: https://partner.example/authorize\n      token_url: https://partner.example/token\n      userinfo_url: https://partner.example/me\n      claims: {subject: id, shoe: size}\n", "claims.shoe"},
+		{"oauth2 bad path", "auth:\n  strategies:\n    password: [password]\n    partner: [partner]\n  providers:\n    partner:\n      type: oauth2\n      issuer: https://partner.example\n      client_id: backd\n      client_secret: secret:P\n      authorize_url: https://partner.example/authorize\n      token_url: https://partner.example/token\n      userinfo_url: https://partner.example/me\n      claims: {subject: 'a b'}\n", "must be the name of a field"},
+		{"oauth2 no token url", "auth:\n  strategies:\n    password: [password]\n    partner: [partner]\n  providers:\n    partner:\n      type: oauth2\n      issuer: https://partner.example\n      client_id: backd\n      client_secret: secret:P\n      authorize_url: https://partner.example/authorize\n      userinfo_url: https://partner.example/me\n      claims: {subject: id, email: mail, email_verified: mail_ok}\n", "token_url: is required"},
+		{"oauth2 ftp", "auth:\n  strategies:\n    password: [password]\n    partner: [partner]\n  providers:\n    partner:\n      type: oauth2\n      issuer: https://partner.example\n      client_id: backd\n      client_secret: secret:P\n      authorize_url: ftp://partner.example/authorize\n      token_url: https://partner.example/token\n      userinfo_url: https://partner.example/me\n      claims: {subject: id, email: mail, email_verified: mail_ok}\n", "authorize_url:"},
+		{"oauth2 no issuer", "auth:\n  strategies:\n    password: [password]\n    partner: [partner]\n  providers:\n    partner:\n      type: oauth2\n      client_id: backd\n      client_secret: secret:P\n      authorize_url: https://partner.example/authorize\n      token_url: https://partner.example/token\n      userinfo_url: https://partner.example/me\n      claims: {subject: id, email: mail, email_verified: mail_ok}\n", "issuer: is required"},
+		{"oauth2 link without a verified flag", "auth:\n  strategies:\n    password: [password]\n    partner: [partner]\n  providers:\n    partner:\n      type: oauth2\n      issuer: https://partner.example\n      client_id: backd\n      client_secret: secret:P\n      authorize_url: https://partner.example/authorize\n      token_url: https://partner.example/token\n      userinfo_url: https://partner.example/me\n      claims: {subject: id, email: mail}\n      link_by_email: true\n", "link_by_email: needs claims.email and claims.email_verified"},
+		{"oauth2 with a tenant", "auth:\n  strategies:\n    password: [password]\n    partner: [partner]\n  providers:\n    partner:\n      type: oauth2\n      issuer: https://partner.example\n      client_id: backd\n      client_secret: secret:P\n      authorize_url: https://partner.example/authorize\n      token_url: https://partner.example/token\n      userinfo_url: https://partner.example/me\n      claims: {subject: id}\n      tenant: common\n", "tenant: doesn't apply to partner"},
 		{"another type", "auth:\n  strategies:\n    password: [password]\n    keycloak: [keycloak]\n  providers:\n    keycloak: {type: saml}\n", "type: \"saml\" isn't available"},
 		{"oidc without issuer", "auth:\n  strategies:\n    password: [password]\n    keycloak: [keycloak]\n  providers:\n    keycloak: {type: oidc, client_id: backd, client_secret: secret:S}\n", "issuer: is required"},
 		{"oidc issuer with a query", "auth:\n  strategies:\n    password: [password]\n    keycloak: [keycloak]\n  providers:\n    keycloak: {type: oidc, issuer: \"https://sso.example/?x=1\", client_id: backd, client_secret: secret:S}\n", "no credentials, query or fragment"},
@@ -210,5 +221,35 @@ func TestGenericProviderIsRead(t *testing.T) {
 	s, errs = parseRealmSettings([]byte(yaml))
 	if len(errs) > 0 || s.Providers["keycloak"].TrustsEmail() || !s.Providers["keycloak"].Insecure {
 		t.Errorf("defaults: %v %+v", errs, s.Providers["keycloak"])
+	}
+}
+
+func TestGitHubAndPlainOAuth2AreRead(t *testing.T) {
+	yaml := "auth:\n  strategies:\n    password: [password]\n    github: [github]\n    partner: [partner]\n  sign_in:\n    allowed_redirects: [https://app.acme.example]\n  providers:\n    github: {client_id: Iv1.abc, client_secret: secret:GH}\n    partner:\n      type: oauth2\n      issuer: https://partner.example\n      client_id: backd\n      client_secret: secret:P\n      authorize_url: https://partner.example/oauth/authorize\n      token_url: https://api.partner.example/oauth/token\n      userinfo_url: https://api.partner.example/me\n      scopes: [profile]\n      claims: {subject: data.id, email: mail, email_verified: mail_ok, picture: avatar}\n      pkce: false\n      link_by_email: true\n"
+	s, errs := parseRealmSettings([]byte(yaml))
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	gh := s.Providers["github"]
+	if gh == nil || gh.Kind != "github" || !gh.TrustsEmail() || gh.IssuerOf() != "https://github.com" {
+		t.Fatalf("github = %+v", gh)
+	}
+	sp := gh.SSO()
+	if sp.Endpoints.UserInfo != "https://api.github.com/user" || sp.Endpoints.Emails != "https://api.github.com/user/emails" || len(sp.Hosts) != 2 {
+		t.Errorf("github sso = %+v", sp)
+	}
+	p := s.Providers["partner"]
+	if p == nil || p.Kind != "oauth2" || !p.NoPKCE || !p.LinkByEmail || !p.TrustsEmail() || p.Claims["subject"] != "data.id" || len(p.Scopes) != 1 {
+		t.Fatalf("partner = %+v", p)
+	}
+	ps := p.SSO()
+	if ps.Endpoints.Token != "https://api.partner.example/oauth/token" || ps.Endpoints.UserInfo != "https://api.partner.example/me" || len(ps.Hosts) != 2 || ps.Issuer != "https://partner.example" || !ps.NoPKCE {
+		t.Errorf("partner sso = %+v", ps)
+	}
+	// Organizations cannot connect either.
+	for _, name := range SSOProviders {
+		if name == "github" || name == "oauth2" {
+			t.Errorf("organizations may connect %s", name)
+		}
 	}
 }

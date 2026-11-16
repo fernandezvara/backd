@@ -30,7 +30,11 @@ type AuthorizeParams struct {
 
 // UsesPKCE says whether backd sends a PKCE challenge to the provider (Apple's web flow
 // does not take one).
-func UsesPKCE(p sso.Provider) bool { return p.Kind != sso.Apple }
+func UsesPKCE(p sso.Provider) bool { return p.Kind != sso.Apple && !p.NoPKCE }
+
+// hasIDToken says whether the provider's code exchange gives an ID token; GitHub and plain OAuth 2
+// services give an access token only, which is used to read the person.
+func hasIDToken(p sso.Provider) bool { return p.Kind != sso.GitHub && p.Kind != sso.OAuth2 }
 
 // AuthorizeURL is where to send the user to sign in with the provider.
 func (s *Client) AuthorizeURL(p sso.Provider, a AuthorizeParams) string {
@@ -39,11 +43,19 @@ func (s *Client) AuthorizeURL(p sso.Provider, a AuthorizeParams) string {
 	q.Set("client_id", p.ClientID)
 	q.Set("redirect_uri", a.RedirectURI)
 	q.Set("state", a.State)
-	q.Set("nonce", a.Nonce)
+	if hasIDToken(p) {
+		q.Set("nonce", a.Nonce)
+	}
 	switch p.Kind {
 	case sso.Apple:
 		q.Set("scope", "name email")
 		q.Set("response_mode", "form_post")
+	case sso.GitHub:
+		q.Set("scope", "read:user user:email")
+	case sso.OAuth2:
+		if len(p.Scopes) > 0 {
+			q.Set("scope", strings.Join(p.Scopes, " "))
+		}
 	default:
 		q.Set("scope", strings.Join(append([]string{"openid", "email", "profile"}, p.Scopes...), " "))
 	}
@@ -58,6 +70,7 @@ func (s *Client) AuthorizeURL(p sso.Provider, a AuthorizeParams) string {
 // and, from Apple, the refresh token (kept only to revoke it).
 type Tokens struct {
 	IDToken      string
+	AccessToken  string
 	RefreshToken string
 }
 
@@ -79,6 +92,7 @@ func (s *Client) Exchange(ctx context.Context, p sso.Provider, clientID, secret,
 	}
 	var out struct {
 		IDToken      string `json:"id_token"`
+		AccessToken  string `json:"access_token"`
 		RefreshToken string `json:"refresh_token"`
 		Error        string `json:"error"`
 	}
@@ -88,10 +102,13 @@ func (s *Client) Exchange(ctx context.Context, p sso.Provider, clientID, secret,
 		return Tokens{}, err
 	case status == http.StatusBadRequest || status == http.StatusUnauthorized:
 		return Tokens{}, fmt.Errorf("%w (%s)", sso.ErrExchange, Sanitize(out.Error))
-	case status != http.StatusOK || out.IDToken == "":
+	case status == http.StatusOK && out.Error != "":
+		// GitHub answers a refused code with 200 and an error.
+		return Tokens{}, fmt.Errorf("%w (%s)", sso.ErrExchange, Sanitize(out.Error))
+	case status != http.StatusOK || (hasIDToken(p) && out.IDToken == "") || (!hasIDToken(p) && out.AccessToken == ""):
 		return Tokens{}, fmt.Errorf("%w: status %d", sso.ErrUnavailable, status)
 	}
-	return Tokens{IDToken: out.IDToken, RefreshToken: out.RefreshToken}, nil
+	return Tokens{IDToken: out.IDToken, AccessToken: out.AccessToken, RefreshToken: out.RefreshToken}, nil
 }
 
 // Sanitize keeps a provider's error code short and plain before it is logged.

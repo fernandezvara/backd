@@ -49,8 +49,8 @@ One line each, so you can tell early. "Not built" means no code exists today; th
 
 | Missing | Meanwhile | Status |
 |---|---|---|
-| **Sign in with any OpenID Connect provider** (Okta, Keycloak, Auth0, …), for the realm and for organizations | Google, Microsoft and Apple work for the realm; Google and Microsoft for organizations | Planned: [#157](https://github.com/fernandezvara/backd/issues/157), [#599](https://github.com/fernandezvara/backd/issues/599) |
-| **Apple sign-in for organizations** | Use Google or Microsoft for the company's sign-in | Planned: [#598](https://github.com/fernandezvara/backd/issues/598) |
+| **OpenID Connect sign-in for an organization's own identity provider** (Okta, Keycloak, Entra ID…) | Any OpenID Connect server works for the realm; for a company, Google and Microsoft | Planned: [#1018](https://github.com/fernandezvara/backd/issues/1018) |
+| **Apple sign-in for organizations** | Use Google or Microsoft for the company's sign-in | Not planned: Apple gives no proof of which company a person belongs to |
 | **SCIM provisioning** (users created and removed by a company's identity provider) | [Invitations](../build/organizations/) and company sign-in | Design only |
 | **Atomic update operators** (increment, push, add to set) | `PATCH` is a JSON Merge Patch; use `If-Match` and retry, or a [function](../build/functions/) | Not built |
 | **Exact, global request rate limits** | `backd` limits requests per instance, in memory ([Rate limiting](../operate/rate-limiting/)); for one limit across instances put a proxy, gateway or CDN in front | Per instance only |

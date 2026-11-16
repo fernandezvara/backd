@@ -1,15 +1,15 @@
 ---
-title: "Sign in with Google, Microsoft, Apple or any OpenID Connect provider"
+title: "Sign in with Google, Microsoft, Apple, GitHub or any OpenID Connect provider"
 description: "Let users sign in with an external identity provider (Google, Microsoft, Apple or any OpenID Connect server): configuration, the redirect flow, linking rules, errors and security."
 icon: "sign-in"
 weight: 540
 toc: true
 ---
 
-A realm can let its users sign in with **Google**, **Microsoft**, **Apple** or any **OpenID Connect** server of its own (Keycloak, Okta, Auth0, Microsoft Entra ID…). backd runs the redirect flow with the provider, checks the answer, finds or creates the user, and gives your app a one-time code to trade for a session. A user can have a password and any number of providers at once (at most one of each): they are [sign-in methods](../sessions/#sign-in-methods) of the same user, so roles, rules and owned documents don't depend on how the user signed in.
+A realm can let its users sign in with **Google**, **Microsoft**, **Apple**, **GitHub**, any **OpenID Connect** server of its own (Keycloak, Okta, Auth0, Microsoft Entra ID…) or a plain **OAuth 2** service. backd runs the redirect flow with the provider, checks the answer, finds or creates the user, and gives your app a one-time code to trade for a session. A user can have a password and any number of providers at once (at most one of each): they are [sign-in methods](../sessions/#sign-in-methods) of the same user, so roles, rules and owned documents don't depend on how the user signed in.
 
 {{< hint style="note" >}}
-To let a company's people sign in with **its own** Google Workspace or Microsoft tenant, see [Let a company sign in with its own account](../../organizations/sign-in/). This page covers the **redirect** sign-in and the **native** sign-in of mobile apps. GitHub and plain OAuth 2 services are **planned**.
+To let a company's people sign in with **its own** Google Workspace or Microsoft tenant, see [Let a company sign in with its own account](../../organizations/sign-in/). This page covers the **redirect** sign-in and the **native** sign-in of mobile apps. 
 {{< /hint >}}
 
 ## Set it up
@@ -48,12 +48,14 @@ auth:
 | `auth.providers.google.client_id`, `client_secret` | The OAuth client (type *Web application*) and the secret that holds its secret |
 | `auth.providers.google.native_client_ids` | Optional: the client ids of your mobile apps, accepted by the [ID-token sign-in](#native-apps-the-id-token) |
 | `auth.providers.microsoft.client_id`, `client_secret`, `tenant` | The application (client) id, its secret, and which accounts are accepted: `common` (any), `organizations` (work and school), `consumers` (personal) or one tenant id |
+| `auth.providers.github.client_id`, `client_secret` | The OAuth App registered at github.com/settings/developers and the secret that holds its secret. See [GitHub](#github) |
+| `auth.providers.<name>.type: oauth2`, `issuer`, `authorize_url`, `token_url`, `userinfo_url`, `claims`, `pkce` | A [plain OAuth 2 service](#plain-oauth-2-services): its three URLs, the fields of its userinfo answer that name the person, and whether it takes a PKCE challenge |
 | `auth.providers.apple.services_id`, `team_id`, `key_id`, `private_key` | The Services ID (web client id), the team and key that sign Apple's client secret, and the secret that holds the key. backd signs and renews the client secret itself |
 | `auth.providers.<name>.type: oidc`, `issuer`, `client_id`, `client_secret` | A [generic OpenID Connect provider](#any-openid-connect-provider), under any name you choose |
 | `auth.providers.<name>.scopes`, `link_by_email`, `allow_private_network` | Optional settings of a generic provider: extra scopes, whether its verified addresses link accounts, and whether its hosts may be on your private network |
 | `auth.providers.apple.bundle_ids`, `revoke_on_delete` | Optional: your iOS apps, and whether Apple's tokens are kept and [revoked](#apple-and-account-deletion) when an account is deleted (default `true`) |
 
-`google`, `microsoft` and `apple` are reserved names for the built-in providers, and so are `password`, `email` and `sso` (backd's own sign-in methods) and `github`, `oidc` and `oauth2` (kinds that are or will be built in); any other name is a generic provider and needs `type: oidc`. A provider whose secret is not set answers `503 provider_unavailable`, and `backd` warns about it at startup. A realm with providers needs `BACKD_URL` (or `email.public_url`): startup refuses without it.
+`google`, `microsoft` and `apple` are reserved names for the built-in providers, and so are `password`, `email` and `sso` (backd's own sign-in methods) and `oidc` and `oauth2` (the two generic kinds); any other name is a generic provider and needs `type: oidc` or `type: oauth2`. A provider whose secret is not set answers `503 provider_unavailable`, and `backd` warns about it at startup. A realm with providers needs `BACKD_URL` (or `email.public_url`): startup refuses without it.
 
 ## Any OpenID Connect provider
 
@@ -86,6 +88,47 @@ What backd checks, and why it is safe to point it at a server you name:
 - **The tokens.** The signature is checked against the server's published keys (`RS256`, `PS256`, `ES256` or `EdDSA`; never `none` or `HS256`), the issuer must be the configured one exactly, the audience must contain `client_id` (and when it has several, `azp` must be `client_id`), `exp`, `nbf` and `iat` are enforced with a minute of leeway, and the `nonce` must match. If the server sends `iss` on the callback, it must be the issuer.
 - **The person.** The subject is `sub` and an identity is bound to the [issuer](#who-the-person-is). An address counts as verified only when `email_verified` is `true`.
 - A generic provider has **no native ID-token sign-in** (`404`): mobile apps use the redirect flow.
+
+## GitHub
+
+`github` is built in. Create an **OAuth App** at github.com/settings/developers with the callback address above, store its secret and declare `github: { client_id: …, client_secret: secret:… }`. backd asks for the scopes `read:user user:email` and nothing else, trades the code for an access token, reads `GET /user` and `GET /user/emails` once, and drops the token (it is never stored or logged).
+
+- The person is the **numeric `id`** GitHub gives, never the login: logins can be renamed and then taken by someone else.
+- The address is the **primary address that GitHub has verified**. A person with none (no primary, or an unverified one) ends with `backd_error=email_required`; backd never uses another address of theirs.
+- GitHub is trusted for addresses like Google is: a verified primary address that matches an account links it (if the backd account's is verified too), and new users are stored verified.
+- There is no ID token, so no [native sign-in](#native-apps-the-id-token) for GitHub: apps use the redirect flow.
+- A GitHub Enterprise Server is a [plain OAuth 2 service](#plain-oauth-2-services).
+
+## Plain OAuth 2 services
+
+A service that speaks OAuth 2 but not OpenID Connect (no ID token) is a provider with `type: oauth2`, described field by field:
+
+```yaml
+auth:
+  providers:
+    partner:
+      type: oauth2
+      issuer: https://partner.example          # an identifier you choose
+      client_id: backd
+      client_secret: secret:PARTNER_CLIENT_SECRET
+      authorize_url: https://partner.example/oauth/authorize
+      token_url: https://partner.example/oauth/token
+      userinfo_url: https://partner.example/api/me
+      scopes: [profile, email]
+      claims: { subject: id, email: email, email_verified: email_verified, name: name, picture: avatar }
+      pkce: true
+      link_by_email: false
+```
+
+| Key | Meaning |
+|---|---|
+| `issuer` | A name you give the service (its URL is a good one). It is stored on every identity it signs in, so changing it makes those identities [dormant](#who-the-person-is) instead of letting them match someone else |
+| `authorize_url`, `token_url`, `userinfo_url` | The three endpoints. https only (`http` only with `BACKD_DEV=true`). Their hosts are the only ones backd reaches for this provider |
+| `claims` | Which field of the userinfo answer holds each part of the person: `subject` (required), `email`, `email_verified`, `name`, `given_name`, `family_name`, `picture`. A field, or a dotted path such as `profile.id` |
+| `pkce` | `true` (default): a PKCE challenge is sent. `false` for a service that rejects unknown parameters |
+| `link_by_email`, `scopes`, `allow_private_network` | As for [OpenID Connect providers](#any-openid-connect-provider). `link_by_email: true` needs `claims.email` and `claims.email_verified` |
+
+The **subject must be a stable id that is never reused**: backd refuses a `claims.subject` that names `login`, `username`, `preferred_username`, `email`, `name` and the like, because a person can change those and someone else can take them. An address counts as verified only when `email_verified` is mapped and the service says `true`; without a mapped flag no address is ever verified, new users are stored unverified and nothing links by address.
 
 ## Which providers to offer
 

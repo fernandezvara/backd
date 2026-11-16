@@ -10919,7 +10919,7 @@ components:
       name: provider
       in: path
       required: true
-      description: "A provider of the realm's `auth.providers` (`google`, `microsoft`, `apple` or the name of a generic `type: oidc` provider; a generic one has no `id-token` sign-in and answers `404` there)."
+      description: "A provider of the realm's `auth.providers` (`google`, `microsoft`, `apple`, `github` or the name of a generic `type: oidc` or `type: oauth2` provider; only Google, Microsoft and Apple have an `id-token` sign-in, the others answer `404` there)."
       schema: { type: string, pattern: '^[a-z][a-z0-9-]{0,31}$' }
     fileField:
       name: field

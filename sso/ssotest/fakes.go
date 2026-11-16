@@ -325,6 +325,11 @@ func (f *Protocol) Exchange(_ context.Context, _ sso.Provider, code, _, verifier
 	return sso.Tokens{IDToken: tok, RefreshToken: f.Refresh}, nil
 }
 
+// Identify implements sso.Protocol: the fake's "ID token" is the key of Claims.
+func (f *Protocol) Identify(ctx context.Context, p sso.Provider, t sso.Tokens, nonce string) (sso.Claims, error) {
+	return f.Verify(ctx, p, t.IDToken, nonce, false)
+}
+
 // Verify implements sso.Protocol.
 func (f *Protocol) Verify(_ context.Context, _ sso.Provider, idToken, nonce string, _ bool) (sso.Claims, error) {
 	f.mu.Lock()

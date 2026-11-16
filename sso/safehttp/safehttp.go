@@ -125,6 +125,7 @@ var BuiltinHosts = map[string][]string{
 	"google":    {"accounts.google.com", "oauth2.googleapis.com", "www.googleapis.com"},
 	"microsoft": {"login.microsoftonline.com"},
 	"apple":     {"appleid.apple.com"},
+	"github":    {"github.com", "api.github.com"},
 }
 
 // BuiltinHostAllowed accepts the hosts of the built-in providers.

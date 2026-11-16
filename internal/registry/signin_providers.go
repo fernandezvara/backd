@@ -23,30 +23,34 @@ const (
 	ProviderGoogle    = "google"
 	ProviderMicrosoft = "microsoft"
 	ProviderApple     = "apple"
+	ProviderGitHub    = "github"
 )
 
-// ProviderTypeOIDC is the `type:` of a generic OpenID Connect provider, which any name may take.
-const ProviderTypeOIDC = "oidc"
+// The `type:` of a generic provider, which any name may take: OpenID Connect, or a plain OAuth 2
+// service described field by field.
+const (
+	ProviderTypeOIDC   = "oidc"
+	ProviderTypeOAuth2 = "oauth2"
+)
 
 // providerNamePattern is what a generic provider may be called: it is what identities, URLs and the
 // audit use.
 var providerNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 
-// Kinds that are designed and not built yet: their names are reserved so that nobody takes them
-// for a provider of their own before they exist.
+// The kinds of a generic provider; their names are reserved, so that nobody takes one for a
+// provider of their own.
 const (
-	kindGitHub = "github"
 	kindOIDC   = "oidc"
 	kindOAuth2 = "oauth2"
 )
 
 // BuiltinProviders are the providers backd knows, sorted.
-var BuiltinProviders = []string{ProviderApple, ProviderGoogle, ProviderMicrosoft}
+var BuiltinProviders = []string{ProviderApple, ProviderGitHub, ProviderGoogle, ProviderMicrosoft}
 
 // ReservedProviderNames are the names no provider may take: backd's own sign-in methods (an
 // identity's provider is `password`, magic links record `email`, a strategy method is `sso`) and the
 // kinds still to come.
-var ReservedProviderNames = []string{"password", "email", "sso", kindGitHub, kindOIDC, kindOAuth2}
+var ReservedProviderNames = []string{"password", "email", "sso", kindOIDC, kindOAuth2}
 
 // kindSpec is what one kind of provider is.
 type kindSpec struct {
@@ -64,6 +68,8 @@ type kindSpec struct {
 var kindSpecs = map[string]*kindSpec{
 	ProviderGoogle:    {fields: []string{"client_id", "client_secret", "native_client_ids"}, trustsEmail: true, orgs: true, parse: parseGoogleLike},
 	ProviderMicrosoft: {fields: []string{"client_id", "client_secret", "native_client_ids", "tenant"}, orgs: true, parse: parseGoogleLike},
+	ProviderGitHub:    {fields: []string{"client_id", "client_secret"}, trustsEmail: true, parse: parseGitHub},
+	kindOAuth2:        {fields: []string{"type", "issuer", "client_id", "client_secret", "authorize_url", "token_url", "userinfo_url", "claims", "scopes", "pkce", "link_by_email", "allow_private_network"}, parse: parseOAuth2},
 	kindOIDC:          {fields: []string{"type", "issuer", "client_id", "client_secret", "scopes", "link_by_email", "allow_private_network"}, parse: parseOIDC},
 	ProviderApple:     {fields: []string{"services_id", "bundle_ids", "team_id", "key_id", "private_key", "revoke_on_delete"}, trustsEmail: true, parse: parseApple},
 }
@@ -97,6 +103,12 @@ type providerDoc struct {
 	Scopes              []string `yaml:"scopes"`
 	LinkByEmail         *bool    `yaml:"link_by_email"`
 	AllowPrivateNetwork *bool    `yaml:"allow_private_network"`
+	// Plain OAuth 2 (type: oauth2): the endpoints and the fields of the userinfo answer.
+	AuthorizeURL string            `yaml:"authorize_url"`
+	TokenURL     string            `yaml:"token_url"`
+	UserInfoURL  string            `yaml:"userinfo_url"`
+	Claims       map[string]string `yaml:"claims"`
+	PKCE         *bool             `yaml:"pkce"`
 }
 
 // Provider is an external identity provider a realm lets its users sign in with.
@@ -128,6 +140,11 @@ type Provider struct {
 	LinkByEmail         bool
 	AllowPrivateNetwork bool
 	Insecure            bool
+	// Plain OAuth 2: where to send the person, where to trade the code, where to read them, the map
+	// from the answer to the person, and whether a PKCE challenge is sent.
+	AuthorizeURL, TokenURL, UserInfoURL string
+	Claims                              map[string]string
+	NoPKCE                              bool
 	// Org is set on a provider built from an organization's connection (design/sso.md §9): the
 	// id of the organization. Its ClientSecret then names an organization secret, and the
 	// restrictions of the connection apply on top of the token checks.
@@ -137,11 +154,23 @@ type Provider struct {
 // SSO is the provider as the sign-in library speaks to it, with the endpoints of its kind.
 func (p *Provider) SSO() sso.Provider {
 	kind := sso.Kind(p.Kind)
-	return sso.Provider{
+	sp := sso.Provider{
 		Name: p.Name, Kind: kind, ClientID: p.ClientID, NativeClientIDs: p.NativeClientIDs,
 		Tenant: p.Tenant, TeamID: p.TeamID, KeyID: p.KeyID, Issuer: p.IssuerOf(), Scopes: p.Scopes, AllowPrivate: p.AllowPrivateNetwork,
-		Endpoints: sso.BuiltinEndpoints(kind, p.Tenant),
+		Endpoints: sso.BuiltinEndpoints(kind, p.Tenant), Claims: p.Claims, NoPKCE: p.NoPKCE,
 	}
+	switch p.Kind {
+	case ProviderGitHub:
+		sp.Hosts = []string{"github.com", "api.github.com"}
+	case kindOAuth2:
+		sp.Endpoints = sso.Endpoints{Authorize: p.AuthorizeURL, Token: p.TokenURL, UserInfo: p.UserInfoURL}
+		for _, raw := range []string{p.AuthorizeURL, p.TokenURL, p.UserInfoURL} {
+			if u, err := url.Parse(raw); err == nil && !slices.Contains(sp.Hosts, strings.ToLower(u.Hostname())) {
+				sp.Hosts = append(sp.Hosts, strings.ToLower(u.Hostname()))
+			}
+		}
+	}
+	return sp
 }
 
 // IssuerOf is the issuer the provider's tokens must name, when it is fixed: the built-in providers',
@@ -152,7 +181,9 @@ func (p *Provider) IssuerOf() string {
 		return "https://accounts.google.com"
 	case ProviderApple:
 		return "https://appleid.apple.com"
-	case kindOIDC:
+	case ProviderGitHub:
+		return "https://github.com"
+	case kindOIDC, kindOAuth2:
 		return p.Issuer
 	case ProviderMicrosoft:
 		if !slices.Contains(SharedMicrosoftTenants, p.Tenant) && p.Tenant != "" {
@@ -175,7 +206,9 @@ func (p *Provider) IssuerMatches(iss string) bool {
 		return iss == "https://accounts.google.com"
 	case ProviderApple:
 		return iss == "https://appleid.apple.com"
-	case kindOIDC:
+	case ProviderGitHub:
+		return iss == "https://github.com"
+	case kindOIDC, kindOAuth2:
 		return iss == p.Issuer
 	case ProviderMicrosoft:
 		tenant, ok := strings.CutSuffix(strings.TrimPrefix(iss, msBase), "/v2.0")
@@ -295,6 +328,91 @@ func parseApple(c *providerCheck, d *providerDoc, p *Provider) {
 // scopePattern is what a scope may look like: the characters OAuth 2 allows in a scope token.
 var scopePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}$`)
 
+// scopes reads the extra scopes of a generic provider.
+func (c *providerCheck) scopes(d *providerDoc, p *Provider) {
+	if len(d.Scopes) > 10 {
+		c.add("scopes: at most 10 extra scopes")
+	}
+	seen := map[string]bool{}
+	if p.Kind == kindOIDC {
+		seen = map[string]bool{"openid": true, "email": true, "profile": true}
+	}
+	for i, sc := range d.Scopes {
+		switch {
+		case !scopePattern.MatchString(sc):
+			c.add("scopes[%d]: %q isn't a scope", i, sc)
+		case seen[sc]:
+			c.add("scopes[%d]: %q is asked for already", i, sc)
+		default:
+			p.Scopes = append(p.Scopes, sc)
+		}
+		seen[sc] = true
+	}
+}
+
+// parseGitHub checks GitHub: an OAuth App's client id and secret. Everything else is GitHub's.
+func parseGitHub(c *providerCheck, d *providerDoc, p *Provider) {
+	if !clientIDPattern.MatchString(d.ClientID) {
+		c.add("client_id: is required and must be the OAuth App's client id")
+	}
+	c.secret("client_secret", d.ClientSecret, &p.ClientSecret)
+}
+
+// mutableSubjects are fields a person can rename and someone else can take over: never a subject.
+var mutableSubjects = []string{"login", "username", "user_name", "preferred_username", "email", "mail", "name", "nickname", "handle", "screen_name"}
+
+var claimPathPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$`)
+
+var claimKeys = []string{"subject", "email", "email_verified", "name", "given_name", "family_name", "picture"}
+
+// parseOAuth2 checks a plain OAuth 2 service: three https URLs, an identifier for the issuer, and the
+// fields of the userinfo answer that name the person.
+func parseOAuth2(c *providerCheck, d *providerDoc, p *Provider) {
+	if d.Issuer == "" || len(d.Issuer) > 200 || strings.ContainsAny(d.Issuer, " \t\n") {
+		c.add("issuer: is required: an identifier you choose for this service (such as its URL), stored on every identity it signs in")
+	} else {
+		p.Issuer = d.Issuer
+	}
+	if !clientIDPattern.MatchString(d.ClientID) {
+		c.add("client_id: is required and must be the application's client id")
+	}
+	c.secret("client_secret", d.ClientSecret, &p.ClientSecret)
+	for field, v := range map[string]*string{"authorize_url": &p.AuthorizeURL, "token_url": &p.TokenURL, "userinfo_url": &p.UserInfoURL} {
+		raw := map[string]string{"authorize_url": d.AuthorizeURL, "token_url": d.TokenURL, "userinfo_url": d.UserInfoURL}[field]
+		if msg := oidc.IssuerProblem(raw, true); raw == "" || msg != "" {
+			if raw == "" {
+				c.add("%s: is required", field)
+			} else {
+				c.add("%s: %s", field, strings.Replace(msg, "isn't a URL such as https://sso.example.com/realms/acme", "isn't a URL", 1))
+			}
+			continue
+		}
+		*v = raw
+		p.Insecure = p.Insecure || strings.HasPrefix(raw, "http://")
+	}
+	for key, name := range d.Claims {
+		switch {
+		case !slices.Contains(claimKeys, key):
+			c.add("claims.%s: isn't a field of a person (%s)", key, strings.Join(claimKeys, ", "))
+		case !claimPathPattern.MatchString(name):
+			c.add("claims.%s: %q must be the name of a field of the userinfo answer, or a dotted path such as profile.id", key, name)
+		}
+	}
+	if sub := d.Claims["subject"]; sub == "" {
+		c.add("claims.subject: is required: the field of the userinfo answer that holds a stable id of the person")
+	} else if last := sub[strings.LastIndex(sub, ".")+1:]; slices.Contains(mutableSubjects, strings.ToLower(last)) {
+		c.add("claims.subject: %q is a name a person can change and someone else can take: map a stable id (such as id or sub)", sub)
+	}
+	p.Claims = d.Claims
+	p.LinkByEmail = d.LinkByEmail != nil && *d.LinkByEmail
+	if p.LinkByEmail && (d.Claims["email"] == "" || d.Claims["email_verified"] == "") {
+		c.add("link_by_email: needs claims.email and claims.email_verified, so that only an address the service says is verified links an account")
+	}
+	c.scopes(d, p)
+	p.NoPKCE = d.PKCE != nil && !*d.PKCE
+	p.AllowPrivateNetwork = d.AllowPrivateNetwork != nil && *d.AllowPrivateNetwork
+}
+
 // parseOIDC checks a generic OpenID Connect provider: its issuer, client and the options that say
 // how far to trust it.
 func parseOIDC(c *providerCheck, d *providerDoc, p *Provider) {
@@ -310,21 +428,7 @@ func parseOIDC(c *providerCheck, d *providerDoc, p *Provider) {
 		c.add("client_id: is required and must be the application's client id")
 	}
 	c.secret("client_secret", d.ClientSecret, &p.ClientSecret)
-	if len(d.Scopes) > 10 {
-		c.add("scopes: at most 10 extra scopes")
-	}
-	seen := map[string]bool{"openid": true, "email": true, "profile": true}
-	for i, sc := range d.Scopes {
-		switch {
-		case !scopePattern.MatchString(sc):
-			c.add("scopes[%d]: %q isn't a scope", i, sc)
-		case seen[sc]:
-			c.add("scopes[%d]: %q is asked for already", i, sc)
-		default:
-			p.Scopes = append(p.Scopes, sc)
-		}
-		seen[sc] = true
-	}
+	c.scopes(d, p)
 	p.LinkByEmail = d.LinkByEmail != nil && *d.LinkByEmail
 	p.AllowPrivateNetwork = d.AllowPrivateNetwork != nil && *d.AllowPrivateNetwork
 }
@@ -333,6 +437,7 @@ func parseOIDC(c *providerCheck, d *providerDoc, p *Provider) {
 func (d *providerDoc) docFields() map[string]bool {
 	return map[string]bool{
 		"client_id": d.ClientID != "", "client_secret": d.ClientSecret != "", "native_client_ids": len(d.NativeClientIDs) > 0,
+		"authorize_url": d.AuthorizeURL != "", "token_url": d.TokenURL != "", "userinfo_url": d.UserInfoURL != "", "claims": len(d.Claims) > 0, "pkce": d.PKCE != nil,
 		"type": d.Type != "", "issuer": d.Issuer != "", "scopes": len(d.Scopes) > 0, "link_by_email": d.LinkByEmail != nil, "allow_private_network": d.AllowPrivateNetwork != nil,
 		"tenant": d.Tenant != "", "services_id": d.ServicesID != "", "bundle_ids": len(d.BundleIDs) > 0,
 		"team_id": d.TeamID != "", "key_id": d.KeyID != "", "private_key": d.PrivateKey != "", "revoke_on_delete": d.RevokeOnDelete != nil,
@@ -350,10 +455,6 @@ func parseProviders(docs map[string]*providerDoc) (map[string]*Provider, []error
 			c.add("is empty: it needs at least its client_id (see `backd template realm`)")
 			continue
 		}
-		if slices.Contains([]string{kindGitHub, kindOIDC, kindOAuth2}, name) {
-			c.add("is the name of a kind of provider that isn't available yet; the built-in providers (%s) are", strings.Join(BuiltinProviders, ", "))
-			continue
-		}
 		if slices.Contains(ReservedProviderNames, name) {
 			c.add("is reserved for backd's own sign-in methods (%s) and can't name a provider", strings.Join(ReservedProviderNames, ", "))
 			continue
@@ -361,7 +462,7 @@ func parseProviders(docs map[string]*providerDoc) (map[string]*Provider, []error
 		var spec *kindSpec
 		kind := name
 		switch {
-		case d.Type == ProviderTypeOIDC:
+		case d.Type == ProviderTypeOIDC || d.Type == ProviderTypeOAuth2:
 			if slices.Contains(BuiltinProviders, name) {
 				c.add("type: the name %q belongs to the built-in provider; name a generic one anything else", name)
 				continue
@@ -370,13 +471,14 @@ func parseProviders(docs map[string]*providerDoc) (map[string]*Provider, []error
 				c.add("is not a name for a provider: lower-case letters, digits and - (at most 32), starting with a letter")
 				continue
 			}
-			spec, kind = kindSpecs[kindOIDC], kindOIDC
+			kind = d.Type
+			spec = kindSpecs[kind]
 		case d.Type != "":
-			c.add("type: %q isn't available yet; the built-in providers (%s) need none, and a generic OpenID Connect one is type: oidc", d.Type, strings.Join(BuiltinProviders, ", "))
+			c.add("type: %q isn't available yet; the built-in providers (%s) need none, and a generic one is type: oidc or type: oauth2", d.Type, strings.Join(BuiltinProviders, ", "))
 			continue
 		default:
 			if spec = kindSpecs[name]; spec == nil {
-				c.add("isn't a provider backd knows; the built-in ones are %s, and any other is type: oidc", strings.Join(BuiltinProviders, ", "))
+				c.add("isn't a provider backd knows; the built-in ones are %s, and any other is type: oidc (OpenID Connect) or type: oauth2", strings.Join(BuiltinProviders, ", "))
 				continue
 			}
 		}
