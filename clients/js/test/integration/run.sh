@@ -4,10 +4,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/../../../.."
 root=$(pwd)
+export CLIENT=js
 # An absolute path: the script changes directory below, and the teardown at
 # exit must still find the file.
-compose() { docker compose -f "$root/docker-compose.js.yml" "$@"; }
-trap 'compose down -v >/dev/null 2>&1 || echo "could not tear the stack down: docker compose -f docker-compose.js.yml down -v" >&2' EXIT
+compose() { docker compose -f "$root/docker-compose.client.yml" "$@"; }
+trap 'compose down -v >/dev/null 2>&1 || echo "could not tear the stack down: docker compose -f docker-compose.client.yml down -v" >&2' EXIT
 compose down -v >/dev/null 2>&1 || true # a stack left by an earlier run would hold the ports
 
 . "$root/scripts/retry.sh"
@@ -39,7 +40,7 @@ BACKD_INVITE_API_KEY=$(key invite)
 BACKD_MAIL_API_KEY=$(key mail)
 BACKD_FILES_API_KEY=$(key files)
 # The files realm's storage keys are secrets (MinIO's root user, dev-only), for the private and the public bucket.
-for pair in STORAGE_ACCESS_KEY=backd-js STORAGE_SECRET_KEY='dev-p4ssw0rd!' PUBLIC_STORAGE_ACCESS_KEY=backd-js PUBLIC_STORAGE_SECRET_KEY='dev-p4ssw0rd!'; do
+for pair in STORAGE_ACCESS_KEY=backd-client STORAGE_SECRET_KEY='dev-p4ssw0rd!' PUBLIC_STORAGE_ACCESS_KEY=backd-client PUBLIC_STORAGE_SECRET_KEY='dev-p4ssw0rd!'; do
   printf '%s\n' "${pair#*=}" | compose exec -T backd /backd secret set --realm files --name "${pair%%=*}" --url http://localhost:8080 >/dev/null
 done
 # The bucket is made by minio-setup, which may still be at it: wait until the storage works.

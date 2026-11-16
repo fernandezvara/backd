@@ -35,7 +35,7 @@ jobs:
         run: scripts/check-js-package.sh
       - name: Validate the compose file
         working-directory: .
-        run: docker compose -f docker-compose.js.yml config -q
+        run: docker compose -f docker-compose.client.yml config -q
       - name: The browser for the passkey test
         run: ../../scripts/retry.sh npx playwright install --with-deps chromium
       - name: Integration tests (backd + MongoDB in Docker)

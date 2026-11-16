@@ -77,13 +77,13 @@ This section is for the **contributor**: whoever changes `backd` itself. To run 
 | `Dockerfile` | Multi-stage build into a distroless image |
 | `docker-compose.test.yml` | Dockerized test environment (project `backd-test`) |
 | `.github/workflows/ci.yml` | CI: vet, OpenAPI lint, dockerized tests, release configuration check, the production reference test, the tutorial replayed against a stack built from the checkout (`make shelf-tour-ci`), docs build |
-| `.github/workflows/js.yml` | The JavaScript client: type-check, unit tests on Node 22 and 26, the package check and integration tests against `backd` and MongoDB in Docker (`docker-compose.js.yml`) |
+| `.github/workflows/js.yml` | The JavaScript client: type-check, unit tests on Node 22 and 26, the package check and integration tests against `backd` and MongoDB in Docker (`docker-compose.client.yml`) |
 | `.github/workflows/ui.yml` | The admin UI: type-check, lint, unit tests, build, `npm audit` of what ships in the bundle, and its Playwright tests against the example stack |
 | `.github/workflows/pages.yml` | On version tags, builds this documentation site, checks its links and callouts, and publishes it to GitHub Pages (see [Releasing](#releasing)) |
 | `.github/workflows/publish-js.yml` | On `js-v*` tags, publishes the JavaScript client to npm (see [Releasing the JavaScript client](#releasing-the-javascript-client)) |
 | `.github/workflows/release.yml`, `.goreleaser.yaml` | Releases on version tags: binaries, GitHub release, container image (see [Releasing](#releasing)) |
 | `.github/dependabot.yml` | Weekly dependency updates (see [Supply chain](#supply-chain)) |
-| `docker-compose.js.yml` | Stack for the JavaScript client's integration tests (project `backd-js-test`) |
+| `docker-compose.client.yml` | Stack for the JavaScript, Dart and Python clients' integration tests (project `backd-<client>-test`; `CLIENT` and `API_PORT` set by each `run.sh`) |
 
 ## The two local stacks
 

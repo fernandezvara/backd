@@ -1,11 +1,15 @@
-# Dart client integration tests: backd (built from this checkout, running
-# both the serve and worker roles) + a real functions executor + MongoDB with
-# the config in clients/js/test/integration/config — a server's config, so
-# one file serves both clients' test suites. Run with `make dart-integration`.
+# Client integration tests (JavaScript, Dart, Python): backd (built from this
+# checkout, running both the serve and worker roles) + a real functions
+# executor + MongoDB + MinIO, with the config in clients/js/test/integration/config
+# — a server's config, so one file serves every client's test suite. Run with
+# `make js-integration`, `make dart-integration` or `make python-integration`.
+#
+# Set by each run.sh: CLIENT (js, dart, python), which names the project, and
+# API_PORT (default 18080), the port backd is published on.
 #
 # Its own project name, so running it never touches the local stack
-# (docker-compose.yml, `make example`) or the other test stacks'.
-name: backd-dart-test
+# (docker-compose.yml, `make example`) or the unit tests' (docker-compose.test.yml).
+name: backd-${CLIENT:-client}-test
 services:
   mongo:
     image: docker.io/library/mongo:8.2
@@ -24,7 +28,7 @@ services:
     image: cgr.dev/chainguard/minio:latest
     command: ["server", "/data"]
     environment:
-      MINIO_ROOT_USER: backd-dart
+      MINIO_ROOT_USER: backd-client
       MINIO_ROOT_PASSWORD: dev-p4ssw0rd!
     ports:
       - "127.0.0.1:18090:9000"
@@ -34,7 +38,7 @@ services:
   minio-setup:
     image: cgr.dev/chainguard/minio-client:latest
     environment:
-      MC_HOST_local: "http://backd-dart:dev-p4ssw0rd!@minio:9000"
+      MC_HOST_local: "http://backd-client:dev-p4ssw0rd!@minio:9000"
     command: ["mb", "--ignore-existing", "local/files"]
     depends_on: [minio]
     restart: on-failure:30
@@ -45,7 +49,7 @@ services:
   minio-public-setup:
     image: cgr.dev/chainguard/minio-client:latest
     environment:
-      MC_HOST_local: "http://backd-dart:dev-p4ssw0rd!@minio:9000"
+      MC_HOST_local: "http://backd-client:dev-p4ssw0rd!@minio:9000"
     command: ["mb", "--ignore-existing", "local/public"]
     depends_on: [minio]
     restart: on-failure:30
@@ -53,7 +57,7 @@ services:
   minio-public-policy:
     image: cgr.dev/chainguard/minio-client:latest
     environment:
-      MC_HOST_local: "http://backd-dart:dev-p4ssw0rd!@minio:9000"
+      MC_HOST_local: "http://backd-client:dev-p4ssw0rd!@minio:9000"
     command: ["anonymous", "set-json", "/policy.json", "local/public"]
     volumes:
       - ./docker/minio/read-only-public.json:/policy.json:ro
@@ -75,21 +79,21 @@ services:
     # process, so the integration tests need no separate worker service.
     command: ["serve", "--with-worker"]
     ports:
-      - "127.0.0.1:18080:8080"
+      - "127.0.0.1:${API_PORT:-18080}:8080"
     environment:
       CONFIG_DIR: /config
       MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
       LOG_LEVEL: warn
       BACKD_INTERNAL_ADDR: :8081
       BACKD_EXECUTOR_URL: http://executor:9100
-      BACKD_EXECUTOR_TOKEN: dart-integration-executor-token-012345678
+      BACKD_EXECUTOR_TOKEN: integration-executor-token-0123456789ab
       BACKD_CALLBACK_URL: http://backd:8081
-      BACKD_CALLBACK_KEY: dart-integration-callback-key-0123456789ab
+      BACKD_CALLBACK_KEY: integration-callback-key-0123456789abcdef
       # The mail realm delivers email through the dev-only email-capture function.
       BACKD_DEV: "true"
       BACKD_DEV_ANY_ADDR: "true"
       # The files realm keeps its storage keys as secrets (set by run.sh).
-      BACKD_SECRETS_KEY: dart-integration-secrets-key-0123456789abcd
+      BACKD_SECRETS_KEY: integration-secrets-key-0123456789abcdef
     volumes:
       - ./clients/js/test/integration/config:/config
     depends_on:
@@ -104,5 +108,5 @@ services:
       dockerfile: docker/executor/Dockerfile
     depends_on: [backd]
     environment:
-      BACKD_EXECUTOR_TOKEN: dart-integration-executor-token-012345678
+      BACKD_EXECUTOR_TOKEN: integration-executor-token-0123456789ab
       LOG_LEVEL: warn
