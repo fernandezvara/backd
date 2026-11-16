@@ -182,24 +182,11 @@ type OrgSettings struct {
 	SigninLink string
 	// SSO is the organization sign-in section (design/sso.md §9); nil when the realm doesn't
 	// let organizations set up their own providers.
-	SSO    *OrgSSOSettings
-	create *rules.Rule
-}
-
-// OrgSSOSettings is organizations.sso: the realm's switch for organization sign-in.
-type OrgSSOSettings struct {
-	// Providers are the ones an organization may connect.
-	Providers []string
-	// MaxPerOrg caps the connections of one organization.
-	MaxPerOrg int
-}
-
-// SSOProviders are the providers an organization may connect.
-var SSOProviders = []string{ProviderGoogle, ProviderMicrosoft}
-
-// Allows reports whether organizations may connect the provider.
-func (s *OrgSSOSettings) Allows(provider string) bool {
-	return s != nil && slices.Contains(s.Providers, provider)
+	SSO *OrgSSOSettings
+	// Domains is the verified-domains section (design/sso.md §10); nil when the realm doesn't
+	// let organizations prove the domains they own.
+	Domains *OrgDomainsSettings
+	create  *rules.Rule
 }
 
 // CreateRuleAllows evaluates the create rule for user.
@@ -297,24 +284,21 @@ type orgsDoc struct {
 		Grants      []string `yaml:"grants"`
 		RequireMFA  bool     `yaml:"require_mfa"`
 	} `yaml:"team_roles"`
-	Create                *string  `yaml:"create"`
-	CreatorRoles          []string `yaml:"creator_roles"`
-	DefaultRoles          []string `yaml:"default_roles"`
-	MaxCreatedPerUser     *int     `yaml:"max_created_per_user"`
-	MaxMembershipsPerUser *int     `yaml:"max_memberships_per_user"`
-	MaxTeamsPerOrg        *int     `yaml:"max_teams_per_org"`
-	MaxTeamsPerMember     *int     `yaml:"max_teams_per_member"`
-	MaxPendingInvitations *int     `yaml:"max_pending_invitations"`
-	AllowRequireMFA       *bool    `yaml:"allow_require_mfa"`
-	MembersVisibleTo      string   `yaml:"members_visible_to"`
-	InvitationLink        string   `yaml:"invitation_link"`
-	SigninLink            string   `yaml:"signin_link"`
-	SSO                   *struct {
-		Enabled   *bool    `yaml:"enabled"`
-		Providers []string `yaml:"providers"`
-		MaxPerOrg *int     `yaml:"max_per_org"`
-	} `yaml:"sso"`
-	Hooks *struct {
+	Create                *string        `yaml:"create"`
+	CreatorRoles          []string       `yaml:"creator_roles"`
+	DefaultRoles          []string       `yaml:"default_roles"`
+	MaxCreatedPerUser     *int           `yaml:"max_created_per_user"`
+	MaxMembershipsPerUser *int           `yaml:"max_memberships_per_user"`
+	MaxTeamsPerOrg        *int           `yaml:"max_teams_per_org"`
+	MaxTeamsPerMember     *int           `yaml:"max_teams_per_member"`
+	MaxPendingInvitations *int           `yaml:"max_pending_invitations"`
+	AllowRequireMFA       *bool          `yaml:"allow_require_mfa"`
+	MembersVisibleTo      string         `yaml:"members_visible_to"`
+	InvitationLink        string         `yaml:"invitation_link"`
+	SigninLink            string         `yaml:"signin_link"`
+	SSO                   *orgSSODoc     `yaml:"sso"`
+	Domains               *orgDomainsDoc `yaml:"domains"`
+	Hooks                 *struct {
 		OnMemberJoined string `yaml:"on_member_joined"`
 		OnMemberLeft   string `yaml:"on_member_left"`
 		OnRolesChanged string `yaml:"on_roles_changed"`
@@ -490,34 +474,8 @@ func (d *orgsDoc) apply(s *RealmSettings) []error {
 			add("signin_link: %q must be an absolute URL within auth.sign_in.allowed_redirects (or email.allowed_redirects when it has none)", o.SigninLink)
 		}
 	}
-	if d.SSO != nil && (d.SSO.Enabled == nil || *d.SSO.Enabled) {
-		sso := &OrgSSOSettings{Providers: d.SSO.Providers}
-		if len(sso.Providers) == 0 {
-			sso.Providers = slices.Clone(SSOProviders)
-		}
-		seen := map[string]bool{}
-		for i, name := range sso.Providers {
-			switch {
-			case !slices.Contains(SSOProviders, name):
-				add("sso.providers[%d]: %q isn't available to organizations yet; the choices are %s", i, name, strings.Join(SSOProviders, ", "))
-			case seen[name]:
-				add("sso.providers[%d]: %q is listed twice", i, name)
-			}
-			seen[name] = true
-		}
-		sso.MaxPerOrg = len(sso.Providers)
-		if m := d.SSO.MaxPerOrg; m != nil {
-			if *m < 1 || *m > len(sso.Providers) {
-				add("sso.max_per_org: must be between 1 and %d (an organization has one connection per provider), got %d", len(sso.Providers), *m)
-			} else {
-				sso.MaxPerOrg = *m
-			}
-		}
-		if !slices.ContainsFunc(slices.Collect(maps.Values(o.Roles)), func(r OrgRole) bool { return r.Manage.Has(CapSSO) }) {
-			add("sso: needs a role with manage: sso, or no member of an organization could set up its sign-in (realm administrators still could)")
-		}
-		o.SSO = sso
-	}
+	o.SSO = parseOrgSSO(d.SSO, o, add)
+	o.Domains = parseOrgDomains(d.Domains, add)
 	if len(errs) == 0 {
 		s.Organizations = o
 	}

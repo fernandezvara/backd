@@ -252,7 +252,7 @@ func (c ssoCatalog) Provider(ctx context.Context, scope, name string) (sso.Provi
 // ConnectionProvider is the provider an organization's connection stands for.
 func ConnectionProvider(c OrgConnection) *registry.Provider {
 	return &registry.Provider{
-		Name: c.Provider, ClientID: c.ClientID, ClientSecret: SSOSecretName(c.Provider),
+		Name: c.Provider, Kind: c.Provider, ClientID: c.ClientID, ClientSecret: SSOSecretName(c.Provider),
 		NativeClientIDs: c.NativeClientIDs, Tenant: c.Tenant, Org: c.Org,
 	}
 }

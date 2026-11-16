@@ -766,10 +766,10 @@ func TestContract(t *testing.T) {
 		f.svc.Settings.Signup = registry.SignupClosed
 		req("POST", ex, native(nativeClaims("g-closed", "closed@example.com", true), ""), nil, 403)
 		f.svc.Settings.Signup = registry.SignupOpen
-		f.svc.Settings.Providers["dead"] = &registry.Provider{Name: "google", ClientID: "dead-client", ClientSecret: "GOOGLE_SECRET"}
+		f.svc.Settings.Providers["dead"] = &registry.Provider{Name: "google", Kind: "google", ClientID: "dead-client", ClientSecret: "GOOGLE_SECRET"}
 		req("POST", o+"/dead/id-token", native(nativeClaims("g-n", "native@example.com", true), ""), nil, 503)
 		// A provider whose secret was never set can't be offered.
-		f.svc.Settings.Providers["unset"] = &registry.Provider{Name: "google", ClientID: "g-client", ClientSecret: "NEVER_SET"}
+		f.svc.Settings.Providers["unset"] = &registry.Provider{Name: "google", Kind: "google", ClientID: "g-client", ClientSecret: "NEVER_SET"}
 		req("GET", o+"/unset/start?redirect_to="+redirect+"&code_challenge="+challenge, "", nil, 503)
 		req("POST", o+"/unset/start", `{"redirect_to": "https://app.acme.example/x", "code_challenge": "`+challenge+`"}`, nil, 503)
 		req("GET", a+"/providers", "", nil, 200)

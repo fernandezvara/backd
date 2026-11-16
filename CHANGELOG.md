@@ -4,6 +4,14 @@ All notable changes to `backd` and to its JavaScript client `backd-js`, which ar
 
 Until a stable release is declared, a minor release may have breaking changes; they are listed first.
 
+## Unreleased
+
+The sign-in code is reorganized (the `sso/` library, milestone 48, `design/sso.md`) with no change to the API.
+
+### Changed
+
+- **Provider names `sso`, `github`, `oidc` and `oauth2` are reserved** in `auth.providers`, next to `password` and `email`: `sso` is the strategy method of an organization's connection, and the others are kinds of provider that come with this milestone. A provider that used one of them as its name (none could have worked: a provider must be `google`, `microsoft` or `apple`) is refused at startup with a message that says so.
+
 ## 0.9.12
 
 The **limits and visibility** release: `backd` limits requests itself, the audit trail records sign-ins, reads can select fields, the clients can act as a user, and a schema's `default` is applied. Nothing needs editing before the new binaries start, but four behaviours change (see [Upgrading to v0.9.12](https://fernandezvara.github.io/backd/docs/operate/#upgrading-to-v0912)): request limiting is on by default in production mode, failed sign-ins are recorded, a key can no longer act as an administrator, and a `default` already in a `schema.json` starts to be applied. The Go, JavaScript, Dart and Python clients are released with it.

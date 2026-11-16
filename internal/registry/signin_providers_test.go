@@ -76,7 +76,10 @@ func TestSignInRedirectsFallBackToEmail(t *testing.T) {
 
 func TestProviderErrors(t *testing.T) {
 	cases := []struct{ name, yaml, want string }{
-		{"unknown provider", "auth:\n  strategies:\n    password: [password]\n    github: [github]\n  providers:\n    github: {client_id: x}\n", "isn't a provider backd knows"},
+		{"unknown provider", "auth:\n  strategies:\n    password: [password]\n    facebook: [facebook]\n  providers:\n    facebook: {client_id: x}\n", "isn't a provider backd knows"},
+		{"a kind not built yet", "auth:\n  strategies:\n    password: [password]\n    github: [github]\n  providers:\n    github: {client_id: x}\n", "isn't available yet"},
+		{"reserved name sso", "auth:\n  strategies:\n    password: [password]\n  providers:\n    sso: {client_id: abc}\n", "is reserved"},
+		{"type oidc not built yet", "auth:\n  strategies:\n    password: [password]\n    keycloak: [keycloak]\n  providers:\n    keycloak: {type: oidc, issuer: \"https://sso.example\"}\n", "type:"},
 		{"type oidc is not available yet", "auth:\n  strategies:\n    password: [password]\n    keycloak: [keycloak]\n  providers:\n    keycloak: {type: oidc}\n", "isn't available yet"},
 		{"empty", "auth:\n  strategies:\n    password: [password]\n    google: [google]\n  providers:\n    google:\n", "is empty"},
 		{"no client id", "auth:\n  strategies:\n    password: [password]\n    google: [google]\n  providers:\n    google: {client_secret: secret:S}\n", "client_id: is required"},
