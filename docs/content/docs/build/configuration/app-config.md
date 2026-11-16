@@ -230,7 +230,7 @@ rules:
   create: user != nil && appConfig("features.checkout.enabled") == true
 ```
 
-`appConfig("a.b")` takes the key as a string literal naming a declared value, or startup fails. The value is read once for the request, so it is a constant to the database filter: a read rule that depends on it still becomes a query. The same call works in a function's `invoke` rule.
+`appConfig("a.b")` takes the key as a string literal naming a declared value, or startup fails. The value is read once for the request, so it is a constant to the database filter: a read rule that depends on it still becomes a query. The same call works in a function's `invoke` rule. Every route that applies the rule reads it, `_batch` included, so a switch written either way (`== true` or `!= false`) holds for single writes and batches alike.
 
 ## No secrets, no encryption
 
