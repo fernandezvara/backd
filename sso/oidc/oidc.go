@@ -58,6 +58,9 @@ func (s *Verifier) now() time.Time {
 
 // Claims are what backd takes from a verified ID token.
 type Claims struct {
+	// Issuer is the issuer that vouched for the subject, as the token states it (Google's older
+	// form without the scheme is written with it).
+	Issuer string
 	// Subject identifies the person for the provider: sub, or for Microsoft the tenant
 	// and object ids, so the same person in two tenants is two identities.
 	Subject       string
@@ -77,6 +80,14 @@ type Claims struct {
 	// its domain is one the tenant has verified, unlike the address in the email claim, which the
 	// tenant's administrator sets freely.
 	Username string
+}
+
+// normalizeIssuer writes an issuer one way: Google also states its issuer without the scheme.
+func normalizeIssuer(iss string) string {
+	if iss == "accounts.google.com" {
+		return "https://accounts.google.com"
+	}
+	return iss
 }
 
 type idClaims struct {
@@ -161,7 +172,7 @@ func (s *Verifier) Verify(ctx context.Context, p sso.Provider, idToken, nonce st
 	if !nonceOK(c.Nonce, nonce, native) {
 		return bad("nonce")
 	}
-	out := Claims{Subject: c.Subject, Email: strings.TrimSpace(c.Email), EmailVerified: bool(c.EmailVerified), Name: c.Name, GivenName: c.GivenName, FamilyName: c.FamilyName, Picture: c.Picture}
+	out := Claims{Issuer: normalizeIssuer(c.Issuer), Subject: c.Subject, Email: strings.TrimSpace(c.Email), EmailVerified: bool(c.EmailVerified), Name: c.Name, GivenName: c.GivenName, FamilyName: c.FamilyName, Picture: c.Picture}
 	if p.Kind == sso.Google {
 		out.HostedDomain = strings.ToLower(c.HostedDomain)
 	}

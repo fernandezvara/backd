@@ -310,7 +310,7 @@ func (m *MemStore) PutIdentity(_ context.Context, id auth.Identity) error {
 	if m.FailPutIdentity != nil {
 		return m.FailPutIdentity
 	}
-	k := identityKey(id.Provider, id.Org, id.Subject)
+	k := identityKey(id.Provider, id.Org, id.Issuer, id.Subject)
 	if cur, ok := m.identities[k]; ok {
 		if cur.UserID != id.UserID {
 			return auth.ErrIdentityExists
@@ -339,7 +339,7 @@ func (m *MemStore) PutIdentity(_ context.Context, id auth.Identity) error {
 func (m *MemStore) ForgetPasswordChangedAt(id auth.Identity) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	k := identityKey(id.Provider, id.Org, id.Subject)
+	k := identityKey(id.Provider, id.Org, id.Issuer, id.Subject)
 	cur, ok := m.identities[k]
 	if !ok {
 		return auth.ErrNotFound
@@ -439,15 +439,17 @@ func (m *MemStore) DeleteIdentityIn(_ context.Context, userID, provider, org str
 }
 
 func (m *MemStore) Identity(ctx context.Context, provider, subject string) (auth.Identity, error) {
-	return m.IdentityIn(ctx, provider, "", subject)
+	return m.IdentityIn(ctx, provider, "", "", subject)
 }
 
-func identityKey(provider, org, subject string) string { return provider + "/" + org + "/" + subject }
+func identityKey(provider, org, issuer, subject string) string {
+	return provider + "/" + org + "/" + issuer + "/" + subject
+}
 
-func (m *MemStore) IdentityIn(_ context.Context, provider, org, subject string) (auth.Identity, error) {
+func (m *MemStore) IdentityIn(_ context.Context, provider, org, issuer, subject string) (auth.Identity, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	i, ok := m.identities[identityKey(provider, org, subject)]
+	i, ok := m.identities[identityKey(provider, org, issuer, subject)]
 	if !ok {
 		return auth.Identity{}, auth.ErrNotFound
 	}

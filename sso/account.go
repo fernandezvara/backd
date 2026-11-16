@@ -30,12 +30,18 @@ type Account struct {
 type IdentityKey struct {
 	Provider string
 	Org      string // the organization of a connection; empty for the realm's providers
-	Subject  string
+	// Issuer is the issuer that vouched for the subject: a subject is only unique within one
+	// issuer, so an identity of another issuer is a different person (design/sso.md §6.1).
+	Issuer  string
+	Subject string
 }
 
 // Claims are what a provider said of the person, checked: a verified ID token's claims, or the
 // fields of a userinfo answer.
 type Claims struct {
+	// Issuer is the issuer that vouched for the subject, as the verified token states it (Google's
+	// older form without the scheme is normalized).
+	Issuer string
 	// Subject identifies the person for the provider.
 	Subject       string
 	Email         string

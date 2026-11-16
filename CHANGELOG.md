@@ -10,6 +10,7 @@ The sign-in code is reorganized (the `sso/` library, milestone 48, `design/sso.m
 
 ### Changed
 
+- **Identities record the issuer that vouched for them** (#1013). A subject is only unique within one issuer, so an external provider's identity is now keyed by `(provider, org, issuer, subject)`: if an issuer changes, the old identities match nothing instead of matching a stranger with the same subject, and they show as `dormant` in `GET /_auth/me` (which also lists the `issuer`). A signed-in person who links the provider again replaces their dormant identity. **Run `backd-server provision` before starting the new version:** it records the issuer on existing identities of Google, Microsoft and Apple and replaces the unique index (`PROVISION_MODE=verify` refuses to start until then).
 - **Provider names `sso`, `github`, `oidc` and `oauth2` are reserved** in `auth.providers`, next to `password` and `email`: `sso` is the strategy method of an organization's connection, and the others are kinds of provider that come with this milestone. A provider that used one of them as its name (none could have worked: a provider must be `google`, `microsoft` or `apple`) is refused at startup with a message that says so.
 
 ## 0.9.12

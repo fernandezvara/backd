@@ -42,6 +42,8 @@ func TestNativeSignInGivesASession(t *testing.T) {
 	_, me := f.doH(t, "GET", "/v1/acme/_auth/me", "", bearer(out["token"].(string)))
 	if ids := me["identities"].([]any); len(ids) != 1 || ids[0].(map[string]any)["provider"] != "google" {
 		t.Errorf("me: %v", me)
+	} else if id := ids[0].(map[string]any); id["issuer"] != "https://accounts.google.com" || id["dormant"] != false {
+		t.Errorf("the identity says who vouched for it: %v", id)
 	}
 	// Again: the same user. The SDKs may send the nonce hashed.
 	sum := sha256.Sum256([]byte("raw-nonce"))

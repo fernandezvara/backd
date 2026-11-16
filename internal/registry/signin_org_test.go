@@ -97,3 +97,32 @@ func TestKindsAreOneTable(t *testing.T) {
 		t.Error("TrustsEmail follows the kind, and a connection never trusts")
 	}
 }
+
+func TestIssuerMatches(t *testing.T) {
+	const ms = "https://login.microsoftonline.com/"
+	tid := "11111111-2222-3333-4444-555555555555"
+	google := &Provider{Name: "google", Kind: "google"}
+	apple := &Provider{Name: "apple", Kind: "apple"}
+	common := &Provider{Name: "microsoft", Kind: "microsoft", Tenant: "common"}
+	own := &Provider{Name: "microsoft", Kind: "microsoft", Tenant: tid, Org: "o1"}
+	for name, tc := range map[string]struct {
+		p    *Provider
+		iss  string
+		want bool
+	}{
+		"google":                   {google, "https://accounts.google.com", true},
+		"google, another":          {google, "https://evil.example", false},
+		"apple":                    {apple, "https://appleid.apple.com", true},
+		"apple, google's":          {apple, "https://accounts.google.com", false},
+		"microsoft common":         {common, ms + tid + "/v2.0", true},
+		"microsoft common, odd":    {common, "https://evil.example/" + tid + "/v2.0", false},
+		"microsoft common, nested": {common, ms + tid + "/x/v2.0", false},
+		"microsoft own tenant":     {own, ms + tid + "/v2.0", true},
+		"microsoft other":          {own, ms + "99999999-2222-3333-4444-555555555555/v2.0", false},
+		"not recorded yet":         {own, "", true},
+	} {
+		if got := tc.p.IssuerMatches(tc.iss); got != tc.want {
+			t.Errorf("%s: %v", name, got)
+		}
+	}
+}

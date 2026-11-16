@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -12,8 +13,10 @@ import (
 // identitiesJSON describes a user's sign-in methods: the provider, the organization whose
 // connection it came through (if any), the address the
 // provider reported (a password has none of its own: the user's counts), and when
-// each was linked and last used. Never the provider's subject, a hash or a token.
-func identitiesJSON(u auth.User, ids []auth.Identity) []map[string]any {
+// each was linked and last used, the issuer that vouched for it and whether it is dormant (the
+// provider's issuer is not that one any more, so it signs nobody in). Never the provider's subject, a
+// hash or a token.
+func identitiesJSON(ctx context.Context, svc *auth.Users, u auth.User, ids []auth.Identity) []map[string]any {
 	out := make([]map[string]any, 0, len(ids))
 	for _, i := range ids {
 		email, verified := i.Email, i.EmailVerified
@@ -30,6 +33,10 @@ func identitiesJSON(u auth.User, ids []auth.Identity) []map[string]any {
 		}
 		if i.Org != "" {
 			item["org"] = i.Org
+		}
+		if i.Issuer != "" {
+			item["issuer"] = i.Issuer
+			item["dormant"] = svc.IdentityDormant(ctx, i)
 		}
 		out = append(out, item)
 	}

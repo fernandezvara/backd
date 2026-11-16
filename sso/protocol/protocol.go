@@ -74,7 +74,7 @@ func (c *Client) Exchange(ctx context.Context, p sso.Provider, code, redirectURI
 func (c *Client) Verify(ctx context.Context, p sso.Provider, idToken, nonce string, native bool) (sso.Claims, error) {
 	cl, err := c.oidc.Verify(ctx, p, idToken, nonce, native)
 	return sso.Claims{
-		Subject: cl.Subject, Email: cl.Email, EmailVerified: cl.EmailVerified, Name: cl.Name, GivenName: cl.GivenName,
+		Issuer: cl.Issuer, Subject: cl.Subject, Email: cl.Email, EmailVerified: cl.EmailVerified, Name: cl.Name, GivenName: cl.GivenName,
 		FamilyName: cl.FamilyName, Picture: cl.Picture, Audience: cl.Audience, HostedDomain: cl.HostedDomain,
 		Tenant: cl.Tenant, Username: cl.Username,
 	}, err

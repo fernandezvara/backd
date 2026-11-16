@@ -121,6 +121,29 @@ func (p *Provider) SSO() sso.Provider {
 	}
 }
 
+// IssuerMatches says whether an identity vouched for by iss is one the provider signs in now: the
+// provider's issuer is the one that vouched for it. An identity without an issuer (not recorded yet)
+// matches.
+func (p *Provider) IssuerMatches(iss string) bool {
+	if iss == "" {
+		return true
+	}
+	const msBase = "https://login.microsoftonline.com/"
+	switch p.Kind {
+	case ProviderGoogle:
+		return iss == "https://accounts.google.com"
+	case ProviderApple:
+		return iss == "https://appleid.apple.com"
+	case ProviderMicrosoft:
+		tenant, ok := strings.CutSuffix(strings.TrimPrefix(iss, msBase), "/v2.0")
+		if !strings.HasPrefix(iss, msBase) || !ok || tenant == "" || strings.Contains(tenant, "/") {
+			return false
+		}
+		return slices.Contains(SharedMicrosoftTenants, p.Tenant) || strings.EqualFold(tenant, p.Tenant)
+	}
+	return false
+}
+
 // SecretNames are the realm secrets the provider needs.
 func (p *Provider) SecretNames() []string {
 	var out []string

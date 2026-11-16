@@ -5,6 +5,8 @@ import (
 	"errors"
 	"slices"
 	"sort"
+
+	"github.com/fernandezvara/backd/internal/registry"
 )
 
 // Identities returns the user's sign-in methods, oldest first.
@@ -175,4 +177,21 @@ func (s *Users) touchIdentity(ctx context.Context, userID, provider string) {
 			s.Log.Warn("record the use of a sign-in method", "provider", provider, "error", err)
 		}
 	}
+}
+
+// IdentityDormant says whether an identity belongs to an issuer its provider no longer has: the
+// operator or a manager changed the provider's issuer (or an organization its tenant), so it
+// matches no sign-in. A provider that is not configured any more leaves its identities orphaned,
+// which is another thing.
+func (s *Users) IdentityDormant(ctx context.Context, i Identity) bool {
+	if i.Issuer == "" {
+		return false
+	}
+	var p *registry.Provider
+	if i.Org == "" {
+		p = s.Settings.Providers[i.Provider]
+	} else if c, err := s.Store.OrgConnection(ctx, i.Org, i.Provider); err == nil {
+		p = ConnectionProvider(c)
+	}
+	return p != nil && !p.IssuerMatches(i.Issuer)
 }

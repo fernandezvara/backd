@@ -199,7 +199,7 @@ func (d *Directory) Touch(_ context.Context, k sso.IdentityKey, _ sso.Login, _ s
 func (d *Directory) Link(_ context.Context, a sso.Account, l sso.Login, _ string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	k := sso.IdentityKey{Provider: l.Provider.Name, Org: l.Provider.Org, Subject: l.Claims.Subject}
+	k := sso.IdentityKey{Provider: l.Provider.Name, Org: l.Provider.Org, Issuer: l.Claims.Issuer, Subject: l.Claims.Subject}
 	if _, taken := d.Identities[k]; taken {
 		return sso.ErrLinkConflict
 	}
@@ -237,7 +237,7 @@ func (d *Directory) Create(_ context.Context, l sso.Login, email string, verifie
 		d.Identities = map[sso.IdentityKey]string{}
 	}
 	d.Users[a.ID] = a
-	d.Identities[sso.IdentityKey{Provider: l.Provider.Name, Org: l.Provider.Org, Subject: l.Claims.Subject}] = a.ID
+	d.Identities[sso.IdentityKey{Provider: l.Provider.Name, Org: l.Provider.Org, Issuer: l.Claims.Issuer, Subject: l.Claims.Subject}] = a.ID
 	d.Created = append(d.Created, a)
 	return a, nil
 }

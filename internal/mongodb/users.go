@@ -76,6 +76,7 @@ type identityDoc struct {
 	Provider     string `bson:"provider"`
 	Subject      string `bson:"subject"`
 	Org          string `bson:"org,omitempty"`
+	Issuer       string `bson:"issuer,omitempty"`
 	PasswordHash string `bson:"password_hash,omitempty"`
 	// What an external provider last reported, and the last sign-in.
 	Email         string    `bson:"email,omitempty"`
@@ -92,7 +93,7 @@ type identityDoc struct {
 
 func (d identityDoc) identity() auth.Identity {
 	return auth.Identity{
-		ID: d.ID, UserID: d.UserID, Provider: d.Provider, Subject: d.Subject, Org: d.Org, PasswordHash: d.PasswordHash,
+		ID: d.ID, UserID: d.UserID, Provider: d.Provider, Subject: d.Subject, Org: d.Org, Issuer: d.Issuer, PasswordHash: d.PasswordHash,
 		Email: d.Email, EmailVerified: d.EmailVerified, LastUsedAt: d.LastUsedAt.UTC(), PasswordChangedAt: d.PasswordChangedAt.UTC(),
 		AppleRefreshToken: d.AppleRefreshToken, AppleClientID: d.AppleClientID,
 		CreatedAt: d.CreatedAt.UTC(), UpdatedAt: d.UpdatedAt.UTC(),
@@ -327,10 +328,19 @@ func orgFilter(org string) bson.E {
 	return bson.E{Key: "org", Value: org}
 }
 
+// issuerFilter selects the identities vouched for by an issuer, or those without one (a password's
+// and an email's) for "".
+func issuerFilter(issuer string) bson.E {
+	if issuer == "" {
+		return bson.E{Key: "issuer", Value: bson.D{{Key: "$exists", Value: false}}}
+	}
+	return bson.E{Key: "issuer", Value: issuer}
+}
+
 func (s *AuthStore) PutIdentity(ctx context.Context, id auth.Identity) error {
 	// The user is part of the filter: a provider account that belongs to someone else
 	// is not updated but refused (the insert hits the unique index).
-	filter := bson.D{{Key: "provider", Value: id.Provider}, {Key: "subject", Value: id.Subject}, {Key: "user_id", Value: id.UserID}, orgFilter(id.Org)}
+	filter := bson.D{{Key: "provider", Value: id.Provider}, {Key: "subject", Value: id.Subject}, {Key: "user_id", Value: id.UserID}, orgFilter(id.Org), issuerFilter(id.Issuer)}
 	set := bson.D{{Key: "updated_at", Value: id.UpdatedAt}}
 	if id.PasswordHash != "" {
 		set = append(set, bson.E{Key: "password_hash", Value: id.PasswordHash}, bson.E{Key: "password_changed_at", Value: id.UpdatedAt})
@@ -338,6 +348,9 @@ func (s *AuthStore) PutIdentity(ctx context.Context, id auth.Identity) error {
 	setOnInsert := bson.D{{Key: "_id", Value: id.ID}, {Key: "user_id", Value: id.UserID}, {Key: "created_at", Value: id.CreatedAt}}
 	if id.Org != "" {
 		setOnInsert = append(setOnInsert, bson.E{Key: "org", Value: id.Org})
+	}
+	if id.Issuer != "" {
+		setOnInsert = append(setOnInsert, bson.E{Key: "issuer", Value: id.Issuer})
 	}
 	if id.Email != "" {
 		set = append(set, bson.E{Key: "email", Value: id.Email})
@@ -416,11 +429,11 @@ func (s *AuthStore) DeleteIdentityIn(ctx context.Context, userID, provider, org 
 }
 
 func (s *AuthStore) Identity(ctx context.Context, provider, subject string) (auth.Identity, error) {
-	return s.IdentityIn(ctx, provider, "", subject)
+	return s.IdentityIn(ctx, provider, "", "", subject)
 }
 
-func (s *AuthStore) IdentityIn(ctx context.Context, provider, org, subject string) (auth.Identity, error) {
-	d, err := getOne[identityDoc](ctx, s.identities(), bson.D{{Key: "provider", Value: provider}, {Key: "subject", Value: subject}, orgFilter(org)}, auth.ErrNotFound)
+func (s *AuthStore) IdentityIn(ctx context.Context, provider, org, issuer, subject string) (auth.Identity, error) {
+	d, err := getOne[identityDoc](ctx, s.identities(), bson.D{{Key: "provider", Value: provider}, {Key: "subject", Value: subject}, orgFilter(org), issuerFilter(issuer)}, auth.ErrNotFound)
 	if err != nil {
 		return auth.Identity{}, err
 	}

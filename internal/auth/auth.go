@@ -69,7 +69,11 @@ type Identity struct {
 	ID       string
 	UserID   string
 	Provider string
-	Subject  string // unique per provider (and organization)
+	Subject  string // unique per provider, organization and issuer
+	// Issuer is the issuer that vouched for Subject (an external provider's identities only): the key
+	// of an identity is (Provider, Org, Issuer, Subject), so a changed issuer matches nothing
+	// instead of matching someone else (design/sso.md §6.1). Password and email identities have none.
+	Issuer string
 	// Org is the organization whose connection signed the person in (design/sso.md §9); empty for
 	// the realm's own providers and the password. A user holds one identity per provider per
 	// organization.
@@ -237,7 +241,7 @@ type Store interface {
 	Identity(ctx context.Context, provider, subject string) (Identity, error)
 	// IdentityIn, IdentityOfIn and DeleteIdentityIn are the three lookups above for the identities of
 	// an organization's connection; the plain ones are the realm's (org "").
-	IdentityIn(ctx context.Context, provider, org, subject string) (Identity, error)
+	IdentityIn(ctx context.Context, provider, org, issuer, subject string) (Identity, error)
 	IdentityOfIn(ctx context.Context, userID, provider, org string) (Identity, error)
 	DeleteIdentityIn(ctx context.Context, userID, provider, org string) error
 	// ListIdentities returns a user's identities, oldest first.

@@ -44,7 +44,7 @@ func TestProvisionSystemDatabase(t *testing.T) {
 	// Expected indexes, including TTL and unique ones.
 	wantIdx := map[string][]string{
 		"users":          {"email:1 unique sparse"},
-		"identities":     {"provider:1,org:1,subject:1 unique", "user_id:1,provider:1,org:1 unique", "user_id:1"},
+		"identities":     {"provider:1,org:1,issuer:1,subject:1 unique", "user_id:1,provider:1,org:1 unique", "user_id:1"},
 		"sessions":       {"token_hash:1 unique", "user_id:1", "expires_at:1 ttl"},
 		"api_keys":       {"name:1 unique"},
 		"invitations":    {"token_hash:1 unique", "expires_at:1 ttl"},
@@ -257,7 +257,7 @@ func TestProvisionRekeysIdentitiesForOrganizations(t *testing.T) {
 	}
 
 	// Back to how v0.9.2 left them.
-	for _, name := range []string{"provider_1_org_1_subject_1", "user_id_1_provider_1_org_1"} {
+	for _, name := range []string{"provider_1_org_1_issuer_1_subject_1", "user_id_1_provider_1_org_1"} {
 		if err := ids.Indexes().DropOne(ctx, name); err != nil {
 			t.Fatal(err)
 		}
@@ -284,24 +284,98 @@ func TestProvisionRekeysIdentitiesForOrganizations(t *testing.T) {
 	if err := p.Verify(ctx); err != nil {
 		t.Fatalf("Verify after the upgrade: %v", err)
 	}
-	if _, err := ids.InsertOne(ctx, identity("i2", "u1", "o1", "g-2")); err != nil {
+	// What the application writes after the upgrade carries the issuer that vouched for it.
+	withIssuer := func(d bson.D) bson.D { return append(d, bson.E{Key: "issuer", Value: "https://accounts.google.com"}) }
+	if _, err := ids.InsertOne(ctx, withIssuer(identity("i2", "u1", "o1", "g-2"))); err != nil {
 		t.Errorf("an organization's identity after the upgrade: %v", err)
 	}
 	// What stays unique: one identity per provider per user per organization, one subject per
 	// organization, and the realm's own as before.
 	for name, doc := range map[string]bson.D{
-		"a second google identity of the user in the organization": identity("i3", "u1", "o1", "g-3"),
-		"the subject of another user in the organization":          identity("i4", "u2", "o1", "g-2"),
-		"a second realm google identity of the user":               identity("i5", "u1", "", "g-5"),
-		"the realm subject of another user":                        identity("i6", "u2", "", "g-1"),
+		"a second google identity of the user in the organization": withIssuer(identity("i3", "u1", "o1", "g-3")),
+		"the subject of another user in the organization":          withIssuer(identity("i4", "u2", "o1", "g-2")),
+		"a second realm google identity of the user":               withIssuer(identity("i5", "u1", "", "g-5")),
+		"the realm subject of another user":                        withIssuer(identity("i6", "u2", "", "g-1")),
 	} {
 		if _, err := ids.InsertOne(ctx, doc); !mongo.IsDuplicateKeyError(err) {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
 	// The same subject at another organization is another person's identity.
-	if _, err := ids.InsertOne(ctx, identity("i7", "u3", "o2", "g-2")); err != nil {
+	if _, err := ids.InsertOne(ctx, withIssuer(identity("i7", "u3", "o2", "g-2"))); err != nil {
 		t.Errorf("the same subject at another organization: %v", err)
+	}
+	// Applying again changes nothing.
+	if err := p.Apply(ctx); err != nil {
+		t.Fatalf("Apply again: %v", err)
+	}
+}
+
+func TestProvisionRecordsTheIssuerOfIdentities(t *testing.T) {
+	client := testClient(t)
+	realm := testRealm(t, client)
+	ctx := context.Background()
+	log, _ := testLogger()
+	p := &Provisioner{Client: client, Registry: loadRegistryWith(t, realm, "", map[string]string{"app/notes": `{}`}), Log: log}
+	if err := p.Apply(ctx); err != nil {
+		t.Fatal(err)
+	}
+	ids := client.Database(realm + "___system").Collection("identities")
+	now := time.Now().UTC()
+	doc := func(id, user, provider, org, subject string) bson.D {
+		d := bson.D{{Key: "_id", Value: id}, {Key: "user_id", Value: user}, {Key: "provider", Value: provider}, {Key: "subject", Value: subject}, {Key: "created_at", Value: now}, {Key: "updated_at", Value: now}}
+		if org != "" {
+			d = append(d, bson.E{Key: "org", Value: org})
+		}
+		return d
+	}
+	// How v0.9.12 left them: no issuer, and the key without it.
+	if err := ids.Indexes().DropOne(ctx, "provider_1_org_1_issuer_1_subject_1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ids.Indexes().CreateOne(ctx, mongo.IndexModel{Keys: bson.D{{Key: "provider", Value: 1}, {Key: "org", Value: 1}, {Key: "subject", Value: 1}}, Options: options.Index().SetUnique(true)}); err != nil {
+		t.Fatal(err)
+	}
+	tid := "11111111-2222-3333-4444-555555555555"
+	for _, d := range []bson.D{
+		doc("g", "u1", "google", "", "g-1"), doc("a", "u2", "apple", "", "a-1"), doc("m", "u3", "microsoft", "", tid+":oid-1"),
+		doc("og", "u4", "google", "o1", "g-2"), doc("pw", "u5", "password", "", "u5"),
+	} {
+		if _, err := ids.InsertOne(ctx, d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Verify says what is left to do; apply does it.
+	if err := p.Verify(ctx); err == nil || !strings.Contains(err.Error(), "not up to date") || !strings.Contains(err.Error(), "obsolete") {
+		t.Fatalf("Verify before = %v", err)
+	}
+	if err := p.Apply(ctx); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if err := p.Verify(ctx); err != nil {
+		t.Fatalf("Verify after: %v", err)
+	}
+	for id, want := range map[string]string{
+		"g": "https://accounts.google.com", "a": "https://appleid.apple.com", "og": "https://accounts.google.com",
+		"m": "https://login.microsoftonline.com/" + tid + "/v2.0", "pw": "",
+	} {
+		var got struct {
+			Issuer string `bson:"issuer"`
+		}
+		if err := ids.FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&got); err != nil || got.Issuer != want {
+			t.Errorf("identity %s: issuer %q, %v; want %q", id, got.Issuer, err, want)
+		}
+	}
+	// The same subject at another issuer is another person's identity; at the same one it is not.
+	other := doc("x", "u9", "google", "", "g-1")
+	other = append(other, bson.E{Key: "issuer", Value: "https://other.example"})
+	if _, err := ids.InsertOne(ctx, other); err != nil {
+		t.Errorf("the same subject at another issuer: %v", err)
+	}
+	same := doc("y", "u8", "google", "", "g-1")
+	same = append(same, bson.E{Key: "issuer", Value: "https://accounts.google.com"})
+	if _, err := ids.InsertOne(ctx, same); !mongo.IsDuplicateKeyError(err) {
+		t.Errorf("the same subject at the same issuer: %v", err)
 	}
 	// Applying again changes nothing.
 	if err := p.Apply(ctx); err != nil {

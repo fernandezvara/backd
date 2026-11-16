@@ -368,7 +368,7 @@ func (e *Engine) IDToken(ctx context.Context, in IDTokenInput) (Native, error) {
 func (e *Engine) Resolve(ctx context.Context, l Login) (Result, error) {
 	d := e.Directory
 	email := d.NormalizeEmail(l.Claims.Email)
-	key := IdentityKey{Provider: l.Provider.Name, Org: l.Provider.Org, Subject: l.Claims.Subject}
+	key := IdentityKey{Provider: l.Provider.Name, Org: l.Provider.Org, Issuer: l.Claims.Issuer, Subject: l.Claims.Subject}
 	f := Facts{Intent: l.Intent, Email: email, EmailVerified: l.Claims.EmailVerified, LinkUserID: l.LinkUserID}
 	find := func(get func() (Account, error)) (*Account, error) {
 		a, err := get()
