@@ -69,3 +69,6 @@ deploy/terraform/**/plan.*
 # Playwright (clients/js)
 clients/js/test-results/
 clients/js/playwright-report/
+
+__pycache__/
+*.pyc
