@@ -340,7 +340,7 @@ func (d ssoDirectory) NormalizeEmail(raw string) string {
 }
 
 func (d ssoDirectory) Identity(ctx context.Context, k sso.IdentityKey) (sso.Account, error) {
-	id, err := d.h.Users.Store.IdentityIn(ctx, k.Provider, k.Org, k.Subject)
+	id, err := d.h.Users.Store.IdentityIn(ctx, k.Provider, k.Org, k.Issuer, k.Subject)
 	if err != nil {
 		return sso.Account{}, ssoError(err)
 	}
@@ -381,7 +381,7 @@ func (d ssoDirectory) MaySignIn(ctx context.Context, a sso.Account, req sso.Requ
 func providerLoginOf(l sso.Login) ProviderLogin {
 	hd := DecodeSSOHost(l.Host)
 	in := ProviderLogin{
-		Provider: l.Provider.Name, Org: l.Provider.Org, Subject: l.Claims.Subject, Email: l.Claims.Email, EmailVerified: l.Claims.EmailVerified,
+		Provider: l.Provider.Name, Org: l.Provider.Org, Issuer: l.Claims.Issuer, Subject: l.Claims.Subject, Email: l.Claims.Email, EmailVerified: l.Claims.EmailVerified,
 		TrustsEmail: l.Provider.Link == sso.LinkVerifiedEmail, Intent: string(l.Intent), LinkUserID: l.LinkUserID, Locales: hd.Locales,
 		IP: l.Request.IP, Consents: hd.Consents, UserAgent: l.Request.UserAgent, Profile: l.Profile,
 	}
@@ -403,7 +403,7 @@ func InvitationOfScope(login *ProviderLogin, hash, scopeOrg string) {
 }
 
 func (d ssoDirectory) Touch(ctx context.Context, k sso.IdentityKey, l sso.Login, email string) {
-	id, err := d.h.Users.Store.IdentityIn(ctx, k.Provider, k.Org, k.Subject)
+	id, err := d.h.Users.Store.IdentityIn(ctx, k.Provider, k.Org, k.Issuer, k.Subject)
 	if err != nil {
 		return
 	}
@@ -415,7 +415,14 @@ func (d ssoDirectory) Link(ctx context.Context, a sso.Account, l sso.Login, emai
 	if err != nil {
 		return err
 	}
-	return ssoError(d.h.Users.addIdentity(ctx, u, providerLoginOf(l), email))
+	in := providerLoginOf(l)
+	err = ssoError(d.h.Users.addIdentity(ctx, u, in, email))
+	// A signed-in person linking again what an issuer change left dormant replaces their own old
+	// identity; no sign-in ever does (design/sso.md §6.1).
+	if errors.Is(err, sso.ErrLinkConflict) && l.Intent == sso.IntentLink && d.h.Users.replaceDormant(ctx, u, in) {
+		err = ssoError(d.h.Users.addIdentity(ctx, u, in, email))
+	}
+	return err
 }
 
 // Create makes the user as the realm's sign-up mode allows. The address counts as verified when the
@@ -510,7 +517,7 @@ func (s *Users) ResolveProviderLogin(ctx context.Context, in ProviderLogin) (Pro
 	}
 	res, err := h.Engine(nil).Resolve(ctx, sso.Login{
 		Provider: sso.Provider{Name: in.Provider, Kind: sso.Kind(in.Provider), Org: in.Org, Link: link},
-		Claims:   sso.Claims{Subject: in.Subject, Email: in.Email, EmailVerified: in.EmailVerified},
+		Claims:   sso.Claims{Issuer: in.Issuer, Subject: in.Subject, Email: in.Email, EmailVerified: in.EmailVerified},
 		Profile:  in.Profile, Intent: sso.Intent(in.Intent), LinkUserID: in.LinkUserID, Host: hd.Encode(),
 		Request: sso.Request{IP: in.IP, UserAgent: in.UserAgent},
 	})
@@ -543,4 +550,30 @@ func authError(err error) error {
 		return err
 	}
 	return fmt.Errorf("%w: %w", own, err)
+}
+
+// replaceDormant removes the user's own identity of the provider (and organization) when it was
+// vouched for by another issuer than the one now linking, so the new one can take its place. It
+// does nothing, and says so, when the new identity is already someone's or the old one is not
+// dormant.
+func (s *Users) replaceDormant(ctx context.Context, u User, in ProviderLogin) bool {
+	if in.Issuer == "" {
+		return false
+	}
+	own, err := s.Store.IdentityOfIn(ctx, u.ID, in.Provider, in.Org)
+	if err != nil || own.Issuer == "" || own.Issuer == in.Issuer {
+		return false
+	}
+	if _, err := s.Store.IdentityIn(ctx, in.Provider, in.Org, in.Issuer, in.Subject); err == nil {
+		return false // the new identity belongs to someone: a conflict, not a replacement
+	}
+	if err := s.Store.DeleteIdentityIn(ctx, u.ID, in.Provider, in.Org); err != nil {
+		return false
+	}
+	details := map[string]any{"provider": in.Provider, "by": "self", "replaced": "dormant"}
+	if in.Org != "" {
+		details["org"] = in.Org
+	}
+	s.Audit(ctx, AuditIdentityUnlinked, userTarget(u.ID), details)
+	return true
 }

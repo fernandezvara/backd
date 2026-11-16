@@ -98,7 +98,7 @@ func TestOrganizationSignInWithGoogle(t *testing.T) {
 	}
 	userID := out["user"].(map[string]any)["id"].(string)
 	// The identity is the organization's, not the realm's.
-	id, err := o.svc.Store.IdentityIn(ctx, "google", o.org, "g-org-1")
+	id, err := o.svc.Store.IdentityIn(ctx, "google", o.org, "https://accounts.google.com", "g-org-1")
 	if err != nil || id.UserID != userID || id.Org != o.org {
 		t.Fatalf("identity = %+v, %v", id, err)
 	}
@@ -160,7 +160,7 @@ func TestOrganizationSignInWithMicrosoft(t *testing.T) {
 	if code, out := o.redeem(t, a); code != 200 || out["new_user"] != true {
 		t.Fatalf("redeem: %d %v", code, out)
 	}
-	if _, err := o.svc.Store.IdentityIn(ctx, "microsoft", o.org, orgTenant+":oid-1"); err != nil {
+	if _, err := o.svc.Store.IdentityIn(ctx, "microsoft", o.org, "https://login.microsoftonline.com/"+orgTenant+"/v2.0", orgTenant+":oid-1"); err != nil {
 		t.Errorf("identity: %v", err)
 	}
 	// Another tenant's person is not the company's: the token's issuer is not its tenant.

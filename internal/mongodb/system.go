@@ -128,6 +128,11 @@ type systemCollection struct {
 	// indexes replace: provisioning drops them after creating the new ones, and verifying
 	// reports them.
 	obsolete []bson.D
+	// backfill brings the documents an earlier version wrote up to date, after the new indexes exist
+	// and before the obsolete ones are dropped; it returns how many it changed. pending counts what
+	// backfill would change, for verifying.
+	backfill func(ctx context.Context, coll *mongo.Collection) (int64, error)
+	pending  func(ctx context.Context, coll *mongo.Collection) (int64, error)
 }
 
 // SystemCollectionNames returns the collections of every system database.
@@ -175,6 +180,7 @@ var systemCollections = []systemCollection{
 			"provider":      map[string]any{"bsonType": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$"},
 			"subject":       str(),
 			"org":           str(),
+			"issuer":        str(),
 			"password_hash": str(),
 			// What an external provider reported (never for a password), and the
 			// last sign-in; an Apple identity also holds its encrypted refresh token.
@@ -188,8 +194,9 @@ var systemCollections = []systemCollection{
 			"updated_at":          typ("date"),
 		}),
 		indexes: []systemIndex{
-			// An organization's connection adds its id to the key (a realm identity has none).
-			{keys: bson.D{{Key: "provider", Value: 1}, {Key: "org", Value: 1}, {Key: "subject", Value: 1}}, unique: true},
+			// An organization's connection adds its id to the key (a realm identity has none), and the
+			// issuer that vouched for the subject completes it: a subject is unique per issuer only.
+			{keys: bson.D{{Key: "provider", Value: 1}, {Key: "org", Value: 1}, {Key: "issuer", Value: 1}, {Key: "subject", Value: 1}}, unique: true},
 			// One identity per provider per user, and per organization.
 			{keys: bson.D{{Key: "user_id", Value: 1}, {Key: "provider", Value: 1}, {Key: "org", Value: 1}}, unique: true},
 			{keys: bson.D{{Key: "user_id", Value: 1}}},
@@ -199,7 +206,12 @@ var systemCollections = []systemCollection{
 		obsolete: []bson.D{
 			{{Key: "provider", Value: 1}, {Key: "subject", Value: 1}},
 			{{Key: "user_id", Value: 1}, {Key: "provider", Value: 1}},
+			// Without the issuer: it would refuse the same subject at another issuer.
+			{{Key: "provider", Value: 1}, {Key: "org", Value: 1}, {Key: "subject", Value: 1}},
 		},
+		// The identities of the built-in providers get the issuer that vouched for them.
+		backfill: backfillIdentityIssuers,
+		pending:  pendingIdentityIssuers,
 	},
 	{
 		name: SessionsCollection,
@@ -964,6 +976,15 @@ func (p *Provisioner) applySystem(ctx context.Context) error {
 				}
 				p.Log.Info("index created", "database", dbName, "collection", sc.name, "index", name)
 			}
+			if sc.backfill != nil {
+				n, err := sc.backfill(ctx, coll)
+				if err != nil {
+					return fmt.Errorf("%s.%s: %w", dbName, sc.name, err)
+				}
+				if n > 0 {
+					p.Log.Info("documents brought up to date", "database", dbName, "collection", sc.name, "count", n)
+				}
+			}
 			if err := dropObsoleteIndexes(ctx, coll, sc.obsolete, func(name string) {
 				p.Log.Info("obsolete index dropped", "database", dbName, "collection", sc.name, "index", name)
 			}); err != nil {
@@ -1038,9 +1059,18 @@ func (p *Provisioner) systemDiffs(ctx context.Context, realm string) ([]string, 
 			for _, k := range sc.obsolete {
 				for _, e := range have {
 					if e.keys == keyList(k) {
-						diffs = append(diffs, fmt.Sprintf("%s: index %s (%s) is obsolete and would refuse sign-ins of organizations", ns, e.name, e.keys))
+						diffs = append(diffs, fmt.Sprintf("%s: index %s (%s) is obsolete (run `backd-server provision`)", ns, e.name, e.keys))
 					}
 				}
+			}
+		}
+		if sc.pending != nil {
+			n, err := sc.pending(ctx, p.Client.Database(dbName).Collection(sc.name))
+			if err != nil {
+				return nil, nil, err
+			}
+			if n > 0 {
+				diffs = append(diffs, fmt.Sprintf("%s: %d documents are not up to date (run `backd-server provision`)", ns, n))
 			}
 		}
 	}
@@ -1128,4 +1158,36 @@ func (p *Provisioner) warnUnknownSystemCollections(dbName string, existing map[s
 			p.Log.Warn("unexpected collection in system database; it is ignored", "database", dbName, "collection", name)
 		}
 	}
+}
+
+// The issuers that vouch for the identities of the built-in providers. A Microsoft identity's
+// subject is "<tenant id>:<object id>", and its issuer names the tenant.
+var identityIssuers = bson.A{
+	bson.D{{Key: "case", Value: bson.D{{Key: "$eq", Value: bson.A{"$provider", "google"}}}}, {Key: "then", Value: "https://accounts.google.com"}},
+	bson.D{{Key: "case", Value: bson.D{{Key: "$eq", Value: bson.A{"$provider", "apple"}}}}, {Key: "then", Value: "https://appleid.apple.com"}},
+	bson.D{{Key: "case", Value: bson.D{{Key: "$eq", Value: bson.A{"$provider", "microsoft"}}}}, {Key: "then", Value: bson.D{{Key: "$concat", Value: bson.A{
+		"https://login.microsoftonline.com/", bson.D{{Key: "$arrayElemAt", Value: bson.A{bson.D{{Key: "$split", Value: bson.A{"$subject", ":"}}}, 0}}}, "/v2.0"}}}}},
+}
+
+// withoutIssuer selects the identities of the built-in providers that were written before the
+// issuer was recorded.
+var withoutIssuer = bson.D{
+	{Key: "provider", Value: bson.D{{Key: "$in", Value: bson.A{"google", "microsoft", "apple"}}}},
+	{Key: "issuer", Value: bson.D{{Key: "$exists", Value: false}}},
+}
+
+// backfillIdentityIssuers records the issuer of every identity of a built-in provider that has
+// none (the realm's and an organization's alike).
+func backfillIdentityIssuers(ctx context.Context, coll *mongo.Collection) (int64, error) {
+	res, err := coll.UpdateMany(ctx, withoutIssuer, mongo.Pipeline{
+		{{Key: "$set", Value: bson.D{{Key: "issuer", Value: bson.D{{Key: "$switch", Value: bson.D{{Key: "branches", Value: identityIssuers}}}}}}}},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("record the issuer of the identities: %w", err)
+	}
+	return res.ModifiedCount, nil
+}
+
+func pendingIdentityIssuers(ctx context.Context, coll *mongo.Collection) (int64, error) {
+	return coll.CountDocuments(ctx, withoutIssuer)
 }

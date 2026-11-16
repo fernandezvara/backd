@@ -136,7 +136,7 @@ Each realm with an `auth` section has a system database named `<realm>___system`
 | Collection | Holds | Indexes |
 |---|---|---|
 | `users` | email, verified flag, roles, disabled flag | `email` (unique, sparse) |
-| `identities` | sign-in methods per user: a password hash, or an external [provider](../build/auth/providers/)'s subject and address (and, for Apple, a sealed refresh token) | `provider` + `subject` (unique), `user_id` + `provider` (unique), `user_id` |
+| `identities` | sign-in methods per user: a password hash, or an external [provider](../build/auth/providers/)'s subject, the issuer that vouched for it and the address (and, for Apple, a sealed refresh token) | `provider` + `org` + `issuer` + `subject` (unique), `user_id` + `provider` + `org` (unique), `user_id` |
 | `sessions` | sessions: public id, hashed token, last use and expiry | `token_hash` (unique), `user_id`, `expires_at` (TTL) |
 | `api_keys` | hashed [API keys](../build/auth/api-keys/) with name, first characters, last use and expiry | `name` (unique) |
 | `invitations` | [invitations](administration/admin/#invitations): public id, hashed token, optional email | `token_hash` (unique), `expires_at` (TTL) |
@@ -183,6 +183,13 @@ blog___system.api_keys
 blog__main.posts
 shop__orders.items
 ```
+
+### Upgrading to the next release (unreleased)
+
+The sign-in code moves into the `sso/` library (see [the development notes](../contribute/architecture/)) and identities record which issuer vouched for them. Run `backd-server provision` before you start the new binaries (`PROVISION_MODE=verify` refuses to start until you do):
+
+1. **Identities gain `issuer`.** `provision` records it on every identity of Google, Microsoft and Apple (Google's and Apple's are fixed; a Microsoft one names its tenant, taken from the subject), replaces the unique index with `(provider, org, issuer, subject)` and drops the old one. Nothing is rewritten otherwise and no sign-in breaks. `GET /_auth/me` and the admin view of a user's identities show `issuer` and `dormant`.
+2. **The provider names `sso`, `github`, `oidc` and `oauth2` are reserved** in `auth.providers`.
 
 ### Upgrading to v0.9.12
 

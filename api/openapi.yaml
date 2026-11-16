@@ -11695,6 +11695,8 @@ components:
       properties:
         provider: { type: string, description: "`password`, `google`, `microsoft`, `apple` or the name of a configured provider." }
         org: { type: string, description: "Present when the identity came through an organization's connection: the organization's id. A user holds one identity per provider per organization." }
+        issuer: { type: string, description: "Present for an external provider's identity: the issuer that vouched for the person (an identity is bound to it, so a changed issuer never matches someone else's account)." }
+        dormant: { type: boolean, description: "Present with `issuer`: true when the provider's issuer is not that one any more (the operator or a manager changed it), so the identity signs nobody in. Linking the provider again replaces it." }
         email: { type: string, description: "The address the provider reported at the last sign-in; for `password`, the user's own." }
         email_verified: { type: boolean }
         created_at: { $ref: "#/components/schemas/Timestamp" }

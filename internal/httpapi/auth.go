@@ -391,7 +391,7 @@ func (a *authAPI) me(w http.ResponseWriter, r *http.Request) {
 		authError(w, r, err)
 		return
 	}
-	out["identities"] = identitiesJSON(u, ids)
+	out["identities"] = identitiesJSON(r.Context(), usersOf(r), u, ids)
 	methods, err := usersOf(r).ReauthMethodsOf(r.Context(), u)
 	if err != nil {
 		authError(w, r, err)

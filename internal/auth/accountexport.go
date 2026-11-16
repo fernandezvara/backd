@@ -72,6 +72,9 @@ func (s *Users) AccountExport(ctx context.Context, userID string) ([]AccountPart
 		}
 		if i.Provider != ProviderPassword {
 			row["provider_subject"], row["provider_email"], row["provider_email_verified"] = i.Subject, i.Email, i.EmailVerified
+			if i.Issuer != "" {
+				row["provider_issuer"] = i.Issuer
+			}
 		} else {
 			row["password_changed_at"] = stamp(i.PasswordChangedAt)
 		}

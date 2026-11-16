@@ -92,10 +92,10 @@ func TestAuthStoreOrganizationIdentitiesAndSlugs(t *testing.T) {
 	if id, err := s.Identity(ctx, "google", "sub"); err != nil || id.ID != "i1" || id.Org != "" {
 		t.Errorf("realm identity = %+v, %v", id, err)
 	}
-	if id, err := s.IdentityIn(ctx, "google", "o1", "sub"); err != nil || id.ID != "i2" || id.Org != "o1" {
+	if id, err := s.IdentityIn(ctx, "google", "o1", "", "sub"); err != nil || id.ID != "i2" || id.Org != "o1" {
 		t.Errorf("organization identity = %+v, %v", id, err)
 	}
-	if _, err := s.IdentityIn(ctx, "google", "o2", "sub"); !errors.Is(err, auth.ErrNotFound) {
+	if _, err := s.IdentityIn(ctx, "google", "o2", "", "sub"); !errors.Is(err, auth.ErrNotFound) {
 		t.Errorf("another organization: %v", err)
 	}
 	if id, err := s.IdentityOf(ctx, "u1", "google"); err != nil || id.ID != "i1" {
@@ -290,7 +290,7 @@ func TestErasingAUserRemovesTheirOrganizationIdentities(t *testing.T) {
 		t.Errorf("identities after erasure: %+v", ids)
 	}
 	for _, org := range []string{"", "o1", "o2"} {
-		if _, err := s.IdentityIn(ctx, "google", org, "sub-"+org); err == nil {
+		if _, err := s.IdentityIn(ctx, "google", org, "", "sub-"+org); err == nil {
 			t.Errorf("the identity of %q can still sign in", org)
 		}
 	}

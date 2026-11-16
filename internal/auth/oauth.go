@@ -217,7 +217,10 @@ type ProviderLogin struct {
 	Provider string
 	// Org is the organization whose connection vouched for the person; their identity is
 	// (Provider, Org, Subject). Such a login never links by address: TrustsEmail is false.
-	Org           string
+	Org string
+	// Issuer is the issuer that vouched for Subject: with the provider and the organization, the
+	// key of the identity.
+	Issuer        string
 	Subject       string // the provider's stable id for the person
 	Email         string
 	EmailVerified bool // as the provider asserts it
@@ -284,7 +287,7 @@ func (s *Users) recordIdentityUse(ctx context.Context, id Identity, in ProviderL
 func (s *Users) addIdentity(ctx context.Context, u User, in ProviderLogin, email string) error {
 	now := s.now()
 	err := s.Store.PutIdentity(ctx, Identity{
-		ID: xid.New().String(), UserID: u.ID, Provider: in.Provider, Org: in.Org, Subject: in.Subject,
+		ID: xid.New().String(), UserID: u.ID, Provider: in.Provider, Org: in.Org, Issuer: in.Issuer, Subject: in.Subject,
 		Email: email, EmailVerified: in.EmailVerified && email != "", LastUsedAt: now, CreatedAt: now, UpdatedAt: now,
 	})
 	if errors.Is(err, ErrIdentityExists) {

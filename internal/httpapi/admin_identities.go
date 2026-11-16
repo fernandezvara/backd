@@ -18,7 +18,7 @@ func (a *adminAPI) userIdentities(w http.ResponseWriter, r *http.Request) {
 		adminError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": identitiesJSON(u, ids)})
+	writeJSON(w, http.StatusOK, map[string]any{"items": identitiesJSON(r.Context(), usersOf(r), u, ids)})
 }
 
 // unlinkUserIdentity answers DELETE /users/{id}/identities/{provider}: an administrator
