@@ -1,6 +1,6 @@
 ---
 title: "Sign in with Google, Microsoft, Apple, GitHub or any OpenID Connect provider"
-description: "Let users sign in with an external identity provider (Google, Microsoft, Apple or any OpenID Connect server): configuration, the redirect flow, linking rules, errors and security."
+description: "Let users sign in with an external identity provider (Google, Microsoft, Apple, GitHub, any OpenID Connect server or a plain OAuth 2 service): configuration, the redirect flow, linking rules, errors and security."
 icon: "sign-in"
 weight: 540
 toc: true

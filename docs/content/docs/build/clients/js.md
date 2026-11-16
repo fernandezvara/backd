@@ -220,9 +220,9 @@ try {
 - `signInWith(provider, { invitation, locale })` passes an invitation for realms with `signup: invite`.
 - **Which buttons to show:** `await backd.auth.providers()` lists the providers the realm has configured *and* that work now (`['google', 'microsoft']`), the check a sign-in start makes. Nothing but names comes back.
 
-#### Through an organization's own Google or Microsoft
+#### Through an organization's own provider
 
-A company can sign its people in with its own Google Workspace or Microsoft tenant (see [Sign-in connections](../../organizations/api/#sign-in-connections)). The same calls take `org`, the organization's id or slug:
+A company can sign its people in with its own Google Workspace, Microsoft tenant or OpenID Connect server (see [Sign-in connections](../../organizations/api/#sign-in-connections)). The same calls take `org`, the organization's id or slug:
 
 ```js
 const names = await backd.auth.providers({ org: 'acme-corp' })     // ['google'], the connections usable now ([] for an unknown organization too)
@@ -241,6 +241,7 @@ const sso = backd.orgs.sso(org.id)
 const { items, providers, max_connections } = await sso.list()
 await backd.auth.withProof(() => sso.set('google', { clientId, clientSecret, hostedDomain: 'acme.example', joinRoles: ['member'] }))
 // items[n].redirect_uri is the address to register with the provider; the secret is never returned (client_secret_set says it is stored)
+await backd.auth.withProof(() => sso.set('oidc', { clientId, clientSecret, issuer: 'https://login.acme.example', joinRoles: ['member'] }))   // needs a verified domain
 await backd.auth.withProof(() => sso.delete('google'))
 ```
 

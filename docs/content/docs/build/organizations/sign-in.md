@@ -128,7 +128,7 @@ Addresses that come through a connection are stored **unverified**, so your own 
 | Joining, blocking and what a session remembers | [Joining](../api/#joining) |
 | Requiring the connection, and `403 sso_session` | [Requiring the connection](../api/#requiring-the-connection) |
 | Realm admin: `/_admin/orgs/{org}/sso`, `backd orgs sso\|sso-set\|sso-delete` | [Admin API](../../../operate/administration/admin/), [CLI](../../../operate/administration/cli/) |
-| Client: `auth.providers`, `signInWith({ org })`, `orgs.sso(id)`, `NotAllowedError` | [JavaScript client](../../clients/js/#through-an-organizations-own-google-or-microsoft) |
+| Client: `auth.providers`, `signInWith({ org })`, `orgs.sso(id)`, `NotAllowedError` | [JavaScript client](../../clients/js/#through-an-organizations-own-provider) |
 | Audit: `org.sso.set`, `org.sso.deleted`, `org.sso.disabled`, `org.sso.login`, `secret.set` with an `org` | [Audit trail](../../../operate/administration/audit/) |
 
 The errors a sign-in can end with: `not_allowed` (the person is not of the company), `account_exists` (link instead), `link_conflict`, `provider_error` (including a connection backd just disabled), `cancelled`, and `404 not_found` for anything unavailable. For the API: `409 sso_limit` (more connections than the realm allows), `409 org_not_active`, `403 forbidden` (the manager's roles don't allow it), `401 reauth_required` (a change needs a fresh proof) and `503` when the instance has no `BACKD_SECRETS_KEY`.
