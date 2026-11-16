@@ -371,12 +371,14 @@ func registerRemote(cfg *kli.Config) {
 		cmdutil.Required(cc, "id", "the organization's id")
 	})
 	og.SubCommand("sso-set").ShortHelp("create or replace an organization's sign-in connection").
-		LongHelp("Connects the organization to its own Google Workspace (--provider google --hosted-domain acme.example) or\nMicrosoft Entra tenant (--provider microsoft --tenant <tenant id>). The client secret is read from the terminal\nwithout echo, or the first line of standard input; --keep-secret leaves the stored one. It is stored as an\norganization secret nobody can read back. --join-roles are given to people who join through it. " + clicore.AdminAPINote).
+		LongHelp("Connects the organization to its own Google Workspace (--provider google --hosted-domain acme.example),\nMicrosoft Entra tenant (--provider microsoft --tenant <tenant id>) or OpenID Connect server (--provider oidc --issuer\nhttps://acme.okta.com: the issuer must match organizations.sso.oidc.issuers and the organization needs a verified domain). The client secret is read from the terminal\nwithout echo, or the first line of standard input; --keep-secret leaves the stored one. It is stored as an\norganization secret nobody can read back. --join-roles are given to people who join through it. " + clicore.AdminAPINote).
 		Func(cmdutil.Act("backd orgs sso-set", admin.OrgsSSOSet)).Config(func(cc *kli.CommandConfig) {
 		clicore.Remote(cc)
 		cmdutil.Required(cc, "id", "the organization's id")
-		cc.Define("provider").String().Flag("provider").Required().OneOf("google", "microsoft").Description("google or microsoft")
+		cc.Define("provider").String().Flag("provider").Required().OneOf("google", "microsoft", "oidc").Description("google, microsoft or oidc")
 		cmdutil.Required(cc, "client-id", "the organization's application (client) id with the provider")
+		cmdutil.Optional(cc, "issuer", "OpenID Connect: the server's issuer URL (must match the realm's organizations.sso.oidc.issuers)")
+		cmdutil.Optional(cc, "domains", "OpenID Connect: comma-separated verified domains whose addresses it admits (default: all of the organization's)")
 		cmdutil.Optional(cc, "tenant", "Microsoft: the tenant id (a GUID); common, organizations and consumers are refused")
 		cmdutil.Optional(cc, "hosted-domain", "Google: the Workspace domain whose people may sign in")
 		cmdutil.Optional(cc, "email-domains", "comma-separated: also require the verified email to be in one of these domains")
@@ -389,7 +391,7 @@ func registerRemote(cfg *kli.Config) {
 		Func(cmdutil.Act("backd orgs sso-delete", admin.OrgsSSODelete)).Config(func(cc *kli.CommandConfig) {
 		clicore.Remote(cc)
 		cmdutil.Required(cc, "id", "the organization's id")
-		cc.Define("provider").String().Flag("provider").Required().OneOf("google", "microsoft").Description("google or microsoft")
+		cc.Define("provider").String().Flag("provider").Required().OneOf("google", "microsoft", "oidc").Description("google, microsoft or oidc")
 	})
 
 	og.SubCommand("domains").ShortHelp("show the domains an organization claimed and their state").

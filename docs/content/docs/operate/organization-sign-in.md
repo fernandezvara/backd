@@ -16,13 +16,32 @@ It is off unless `realm.yaml` turns it on, and a realm that doesn't answers `404
 organizations:
   sso:
     enabled: true                    # default once the section is there
-    providers: [google, microsoft]   # the ones organizations may connect (default: both)
+    providers: [google, microsoft]   # the ones organizations may connect (default: google and microsoft)
     max_per_org: 2                   # connections one organization may have (default and most: the number of providers)
   roles:
     owner: { manage: [org, members, roles, teams, sso] }
 ```
 
-- `organizations` and authentication must be on; Apple and generic OpenID Connect are **planned**, not available to organizations yet.
+To let companies bring **their own OpenID Connect server** (Okta, Keycloak, Entra ID, Auth0…) add `oidc` and say which servers are acceptable. It needs [verified domains](../../build/organizations/verified-domains/), because a company's own server can say anything about an address and only a domain the company proved ties the address to it:
+
+```yaml
+organizations:
+  domains: { enabled: true }
+  sso:
+    providers: [google, microsoft, oidc]
+    oidc:
+      issuers:                       # none: organizations cannot use OpenID Connect
+        - https://*.okta.com         # one label: https://acme.okta.com, not https://a.b.okta.com
+        - https://login.partner.example
+  roles:
+    owner: { manage: [org, members, roles, teams, sso, domains] }
+```
+
+- **An issuer must match a pattern**: an `https` origin, with `*.` for the first label at most, no path, no port other than 443, never a public suffix (`https://*.com` is refused at startup). The check is made again every time the connection is used, so removing a pattern stops its connections at once.
+- **backd calls the issuer** (to read its discovery document and keys), so the list is the realm's decision: only the issuer's host and the endpoints it names on the same registered domain are reached, https only, and never a private, loopback, link-local or metadata address (`allow_private_network` is for the providers you write in `realm.yaml`, never for a company's).
+- Under `BACKD_DEV=true` a server on this machine (`localhost`, any port, http) is accepted too, to try a local Keycloak.
+
+- `organizations` and authentication must be on; Apple is **not available** to organizations (it gives no proof of which company a person belongs to), and nor are GitHub and plain OAuth 2.
 - At least one role needs `manage: sso`, or no member could set a connection up (realm administrators still can, with `backd orgs sso-set` or the admin API). Startup refuses the section otherwise.
 - Turning the feature off or removing a provider makes its connections unavailable at once; the stored connections stay.
 

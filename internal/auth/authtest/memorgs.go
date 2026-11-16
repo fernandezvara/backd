@@ -739,3 +739,15 @@ func (m *MemStore) UnblockOrgMember(_ context.Context, org, user string) error {
 	}
 	return nil
 }
+
+func (m *MemStore) CountDormantIdentities(_ context.Context, org, provider, issuer string) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := 0
+	for _, i := range m.identities {
+		if i.Org == org && i.Provider == provider && i.Issuer != issuer {
+			n++
+		}
+	}
+	return n, nil
+}

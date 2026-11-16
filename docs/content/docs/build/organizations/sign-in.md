@@ -64,6 +64,15 @@ await backd.auth.withProof(() =>
 
 Without a client secret stored the connection is *unavailable*: the admin UI says so.
 
+### With your own OpenID Connect server
+
+A company that runs Okta, Keycloak, Entra ID or Auth0 connects it with `provider: oidc` (if the realm allows it): its **issuer**, a client id and the secret. Register backd's redirect address in that server's application, as in step 2, and make sure the organization has [proved a domain](../verified-domains/) first: that domain is what says whose addresses the server may vouch for. A person signs in when the server says their address is verified and the address is on a proved domain; everyone else is refused with `not_allowed`.
+
+```
+PUT /v1/{realm}/_orgs/{org}/sso/oidc
+{ "issuer": "https://acme.okta.com", "client_id": "…", "client_secret": "…", "join_roles": ["member"] }
+```
+
 ## 4. Offer the button
 
 Ask which providers to show for an organization instead of hard-coding them. The list holds only connections that work right now, and it is empty for an unknown organization, so it does not say who your customers are:

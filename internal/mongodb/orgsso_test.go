@@ -346,3 +346,36 @@ func TestOrganizationsKeepSecretsOfTheSameName(t *testing.T) {
 		t.Errorf("the realm's secret went: %v", err)
 	}
 }
+
+func TestAuthStoreKeepsAnOIDCConnectionAndCountsDormantIdentities(t *testing.T) {
+	s, _ := authFixture(t)
+	ctx := context.Background()
+	now := time.Date(2126, 11, 16, 9, 0, 0, 0, time.UTC)
+	c := auth.OrgConnection{
+		ID: "o1:oidc", Org: "o1", Provider: "oidc", ClientID: "backd", Issuer: "https://acme.okta.com", Domains: []string{"acme.example"},
+		Enabled: true, CreatedAt: now, UpdatedAt: now, JoinRoles: []string{"member"},
+	}
+	if err := s.PutOrgConnection(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.OrgConnection(ctx, "o1", "oidc")
+	if err != nil || got.Issuer != "https://acme.okta.com" || len(got.Domains) != 1 || got.Domains[0] != "acme.example" {
+		t.Fatalf("connection = %+v, %v", got, err)
+	}
+	// Identities of the connection under two issuers: the ones of the old issuer are the dormant ones.
+	for i, issuer := range []string{"https://acme.okta.com", "https://old.example.com", "https://old.example.com"} {
+		id := auth.Identity{ID: string(rune('a' + i)), UserID: "u" + string(rune('1'+i)), Provider: "oidc", Org: "o1", Issuer: issuer, Subject: "s" + string(rune('1'+i)), CreatedAt: now, UpdatedAt: now}
+		if err := s.PutIdentity(ctx, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n, err := s.CountDormantIdentities(ctx, "o1", "oidc", "https://acme.okta.com"); err != nil || n != 2 {
+		t.Errorf("dormant = %d, %v", n, err)
+	}
+	if n, _ := s.CountDormantIdentities(ctx, "o1", "oidc", "https://old.example.com"); n != 1 {
+		t.Errorf("dormant for the other issuer = %d", n)
+	}
+	if n, _ := s.CountDormantIdentities(ctx, "o2", "oidc", "https://acme.okta.com"); n != 0 {
+		t.Errorf("another organization's = %d", n)
+	}
+}

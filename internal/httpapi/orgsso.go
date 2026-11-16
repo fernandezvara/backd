@@ -47,6 +47,13 @@ func connectionJSON(reg *registry.Registry, baseURL, realm string, v auth.Connec
 	if v.HostedDomain != "" {
 		out["hosted_domain"] = v.HostedDomain
 	}
+	if v.Issuer != "" {
+		out["issuer"] = v.Issuer
+		out["domains"] = nonNil(v.Domains)
+	}
+	if v.DormantIdentities > 0 {
+		out["dormant_identities"] = v.DormantIdentities
+	}
 	return out
 }
 
@@ -70,7 +77,7 @@ func connectionBody(w http.ResponseWriter, r *http.Request) (auth.ConnectionInpu
 		return auth.ConnectionInput{}, false
 	}
 	f, ok := fields(w, r, obj, map[string]string{
-		"client_id": "string", "client_secret": "string?", "tenant": "string?", "hosted_domain": "string?",
+		"client_id": "string", "client_secret": "string?", "tenant": "string?", "hosted_domain": "string?", "issuer": "string?", "domains": "strings?",
 		"email_domains": "strings?", "native_client_ids": "strings?", "join_roles": "strings?", "enabled": "bool?",
 	})
 	if !ok {
@@ -81,6 +88,8 @@ func connectionBody(w http.ResponseWriter, r *http.Request) (auth.ConnectionInpu
 	in.ClientSecret, _ = f["client_secret"].(string)
 	in.Tenant, _ = f["tenant"].(string)
 	in.HostedDomain, _ = f["hosted_domain"].(string)
+	in.Issuer, _ = f["issuer"].(string)
+	in.Domains, _ = f["domains"].([]string)
 	in.EmailDomains, _ = f["email_domains"].([]string)
 	in.NativeClientIDs, _ = f["native_client_ids"].([]string)
 	in.JoinRoles, _ = f["join_roles"].([]string)

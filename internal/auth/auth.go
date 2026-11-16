@@ -476,6 +476,9 @@ type Store interface {
 	OrgConnection(ctx context.Context, org, provider string) (OrgConnection, error)
 	// OrgConnections lists an organization's connections, sorted by provider.
 	OrgConnections(ctx context.Context, org string) ([]OrgConnection, error)
+	// CountDormantIdentities counts the identities of a connection (provider and organization) that an
+	// issuer other than the one given vouched for.
+	CountDormantIdentities(ctx context.Context, org, provider, issuer string) (int, error)
 	DeleteOrgConnection(ctx context.Context, org, provider string) error
 	// BlockOrgMember adds the user to Blocked in every connection of the organization (keeping the
 	// most recent MaxConnectionBlocked), and UnblockOrgMember takes them out of all of them.

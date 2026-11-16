@@ -589,7 +589,7 @@ func (a *App) RealmUsers() func(string) *auth.Users {
 	services := map[string]*auth.Users{}
 	for name, rl := range a.reg.Realms {
 		if rl.Settings.AuthEnabled {
-			services[name] = &auth.Users{Store: mongodb.NewAuthStore(a.client, name), Hasher: hasher, Settings: rl.Settings, Realm: name, Log: a.log, Cipher: cipher, Cache: cache, Metrics: a.metrics, KeyUses: rl.EncryptionKeyUses}
+			services[name] = &auth.Users{Store: mongodb.NewAuthStore(a.client, name), Hasher: hasher, Settings: rl.Settings, Realm: name, Log: a.log, Cipher: cipher, Cache: cache, Metrics: a.metrics, KeyUses: rl.EncryptionKeyUses, Dev: a.cfg.Dev}
 		}
 	}
 	a.userServices = func(realm string) *auth.Users { return services[realm] }

@@ -178,7 +178,7 @@ A company can sign its people in with **its own** Google Workspace or Microsoft 
 | `PUT /_orgs/{org}/sso/{provider}` | `manage: sso`, fresh proof | `200` with the connection; creates it or replaces every field |
 | `DELETE /_orgs/{org}/sso/{provider}` | `manage: sso`, fresh proof | `204`; the client secret goes with it |
 
-`{provider}` is `google` or `microsoft`. A `PUT` takes:
+`{provider}` is `google`, `microsoft` or `oidc` (the last only if the realm [allows it](../../../operate/organization-sign-in/)). A `PUT` takes:
 
 ```json
 {
@@ -191,6 +191,7 @@ A company can sign its people in with **its own** Google Workspace or Microsoft 
 }
 ```
 
+- **An OpenID Connect connection** (`oidc`) takes `issuer` (its URL, which must match one of the realm's `organizations.sso.oidc.issuers`) and optionally `domains` (verified domains of the organization whose addresses it admits; all of them when empty), instead of `hosted_domain` or `tenant`. It can only be set when the organization has a [verified domain](../verified-domains/): a person is admitted when their address is present, verified by the server, and on one of those domains. A lapsed domain stops admitting at once. Changing `issuer` is checked again as a new connection, and the answer says in `dormant_identities` how many identities belong to the old issuer: they match no sign-in, and their people link the connection again.
 - **Who may come in** is cryptographic, not a claim: a Google connection names the Workspace `hosted_domain` (a personal Google account has none and is refused), a Microsoft one the company's `tenant` id (a GUID; `common`, `organizations` and `consumers` admit anyone and are refused). `email_domains` narrows it further and `native_client_ids` lists the extra client ids a mobile app uses.
 - **The client secret is write-only.** Send it when you create the connection (it is required then) or change it; leave it out to keep the stored one. It is kept as an [organization secret](../../functions/secrets/): sealed like every secret, readable by nobody, not by the managers and not by functions. The answers say only `client_secret_set`. A connection without its secret is unavailable.
 - **`join_roles`** are the organization roles a person receives on joining through the connection. They follow the same rule as [granting roles](#members): a manager can't give what they don't hold. With `manage: roles` any role can be named; with `manage: members` (and `manage: sso`) only roles that open no capability the manager lacks; with only `manage: sso`, none (`403 forbidden`), because the roles go to every person of the company. Leave `join_roles` empty and the default roles are all they get.

@@ -2639,7 +2639,7 @@ paths:
                       properties:
                         org: { type: string, description: "The organization's id." }
                         name: { type: string }
-                        providers: { type: array, items: { type: string, enum: [google, microsoft] } }
+                        providers: { type: array, items: { type: string, enum: [google, microsoft, oidc] } }
         "400": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
@@ -11058,7 +11058,7 @@ components:
       in: path
       required: true
       description: A provider organizations may connect (`organizations.sso.providers`).
-      schema: { type: string, enum: [google, microsoft] }
+      schema: { type: string, enum: [google, microsoft, oidc] }
     orgQuery:
       name: org
       in: query
@@ -12117,14 +12117,18 @@ components:
     OrganizationConnection:
       description: |
         An organization's sign-in provider. Signing in through it uses the same redirect flow as the
-        realm's providers; who may come in is limited by `hosted_domain` or `tenant`. The client
+        realm's providers; who may come in is limited by `hosted_domain` or `tenant`, or, for OpenID Connect, by
+        an address on a verified domain of the organization. The client
         secret is never returned.
       type: object
       additionalProperties: false
       required: [provider, client_id, enabled, client_secret_set, email_domains, native_client_ids, join_roles, redirect_path, created_at, updated_at]
       properties:
-        provider: { type: string, enum: [google, microsoft] }
+        provider: { type: string, enum: [google, microsoft, oidc] }
         client_id: { type: string, description: "The organization's application with the provider." }
+        issuer: { type: string, description: "OpenID Connect: the server's issuer URL, which matches one of the realm's `organizations.sso.oidc.issuers`." }
+        domains: { type: array, items: { type: string }, description: "OpenID Connect: the verified domains whose addresses the connection admits (all of the organization's when empty)." }
+        dormant_identities: { type: integer, description: "After a change of `issuer`: how many identities of the connection belong to another issuer now and match no sign-in until their people link again." }
         tenant: { type: string, description: "Microsoft: the organization's tenant id." }
         hosted_domain: { type: string, description: "Google: the Workspace domain." }
         email_domains: { type: array, items: { type: string }, description: "When set, the verified email's domain must also be one of these." }
@@ -12200,6 +12204,8 @@ components:
         client_secret: { type: string, maxLength: 1024, description: "Write-only. Required the first time; left out, the stored secret is kept." }
         tenant: { type: string, description: "Microsoft: required, a tenant id (GUID). `common`, `organizations` and `consumers` are refused." }
         hosted_domain: { type: string, description: "Google: required, the Workspace domain (lower case)." }
+        issuer: { type: string, description: "OpenID Connect: required, the server's issuer URL (https). It has to match one of the realm's `organizations.sso.oidc.issuers`, and a change of it is checked again as a new connection." }
+        domains: { type: array, maxItems: 20, items: { type: string }, description: "OpenID Connect: verified domains of the organization whose addresses the connection admits; empty admits all of them. The organization needs at least one verified domain." }
         email_domains: { type: array, maxItems: 20, items: { type: string } }
         native_client_ids: { type: array, maxItems: 10, items: { type: string } }
         join_roles: { type: array, items: { type: string } }

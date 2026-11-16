@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/sso/oidc"
 )
 
 // Import outcomes of one portable document.
@@ -89,6 +90,9 @@ func (a *AuthAnonymize) apply(collection string, d map[string]any, now time.Time
 		// production: their client ids are blanked, so none of them can sign anyone in.
 		d["client_id"] = ""
 		d["native_client_ids"] = []any{}
+		if _, has := d["issuer"]; has {
+			d["issuer"] = "" // a copy for staging reaches no real server
+		}
 	case "identities":
 		if d["provider"] != ProviderPassword {
 			return false
@@ -275,6 +279,20 @@ func importedConnectionProblem(d map[string]any) string {
 		}
 		if str("hosted_domain") != "" {
 			return "hosted_domain applies to Google only"
+		}
+	case registry.ProviderTypeOIDC:
+		if iss := str("issuer"); iss != "" {
+			if msg := oidc.IssuerProblem(iss, false); msg != "" {
+				return "issuer " + msg
+			}
+		}
+		if str("hosted_domain") != "" || str("tenant") != "" || len(list("email_domains")) > 0 {
+			return "an OpenID Connect connection has an issuer and domains only"
+		}
+		for _, dom := range list("domains") {
+			if msg := registry.DomainProblem(dom); msg != "" {
+				return "domains " + msg
+			}
 		}
 	case registry.ProviderGoogle:
 		if msg := registry.DomainProblem(str("hosted_domain")); msg != "" {

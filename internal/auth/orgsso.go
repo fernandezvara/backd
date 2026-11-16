@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/fernandezvara/backd/internal/registry"
+	"github.com/fernandezvara/backd/sso/oidc"
 )
 
 // Organization sign-in connections (design/sso.md §9.3): a provider configured for one
@@ -51,8 +52,13 @@ const (
 type OrgConnection struct {
 	ID       string // org:provider, which is also what makes the pair unique
 	Org      string
-	Provider string // google or microsoft
+	Provider string // google, microsoft or oidc
 	ClientID string
+	// Issuer is an OpenID Connect connection's: the server's URL, which has to match one of the realm's
+	// organizations.sso.oidc.issuers. Domains are the verified domains of the organization whose addresses
+	// it admits (empty: all of them).
+	Issuer  string
+	Domains []string
 	// Tenant is Microsoft's tenant id (a GUID); HostedDomain is Google's Workspace domain.
 	// The one that applies is required: they are what limits who may sign in.
 	Tenant       string
@@ -81,6 +87,8 @@ func SSOSecretName(provider string) string {
 // ConnectionInput is what a manager sends for a connection; PUT replaces every field.
 type ConnectionInput struct {
 	ClientID        string
+	Issuer          string
+	Domains         []string
 	Tenant          string
 	HostedDomain    string
 	EmailDomains    []string
@@ -97,6 +105,9 @@ type ConnectionView struct {
 	OrgConnection
 	// SecretSet says whether the client secret is stored; the value is never returned.
 	SecretSet bool
+	// DormantIdentities is, after a change of issuer, how many identities of the connection belong to
+	// another issuer now and match no sign-in until their people link again.
+	DormantIdentities int
 }
 
 // ssoSettings returns the realm's organization sign-in section, ErrSSODisabled when absent.
@@ -258,7 +269,7 @@ func (s *Users) setConnection(ctx context.Context, org Org, callerCaps registry.
 		return ConnectionView{}, err
 	}
 	c := OrgConnection{
-		ID: org.ID + ":" + provider, Org: org.ID, Provider: provider, ClientID: in.ClientID,
+		ID: org.ID + ":" + provider, Org: org.ID, Provider: provider, ClientID: in.ClientID, Issuer: in.Issuer, Domains: uniqueStrings(in.Domains),
 		Tenant: in.Tenant, HostedDomain: in.HostedDomain,
 		EmailDomains: in.EmailDomains, NativeClientIDs: in.NativeClientIDs, JoinRoles: uniqueStrings(in.JoinRoles),
 		Enabled: true, CreatedBy: by, UpdatedBy: by,
@@ -274,6 +285,11 @@ func (s *Users) setConnection(ctx context.Context, org Org, callerCaps registry.
 	}
 	if err := s.checkEmailDomainsProved(ctx, org.ID, c.EmailDomains, have.EmailDomains); err != nil {
 		return ConnectionView{}, err
+	}
+	if provider == registry.ProviderTypeOIDC {
+		if err := s.checkOIDCConnection(ctx, c); err != nil {
+			return ConnectionView{}, err
+		}
 	}
 	secretSet := false
 	if _, err := s.Store.SecretByScope(ctx, OrgScope(org.ID), SSOSecretName(provider)); err == nil {
@@ -312,7 +328,48 @@ func (s *Users) setConnection(ctx context.Context, org Org, callerCaps registry.
 	if !c.Enabled {
 		s.releaseSSORequired(ctx, org.ID, "the connection was disabled")
 	}
-	return ConnectionView{OrgConnection: c, SecretSet: secretSet}, nil
+	view := ConnectionView{OrgConnection: c, SecretSet: secretSet}
+	if exists && c.Provider == registry.ProviderTypeOIDC && have.Issuer != c.Issuer {
+		view.DormantIdentities, _ = s.Store.CountDormantIdentities(ctx, org.ID, c.Provider, c.Issuer)
+	}
+	return view, nil
+}
+
+// checkOIDCConnection applies what an OpenID Connect connection needs besides the field rules: an issuer the
+// realm allows (and a change of it is a new connection, so this runs on every set), and at least one verified
+// domain of the organization, which is what admits its people.
+func (s *Users) checkOIDCConnection(ctx context.Context, c OrgConnection) error {
+	if !s.AllowsIssuer(c.Issuer) {
+		return &OrgInvalidError{"issuer", fmt.Sprintf("%q is not an issuer this realm lets organizations connect (organizations.sso.oidc.issuers)", c.Issuer)}
+	}
+	proved, err := s.provedDomains(ctx, c.Org, nil)
+	if err != nil {
+		return err
+	}
+	if len(proved) == 0 {
+		return &OrgInvalidError{"domains", "the organization has no verified domain: an OpenID Connect connection admits people by an address on a domain the organization proved"}
+	}
+	for i, d := range c.Domains {
+		if !slices.Contains(proved, d) {
+			return &OrgInvalidError{fmt.Sprintf("domains[%d]", i), fmt.Sprintf("%q isn't a verified domain of the organization", d)}
+		}
+	}
+	return nil
+}
+
+// provedDomains are the verified domains of an organization, narrowed to the ones named when some are.
+func (s *Users) provedDomains(ctx context.Context, orgID string, named []string) ([]string, error) {
+	list, err := s.Store.OrgDomains(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, d := range list {
+		if d.State == DomainVerified && (len(named) == 0 || slices.Contains(named, d.Domain)) {
+			out = append(out, d.Domain)
+		}
+	}
+	return out, nil
 }
 
 // checkEmailDomainsProved holds the email_domains of a connection to the domains its organization has
@@ -347,7 +404,20 @@ func (s *Users) checkConnection(c *OrgConnection, callerCaps registry.OrgCaps) e
 		return bad("client_id", msg)
 	}
 	switch c.Provider {
+	case registry.ProviderTypeOIDC:
+		if c.Tenant != "" || c.HostedDomain != "" || len(c.EmailDomains) > 0 {
+			return bad("issuer", "an OpenID Connect connection is limited by its domains, not by tenant, hosted_domain or email_domains")
+		}
+		if msg := oidc.IssuerProblem(c.Issuer, s.Dev); msg != "" {
+			return bad("issuer", msg)
+		}
+		if len(c.Domains) > MaxConnectionEmailDomains {
+			return bad("domains", fmt.Sprintf("at most %d", MaxConnectionEmailDomains))
+		}
 	case registry.ProviderMicrosoft:
+		if c.Issuer != "" || len(c.Domains) > 0 {
+			return bad("issuer", "applies to OpenID Connect only")
+		}
 		if c.HostedDomain != "" {
 			return bad("hosted_domain", "applies to Google only")
 		}
@@ -355,6 +425,9 @@ func (s *Users) checkConnection(c *OrgConnection, callerCaps registry.OrgCaps) e
 			return bad("tenant", msg)
 		}
 	case registry.ProviderGoogle:
+		if c.Issuer != "" || len(c.Domains) > 0 {
+			return bad("issuer", "applies to OpenID Connect only")
+		}
 		if c.Tenant != "" {
 			return bad("tenant", "applies to Microsoft only")
 		}
@@ -606,4 +679,9 @@ func (s *Users) RemoveOrgConnections(ctx context.Context, orgID string) (int, er
 		}
 	}
 	return len(list), nil
+}
+
+// AllowsIssuer says whether an organization may connect an OpenID Connect server with this issuer.
+func (s *Users) AllowsIssuer(issuer string) bool {
+	return s.Settings.Organizations != nil && s.Settings.Organizations.SSO.AllowsIssuer(issuer, s.Dev)
 }
