@@ -195,7 +195,7 @@ try {
 
 The rules behind each flow are in [Sign-up, login and sessions](../../auth/sessions/).
 
-### Sign in with Google, Microsoft or Apple
+### Sign in with a provider
 
 In a realm that lists [providers](../../auth/providers/), signing in is one call on the page with the buttons. backd sends the user back to a page of your app (the current one by default, so no return route is needed), and the client finishes the sign-in when it is created there.
 
@@ -220,9 +220,9 @@ try {
 - `signInWith(provider, { invitation, locale })` passes an invitation for realms with `signup: invite`.
 - **Which buttons to show:** `await backd.auth.providers()` lists the providers the realm has configured *and* that work now (`['google', 'microsoft']`), the check a sign-in start makes. Nothing but names comes back.
 
-#### Through an organization's own Google or Microsoft
+#### Through an organization's own provider
 
-A company can sign its people in with its own Google Workspace or Microsoft tenant (see [Sign-in connections](../../organizations/api/#sign-in-connections)). The same calls take `org`, the organization's id or slug:
+A company can sign its people in with its own Google Workspace, Microsoft tenant or OpenID Connect server (see [Sign-in connections](../../organizations/api/#sign-in-connections)). The same calls take `org`, the organization's id or slug:
 
 ```js
 const names = await backd.auth.providers({ org: 'acme-corp' })     // ['google'], the connections usable now ([] for an unknown organization too)
@@ -241,6 +241,7 @@ const sso = backd.orgs.sso(org.id)
 const { items, providers, max_connections } = await sso.list()
 await backd.auth.withProof(() => sso.set('google', { clientId, clientSecret, hostedDomain: 'acme.example', joinRoles: ['member'] }))
 // items[n].redirect_uri is the address to register with the provider; the secret is never returned (client_secret_set says it is stored)
+await backd.auth.withProof(() => sso.set('oidc', { clientId, clientSecret, issuer: 'https://login.acme.example', joinRoles: ['member'] }))   // needs a verified domain
 await backd.auth.withProof(() => sso.delete('google'))
 ```
 
@@ -837,7 +838,7 @@ const offer = await backd.auth.previewInvitation(token, { org: 'acme' })   // { 
 await backd.org('acme').auth.login({ email, password, invitation: token })
 ```
 
-The rest of the surface, by object: `orgs` has `create`, `signedIn`, `get`, `update` (`name`, `slug`, `require_mfa` and `session_max_age`), `leave` (allowed without a second factor; the last manager cannot) and `delete`; `members(id)` has `list`, `update` and `remove`; `teams(id)` has `list`, `create`, `update`, `delete`, `members`, `addMember`, `removeMember`, `grantRole`, `setRoleWindow` and `revokeRole`; `invitations(id)` has `create`, `list`, `revoke`, `send` and `newLink`; `templates(id)` has `list`, `get`, `put`, `delete`, `preview` and `test`; `sso(id)` has `list`, `get`, `set` and `delete` (the organization's [sign-in connections](#through-an-organizations-own-google-or-microsoft)). Each maps to a route of the [organizations API](../../organizations/api/).
+The rest of the surface, by object: `orgs` has `create`, `signedIn`, `get`, `update` (`name`, `slug`, `require_mfa` and `session_max_age`), `leave` (allowed without a second factor; the last manager cannot) and `delete`; `members(id)` has `list`, `update` and `remove`; `teams(id)` has `list`, `create`, `update`, `delete`, `members`, `addMember`, `removeMember`, `grantRole`, `setRoleWindow` and `revokeRole`; `invitations(id)` has `create`, `list`, `revoke`, `send` and `newLink`; `templates(id)` has `list`, `get`, `put`, `delete`, `preview` and `test`; `sso(id)` has `list`, `get`, `set` and `delete` (the organization's [sign-in connections](#through-an-organizations-own-provider)). Each maps to a route of the [organizations API](../../organizations/api/).
 
 **Documents belong to an organization** when their collection says so: the one the session was opened for. There is nothing to name: creates go there and lists show only that organization's documents (the read rule still decides what is seen). To work in another organization use its client, `backd.org('beta')`.
 

@@ -24,7 +24,7 @@ This section is for the **operator**: whoever deploys, secures, monitors, backs 
 | Back it up and restore it | [Backup and restore](backup/) and [Keeping storage tidy](storage-maintenance/) |
 | Connect email, storage and push providers | [Providers](providers/) |
 | Something leaked | [If credentials leak](if-credentials-leak/) |
-| Let companies sign in with their own Google or Microsoft account | [Organization sign-in](organization-sign-in/) |
+| Let companies sign in with their own Google, Microsoft or OpenID Connect server | [Organization sign-in](organization-sign-in/) |
 | Move to a new version | *Upgrading to* below |
 | Find a word I don't know | [Glossary](../build/glossary/) |
 

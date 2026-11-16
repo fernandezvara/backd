@@ -49,11 +49,11 @@ This section is for the **contributor**: whoever changes `backd` itself. To run 
 | `internal/cron/` | Five-field cron expressions and their schedule, in UTC or a time zone |
 | `internal/email/` | Email kinds, templates (from `_realm/email`) and rendering |
 | `internal/push/`, `internal/pushsend/` | Push messages and templates; the FCM, APNs and Web Push senders |
-| `sso/` | The sign-in library: Google, Microsoft and Apple authorize URLs, code exchange, ID token checks; imports nothing else of backd |
+| `sso/` | The sign-in library: the engine and its ports, OpenID Connect (discovery, keys, ID token checks), OAuth 2, Apple, PKCE and a client that reaches only public addresses (`safehttp`); imports nothing else of backd |
 | `internal/fieldcrypt/` | [Field encryption](../build/encryption/): encrypting before the database, decrypting for readers |
 | `internal/imaging/` | Image versions: resizing safely, in pure Go, with the pixel count checked first |
 | `internal/exportpkg/`, `internal/exportreadme/` | The format of an export package, and the README of a personal data export |
-| `internal/typegen/`, `internal/openapigen/` | `backd types` (TypeScript and Dart) and `backd openapi` for a realm |
+| `internal/typegen/`, `internal/openapigen/` | `backd types` (TypeScript, Dart, Go and Python) and `backd openapi` for a realm |
 | `internal/rulestest/` | The fixtures of `backd rules test` |
 | `internal/metrics/` | Prometheus instrumentation |
 | `api/openapi.yaml` | The [HTTP API contract](contract/) (OpenAPI 3.1) and its lint settings |
