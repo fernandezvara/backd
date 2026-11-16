@@ -1,7 +1,7 @@
 # Design: SCIM provisioning (organizations and realm)
 
-- **Issues:** not created yet (milestone to be named after the design is agreed)
-- **Status:** draft; the decisions of §13.1 are agreed, §13.2 lists what is still open
+- **Issues:** milestone `49-scim`, #1041–#1052 (the sketch of §14 in order)
+- **Status:** agreed, to be built; reviewed against [sso.md](./sso.md) as built on 2026-11-16 (decisions 21–24 of §13.1 come from that review); §13.2 lists what is still open
 - **Related designs:** [sso.md](./sso.md) (providers, connections, joining, `blocked`, and §10 verified domains: proof of domain ownership, discovery, linking), [scoped-sessions.md](./scoped-sessions.md) (§4.5 ending access, §6 `sso_required`), [organizations.md](./organizations.md) (members, roles, capabilities, hooks), [account-lifecycle.md](./account-lifecycle.md) (erasure, disabling), [breach-response.md](./breach-response.md) (session revocation)
 
 ## 1. The idea
@@ -19,7 +19,7 @@ What SCIM does **not** do: sign anybody in (that stays org sign-in, [sso.md](./s
 
 Google: Google Workspace's outbound SCIM covers its own app catalog, and whether a custom SAML app can push to an arbitrary SCIM endpoint is not reliable. A Google tenant therefore reaches this feature only if its console offers it, or through an intermediary identity provider. A pull connector (Admin SDK Directory, Microsoft Graph delta) is a different mechanism, a separate later milestone (§13.1).
 
-SCIM depends on **verified domains** (proof, discovery and linking), which are designed in [sso.md §10](./sso.md) and built before SCIM, in the sign-in milestone ([sso.md §14](./sso.md), step S5). `sso_required` is already built.
+SCIM depends on **verified domains** (proof, discovery and linking, [sso.md §10](./sso.md)), which are built (`org_domains`, `/_orgs/{org}/domains`, `manage: domains`, the clients and the admin UI's *Domains* section), and on `sso_required`, which is built too. The identity key of a sign-in is now (provider, org, issuer, subject) and organizations may connect `oidc` servers; §3.5 says what that means for binding.
 
 ## 2. Decisions at a glance
 
@@ -111,7 +111,7 @@ Enabling SCIM makes the organization **scim-only**, with no setting. The identit
 - **No other way in.** While SCIM is enabled, an organization takes in **only provisioned people**. `POST /_orgs/{org}/invitations` answers `409 scim_managed` for everybody, managers included, and the invitations that were still pending when SCIM was enabled are revoked (the answer to enabling lists how many). The one invitation that still exists is the one SCIM itself sends to an existing account (§3.2), because it is part of provisioning. A new manager is therefore a provisioned member who is promoted by role change (`PATCH …/members/{user}`), and the backup rule of §9 applies to the promotion.
 - **Holders of `manage: org` keep every method:** password with MFA, magic link or the connection. That is their backup (§9), so a broken integration never locks the organization out.
 - **Everyone else's other methods** (password, magic link) are governed by the separate `sso_required` switch ([scoped-sessions.md](./scoped-sessions.md) §6, amended: its exemption for managers, §9.6).
-- **Binding the first sign-in to a SCIM-created user:** a user SCIM created has no identity. The first sign-in through the connection binds the identity to the link whose `user_name` equals the **verified email** of the token, **in the same organization and only for a user SCIM itself created that has no identity on the connection**. Its safety rests on the tenant/Workspace restriction of the connection (the person is proven to belong to the company), the Microsoft rule that email counts only on the UPN domain, the verified domain of that email, and that the target account was created by this organization's SCIM, so there is no pre-existing account to take over. A `pending` link (an existing account) is never bound by SCIM: the person accepts the invitation, or the verified-domain linking of [sso.md](./sso.md) applies.
+- **Binding the first sign-in to a SCIM-created user:** a user SCIM created has no identity **on the connection** (an identity that went dormant because the connection's issuer changed counts as none: it is replaced, [sso.md §6.1](./sso.md)). The first sign-in through the connection binds the identity to the link whose `user_name` equals the **verified email** of the token, **in the same organization and only for a user SCIM itself created that has no identity on the connection**. Its safety rests on the tenant/Workspace restriction of the connection (the person is proven to belong to the company), the Microsoft rule that email counts only on the UPN domain, the verified domain of that email, and that the target account was created by this organization's SCIM, so there is no pre-existing account to take over. With an `oidc` connection the address is the one the server says is verified **and** that is on a domain the organization proved ([sso.md §9.2](./sso.md)), which is the same check that admits the person; the bound identity records the issuer. In the **realm scope** the same binding works for a realm provider of `type: oidc` whatever its `link_by_email` (binding is not linking: the account has no identity and SCIM made it), but never without the provider's `email_verified`; `link_by_email` keeps governing every other account. A `pending` link (an existing account) is never bound by SCIM: the person accepts the invitation, or the verified-domain linking of [sso.md](./sso.md) applies.
   - *Option:* `bind_by: external_id` binds by the token's stable claim (`oid` for Microsoft, `sub` for Google) when the administrator maps `externalId` to it: no email trust, but it needs a correct attribute mapping on the provider side. `email` is the default because Entra's default `externalId` is not the object id.
 
 ### 3.6 What SCIM cannot do
@@ -730,6 +730,10 @@ An example against the knowledge base realm, and **a single commented page**, no
 | 18 | While SCIM is enabled the organization takes in only provisioned people: invitations are refused (`409 scim_managed`) for everybody and pending ones are revoked; new managers are promoted from provisioned members |
 | 19 | No `backd orgs check` command: organizations out of compliance with the backup rule are shown by the warnings only |
 | 20 | A passkey counts as the second factor of the manager backup rule |
+| 21 | An identity made dormant by a change of the connection's issuer counts as none for the first-sign-in binding of a SCIM-created user (review of 2026-11-16) |
+| 22 | A provisioned email on a domain no enabled connection admits (a connection narrowed with `domains`) is **warned**, never refused: the provisioning panel and the audit show it |
+| 23 | Realm scope: binding a SCIM-created user works for a generic `oidc` provider without `link_by_email`, always with the provider's `email_verified` |
+| 24 | The ports stay `Store` and `Host`; the layering and the import-guard test follow `sso/` ([sso.md §3](./sso.md)) |
 
 ### 13.2 Still open (small)
 
@@ -746,12 +750,12 @@ The verified-domains questions are settled ([sso.md §10.1](./sso.md): `link_acc
 | 3 | The `scim` library: `wire/v2` and dialects, domain types, engine, `Store` and `Host` ports, `httpscim`, `scimtest` (no backd imports; golden files from the RFC and Entra/Okta traffic) |
 | 3b | backd side: `Store` over MongoDB (`scim_scopes`, `scim_links`, `scim_groups`), tokens, `provision`, export/import parts |
 | 4 | Organization host: settings, `manage: scim`, API, CLI |
-| 5 | Verified domains: **built before this milestone**, in step S5 of the sign-in milestone ([sso.md §10](./sso.md)); here only the SCIM integration (provisioned emails on a verified domain) |
+| 5 | Verified domains: **built** in the sign-in milestone ([sso.md §10](./sso.md)); here only the SCIM integration (provisioned emails on a verified domain, the warning of decision 22) |
 | 6 | Sign-in changes: scim-only joining, first sign-in binding, manager exemption, domain linking and discovery |
 | 7 | Realm host and the `realm.yaml` section |
 | 8 | Groups and role mapping: `scim_groups`, `mappings`, `membership`, the recompute job, `scim: true` on roles, `scim_groups` in `realm.yaml` |
 | 9 | Lifecycle: export/import, deletion, erasure, retention purge, audit, metrics |
-| 10 | Clients (`orgs.scim`, `orgs.capabilities`, `orgs.domains`), admin UI "Provisioning" and "Domains" tabs as the reference panel |
+| 10 | Clients (`orgs.scim`, `orgs.capabilities`; `orgs.domains` is built) and the admin UI's "Provisioning" section as the reference panel (the *Domains* section is built) |
 | 10b | Knowledge base settings page: realm changes, the commented page, `kb-settings-e2e.sh` with the screenshots, the test-only directory simulator, `example-file` second root |
 | 11 | Docs: settings-panel guide, SCIM guide with the Entra walk-through, domains guide, operator page, API and reference updates, Shelf chapter |
 | 12 | Security review |
