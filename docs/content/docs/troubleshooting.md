@@ -33,6 +33,13 @@ These docs describe the current `main`. If a released image refuses a configurat
 - **`400 unknown_strategy`**: the name does not exist, or the strategy starts with another method (a Google strategy cannot be used with a password). The answer is the same for both on purpose.
 - **Signed in, but the admin interface says you are not an administrator**: the session's strategy is not one of the admin role's `strategies`, so the role is inactive; the sign-in answer lists it in `roles_inactive`. Sign in with the strategy the role lists.
 
+## Signing in with a provider fails
+
+- **The browser comes back to your app with `?backd_error=<code>`**: the codes (`account_exists`, `link_conflict`, `email_not_verified`, `not_allowed`, …) are listed under [Errors](../build/auth/providers/#errors) of the provider page. The reason is only in the [audit trail](../operate/administration/audit/), never in the address.
+- **`503 provider_unavailable`**: the provider's client secret is not set as a realm secret, backd's public address (`BACKD_URL`) is unknown, or the keys of an OpenID Connect server could not be fetched. The log names the provider at startup.
+- **An OpenID Connect provider is refused at startup**: its `issuer` must be exactly what the server's tokens put in `iss`, over https (`http` only with `BACKD_DEV=true`), and its discovery document must name that same issuer and offer PKCE `S256`. A server on a private network needs `allow_private_network: true`.
+- **A company's connection answers `not_allowed`**: the organization has not [proved the domain](../build/organizations/verified-domains/) of the person's address, or the server did not say the address is verified. See [Company sign-in](../build/organizations/sign-in/#with-your-own-openid-connect-server).
+
 ## The stack does not start
 
 - **`EXECUTOR_TOKEN required - see README.md (Develop locally)`** (or `CALLBACK_KEY`, `EGRESS_KEY`): Compose needs the three secrets in a `.env` file next to `compose.yaml`. The [Quickstart](../build/quickstart/#3-run-it) shows how to write it.

@@ -178,7 +178,7 @@ curl http://127.0.0.1:9090/v1/demo/main/posts -H "Authorization: Bearer $KEY"
 | `backd config check`, `backd config fingerprint` | Validate `CONFIG_DIR` as startup would, or print its fingerprint |
 | `backd rules test` | Run each collection's `rules.test.yaml` without a database (see [Testing rules](../auth/rules/#testing-rules)) |
 | `backd databases [--collections]` | Print the MongoDB databases (or collections) the config uses |
-| `backd types`, `backd openapi` | Generate TypeScript types or an OpenAPI document from a realm (see [Clients](../clients/types/)) |
+| `backd types`, `backd openapi` | Generate TypeScript, Dart, Go or Python types, or an OpenAPI document, from a realm (see [Clients](../clients/types/)) |
 | `backd functions invoke\|history\|logs\|jobs` | Call and inspect [server-side functions](../functions/) through a running backd |
 | `backd-server functions build` | Bundle the functions (CI and the container do it; dev mode does it for you) |
 

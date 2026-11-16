@@ -243,7 +243,7 @@ A failed attempt goes back to your app as `redirect_to?backd_error=<code>`, with
 | `link_conflict` | The provider account belongs to another user, or the user has one of this provider already |
 | `email_not_verified` | The realm requires a verified address and the account's isn't |
 | `email_required` | The provider gave no address |
-| `not_allowed` | Only for an [organization's connection](../../organizations/api/#signing-in-through-a-connection): the person is not of the Workspace domain or the Microsoft tenant it admits |
+| `not_allowed` | Only for an [organization's connection](../../organizations/api/#signing-in-through-a-connection): the person is not of the Workspace domain or the Microsoft tenant it admits, or (OpenID Connect) the server did not say the address is verified, or it is not on a [proved domain](../../organizations/verified-domains/) of the organization |
 | `signin_refused` | The account can't sign in (disabled, or from this network); the real reason is only in the [audit](../../../operate/administration/audit/) as `identity.signin_refused` |
 | `provider_error` | The provider failed or answered something backd can't accept |
 

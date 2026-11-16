@@ -80,7 +80,7 @@ Every realm needs an `auth` key: either `auth: disabled` (no authentication, for
 | `email` | none (no email) | How the realm sends email: the delivery function, the sender, backd's public address for links, the pages the links open, where users go afterwards, and limits. backd never sends mail itself. See [Email](../../functions/email/) |
 | `email.customizable`, `email.overrides.permission` | none, `manage_org` | The kinds of email an organization may write its own template of, and the capability that edits them. See [organization email templates](../../organizations/email-templates/) |
 | `pages.data_hook` | none | An internal, `mode: sync` function (`<database>/<function>`) that fills in `{{.App}}` in the hosted pages with an organization's branding; `email.data_hook` does it for emails. See [organization context](../../organizations/organization-context/) |
-| `auth.providers` | none | The external identity providers users may sign in with (`google`, `microsoft`, `apple`, and generic OpenID Connect servers with `type: oidc`), each with its client id and `secret:NAME` references. See [Sign in with providers](../../auth/providers/) |
+| `auth.providers` | none | The external identity providers users may sign in with (`google`, `microsoft`, `apple`, `github`, and generic servers with `type: oidc` or `type: oauth2`), each with its client id and `secret:NAME` references. See [Sign in with providers](../../auth/providers/) |
 | `push` | none (no push) | Push notifications: the platforms and their providers, the web subscription hosts and the device limits. Needs `BACKD_SECRETS_KEY`. See [Push notifications](../../push/) |
 | `auth.sign_in.allowed_redirects` | `email.allowed_redirects` | Origins and app schemes a provider sign-in may send the user back to |
 | `auth.sign_in.app_url` | none | Where a sign-in goes back to when it has no `redirect_to`; within the allowed redirects |
@@ -189,7 +189,7 @@ organizations:
   create: user.email_verified
   creator_roles: [owner]
   max_created_per_user: 5
-  sso: { providers: [google, microsoft] }   # optional: organizations connect their own provider
+  sso: { providers: [google, microsoft] }   # optional: organizations connect their own sign-in (add oidc and oidc.issuers for their own server)
   invitation_link: "https://app.acme.example/join?token={token}&org={org}"
   signin_link: "https://app.acme.example/{slug}/signin"   # optional: the "which companies am I in?" email
 ```
@@ -209,7 +209,7 @@ organizations:
 | `allow_require_mfa` | Whether an organization may require a second factor of its members | `true` |
 | `members_visible_to` | Who sees other members' emails: `members`, or `managers` (holders of any role with a `manage` capability) | `members` |
 | `domains` | [Verified domains](../../organizations/verified-domains/): `enabled` (default `true` once the section is there), `max_per_org` (default `10`), `recheck` (default `7d`), `lapse_after` (default `3`), `blocked` and `resolvers`. Without the section the whole surface answers `404`. Needs a role with `manage: domains` | off |
-| `sso` | [Organization sign-in](../../organizations/api/#sign-in-connections): `enabled` (default `true` once the section is there), `providers` (`google`, `microsoft`; default both) and `max_per_org` (default and most: the number of providers). Without the section, or with `enabled: false`, the whole surface answers `404`. Needs a role with `manage: sso` | off |
+| `sso` | [Organization sign-in](../../organizations/api/#sign-in-connections): `enabled` (default `true` once the section is there), `providers` (`google`, `microsoft`, `oidc`; default Google and Microsoft), `oidc.issuers` (the issuer patterns organizations may connect; `oidc` needs it and the `domains` section) and `max_per_org` (default and most: the number of providers). Without the section, or with `enabled: false`, the whole surface answers `404`. Needs a role with `manage: sso` | off |
 | `invitation_link` | Where invitation links point: an absolute URL with `{token}` once (and `{org}` if you want it) within `auth.sign_in.allowed_redirects` | none |
 | `signin_link` | Where an organization's sign-in page is, for the ["which companies am I in?" email](../../organizations/api/#which-companies-am-i-in): an absolute URL with `{slug}` (the organization's id when it has none; `{org}` is always the id) within `auth.sign_in.allowed_redirects`. Needs `email:`. Without it `POST /_auth/orgs/find` answers `404` | none |
 

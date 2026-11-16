@@ -14,9 +14,9 @@ Read this before you invest an afternoon. `backd` is a config-driven REST backen
 - You want **who may read and write what** decided on the server by [access rules](../build/auth/rules/), not in each client.
 - You want the whole backend to be **files in git**: realms, schemas, rules, functions and email texts that you review, test in CI and deploy as one unit.
 - You **self-host**, on Docker, Kubernetes or a plain host, and you can run MongoDB (a replica set, even a single node).
-- You build **multi-tenant** or business-to-business products: [organizations](../build/organizations/), teams, and company sign-in with Google Workspace or Microsoft.
+- You build **multi-tenant** or business-to-business products: [organizations](../build/organizations/), teams, and company sign-in with Google Workspace, Microsoft or the company's own OpenID Connect server (Okta, Keycloak, Entra ID…).
 - You need **server-side logic** you can write in TypeScript: [functions](../build/functions/), background jobs, cron, webhooks and triggers.
-- You want people to sign in **without a password**: [passkeys](../build/auth/passkeys/), magic links or Google, Microsoft and Apple, with a second factor where a role needs one.
+- You want people to sign in **without a password**: [passkeys](../build/auth/passkeys/), magic links or Google, Microsoft, Apple, GitHub or any OpenID Connect server, with a second factor where a role needs one.
 - Your schema **will change** while apps you can't update are in the field: a collection can keep its [schema in versions](../build/configuration/evolving-a-schema/), with migrations the server runs in the background and a minimum version that tells old apps to update.
 - You must answer **compliance** questions: an audit trail, user erasure, personal-data export, field encryption.
 - Your clients are in JavaScript, Dart/Flutter, Go or Python, or can use a generated [OpenAPI](../build/api/openapi/) client.
@@ -49,9 +49,8 @@ One line each, so you can tell early. "Not built" means no code exists today; th
 
 | Missing | Meanwhile | Status |
 |---|---|---|
-| **OpenID Connect sign-in for an organization's own identity provider** (Okta, Keycloak, Entra ID…) | Any OpenID Connect server works for the realm; for a company, Google and Microsoft | Planned: [#1018](https://github.com/fernandezvara/backd/issues/1018) |
 | **Apple sign-in for organizations** | Use Google or Microsoft for the company's sign-in | Not planned: Apple gives no proof of which company a person belongs to |
-| **SCIM provisioning** (users created and removed by a company's identity provider) | [Invitations](../build/organizations/) and company sign-in | Design only |
+| **SCIM provisioning** (users created and removed by a company's identity provider) | [Invitations](../build/organizations/) and company sign-in | Designed, not built: issues [#1041](https://github.com/fernandezvara/backd/issues/1041) to [#1052](https://github.com/fernandezvara/backd/issues/1052) |
 | **Atomic update operators** (increment, push, add to set) | `PATCH` is a JSON Merge Patch; use `If-Match` and retry, or a [function](../build/functions/) | Not built |
 | **Exact, global request rate limits** | `backd` limits requests per instance, in memory ([Rate limiting](../operate/rate-limiting/)); for one limit across instances put a proxy, gateway or CDN in front | Per instance only |
 | **Outbound webhooks** as a declared feature | A trigger plus a function that calls out through [egress](../build/functions/) | Not built |
