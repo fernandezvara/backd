@@ -24,6 +24,10 @@ type Lazy struct {
 	done     chan struct{}
 	timer    *time.Timer
 	closed   bool
+	// opened is closed when the stream of the current start is open: from then on, whatever
+	// is written is read. openOnce makes it happen once per start.
+	opened   chan struct{}
+	openOnce *sync.Once
 }
 
 // NewLazy wraps c. A grace of 0 is DefaultGrace.
@@ -63,6 +67,39 @@ func (l *Lazy) Open() bool {
 	return l.cancel != nil
 }
 
+// WaitOpen returns when the stream a subscriber was given by Acquire is open, so that
+// whatever is written after it returns is read: the stream starts "from now" when the
+// database accepts the watch, which is after Acquire returns. It returns nil at once when
+// nothing is watched (there is nothing to read) or the consumer is not running, and the
+// context's error when the stream does not open in time (the database is unreachable).
+func (l *Lazy) WaitOpen(ctx context.Context) error {
+	l.mu.Lock()
+	opened, running := l.opened, l.cancel != nil
+	l.mu.Unlock()
+	if !running {
+		return nil
+	}
+	if set, _ := l.c.watched(); set.Empty() {
+		return nil
+	}
+	select {
+	case <-opened:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// markOpen records that the running stream is open.
+func (l *Lazy) markOpen() {
+	l.mu.Lock()
+	opened, once := l.opened, l.openOnce
+	l.mu.Unlock()
+	if once != nil {
+		once.Do(func() { close(opened) })
+	}
+}
+
 // Subscribers is how many handlers are registered.
 func (l *Lazy) Subscribers() int {
 	l.mu.Lock()
@@ -75,6 +112,7 @@ func (l *Lazy) start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	l.cancel, l.done = cancel, done
+	l.opened, l.openOnce = make(chan struct{}), new(sync.Once)
 	go func() {
 		defer close(done)
 		_, _ = l.c.Run(ctx, nil, fanout{l})
@@ -143,6 +181,7 @@ func (f fanout) Change(ctx context.Context, c Change, at Position) {
 }
 
 func (f fanout) Idle(ctx context.Context, at Position) {
+	f.l.markOpen() // a stream opened from now reports its position at once
 	for _, h := range f.l.snapshot() {
 		h.Idle(ctx, at)
 	}

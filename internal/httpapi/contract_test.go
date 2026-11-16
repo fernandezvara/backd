@@ -28,6 +28,7 @@ import (
 	"github.com/fernandezvara/backd/internal/auth"
 	"github.com/fernandezvara/backd/internal/auth/passkey"
 	"github.com/fernandezvara/backd/internal/auth/passkey/passkeytest"
+	"github.com/fernandezvara/backd/internal/changefeed"
 	"github.com/fernandezvara/backd/internal/exportpkg"
 	"github.com/fernandezvara/backd/internal/registry"
 	"github.com/fernandezvara/backd/internal/storage"
@@ -352,10 +353,11 @@ func TestContract(t *testing.T) {
 		}
 		return e
 	}
+	realtimeHub := testHub(t)
 	f := newRulesFixture(t, func(cfg *Config) {
 		cfg.OAuth, cfg.OAuthEndpoints = oauthSvc, endpoints
 		cfg.Triggers = &fakeTriggerAdmin{}
-		cfg.Realtime = testHub(t)
+		cfg.Realtime = realtimeHub
 	})
 	setUpProviders(t, f)
 	router := f.h.(chi.Routes)
@@ -2111,6 +2113,17 @@ func TestContract(t *testing.T) {
 	liveSub := `{"subscriptions":[{"id":"a","db":"app","collection":"live"}]}`
 	req("POST", "/v1/acme/_realtime", liveSub, ada, 200)
 	req("POST", "/v1/acme/_realtime", liveSub, ada, 429)
+	{
+		// The database does not accept the change stream: nothing is opened, so nothing is
+		// promised and then missed.
+		saved, savedWait := realtimeHub.Feed, realtimeHub.OpenWait
+		broken := &changefeed.Consumer{Name: "realtime", Source: failingFeed{}, Backoff: func(int) time.Duration { return time.Millisecond }}
+		broken.SetWatched(changefeed.WatchSet{Collections: []changefeed.Namespace{{Realm: "acme", DB: "acme__app", Coll: "live"}}})
+		realtimeHub.Feed, realtimeHub.OpenWait = changefeed.NewLazy(broken, time.Minute), 100*time.Millisecond
+		req("POST", "/v1/acme/_realtime", liveSub, carl, 503)
+		realtimeHub.Feed.Close()
+		realtimeHub.Feed, realtimeHub.OpenWait = saved, savedWait
+	}
 	req("POST", "/v1/acme/_realtime", `{"subscriptions":[]}`, carl, 400)
 	req("POST", "/v1/acme/_realtime", liveSub, nil, 401)
 	req("POST", "/v1/acme/_realtime", `{"subscriptions":[{"id":"a","db":"app","collection":"private"}]}`, carl, 403)

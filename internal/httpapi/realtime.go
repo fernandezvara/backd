@@ -189,8 +189,13 @@ func (d *documents) realtime(w http.ResponseWriter, r *http.Request) {
 		MaxStreamsPerUser: rl.Settings.Realtime.MaxStreamsPerUser,
 		Access:            d.accessOf(r, realm, caller, built),
 		Config:            cfgSub,
+		Context:           r.Context(),
 	})
 	switch {
+	case errors.Is(err, realtime.ErrFeedUnavailable):
+		retryAfter(w, 2*time.Second)
+		writeError(w, r, http.StatusServiceUnavailable, codeUnavailable, "realtime is not available right now: retry in a moment")
+		return
 	case errors.Is(err, realtime.ErrBadToken):
 		writeError(w, r, http.StatusBadRequest, codeInvalidResumeToken, "the resume token is not valid for this caller")
 		return
