@@ -164,10 +164,10 @@ Changing the password or the address, deleting the account, unlinking a sign-in 
 
 ### Providers, magic links, organizations
 
-- **A provider by redirect:** `url = client.auth.sign_in_with("google", redirect_to="http://localhost:9000/cb", navigate=webbrowser.open)` starts it and returns the provider's address; the PKCE verifier waits in `oauth_storage` (memory by default; pass an `OAuthStorage` to survive a restart). When the person comes back, `client.auth.complete_sign_in(address)` trades the one-time code for a session, or raises the error the redirect carries (`ConflictError` for `account_exists`, `ForbiddenError` for `signup_closed`, …). `link_provider` adds a provider to the signed-in user. Mobile apps that hold the platform's ID token use `sign_in_with_id_token`.
+- **A provider by redirect:** `url = client.auth.sign_in_with("google", redirect_to="http://localhost:9000/cb", navigate=webbrowser.open)` starts it and returns the provider's address; the PKCE verifier waits in `oauth_storage` (memory by default; pass an `OAuthStorage` to survive a restart). When the person comes back, `client.auth.complete_sign_in(address)` trades the one-time code for a session, or raises the error the redirect carries (`ConflictError` for `account_exists`, `ForbiddenError` for `signup_closed`, …). `link_provider` adds a provider to the signed-in user and `unlink_provider` removes one (`org=` for a connection of an organization). Mobile apps that hold the platform's ID token use `sign_in_with_id_token`, or `link_provider_with_id_token` to link.
 - **A magic link:** `client.auth.magic_link.request(email, redirect_to=...)` then `verify_code(code)`, or `complete_sign_in` with the link's address.
 - **Organizations:** `org="acme"` binds the client to an organization, so sign-in goes to `/_auth/orgs/acme/…` and the session is scoped to it. `client.org("acme")` gives the client of one organization for a program signed in to several; each keeps its own token in a slot of the storage (`MemoryStorage` and `FileStorage` have them). `sign_up_with_org` starts a company.
-- **Also:** `mfa` (`status`, `setup`, `confirm`, `disable`, `regenerate_recovery_codes`), `password.set` / `password.remove`, the email flows (`resend_verification`, `verify_email`, `request_password_reset`, `reset_password`, `update_password`, `request_email_change`, `confirm_email_change`, `revert_email_change`, `accept_invitation`), `sessions` / `revoke_session`, `logout_all`, `delete_account`, `update_me`, `providers` / `options`, and `on_auth_change(listener)` for `SIGNED_IN`, `SIGNED_OUT` and `SESSION_EXPIRED`.
+- **Also:** `mfa` (`status`, `setup`, `confirm`, `disable`, `regenerate_recovery_codes`), `password.set` / `password.remove`, the email flows (`resend_verification`, `verify_email`, `request_password_reset`, `reset_password`, `update_password`, `change_password`, `request_email_change`, `confirm_email_change`, `revert_email_change`, `preview_invitation`, `accept_invitation`, `find_orgs` for the "which companies am I in?" email), `sessions` / `revoke_session`, `logout_all`, `delete_account`, `update_me`, `providers` / `options`, and `on_auth_change(listener)` for `SIGNED_IN`, `SIGNED_OUT` and `SESSION_EXPIRED`.
 
 ### Keeping the session between runs
 
@@ -279,6 +279,7 @@ thumb = posts.file_url("p1", "cover", doc["cover"]["id"], version="thumb", file=
 ```
 
 - **What to send** — `Upload(source, name=..., type=...)`, or just the source: bytes, text (sent as UTF-8), a `pathlib.Path`, or a binary file object. Paths and seekable files are read in pieces, never loaded whole, and can be sent again after a `429` or `503`; a pipe can be sent once. `name` and `type` default to the file's own.
+- **Removing** — `posts.delete_file("p1", "cover", file_id, if_match=…)` takes one file off the document and returns the updated document.
 - **Progress** — `on_progress(sent, total)`; `total` is `None` for a stream of unknown size.
 - **Direct uploads** hash the file first (SHA-256, off the event loop in the async client), declare it, send it to the signed link without backd's credentials, and complete. A file above the field's `multipart_above` is declared by the hash of each part and sent in parts, one after the other; a part that fails with a network error or a `5xx` is sent again (four tries), the others are not.
 - **`prepare_upload`** sends a file for a document that doesn't exist yet and returns `ref`: name it in the field of the `create` (`{"cover": [up["ref"]]}`).
@@ -318,6 +319,10 @@ The rest of the account-level surface, with the structure of `backd-js`.
   orgs.members("o1").update("u1", ["editor"])
   orgs.teams("o1").create("Ops", roles=["responder"])
   orgs.teams("o1").grant_role("t1", "u1", "lead", until="2026-12-31T00:00:00Z")
+  orgs.teams("o1").set_role_window("t1", "u1", "lead", until="2027-06-30T00:00:00Z")   # change the window
+  orgs.teams("o1").revoke_role("t1", "u1", "lead")
+  orgs.teams("o1").add_member("t1", "u1")      # and remove_member
+  orgs.invitations("o1").new_link("inv1")     # a fresh link for an open invitation
   orgs.invitations("o1").create("email", email="ada@example.com", roles=["editor"], send=True)
   orgs.templates("o1").put("invite", "es", {"subject": "…", "text": "…", "html": "…"})
   orgs.sso("o1").set("google", client_id="…", client_secret="…", hosted_domain="acme.example")
@@ -336,6 +341,7 @@ The rest of the account-level surface, with the structure of `backd-js`.
   export = client.account.request_export()
   ready = client.account.wait_for_export(export["id"])        # polls every 2 s, up to 30 minutes
   client.account.download_export(ready["id"]).save("export.zip")
+  client.account.exports()                                    # the exports already made
   ```
 
 ## Realtime
