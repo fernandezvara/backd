@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/fernandezvara/backd/sso"
+	"github.com/fernandezvara/backd/sso/oidc"
 )
 
 // Sign-in with external identity providers (auth.providers in realm.yaml). A provider is a kind plus
@@ -23,6 +24,13 @@ const (
 	ProviderMicrosoft = "microsoft"
 	ProviderApple     = "apple"
 )
+
+// ProviderTypeOIDC is the `type:` of a generic OpenID Connect provider, which any name may take.
+const ProviderTypeOIDC = "oidc"
+
+// providerNamePattern is what a generic provider may be called: it is what identities, URLs and the
+// audit use.
+var providerNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 
 // Kinds that are designed and not built yet: their names are reserved so that nobody takes them
 // for a provider of their own before they exist.
@@ -56,6 +64,7 @@ type kindSpec struct {
 var kindSpecs = map[string]*kindSpec{
 	ProviderGoogle:    {fields: []string{"client_id", "client_secret", "native_client_ids"}, trustsEmail: true, orgs: true, parse: parseGoogleLike},
 	ProviderMicrosoft: {fields: []string{"client_id", "client_secret", "native_client_ids", "tenant"}, orgs: true, parse: parseGoogleLike},
+	kindOIDC:          {fields: []string{"type", "issuer", "client_id", "client_secret", "scopes", "link_by_email", "allow_private_network"}, parse: parseOIDC},
 	ProviderApple:     {fields: []string{"services_id", "bundle_ids", "team_id", "key_id", "private_key", "revoke_on_delete"}, trustsEmail: true, parse: parseApple},
 }
 
@@ -83,12 +92,17 @@ type providerDoc struct {
 	KeyID           string   `yaml:"key_id"`
 	PrivateKey      string   `yaml:"private_key"`
 	RevokeOnDelete  *bool    `yaml:"revoke_on_delete"`
+	// Generic OpenID Connect (type: oidc).
+	Issuer              string   `yaml:"issuer"`
+	Scopes              []string `yaml:"scopes"`
+	LinkByEmail         *bool    `yaml:"link_by_email"`
+	AllowPrivateNetwork *bool    `yaml:"allow_private_network"`
 }
 
 // Provider is an external identity provider a realm lets its users sign in with.
 type Provider struct {
 	Name string // what identities, URLs and the audit call it
-	// Kind is how it is spoken to and checked: google, microsoft or apple.
+	// Kind is how it is spoken to and checked: google, microsoft, apple or oidc.
 	Kind string
 	// ClientID is the application's id with the provider (Apple: the Services ID);
 	// ClientSecret names the secret that holds its secret (Apple has none: it
@@ -105,6 +119,15 @@ type Provider struct {
 	// account goes away.
 	TeamID, KeyID, PrivateKey string
 	RevokeOnDelete            bool
+	// Generic OpenID Connect providers: the issuer its tokens name and its discovery document is
+	// under, the extra scopes asked for, whether its verified addresses link accounts, whether its
+	// hosts may be on the operator's private network, and whether the issuer is a plain http URL
+	// (only BACKD_DEV allows it).
+	Issuer              string
+	Scopes              []string
+	LinkByEmail         bool
+	AllowPrivateNetwork bool
+	Insecure            bool
 	// Org is set on a provider built from an organization's connection (design/sso.md §9): the
 	// id of the organization. Its ClientSecret then names an organization secret, and the
 	// restrictions of the connection apply on top of the token checks.
@@ -116,9 +139,27 @@ func (p *Provider) SSO() sso.Provider {
 	kind := sso.Kind(p.Kind)
 	return sso.Provider{
 		Name: p.Name, Kind: kind, ClientID: p.ClientID, NativeClientIDs: p.NativeClientIDs,
-		Tenant: p.Tenant, TeamID: p.TeamID, KeyID: p.KeyID,
+		Tenant: p.Tenant, TeamID: p.TeamID, KeyID: p.KeyID, Issuer: p.IssuerOf(), Scopes: p.Scopes, AllowPrivate: p.AllowPrivateNetwork,
 		Endpoints: sso.BuiltinEndpoints(kind, p.Tenant),
 	}
+}
+
+// IssuerOf is the issuer the provider's tokens must name, when it is fixed: the built-in providers',
+// and a generic provider's. Microsoft's depends on the tenant of the person.
+func (p *Provider) IssuerOf() string {
+	switch p.Kind {
+	case ProviderGoogle:
+		return "https://accounts.google.com"
+	case ProviderApple:
+		return "https://appleid.apple.com"
+	case kindOIDC:
+		return p.Issuer
+	case ProviderMicrosoft:
+		if !slices.Contains(SharedMicrosoftTenants, p.Tenant) && p.Tenant != "" {
+			return "https://login.microsoftonline.com/" + p.Tenant + "/v2.0"
+		}
+	}
+	return ""
 }
 
 // IssuerMatches says whether an identity vouched for by iss is one the provider signs in now: the
@@ -134,6 +175,8 @@ func (p *Provider) IssuerMatches(iss string) bool {
 		return iss == "https://accounts.google.com"
 	case ProviderApple:
 		return iss == "https://appleid.apple.com"
+	case kindOIDC:
+		return iss == p.Issuer
 	case ProviderMicrosoft:
 		tenant, ok := strings.CutSuffix(strings.TrimPrefix(iss, msBase), "/v2.0")
 		if !strings.HasPrefix(iss, msBase) || !ok || tenant == "" || strings.Contains(tenant, "/") {
@@ -162,7 +205,7 @@ func (p *Provider) TrustsEmail() bool {
 	// A connection an organization's managers control never vouches for an address: it can't
 	// link a sign-in to an account (design/sso.md §8).
 	spec := kindSpecs[p.Kind]
-	return p.Org == "" && spec != nil && spec.trustsEmail
+	return p.Org == "" && spec != nil && (spec.trustsEmail || p.LinkByEmail)
 }
 
 // Audiences are the client ids an ID token may be issued to: the web client and, for
@@ -249,10 +292,48 @@ func parseApple(c *providerCheck, d *providerDoc, p *Provider) {
 	}
 }
 
+// scopePattern is what a scope may look like: the characters OAuth 2 allows in a scope token.
+var scopePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}$`)
+
+// parseOIDC checks a generic OpenID Connect provider: its issuer, client and the options that say
+// how far to trust it.
+func parseOIDC(c *providerCheck, d *providerDoc, p *Provider) {
+	if d.Issuer == "" {
+		c.add("issuer: is required: the URL of the OpenID Connect server, such as https://sso.acme.example/realms/acme")
+	} else if msg := oidc.IssuerProblem(d.Issuer, true); msg != "" {
+		c.add("issuer: %s", msg)
+	} else {
+		p.Issuer = d.Issuer
+		p.Insecure = strings.HasPrefix(d.Issuer, "http://")
+	}
+	if !clientIDPattern.MatchString(d.ClientID) {
+		c.add("client_id: is required and must be the application's client id")
+	}
+	c.secret("client_secret", d.ClientSecret, &p.ClientSecret)
+	if len(d.Scopes) > 10 {
+		c.add("scopes: at most 10 extra scopes")
+	}
+	seen := map[string]bool{"openid": true, "email": true, "profile": true}
+	for i, sc := range d.Scopes {
+		switch {
+		case !scopePattern.MatchString(sc):
+			c.add("scopes[%d]: %q isn't a scope", i, sc)
+		case seen[sc]:
+			c.add("scopes[%d]: %q is asked for already", i, sc)
+		default:
+			p.Scopes = append(p.Scopes, sc)
+		}
+		seen[sc] = true
+	}
+	p.LinkByEmail = d.LinkByEmail != nil && *d.LinkByEmail
+	p.AllowPrivateNetwork = d.AllowPrivateNetwork != nil && *d.AllowPrivateNetwork
+}
+
 // docFields says which keys of a provider's entry are set.
 func (d *providerDoc) docFields() map[string]bool {
 	return map[string]bool{
 		"client_id": d.ClientID != "", "client_secret": d.ClientSecret != "", "native_client_ids": len(d.NativeClientIDs) > 0,
+		"type": d.Type != "", "issuer": d.Issuer != "", "scopes": len(d.Scopes) > 0, "link_by_email": d.LinkByEmail != nil, "allow_private_network": d.AllowPrivateNetwork != nil,
 		"tenant": d.Tenant != "", "services_id": d.ServicesID != "", "bundle_ids": len(d.BundleIDs) > 0,
 		"team_id": d.TeamID != "", "key_id": d.KeyID != "", "private_key": d.PrivateKey != "", "revoke_on_delete": d.RevokeOnDelete != nil,
 	}
@@ -277,14 +358,27 @@ func parseProviders(docs map[string]*providerDoc) (map[string]*Provider, []error
 			c.add("is reserved for backd's own sign-in methods (%s) and can't name a provider", strings.Join(ReservedProviderNames, ", "))
 			continue
 		}
-		if d.Type != "" {
-			c.add("type: %q isn't available yet; the built-in providers (%s) need none", d.Type, strings.Join(BuiltinProviders, ", "))
+		var spec *kindSpec
+		kind := name
+		switch {
+		case d.Type == ProviderTypeOIDC:
+			if slices.Contains(BuiltinProviders, name) {
+				c.add("type: the name %q belongs to the built-in provider; name a generic one anything else", name)
+				continue
+			}
+			if !providerNamePattern.MatchString(name) {
+				c.add("is not a name for a provider: lower-case letters, digits and - (at most 32), starting with a letter")
+				continue
+			}
+			spec, kind = kindSpecs[kindOIDC], kindOIDC
+		case d.Type != "":
+			c.add("type: %q isn't available yet; the built-in providers (%s) need none, and a generic OpenID Connect one is type: oidc", d.Type, strings.Join(BuiltinProviders, ", "))
 			continue
-		}
-		spec := kindSpecs[name]
-		if spec == nil {
-			c.add("isn't a provider backd knows; the built-in ones are %s", strings.Join(BuiltinProviders, ", "))
-			continue
+		default:
+			if spec = kindSpecs[name]; spec == nil {
+				c.add("isn't a provider backd knows; the built-in ones are %s, and any other is type: oidc", strings.Join(BuiltinProviders, ", "))
+				continue
+			}
 		}
 		set := d.docFields()
 		for _, field := range slices.Sorted(maps.Keys(set)) {
@@ -292,7 +386,7 @@ func parseProviders(docs map[string]*providerDoc) (map[string]*Provider, []error
 				c.add("%s: doesn't apply to %s", field, name)
 			}
 		}
-		p := &Provider{Name: name, Kind: name, ClientID: d.ClientID, NativeClientIDs: d.NativeClientIDs, RevokeOnDelete: true}
+		p := &Provider{Name: name, Kind: kind, ClientID: d.ClientID, NativeClientIDs: d.NativeClientIDs, RevokeOnDelete: true}
 		spec.parse(c, d, p)
 		out[name] = p
 	}

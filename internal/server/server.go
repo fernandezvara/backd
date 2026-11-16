@@ -985,6 +985,13 @@ func checkFunctions(reg *registry.Registry, cfg settings.Settings, log *slog.Log
 		}
 	}
 	for _, name := range reg.RealmNames() {
+		for _, pn := range slices.Sorted(maps.Keys(reg.Realms[name].Settings.Providers)) {
+			if p := reg.Realms[name].Settings.Providers[pn]; p.Insecure && !cfg.Dev {
+				return fmt.Errorf("realm %s: the provider %s has a plain http issuer (%s): only BACKD_DEV=true (local development) allows it; use https", name, pn, p.Issuer)
+			}
+		}
+	}
+	for _, name := range reg.RealmNames() {
 		for _, st := range []*registry.StorageSettings{reg.Realms[name].Settings.Storage, reg.Realms[name].Settings.PublicStorage} {
 			if st != nil && st.HTTP && !cfg.Dev {
 				return fmt.Errorf("realm %s: %s uses a plain http address (%s): only BACKD_DEV=true (local development) allows it; use https", name, st.Label(), plainHTTP(st))

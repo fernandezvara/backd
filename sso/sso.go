@@ -22,6 +22,9 @@ const (
 	Google    Kind = "google"
 	Microsoft Kind = "microsoft"
 	Apple     Kind = "apple"
+	// OIDC is any OpenID Connect provider the operator names (type: oidc): its endpoints come from
+	// its issuer's discovery document.
+	OIDC Kind = "oidc"
 )
 
 // Errors a provider's answers can lead to. None of them carries anything the provider said
@@ -52,6 +55,17 @@ type Provider struct {
 	NativeClientIDs []string
 	// Tenant is Microsoft's: common, organizations, consumers or a tenant id.
 	Tenant string
+	// Issuer is the issuer a generic OpenID Connect provider is configured with; its ID tokens must
+	// name exactly it. Built-in providers know theirs. Empty: unknown (Microsoft across tenants).
+	Issuer string
+	// Scopes are extra scopes asked for besides openid email profile (generic providers).
+	Scopes []string
+	// Hosts are the hosts the library may reach for this provider besides the built-in ones: the
+	// issuer's, and after discovery the endpoints' that share its registered domain.
+	Hosts []string
+	// AllowPrivate lets the provider's own hosts resolve to private ranges (never loopback,
+	// link-local or the metadata address): an identity provider on the operator's network.
+	AllowPrivate bool
 	// TeamID and KeyID are Apple's: they sign the client secret.
 	TeamID, KeyID string
 	Endpoints     Endpoints

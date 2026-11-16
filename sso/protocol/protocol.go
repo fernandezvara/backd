@@ -22,16 +22,19 @@ type Client struct {
 	HTTP *http.Client
 	// Now is the clock; time.Now when nil.
 	Now func() time.Time
+	// Dev allows http issuers (BACKD_DEV).
+	Dev bool
 
-	oidc   *oidc.Verifier
-	oauth2 *oauth2.Client
-	apple  *apple.Signer
+	oidc      *oidc.Verifier
+	oauth2    *oauth2.Client
+	apple     *apple.Signer
+	discovery *oidc.Discoverer
 }
 
 // New is the client for the built-in providers: it dials only their hosts (private addresses
 // too when dev).
 func New(dev bool) *Client {
-	return (&Client{HTTP: safehttp.NewClient(safehttp.BuiltinHostAllowed, dev)}).Init()
+	return (&Client{HTTP: safehttp.NewClient(safehttp.BuiltinHostAllowed, dev), Dev: dev}).Init()
 }
 
 // Init prepares a Client built from a struct literal and returns it.
@@ -39,10 +42,31 @@ func (c *Client) Init() *Client {
 	c.oidc = &oidc.Verifier{HTTP: c.HTTP, Now: c.Now}
 	c.oauth2 = &oauth2.Client{HTTP: c.HTTP}
 	c.apple = &apple.Signer{Now: c.Now}
+	c.discovery = &oidc.Discoverer{HTTP: c.HTTP, Now: c.Now, Dev: c.Dev}
 	return c
 }
 
 var _ sso.Protocol = (*Client)(nil)
+
+// reach lets a request reach the provider's own hosts, and its network when the operator said so.
+func reach(ctx context.Context, p sso.Provider) context.Context {
+	return safehttp.ForProvider(ctx, p.AllowPrivate, p.Hosts...)
+}
+
+// Prepare reads a generic OpenID Connect provider's endpoints from its issuer's discovery
+// document (cached); the other kinds know theirs.
+func (c *Client) Prepare(ctx context.Context, p sso.Provider) (sso.Provider, error) {
+	if p.Kind != sso.OIDC {
+		return p, nil
+	}
+	doc, err := c.discovery.Discover(ctx, p.Issuer, p.AllowPrivate)
+	if err != nil {
+		return p, err
+	}
+	p.Endpoints = sso.Endpoints{Authorize: doc.Authorization, Token: doc.Token, JWKS: doc.JWKS}
+	p.Hosts = doc.Hosts
+	return p, nil
+}
 
 // UsesPKCE says whether a PKCE challenge goes to the provider.
 func (c *Client) UsesPKCE(p sso.Provider) bool { return oauth2.UsesPKCE(p) }
@@ -66,13 +90,13 @@ func (c *Client) Exchange(ctx context.Context, p sso.Provider, code, redirectURI
 	if err != nil {
 		return sso.Tokens{}, err
 	}
-	t, err := c.oauth2.Exchange(ctx, p, p.ClientID, secret, code, redirectURI, verifier)
+	t, err := c.oauth2.Exchange(reach(ctx, p), p, p.ClientID, secret, code, redirectURI, verifier)
 	return sso.Tokens{IDToken: t.IDToken, RefreshToken: t.RefreshToken}, err
 }
 
 // Verify checks an ID token and returns what it says.
 func (c *Client) Verify(ctx context.Context, p sso.Provider, idToken, nonce string, native bool) (sso.Claims, error) {
-	cl, err := c.oidc.Verify(ctx, p, idToken, nonce, native)
+	cl, err := c.oidc.Verify(reach(ctx, p), p, idToken, nonce, native)
 	return sso.Claims{
 		Issuer: cl.Issuer, Subject: cl.Subject, Email: cl.Email, EmailVerified: cl.EmailVerified, Name: cl.Name, GivenName: cl.GivenName,
 		FamilyName: cl.FamilyName, Picture: cl.Picture, Audience: cl.Audience, HostedDomain: cl.HostedDomain,

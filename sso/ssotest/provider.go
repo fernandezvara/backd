@@ -39,6 +39,8 @@ type Provider struct {
 	revoke    int    // a status to answer the revoke endpoint with instead (0: 200)
 	revokes   []url.Values
 	keysHits  int
+	// discovery serves /.well-known/openid-configuration; Discovery changes what it says.
+	discovery map[string]any
 }
 
 type grant struct {
@@ -147,6 +149,56 @@ func (p *Provider) RotateKey(t testing.TB, kid string) {
 	p.key, p.kid = key, kid
 }
 
+// Discovery overrides keys of the discovery document (issuer, authorization_endpoint, …); a nil
+// value removes the key.
+func (p *Provider) Discovery(over map[string]any) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.discovery = over
+}
+
+// SignAs signs a token with the claims under another algorithm than the provider's own RS256, to
+// test that the verifier refuses what it must: "none" (unsigned), "HS256" (keyed with secret),
+// and the allowed "PS256".
+func (p *Provider) SignAs(t testing.TB, alg string, claims map[string]any, secret []byte) string {
+	t.Helper()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	c := map[string]any{"iat": time.Now().Unix(), "exp": time.Now().Add(time.Hour).Unix()}
+	maps.Copy(c, claims)
+	payload, _ := json.Marshal(c)
+	enc := base64.RawURLEncoding.EncodeToString
+	switch alg {
+	case "none":
+		header, _ := json.Marshal(map[string]any{"alg": "none", "typ": "JWT", "kid": p.kid})
+		return enc(header) + "." + enc(payload) + "."
+	case "HS256":
+		signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.HS256, Key: jose.JSONWebKey{Key: secret, KeyID: p.kid}}, (&jose.SignerOptions{}).WithType("JWT"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		jws, err := signer.Sign(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s, _ := jws.CompactSerialize()
+		return s
+	case "PS256":
+		signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.PS256, Key: jose.JSONWebKey{Key: p.key, KeyID: p.kid}}, (&jose.SignerOptions{}).WithType("JWT"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		jws, err := signer.Sign(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s, _ := jws.CompactSerialize()
+		return s
+	}
+	t.Fatalf("unknown algorithm %q", alg)
+	return ""
+}
+
 // IDToken signs a token with the claims (iat and exp are added unless given).
 func (p *Provider) IDToken(t testing.TB, claims map[string]any) string {
 	t.Helper()
@@ -229,6 +281,14 @@ func (p *Provider) serve(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "public, max-age=3600")
 		_ = json.NewEncoder(w).Encode(set)
+	case r.URL.Path == "/.well-known/openid-configuration":
+		p.mu.Lock()
+		doc := map[string]any{"issuer": p.URL, "authorization_endpoint": p.URL + "/authorize", "token_endpoint": p.URL + "/token", "jwks_uri": p.URL + "/keys", "code_challenge_methods_supported": []string{"S256"}}
+		maps.Copy(doc, p.discovery)
+		p.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		_ = json.NewEncoder(w).Encode(doc)
 	case r.URL.Path == "/token" && r.Method == http.MethodPost:
 		p.token(w, r)
 	case r.URL.Path == "/revoke" && r.Method == http.MethodPost:
@@ -281,3 +341,9 @@ func (p *Provider) token(w http.ResponseWriter, r *http.Request) {
 type nil2 struct{ testing.TB }
 
 func (nil2) Fatal(args ...any) { panic(args) }
+
+// ClientFor is an HTTP client that reaches the test server only (it listens on a loopback address).
+func ClientFor(srv *httptest.Server) *http.Client {
+	u, _ := url.Parse(srv.URL)
+	return safehttp.NewClient(func(h string) bool { return h == u.Hostname() }, true)
+}

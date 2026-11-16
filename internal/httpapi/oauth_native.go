@@ -59,6 +59,11 @@ func (a *authAPI) oauthIDToken(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Only the built-in providers have native apps whose audiences are configured.
+	if p.Kind == registry.ProviderTypeOIDC {
+		writeError(w, r, http.StatusNotFound, codeNotFound, "this provider has no native sign-in: use the redirect flow")
+		return
+	}
 	intent := str("intent")
 	if intent == "" {
 		intent = auth.IntentSignIn

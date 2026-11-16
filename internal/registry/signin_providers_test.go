@@ -79,8 +79,16 @@ func TestProviderErrors(t *testing.T) {
 		{"unknown provider", "auth:\n  strategies:\n    password: [password]\n    facebook: [facebook]\n  providers:\n    facebook: {client_id: x}\n", "isn't a provider backd knows"},
 		{"a kind not built yet", "auth:\n  strategies:\n    password: [password]\n    github: [github]\n  providers:\n    github: {client_id: x}\n", "isn't available yet"},
 		{"reserved name sso", "auth:\n  strategies:\n    password: [password]\n  providers:\n    sso: {client_id: abc}\n", "is reserved"},
-		{"type oidc not built yet", "auth:\n  strategies:\n    password: [password]\n    keycloak: [keycloak]\n  providers:\n    keycloak: {type: oidc, issuer: \"https://sso.example\"}\n", "type:"},
-		{"type oidc is not available yet", "auth:\n  strategies:\n    password: [password]\n    keycloak: [keycloak]\n  providers:\n    keycloak: {type: oidc}\n", "isn't available yet"},
+		{"another type", "auth:\n  strategies:\n    password: [password]\n    keycloak: [keycloak]\n  providers:\n    keycloak: {type: saml}\n", "type: \"saml\" isn't available"},
+		{"oidc without issuer", "auth:\n  strategies:\n    password: [password]\n    keycloak: [keycloak]\n  providers:\n    keycloak: {type: oidc, client_id: backd, client_secret: secret:S}\n", "issuer: is required"},
+		{"oidc issuer with a query", "auth:\n  strategies:\n    password: [password]\n    keycloak: [keycloak]\n  providers:\n    keycloak: {type: oidc, issuer: \"https://sso.example/?x=1\", client_id: backd, client_secret: secret:S}\n", "no credentials, query or fragment"},
+		{"oidc without a secret", "auth:\n  strategies:\n    password: [password]\n    keycloak: [keycloak]\n  providers:\n    keycloak: {type: oidc, issuer: \"https://sso.example\", client_id: backd}\n", "client_secret: is required"},
+		{"oidc bad scope", "auth:\n  strategies:\n    password: [password]\n    keycloak: [keycloak]\n  providers:\n    keycloak: {type: oidc, issuer: \"https://sso.example\", client_id: backd, client_secret: secret:S, scopes: [\"a b\"]}\n", "scopes[0]"},
+		{"oidc scope asked already", "auth:\n  strategies:\n    password: [password]\n    keycloak: [keycloak]\n  providers:\n    keycloak: {type: oidc, issuer: \"https://sso.example\", client_id: backd, client_secret: secret:S, scopes: [email]}\n", "asked for already"},
+		{"oidc with a tenant", "auth:\n  strategies:\n    password: [password]\n    keycloak: [keycloak]\n  providers:\n    keycloak: {type: oidc, issuer: \"https://sso.example\", client_id: backd, client_secret: secret:S, tenant: common}\n", "tenant: doesn't apply to keycloak"},
+		{"a built-in with oidc fields", "auth:\n  strategies:\n    password: [password]\n    google: [google]\n  providers:\n    google: {client_id: abc, client_secret: secret:S, link_by_email: true}\n", "link_by_email: doesn't apply to google"},
+		{"oidc named google", "auth:\n  strategies:\n    password: [password]\n    google: [google]\n  providers:\n    google: {type: oidc, issuer: \"https://sso.example\", client_id: backd, client_secret: secret:S}\n", "belongs to the built-in provider"},
+		{"oidc bad name", "auth:\n  strategies:\n    password: [password]\n  providers:\n    Key_Cloak: {type: oidc, issuer: \"https://sso.example\", client_id: backd, client_secret: secret:S}\n", "is not a name for a provider"},
 		{"empty", "auth:\n  strategies:\n    password: [password]\n    google: [google]\n  providers:\n    google:\n", "is empty"},
 		{"no client id", "auth:\n  strategies:\n    password: [password]\n    google: [google]\n  providers:\n    google: {client_secret: secret:S}\n", "client_id: is required"},
 		{"secret in the clear", "auth:\n  strategies:\n    password: [password]\n    google: [google]\n  providers:\n    google: {client_id: abc, client_secret: hunter2}\n", "must be secret:NAME"},
@@ -179,5 +187,28 @@ func TestReauthTTL(t *testing.T) {
 		if _, errs := parseRealmSettings([]byte(authBase + "  reauth:\n    ttl: " + ttl + "\n")); len(errs) == 0 {
 			t.Errorf("%s: accepted", ttl)
 		}
+	}
+}
+
+func TestGenericProviderIsRead(t *testing.T) {
+	yaml := "auth:\n  strategies:\n    password: [password]\n    keycloak: [keycloak]\n  sign_in:\n    allowed_redirects: [https://app.acme.example]\n  providers:\n    keycloak:\n      type: oidc\n      issuer: https://sso.acme.example/realms/acme\n      client_id: backd\n      client_secret: secret:KC\n      scopes: [groups, offline_x]\n      link_by_email: true\n      allow_private_network: true\n"
+	s, errs := parseRealmSettings([]byte(yaml))
+	if len(errs) > 0 {
+		t.Fatal(errs)
+	}
+	p := s.Providers["keycloak"]
+	if p == nil || p.Kind != "oidc" || p.Issuer != "https://sso.acme.example/realms/acme" || p.ClientID != "backd" || p.ClientSecret != "KC" ||
+		len(p.Scopes) != 2 || !p.LinkByEmail || !p.AllowPrivateNetwork || p.Insecure || !p.TrustsEmail() {
+		t.Fatalf("provider = %+v", p)
+	}
+	sp := p.SSO()
+	if sp.Kind != "oidc" || sp.Issuer != p.Issuer || sp.Name != "keycloak" || !sp.AllowPrivate || len(sp.Scopes) != 2 {
+		t.Errorf("sso provider = %+v", sp)
+	}
+	// Not trusted unless the operator says so; an http issuer is marked for the startup check.
+	yaml = strings.Replace(strings.Replace(yaml, "      link_by_email: true\n", "", 1), "https://sso.acme", "http://sso.acme", 1)
+	s, errs = parseRealmSettings([]byte(yaml))
+	if len(errs) > 0 || s.Providers["keycloak"].TrustsEmail() || !s.Providers["keycloak"].Insecure {
+		t.Errorf("defaults: %v %+v", errs, s.Providers["keycloak"])
 	}
 }
