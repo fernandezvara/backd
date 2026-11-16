@@ -24,7 +24,7 @@ REPO = "fernandezvara/backd"
 TESTS = (
     (r"--- FAIL: (\S+) \(", "go test"),
     (r"FAIL (backd refuses[^\n]{0,60}|the refusal[^\n]{0,60}|[a-z][^\n]{0,70})", "production reference"),
-    (r"(e2e/[a-z-]+\.spec\.ts:\d+:\d+ › [^\n]*)", "playwright"),
+    (r"✘\s+\d+\s+(e2e/[a-z-]+\.spec\.ts:\d+:\d+ › [^\n]*)", "playwright"),
     (r"FAILED (tests/\S+)", "pytest"),
 )
 INFRA = (
@@ -66,7 +66,7 @@ def failed_jobs(run):
 WHOLE_SUITE = 6  # this many failing tests in one attempt is one cause (the stack, an install), not that many flaky tests
 
 
-TIMING = re.compile(r"\s*\([0-9.]+m?s\)\s*$")
+TIMING = re.compile(r"(\s*\(retry #\d+\))?\s*\([0-9.]+m?s\)?\s*$")
 
 
 def clean(label, text):
