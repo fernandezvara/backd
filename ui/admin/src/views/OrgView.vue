@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AdminOrg, AuditRecord, OrgConnection, OrgConnections, OrgInvitation, OrgMember, OrgOwnedReport, OrgTeam, OrgTeamRoleGrant } from 'backd-js'
+import type { AdminOrg, AuditRecord, OrgConnection, OrgConnections, OrgDomain, OrgInvitation, OrgMember, OrgOwnedReport, OrgTeam, OrgTeamRoleGrant } from 'backd-js'
 import { NotFoundError } from 'backd-js'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -35,6 +35,8 @@ const loadError = ref('')
 const sso = ref<OrgConnections | null>(null)
 const ssoLogins = ref<AuditRecord[]>([])
 const ssoLoginsError = ref('')
+// The organization's verified domains: null while the realm has organizations.domains off.
+const domains = ref<{ items: OrgDomain[]; max_domains: number } | null>(null)
 
 const deleted = computed(() => org.value?.status === 'deleted')
 const teamName = (id: string) => teams.value.find((x) => x.id === id)?.name ?? id
@@ -70,6 +72,7 @@ async function load() {
     teams.value = ts
     invitations.value = invs
     await loadSso()
+    await loadDomains()
   } catch (e) {
     loadError.value = errorText(e, t('orgs.loadOneFailed'))
   }
@@ -93,6 +96,18 @@ async function loadSso() {
     // The audit trail is another area: without it the connections still work.
     ssoLogins.value = []
     ssoLoginsError.value = errorText(e, t('common.unexpected'))
+  }
+}
+// A realm without organizations.domains answers 404: the section is then not shown at all.
+async function loadDomains() {
+  try {
+    domains.value = await admin.orgs.domains(props.id)
+  } catch (e) {
+    if (e instanceof NotFoundError) {
+      domains.value = null
+      return
+    }
+    throw e
   }
 }
 onMounted(() => {
@@ -372,7 +387,7 @@ const invWho = (i: OrgInvitation) => i.email ?? i.user ?? t('orgs.invitations.an
 // ---- Sign-in connections ----
 type Provider = 'google' | 'microsoft' | 'oidc'
 const connecting = ref(false)
-const conn = ref({ provider: 'google' as Provider, clientId: '', clientSecret: '', tenant: '', hostedDomain: '', emailDomains: '', joinRoles: '', enabled: true, existing: false })
+const conn = ref({ provider: 'google' as Provider, clientId: '', clientSecret: '', tenant: '', hostedDomain: '', issuer: '', domains: '', emailDomains: '', joinRoles: '', enabled: true, existing: false })
 const connError = ref('')
 const connBusy = ref(false)
 // Providers the realm offers that this organization hasn't connected yet.
@@ -385,10 +400,10 @@ function openConnect(existing?: OrgConnection) {
   connError.value = ''
   conn.value = existing
     ? {
-        provider: existing.provider, clientId: existing.client_id, clientSecret: '', tenant: existing.tenant ?? '', hostedDomain: existing.hosted_domain ?? '',
+        provider: existing.provider, clientId: existing.client_id, clientSecret: '', tenant: existing.tenant ?? '', hostedDomain: existing.hosted_domain ?? '', issuer: existing.issuer ?? '', domains: (existing.domains ?? []).join(', '),
         emailDomains: existing.email_domains.join(', '), joinRoles: existing.join_roles.join(', '), enabled: existing.enabled, existing: true,
       }
-    : { provider: freeProviders.value[0] ?? 'google', clientId: '', clientSecret: '', tenant: '', hostedDomain: '', emailDomains: '', joinRoles: '', enabled: true, existing: false }
+    : { provider: freeProviders.value[0] ?? 'google', clientId: '', clientSecret: '', tenant: '', hostedDomain: '', issuer: '', domains: '', emailDomains: '', joinRoles: '', enabled: true, existing: false }
   connecting.value = true
 }
 // "invalid request body" says nothing: the field and the reason are in the details.
@@ -402,19 +417,22 @@ async function saveConnection() {
   connError.value = ''
   try {
     const v = conn.value
-    await admin.orgs.setSso(props.id, v.provider, {
+    const saved = await admin.orgs.setSso(props.id, v.provider, {
       clientId: v.clientId.trim(),
       // Left empty on an existing connection, the stored secret stays: it is never shown.
       clientSecret: v.clientSecret === '' ? undefined : v.clientSecret,
       tenant: v.provider === 'microsoft' ? v.tenant.trim() : undefined,
       hostedDomain: v.provider === 'google' ? v.hostedDomain.trim() : undefined,
-      emailDomains: parseList(v.emailDomains),
+      issuer: v.provider === 'oidc' ? v.issuer.trim() : undefined,
+      domains: v.provider === 'oidc' ? parseList(v.domains) : undefined,
+      emailDomains: v.provider === 'oidc' ? undefined : parseList(v.emailDomains),
       joinRoles: parseList(v.joinRoles),
       enabled: v.enabled,
     })
     connecting.value = false
     conn.value.clientSecret = ''
     toasts.push(t('orgs.sso.saved'))
+    if (saved.dormant_identities) toasts.push(t('orgs.sso.dormant', { count: saved.dormant_identities }))
     await load()
   } catch (e) {
     connError.value = connectionErrorText(e)
@@ -431,6 +449,47 @@ function askRemoveConn(c: OrgConnection) {
 const loginUser = (r: AuditRecord) => String((r.details as Record<string, unknown> | undefined)?.user ?? '—')
 const loginProvider = (r: AuditRecord) => String((r.details as Record<string, unknown> | undefined)?.provider ?? '—')
 const loginJoined = (r: AuditRecord) => (r.details as Record<string, unknown> | undefined)?.joined === true
+
+// ---- Verified domains ----
+const claiming = ref(false)
+const claimName = ref('')
+const claimError = ref('')
+const claimBusy = ref(false)
+function openClaim() {
+  claimName.value = ''
+  claimError.value = ''
+  claiming.value = true
+}
+async function claim() {
+  claimBusy.value = true
+  claimError.value = ''
+  try {
+    await admin.orgs.addDomain(props.id, claimName.value.trim())
+    claiming.value = false
+    toasts.push(t('orgs.domains.added'))
+    await loadDomains()
+  } catch (e) {
+    claimError.value = errorText(e, t('common.unexpected'))
+  } finally {
+    claimBusy.value = false
+  }
+}
+async function verifyDomain(d: OrgDomain) {
+  try {
+    const got = await admin.orgs.verifyDomain(props.id, d.domain)
+    toasts.push(got.state === 'verified' ? t('orgs.domains.nowVerified', { domain: d.domain }) : t('orgs.domains.notYet', { reason: got.reason ? t(`orgs.domains.reasons.${got.reason}`) : '' }), 'info')
+    await loadDomains()
+  } catch (e) {
+    toasts.push(errorText(e, t('common.unexpected')), 'error')
+  }
+}
+const setDomain = (d: OrgDomain, patch: { discoverable?: boolean; linkAccounts?: boolean }) => act(() => admin.orgs.updateDomain(props.id, d.domain, patch), t('orgs.domains.saved'))
+const removingDomain = ref(false)
+const removeDomain = ref('')
+function askRemoveDomain(d: OrgDomain) {
+  removeDomain.value = d.domain
+  removingDomain.value = true
+}
 
 const box = 'rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'
 const th = 'px-3 py-2'
@@ -629,7 +688,7 @@ const th = 'px-3 py-2'
             <tbody>
               <tr v-for="c in sso.items" :key="c.provider" class="border-b border-slate-100 last:border-0 dark:border-slate-800" :data-testid="`connection-${c.provider}`">
                 <td class="px-3 py-2">{{ t(`orgs.sso.providers.${c.provider}`) }}<div class="font-mono text-xs text-slate-600 dark:text-slate-400">{{ c.client_id }}</div></td>
-                <td class="px-3 py-2">{{ c.hosted_domain ?? c.tenant }}<div v-if="c.email_domains.length" class="text-xs text-slate-600 dark:text-slate-400">{{ c.email_domains.join(', ') }}</div></td>
+                <td class="px-3 py-2">{{ c.hosted_domain ?? c.tenant ?? c.issuer }}<div v-if="c.provider === 'oidc'" class="text-xs text-slate-600 dark:text-slate-400" data-testid="connection-domains">{{ c.domains?.length ? c.domains.join(', ') : t('orgs.sso.allDomains') }}</div><div v-if="c.email_domains.length" class="text-xs text-slate-600 dark:text-slate-400">{{ c.email_domains.join(', ') }}</div></td>
                 <td class="px-3 py-2">{{ c.join_roles.join(', ') || t('common.none') }}</td>
                 <td class="px-3 py-2">
                   {{ c.enabled ? t('orgs.sso.enabled') : t('orgs.sso.disabled') }}
@@ -658,6 +717,55 @@ const th = 'px-3 py-2'
         </ul>
       </section>
 
+      <section v-if="domains" class="mt-8" aria-labelledby="domains-h" data-testid="org-domains">
+        <div class="flex flex-wrap items-end justify-between gap-3">
+          <h2 id="domains-h" class="text-lg font-semibold">{{ t('orgs.domains.title') }}</h2>
+          <AppButton v-if="canWrite && domains.items.length < domains.max_domains" variant="secondary" @click="openClaim">{{ t('orgs.domains.add') }}</AppButton>
+        </div>
+        <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">{{ t('orgs.domains.help') }}</p>
+        <div :class="[box, 'mt-2 overflow-x-auto']">
+          <table class="w-full text-left text-sm" data-testid="org-domain-list">
+            <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
+              <tr>
+                <th scope="col" :class="th">{{ t('orgs.domains.domain') }}</th>
+                <th scope="col" :class="th">{{ t('orgs.statusLabel') }}</th>
+                <th scope="col" :class="th">{{ t('orgs.domains.record') }}</th>
+                <th scope="col" :class="th">{{ t('orgs.domains.use') }}</th>
+                <th v-if="canWrite" scope="col" :class="th"><span class="sr-only">{{ t('orgs.members.actions') }}</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="d in domains.items" :key="d.domain" class="border-b border-slate-100 last:border-0 dark:border-slate-800" :data-testid="`domain-${d.domain}`">
+                <td class="px-3 py-2 font-mono text-xs">{{ d.domain }}</td>
+                <td class="px-3 py-2">
+                  <span data-testid="domain-state">{{ t(`orgs.domains.states.${d.state}`) }}</span>
+                  <div v-if="d.reason && d.state !== 'verified'" class="text-xs text-amber-800 dark:text-amber-300">{{ t(`orgs.domains.reasons.${d.reason}`) }}</div>
+                </td>
+                <td class="px-3 py-2">
+                  <template v-if="d.state !== 'verified'">
+                    <div class="text-xs text-slate-600 dark:text-slate-400">{{ t('orgs.domains.publish', { type: d.record.type }) }}</div>
+                    <code class="break-all text-xs" data-testid="domain-record-name">{{ d.record.name }}</code>
+                    <div><code class="break-all text-xs" data-testid="domain-record-value">{{ d.record.value }}</code></div>
+                  </template>
+                  <span v-else class="text-xs text-slate-600 dark:text-slate-400">{{ d.last_checked_at ? t('orgs.domains.checked', { when: formatDate(d.last_checked_at) }) : '' }}</span>
+                </td>
+                <td class="px-3 py-2">
+                  <label class="flex items-center gap-2 text-xs"><input type="checkbox" :checked="d.discoverable" :disabled="!canWrite" :aria-label="t('orgs.domains.discoverable')" data-testid="domain-discoverable" @change="setDomain(d, { discoverable: ($event.target as HTMLInputElement).checked })" /> {{ t('orgs.domains.discoverable') }}</label>
+                  <label class="flex items-center gap-2 text-xs"><input type="checkbox" :checked="d.link_accounts" :disabled="!canWrite" :aria-label="t('orgs.domains.linkAccounts')" data-testid="domain-link" @change="setDomain(d, { linkAccounts: ($event.target as HTMLInputElement).checked })" /> {{ t('orgs.domains.linkAccounts') }}</label>
+                </td>
+                <td v-if="canWrite" class="space-x-3 px-3 py-2 text-right">
+                  <button v-if="d.state !== 'verified'" type="button" class="underline" data-testid="domain-verify" @click="verifyDomain(d)">{{ t('orgs.domains.verify') }}</button>
+                  <button type="button" class="underline" @click="askRemoveDomain(d)">{{ t('common.delete') }}</button>
+                </td>
+              </tr>
+              <tr v-if="!domains.items.length">
+                <td colspan="5" class="px-3 py-6 text-center text-slate-600 dark:text-slate-400">{{ t('orgs.domains.empty') }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section class="mt-8" aria-labelledby="claims-h">
         <h2 id="claims-h" class="text-lg font-semibold">{{ t('orgs.claims.title') }}</h2>
         <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">{{ t('orgs.claims.help') }}</p>
@@ -679,9 +787,13 @@ const th = 'px-3 py-2'
     </div>
     <TextField v-model="conn.clientId" :label="t('orgs.sso.clientId')" autocomplete="off" required />
     <TextField v-model="conn.clientSecret" type="password" :label="t('orgs.sso.clientSecret')" :help="conn.existing ? t('orgs.sso.secretKeepHelp') : t('orgs.sso.secretHelp')" autocomplete="new-password" :required="!conn.existing" />
-    <TextField v-if="conn.provider === 'microsoft'" v-model="conn.tenant" :label="t('orgs.sso.tenant')" :help="t('orgs.sso.tenantHelp')" autocomplete="off" required />
+    <template v-if="conn.provider === 'oidc'">
+      <TextField v-model="conn.issuer" :label="t('orgs.sso.issuer')" :help="t('orgs.sso.issuerHelp')" autocomplete="off" required />
+      <TextField v-model="conn.domains" :label="t('orgs.sso.domains')" :help="t('orgs.sso.domainsHelp')" autocomplete="off" />
+    </template>
+    <TextField v-else-if="conn.provider === 'microsoft'" v-model="conn.tenant" :label="t('orgs.sso.tenant')" :help="t('orgs.sso.tenantHelp')" autocomplete="off" required />
     <TextField v-else v-model="conn.hostedDomain" :label="t('orgs.sso.hostedDomain')" :help="t('orgs.sso.hostedDomainHelp')" autocomplete="off" required />
-    <TextField v-model="conn.emailDomains" :label="t('orgs.sso.emailDomains')" :help="t('orgs.sso.emailDomainsHelp')" autocomplete="off" />
+    <TextField v-if="conn.provider !== 'oidc'" v-model="conn.emailDomains" :label="t('orgs.sso.emailDomains')" :help="t('orgs.sso.emailDomainsHelp')" autocomplete="off" />
     <TextField v-model="conn.joinRoles" :label="t('orgs.sso.joinRoles')" :help="t('orgs.members.rolesHelp', { roles: (declared ?? []).join(', ') })" autocomplete="off" />
     <label class="flex items-center gap-2 text-sm"><input v-model="conn.enabled" type="checkbox" /> {{ t('orgs.sso.enabled') }}</label>
   </FormDialog>
@@ -693,6 +805,19 @@ const th = 'px-3 py-2'
     :expected="removeConn ? removeConn.provider : ''"
     :action="t('common.delete')"
     @confirm="act(() => admin.orgs.deleteSso(id, removeConn!.provider), t('orgs.sso.removed'))"
+  />
+
+  <FormDialog v-model:open="claiming" :title="t('orgs.domains.add')" :submit="t('orgs.domains.claim')" :busy="claimBusy" :error="claimError" @submit="claim">
+    <TextField v-model="claimName" :label="t('orgs.domains.domain')" :help="t('orgs.domains.claimHelp')" autocomplete="off" required />
+  </FormDialog>
+
+  <ConfirmDialog
+    v-model:open="removingDomain"
+    :title="t('orgs.domains.removeTitle')"
+    :description="t('orgs.domains.removeHelp')"
+    :expected="removeDomain"
+    :action="t('common.delete')"
+    @confirm="act(() => admin.orgs.removeDomain(id, removeDomain), t('orgs.domains.removed'))"
   />
 
   <FormDialog v-model:open="adding" :title="t('orgs.members.add')" :submit="t('common.create')" :busy="addBusy" :error="addError" @submit="addMember">

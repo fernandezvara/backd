@@ -82,7 +82,7 @@ The application then starts `/_auth/orgs/{org}/oauth/{provider}/start` (see [the
 | `link_accounts` | A sign-in through the organization's connection on this domain may link an existing account. Default `true` |
 | `record` | The DNS record to publish |
 
-Change the two switches with `PATCH /_orgs/{org}/domains/{domain}`.
+Change the two switches with `PATCH /_orgs/{org}/domains/{domain}`, or in the organization's page of the admin UI, whose *Domains* section lists the claims with the record to publish, checks a pending one now and releases it.
 
 ## Good to know
 

@@ -443,7 +443,9 @@
       "unlinked": "{provider} quitado.",
       "unlinkTitle": "¿Quitar la forma de iniciar sesión con {provider}?",
       "unlinkBody": "La persona ya no podrá iniciar sesión con ella. La última forma de iniciar sesión no se puede quitar. Quitar Apple también revoca los tokens de Apple de la persona.",
-      "loadFailed": "No se pudieron cargar las formas de iniciar sesión."
+      "loadFailed": "No se pudieron cargar las formas de iniciar sesión.",
+      "viaOrg": "a través de la organización {org}",
+      "dormant": "dormida: su emisor cambió"
     },
     "sessions": {
       "title": "Sesiones",
@@ -1252,7 +1254,8 @@
       "provider": "Proveedor",
       "providers": {
         "google": "Google Workspace",
-        "microsoft": "Microsoft Entra"
+        "microsoft": "Microsoft Entra",
+        "oidc": "OpenID Connect"
       },
       "limitedTo": "Quién puede entrar",
       "joinRoles": "Roles al unirse",
@@ -1280,7 +1283,46 @@
       "recent": "Inicios de sesión recientes",
       "recentHelp": "Los últimos veinte inicios de sesión por las conexiones de esta organización.",
       "noLogins": "Nadie ha iniciado sesión por una conexión todavía.",
-      "joined": "se unió"
+      "joined": "se unió",
+      "issuer": "Emisor",
+      "issuerHelp": "La dirección del emisor del servidor, por ejemplo https://login.acme.example. El realm debe permitirlo.",
+      "domains": "Dominios",
+      "domainsHelp": "Opcional, separados por comas: dominios verificados de esta organización cuyas direcciones admite. Vacío: todos.",
+      "allDomains": "Todos los dominios verificados",
+      "dormant": "{count} identidades pertenecían al emisor anterior y quedan dormidas hasta que sus personas se vuelvan a vincular."
+    },
+    "domains": {
+      "title": "Dominios",
+      "add": "Reclamar un dominio",
+      "claim": "Reclamar",
+      "claimHelp": "Un dominio que la organización controla, por ejemplo acme.example. Se demuestra publicando un registro DNS.",
+      "help": "Un dominio se demuestra publicando un registro DNS y se comprueba de nuevo cada cierto tiempo. Un dominio verificado permite admitir, en la conexión OpenID Connect de la organización, a las personas con sus direcciones, y que encuentren la organización.",
+      "domain": "Dominio",
+      "record": "Prueba",
+      "publish": "Publique un registro {type}:",
+      "use": "Uso",
+      "discoverable": "Descubrible",
+      "linkAccounts": "Vincular cuentas",
+      "verify": "Comprobar ahora",
+      "empty": "No hay dominios reclamados.",
+      "added": "Dominio reclamado. Publique el registro y compruébelo.",
+      "saved": "Dominio guardado.",
+      "nowVerified": "{domain} está verificado.",
+      "notYet": "Aún sin verificar. {reason}",
+      "checked": "Comprobado {when}",
+      "removeTitle": "Liberar dominio",
+      "removeHelp": "Un dominio verificado queda libre para otra organización, y las conexiones que dependen de él dejan de admitir personas.",
+      "removed": "Dominio liberado.",
+      "states": {
+        "pending": "Pendiente",
+        "verified": "Verificado",
+        "lapsed": "Caducado"
+      },
+      "reasons": {
+        "record_not_found": "No se encontró el registro.",
+        "mismatch": "El registro no coincide.",
+        "resolver_error": "Falló la consulta DNS; inténtelo de nuevo."
+      }
     },
     "claims": {
       "title": "Claims",

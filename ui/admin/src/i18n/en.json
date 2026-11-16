@@ -443,7 +443,9 @@
       "unlinked": "{provider} removed.",
       "unlinkTitle": "Remove the way to sign in with {provider}?",
       "unlinkBody": "The user can no longer sign in with it. The last way to sign in can't be removed. Removing Apple also revokes the user's Apple tokens.",
-      "loadFailed": "The ways to sign in could not be loaded."
+      "loadFailed": "The ways to sign in could not be loaded.",
+      "viaOrg": "through organization {org}",
+      "dormant": "dormant: its issuer changed"
     },
     "sessions": {
       "title": "Sessions",
@@ -1252,7 +1254,8 @@
       "provider": "Provider",
       "providers": {
         "google": "Google Workspace",
-        "microsoft": "Microsoft Entra"
+        "microsoft": "Microsoft Entra",
+        "oidc": "OpenID Connect"
       },
       "limitedTo": "Who can come in",
       "joinRoles": "Roles on joining",
@@ -1280,7 +1283,46 @@
       "recent": "Recent sign-ins",
       "recentHelp": "The last twenty sign-ins through this organization's connections.",
       "noLogins": "Nobody has signed in through a connection yet.",
-      "joined": "joined"
+      "joined": "joined",
+      "issuer": "Issuer",
+      "issuerHelp": "The server's issuer address, for example https://login.acme.example. The realm must allow it.",
+      "domains": "Domains",
+      "domainsHelp": "Optional, separated by commas: verified domains of this organization whose addresses it admits. Empty: all of them.",
+      "allDomains": "All verified domains",
+      "dormant": "{count} identities belonged to the previous issuer and are dormant until their people link again."
+    },
+    "domains": {
+      "title": "Domains",
+      "add": "Claim a domain",
+      "claim": "Claim",
+      "claimHelp": "A domain the organization controls, for example acme.example. You prove it by publishing a DNS record.",
+      "help": "A domain is proved by publishing a DNS record, and checked again from time to time. A verified domain lets people with its addresses be admitted through the organization's OpenID Connect connection, and find the organization.",
+      "domain": "Domain",
+      "record": "Proof",
+      "publish": "Publish a {type} record:",
+      "use": "Use",
+      "discoverable": "Discoverable",
+      "linkAccounts": "Link accounts",
+      "verify": "Check now",
+      "empty": "No domains claimed.",
+      "added": "Domain claimed. Publish the record, then check it.",
+      "saved": "Domain saved.",
+      "nowVerified": "{domain} is verified.",
+      "notYet": "Not verified yet. {reason}",
+      "checked": "Checked {when}",
+      "removeTitle": "Release domain",
+      "removeHelp": "A verified domain becomes free for another organization, and the connections that rely on it stop admitting people.",
+      "removed": "Domain released.",
+      "states": {
+        "pending": "Pending",
+        "verified": "Verified",
+        "lapsed": "Lapsed"
+      },
+      "reasons": {
+        "record_not_found": "The record was not found.",
+        "mismatch": "The record does not match.",
+        "resolver_error": "The DNS lookup failed; try again."
+      }
     },
     "claims": {
       "title": "Claims",

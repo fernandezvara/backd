@@ -671,11 +671,12 @@ class AdminUsers {
    * The last one can't be removed: that rejects with a `ConflictError` whose `code` is `last_sign_in_method`.
    * @param {string} id
    * @param {string} provider
-   * @param {RequestOptions} [opts]
+   * @param {RequestOptions & { org?: string }} [opts] `org`: the identity came through that organization's connection.
    * @returns {Promise<void>}
    */
   async unlinkIdentity(id, provider, opts) {
-    await this.admin._request({ method: 'DELETE', path: ['users', id, 'identities', provider], ...opts })
+    const { org, ...rest } = opts ?? {}
+    await this.admin._request({ method: 'DELETE', path: ['users', id, 'identities', provider], query: org ? { org } : undefined, ...rest })
   }
 
   /**
@@ -1670,6 +1671,66 @@ class AdminOrgs {
    */
   async deleteSso(id, provider, opts) {
     await this.admin._request({ method: 'DELETE', path: ['orgs', id, 'sso', provider], ...opts })
+  }
+
+  /**
+   * The organization's domain claims, with the DNS record to publish and where each proof stands; a
+   * `NotFoundError` while the realm has `organizations.domains` off.
+   * @param {string} id
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<{ items: import('./orgs.js').OrgDomain[], max_domains: number }>}
+   */
+  async domains(id, opts) {
+    return (await this.admin._request({ method: 'GET', path: ['orgs', id, 'domains'], ...opts })).data
+  }
+
+  /**
+   * Claims a domain for the organization; the answer holds the record to publish.
+   * @param {string} id
+   * @param {string} domain
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<import('./orgs.js').OrgDomain>}
+   */
+  async addDomain(id, domain, opts) {
+    return (await this.admin._request({ method: 'POST', path: ['orgs', id, 'domains'], body: { domain }, ...opts })).data
+  }
+
+  /**
+   * Checks the record now: `state` is `verified` when it is there, or stays as it was with a `reason`.
+   * @param {string} id
+   * @param {string} domain
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<import('./orgs.js').OrgDomain>}
+   */
+  async verifyDomain(id, domain, opts) {
+    return (await this.admin._request({ method: 'POST', path: ['orgs', id, 'domains', domain, 'verify'], ...opts })).data
+  }
+
+  /**
+   * Changes what a domain may be used for.
+   * @param {string} id
+   * @param {string} domain
+   * @param {{ discoverable?: boolean, linkAccounts?: boolean }} patch
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<import('./orgs.js').OrgDomain>}
+   */
+  async updateDomain(id, domain, patch, opts) {
+    /** @type {Record<string, boolean>} */
+    const body = {}
+    if (patch.discoverable !== undefined) body.discoverable = patch.discoverable
+    if (patch.linkAccounts !== undefined) body.link_accounts = patch.linkAccounts
+    return (await this.admin._request({ method: 'PATCH', path: ['orgs', id, 'domains', domain], body, ...opts })).data
+  }
+
+  /**
+   * Releases the claim.
+   * @param {string} id
+   * @param {string} domain
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<void>}
+   */
+  async removeDomain(id, domain, opts) {
+    await this.admin._request({ method: 'DELETE', path: ['orgs', id, 'domains', domain], ...opts })
   }
 
   /**

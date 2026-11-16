@@ -184,8 +184,10 @@ test('an administrator connects an organization to its own Google Workspace and 
   await ms.getByLabel('Tenant id').fill('11111111-2222-3333-4444-555555555555')
   await ms.getByRole('button', { name: 'Save' }).click()
   await expect(page.getByTestId('connection-microsoft')).toContainText('11111111-2222-3333-4444-555555555555')
-  // Both providers are connected: nothing left to add.
-  await expect(page.getByRole('button', { name: 'Connect a provider' })).toHaveCount(0)
+  // Google and Microsoft are connected: only OpenID Connect is left to add.
+  await page.getByRole('button', { name: 'Connect a provider' }).click()
+  await expect(page.getByRole('dialog').getByLabel('Provider').locator('option')).toHaveText(['OpenID Connect'])
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
   await expect(page.getByTestId('org-sso-logins')).toContainText('Nobody has signed in')
 
   // Removing asks for the provider's name.
@@ -195,4 +197,58 @@ test('an administrator connects an organization to its own Google Workspace and 
   await del.getByRole('button', { name: 'Delete' }).click()
   await expect(page.getByTestId('connection-google')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Connect a provider' })).toBeVisible()
+})
+
+test('an administrator claims a domain, sees the record to publish, and an OpenID Connect connection needs it proved', async ({ page, signIn }) => {
+  const name = `Domains ${stamp}`
+  await signIn('admin', { keep: true })
+  await go(page, 'Organizations')
+  await page.getByRole('button', { name: 'Create organization' }).click()
+  const create = page.getByRole('dialog')
+  await create.getByLabel('Name').fill(name)
+  await create.getByLabel('Slug').fill(name.toLowerCase().replace(/\s+/g, '-'))
+  await create.getByLabel("Owner's email").fill(users.admin)
+  await create.getByRole('button', { name: 'Create', exact: true }).click()
+  await expect(page.getByTestId('org-name')).toHaveText(name)
+
+  // A claim is pending, with the record to publish.
+  const section = page.getByTestId('org-domains')
+  await expect(section).toContainText('No domains claimed')
+  await page.getByRole('button', { name: 'Claim a domain' }).click()
+  const claim = page.getByRole('dialog')
+  await claim.getByLabel('Domain').fill(`e2e-${stamp}.example.com`)
+  await claim.getByRole('button', { name: 'Claim', exact: true }).click()
+  const row = page.getByTestId(`domain-e2e-${stamp}.example.com`)
+  await expect(row.getByTestId('domain-state')).toHaveText('Pending')
+  await expect(row.getByTestId('domain-record-name')).toHaveText(`_backd-challenge.e2e-${stamp}.example.com`)
+  await expect(row.getByTestId('domain-record-value')).not.toBeEmpty()
+
+  // Checking finds no record: it stays pending and says so.
+  await row.getByTestId('domain-verify').click()
+  await expect(page.getByRole('status').filter({ hasText: 'Not verified yet' })).toBeVisible()
+  await expect(row.getByTestId('domain-state')).toHaveText('Pending')
+
+  // What the domain may be used for.
+  await row.getByTestId('domain-discoverable').check()
+  await expect(page.getByRole('status').filter({ hasText: 'Domain saved' })).toBeVisible()
+  await expect(row.getByTestId('domain-discoverable')).toBeChecked()
+
+  // An OpenID Connect connection asks for an issuer, and is refused while no domain is proved.
+  await page.getByRole('button', { name: 'Connect a provider' }).click()
+  const oidc = page.getByRole('dialog')
+  await oidc.getByLabel('Provider').selectOption('oidc')
+  await oidc.getByLabel('Client id').fill('backd')
+  await oidc.getByLabel('Client secret').fill(`never-shown-${stamp}`)
+  await oidc.getByLabel('Issuer').fill('https://login.acme.example')
+  await oidc.getByRole('button', { name: 'Save' }).click()
+  await expect(oidc).toContainText(/domain/i)
+  await oidc.getByRole('button', { name: 'Cancel' }).click()
+  await expect(page.getByTestId('connection-oidc')).toHaveCount(0)
+
+  // Releasing asks for the domain's name.
+  await row.getByRole('button', { name: 'Delete' }).click()
+  const del = page.getByRole('dialog')
+  await del.getByLabel(/Type/).fill(`e2e-${stamp}.example.com`)
+  await del.getByRole('button', { name: 'Delete' }).click()
+  await expect(row).toHaveCount(0)
 })
