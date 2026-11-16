@@ -81,6 +81,22 @@ Once chapter 1 has written the first config, `docker compose up -d` runs backd a
 Working on a `backd` checkout instead? The same files live in the repository: `examples/config/shelf/` is the realm's final state, `clients/js/examples/shelf/` the app, and `make dev-examples` serves it at `/example/shelf/` next to the other examples.
 {{< /hint >}}
 
+## Where to stop
+
+The chapters are cumulative: each starts from the state the previous one left, and CI replays them in order. So you can stop after any chapter and have a working app, but you cannot skip one; the table says where each topic's chapters are and what they build on.
+
+| You want | Read | It builds on |
+|---|---|---|
+| An API with users, rules and a small app | 1–3 | nothing |
+| Sign-up by invitation | 4 | 2; the invitations are emailed once chapter 10 configures delivery |
+| Server logic: functions, internal calls, async jobs, schedules | 5–9 | 3 (chapter 5 closes the holes it left) |
+| Real email, webhooks, API keys, audit and the hardening checklist | 10–12 | 4 and 8–9 (the emails of the invitations and the digest) |
+| Files, big uploads, thumbnails and share links | 13–15 | 1–5 (chapter 15 uses chapter 5's functions) |
+| A second factor, magic links and versioned terms | 16–17 | 10 (the links arrive by email) |
+| App configuration and generated types | 18–19 | 5–9 |
+| Teams: organizations, references, search, pipelines, live updates, encrypted notes | 20–25 | 4 and 5; 22–25 build on chapter 20's pinboard |
+| A user's right to their data | 26 | 10, 13, 17 and 25 |
+
 ## The chapters
 
 | # | Chapter | You add |
