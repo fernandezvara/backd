@@ -1,0 +1,38 @@
+name: Flaky tests
+
+# A job that fails and passes on a re-run turns the run green and the failure vanishes. Every day
+# this lists the failures of the last three days that passed on a re-run and opens one issue per
+# failing test or step (label flaky-test), or adds the new runs to the open one, and reopens a
+# closed one that failed again. See design/ci-flaky-tests.md.
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+    inputs:
+      days:
+        description: Days to look back
+        default: "3"
+      dry_run:
+        description: Say what would be reported, change nothing
+        type: boolean
+        default: false
+
+permissions:
+  actions: read
+  issues: write
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: The report's own tests
+        run: python3 scripts/test-ci-failures.py
+      - name: Report the failures that passed on a re-run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DAYS: ${{ inputs.days || '3' }}
+          DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: scripts/ci-failures.py --days "$DAYS" --report $DRY_RUN

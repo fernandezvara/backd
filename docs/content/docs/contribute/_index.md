@@ -150,6 +150,10 @@ MongoDB must listen on the same port the replica set announces, which is why the
 
 CI steps that depend on something outside the repository (a package mirror, the Go module proxy, an image registry) run through `scripts/retry.sh`: `scripts/retry.sh docker build …`, or `. scripts/retry.sh; retry <command>` in a script. It runs the command again, up to three times, **only** when what it printed matches a known infrastructure failure (`Failed to fetch`, `toomanyrequests`, a dropped connection, a proxy error…). A failure of the code is not run again, so a red check is never hidden by it, and every retry shows as a warning titled `infrastructure retry` on the run. `scripts/test-retry.sh` tests the helper. Add a pattern to `INFRA_PATTERN` when a new kind of infrastructure failure shows up in `scripts/ci-failures.py`.
 
+### Tests that fail at random
+
+A test that fails and passes on a re-run is a defect: tests are the source of truth, and a red check must mean something. A re-run turns the run green and hides the failure, so every day the **Flaky tests** workflow runs `scripts/ci-failures.py --days 3 --report`: it opens one issue (label `flaky-test`) per failing test or step that passed on a re-run, adds the new runs to the open one and reopens a closed one that fails again. `scripts/ci-failures.py` alone lists what failed in a window and what passed on a retry; `design/ci-flaky-tests.md` has the survey and the causes found so far. Before merging a pull request whose check you re-ran, make sure its failure is in one of those issues. To fix one: reproduce it under load (`go test -count=200 -cpu 1`, or the job in a loop), wait for the condition with a deadline instead of sleeping, and give each test its own ports, directories and database names. A race in the product that a test finds is a bug with its own issue.
+
 {{< hint warning >}}
 MongoDB 8.0 (and the current `latest` image) refuses to start on Linux kernel 6.19 or newer ([SERVER-121912](https://jira.mongodb.org/browse/SERVER-121912)). Use 8.2.
 {{< /hint >}}
