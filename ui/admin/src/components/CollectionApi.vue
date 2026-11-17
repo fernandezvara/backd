@@ -51,7 +51,8 @@ ${e ? `  --data-urlencode 'where=${where}' \\\n` : ''}  --data-urlencode 'order_
   "${base}/${db}/${c}"
 
 # create
-curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \\
+curl -X POST -H "Authorization: Bearer $TOKEN" \\
+  -H "Content-Type: application/json" \\
   -d '{}' \\
   "${base}/${db}/${c}"
 `,
@@ -125,7 +126,7 @@ async function download(kind: 'openapi' | 'types') {
           >{{ l.label }}</button>
         </div>
       </div>
-      <SourceViewer :name="`${collection}.${lang}`" :file="file" />
+      <SourceViewer :name="`${collection}.${lang}`" :file="file" fit />
     </AppCard>
     <AppCard flush class="h-fit">
       <h3 class="border-b border-slate-200 px-4 py-2.5 text-[13px] font-semibold dark:border-slate-800">{{ t('data.api.reference') }}</h3>
