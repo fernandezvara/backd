@@ -9,6 +9,7 @@ import AppButton from '@/components/AppButton.vue'
 import AppCard from '@/components/AppCard.vue'
 import { useAdmin } from '@/lib/admin'
 import { errorText } from '@/lib/format'
+import { highlight } from '@/lib/highlight'
 import { useToasts } from '@/stores/toasts'
 
 // A function's code, read-only: the files it has, the shared modules it imports and what it depends on.
@@ -48,6 +49,7 @@ const groups = computed(() => {
 })
 const file = computed(() => source.value?.files.find((f) => f.path === selected.value))
 const lines = computed(() => (file.value?.content ?? '').replace(/\n$/, '').split('\n'))
+const tokens = computed(() => (file.value?.content == null ? [] : highlight(file.value.content.replace(/\n$/, ''), file.value.language)))
 
 async function copy() {
   if (file.value?.content == null) return
@@ -102,7 +104,7 @@ const kindBadge = (k: string) => (k === 'local' ? 'neutral' : k === 'unresolved'
           <p v-if="file.truncated" class="border-b border-slate-200 bg-amber-50 px-4 py-1.5 text-xs text-amber-900 dark:border-slate-800 dark:bg-amber-950/40 dark:text-amber-200">{{ t('fn.code.truncated') }}</p>
           <div class="flex max-h-[34rem] overflow-auto py-2 font-mono text-[12.5px] leading-relaxed" tabindex="0" data-testid="fn-source">
             <pre class="sticky left-0 shrink-0 select-none bg-white px-3 text-right text-slate-400 dark:bg-slate-900" aria-hidden="true">{{ lines.map((_, i) => i + 1).join('\n') }}</pre>
-            <pre class="pr-4">{{ file.content }}</pre>
+            <pre class="pr-4"><span v-for="(tk, i) in tokens" :key="i" :class="tk.type ? `hl-${tk.type}` : undefined">{{ tk.text }}</span></pre>
           </div>
         </template>
       </AppCard>

@@ -15,6 +15,7 @@ import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
 import { useRawAdmin } from '@/lib/adminRaw'
 import { errorText, formatDate, prettyDuration } from '@/lib/format'
+import { highlight } from '@/lib/highlight'
 import { useRealmConfig } from '@/stores/config'
 import { useSession } from '@/stores/session'
 import { useToasts } from '@/stores/toasts'
@@ -63,6 +64,7 @@ const list = (xs: string[]) => (xs.length ? xs.join(', ') : t('functions.noneVal
 const source = ref<FunctionSource>()
 const bundle = computed(() => (source.value ? (source.value.bundle ? (source.value.bundle.current ? 'current' : 'stale') : 'none') : ''))
 const yaml = computed(() => source.value?.files.find((f) => f.role === 'config')?.content ?? '')
+const yamlTokens = computed(() => highlight(yaml.value, 'yaml'))
 
 // Invocations
 const runs = ref<InvocationRecord[]>([])
@@ -242,7 +244,7 @@ const statusClass = (s: string) => (s === 'ok' ? '' : 'font-semibold text-red-80
   <div v-show="tab === 'settings'" class="grid gap-5 lg:grid-cols-3">
     <AppCard flush class="lg:col-span-2">
       <h2 class="border-b border-slate-200 px-4 py-2.5 font-mono text-sm font-semibold dark:border-slate-800">function.yaml</h2>
-      <pre v-if="yaml" class="overflow-auto px-4 py-3 font-mono text-[12.5px] leading-relaxed" tabindex="0">{{ yaml }}</pre>
+      <pre v-if="yaml" class="overflow-auto px-4 py-3 font-mono text-[12.5px] leading-relaxed" tabindex="0"><span v-for="(tk, i) in yamlTokens" :key="i" :class="tk.type ? `hl-${tk.type}` : undefined">{{ tk.text }}</span></pre>
       <p v-else class="p-4 text-[13px] text-slate-600 dark:text-slate-400">{{ t('fn.noYaml') }}</p>
     </AppCard>
     <AppCard v-if="fn" flush class="h-fit">

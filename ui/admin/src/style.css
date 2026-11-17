@@ -133,6 +133,64 @@ html[data-accent='emerald'] {
   .dark tbody tr:hover {
     background: color-mix(in srgb, var(--n900) 70%, transparent);
   }
+  /* Source highlighting (lib/highlight.ts): one colour a kind of token, readable on both themes. */
+  .hl-cmnt {
+    color: var(--n500);
+    font-style: italic;
+  }
+  .hl-kwd,
+  .hl-err {
+    color: #be185d;
+  }
+  .hl-str,
+  .hl-insert {
+    color: #0f766e;
+  }
+  .hl-num,
+  .hl-bool,
+  .hl-class {
+    color: #c2410c;
+  }
+  .hl-type,
+  .hl-func,
+  .hl-section {
+    color: #1d4ed8;
+  }
+  .hl-var,
+  .hl-deleted {
+    color: #b91c1c;
+  }
+  .hl-oper {
+    color: var(--n600);
+  }
+  .dark .hl-cmnt {
+    color: var(--n500);
+  }
+  .dark .hl-kwd,
+  .dark .hl-err {
+    color: #f472b6;
+  }
+  .dark .hl-str,
+  .dark .hl-insert {
+    color: #5eead4;
+  }
+  .dark .hl-num,
+  .dark .hl-bool,
+  .dark .hl-class {
+    color: #fdba74;
+  }
+  .dark .hl-type,
+  .dark .hl-func,
+  .dark .hl-section {
+    color: #93c5fd;
+  }
+  .dark .hl-var,
+  .dark .hl-deleted {
+    color: #fca5a5;
+  }
+  .dark .hl-oper {
+    color: var(--n400);
+  }
   .swatch {
     @apply size-5 rounded-full border-2 border-transparent;
   }
