@@ -244,6 +244,37 @@ func roleRank(p, entry string) int {
 	return 3
 }
 
+// newSourceFile describes a file with its text, within the size limits: `spent` counts the
+// content bytes already returned, and a file that would pass MaxSourceTotalBytes comes without.
+func newSourceFile(p, role string, data []byte, spent *int) SourceFile {
+	sum := sha256.Sum256(data)
+	file := SourceFile{Path: p, Role: role, Language: languageOf(p), Size: int64(len(data)), SHA256: hex.EncodeToString(sum[:])}
+	switch {
+	case !utf8.Valid(data) || strings.IndexByte(string(data), 0) >= 0:
+		file.Binary = true
+	case *spent >= MaxSourceTotalBytes:
+		file.Truncated = true
+	default:
+		text := data
+		if len(text) > MaxSourceFileBytes {
+			text = text[:MaxSourceFileBytes]
+			for len(text) > 0 && !utf8.Valid(text) {
+				text = text[:len(text)-1] // never cut a character in two
+			}
+			file.Truncated = true
+		}
+		if *spent+len(text) > MaxSourceTotalBytes {
+			file.Truncated = true
+			file.Content = nil
+		} else {
+			s := string(text)
+			file.Content = &s
+			*spent += len(text)
+		}
+	}
+	return file
+}
+
 // add reads the project file p once, as a file of the response. It says whether the file exists.
 func (r *sourceReader) add(p, role string) bool {
 	if r.seen[p] {
@@ -271,31 +302,7 @@ func (r *sourceReader) add(p, role string) bool {
 		return false
 	}
 	r.seen[p] = true
-	sum := sha256.Sum256(data)
-	file := SourceFile{Path: p, Role: role, Language: languageOf(p), Size: int64(len(data)), SHA256: hex.EncodeToString(sum[:])}
-	switch {
-	case !utf8.Valid(data) || strings.IndexByte(string(data), 0) >= 0:
-		file.Binary = true
-	case r.spent >= MaxSourceTotalBytes:
-		file.Truncated = true
-	default:
-		text := data
-		if len(text) > MaxSourceFileBytes {
-			text = text[:MaxSourceFileBytes]
-			for len(text) > 0 && !utf8.Valid(text) {
-				text = text[:len(text)-1] // never cut a character in two
-			}
-			file.Truncated = true
-		}
-		if r.spent+len(text) > MaxSourceTotalBytes {
-			file.Truncated = true
-			file.Content = nil
-		} else {
-			s := string(text)
-			file.Content = &s
-			r.spent += len(text)
-		}
-	}
+	file := newSourceFile(p, role, data, &r.spent)
 	r.out.Files = append(r.out.Files, file)
 	return true
 }
@@ -312,6 +319,8 @@ func languageOf(p string) string {
 		return "yaml"
 	case ".md":
 		return "markdown"
+	case ".html", ".htm":
+		return "html"
 	}
 	return "text"
 }

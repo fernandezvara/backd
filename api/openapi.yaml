@@ -6925,7 +6925,9 @@ paths:
         (defaults applied; seeded user emails only for whoever may read users),
         every database's collections (schema, indexes, rules, `collection.yaml` policy) and
         functions (`function.yaml`, secrets by name only), the email templates and hosted
-        pages found on disk, the configuration warnings and the config fingerprint. In dev
+        pages found on disk, how people sign in (`strategies`, `providers` with their secrets
+        named and never shown, `passkeys`, `totp`, `magic_link`, `sign_in`), `consents`, `compliance`,
+        `rate_limit`, `triggers`, `realtime` and the other sections with their defaults applied, the configuration warnings and the config fingerprint. In dev
         mode (`BACKD_DEV`) the warnings include `reload_failed` entries: why the last change to the
         files was refused while the previous config keeps running. Each
         item carries the file it came from, relative to the config directory. Nothing here
@@ -6957,6 +6959,62 @@ paths:
                       properties:
                         code: { type: string }
                         message: { type: string }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+
+  /v1/{realm}/_admin/config/files:
+    parameters: [{ $ref: "#/components/parameters/realm" }]
+    get:
+      tags: [admin]
+      summary: The files of the realm's configuration, read-only
+      description: |
+        The files this instance reads for the realm, with their text, so the whole configuration
+        can be browsed: `realm.yaml`, everything in `_realm/` (email and page templates, consent
+        texts, app configuration), each collection's schema files, `indexes.json` and
+        `collection.yaml`, and each database's functions project and migrations. `path` is
+        relative to the config directory, like the `file` fields of `GET /_admin/config`. Hidden
+        entries, `node_modules`, generated type files and what backd doesn't read are left out.
+        Contents follow the limits of `GET …/functions/{database}/{name}/source`: a file over
+        256 KiB comes cut, binary files and the files past 2 MiB of content come without it.
+        `realm.yaml` holds the seeded user emails, which are personal data: for a caller who may
+        not read users it comes without content and with `restricted: true`. Needs the `config`
+        area (a read-only administrator reads it).
+      operationId: adminConfigFiles
+      security: [{ apiKey: [] }, { session: [] }]
+      responses:
+        "200":
+          description: The files.
+          headers: { Cache-Control: { $ref: "#/components/headers/NoStore" }, X-Backd-Version-Skew: { $ref: "#/components/headers/VersionSkew" } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [realm, fingerprint, files, omitted]
+                properties:
+                  realm: { type: string }
+                  fingerprint: { type: string, description: The config fingerprint the files belong to. }
+                  omitted: { type: integer, description: Files left out because the realm has more than 2000. }
+                  files:
+                    type: array
+                    description: Sorted by path.
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [path, role, language, size, sha256, content, truncated, binary, database, collection, restricted]
+                      properties:
+                        path: { type: string, description: "Relative to the config directory: `acme/app/posts/collection.yaml`." }
+                        role: { type: string, enum: [realm, realm_config, schema, indexes, collection, function, migration, other], description: "`realm` realm.yaml, `realm_config` a file of `_realm/`, `schema` a schema version or its types, `indexes`, `collection` collection.yaml, `function` a file of a functions project, `migration` a data migration." }
+                        language: { type: string, enum: [typescript, javascript, json, yaml, markdown, html, text] }
+                        size: { type: integer }
+                        sha256: { type: string }
+                        content: { type: [string, "null"], description: "The file as text; null when binary, restricted or past the response's size limit." }
+                        truncated: { type: boolean }
+                        binary: { type: boolean }
+                        database: { type: string, description: "The database it belongs to; empty for the realm's own files." }
+                        collection: { type: string, description: "The collection it belongs to; empty when it doesn't belong to one." }
+                        restricted: { type: boolean, description: "The file holds what the caller may not read: it comes without content." }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
@@ -12728,7 +12786,7 @@ components:
             properties:
               path: { type: string, description: "Relative to the functions project (the database's `_functions/`), with slashes: `refund/index.ts`, `lib/relay.ts`, `deno.json`." }
               role: { type: string, enum: [entry, config, schema, code, shared, project], description: "`entry` the module that runs, `config` function.yaml, `schema` the input and output schemas, `code` other files of the function's folder, `shared` code outside it that is imported, `project` deno.json." }
-              language: { type: string, enum: [typescript, javascript, json, yaml, markdown, text] }
+              language: { type: string, enum: [typescript, javascript, json, yaml, markdown, html, text] }
               size: { type: integer, description: The file's size in bytes. }
               sha256: { type: string }
               content: { type: [string, "null"], description: "The file as text; null when it is binary or the response already holds 2 MiB of contents." }

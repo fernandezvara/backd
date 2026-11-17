@@ -24,6 +24,18 @@ func TestAdminConfigView(t *testing.T) {
 		roles["support"].(map[string]any)["admin"] != "users, invitations" {
 		t.Errorf("roles: %v", roles)
 	}
+	// How people sign in, and the sections of every feature, are shown with their defaults.
+	for _, key := range []string{"strategies", "providers", "passkeys", "totp", "magic_link", "sign_in", "consents", "compliance", "rate_limit", "triggers", "realtime", "openapi", "pages", "app_config"} {
+		if settings[key] == nil {
+			t.Errorf("settings.%s is missing", key)
+		}
+	}
+	if st := settings["strategies"].([]any); len(st) < 2 || st[0].(map[string]any)["name"] == nil || st[0].(map[string]any)["methods"] == nil {
+		t.Errorf("strategies: %v", settings["strategies"])
+	}
+	if c := settings["consents"].(map[string]any)["marketing"].(map[string]any); c["required"] != false || c["current"] != "1" {
+		t.Errorf("consents: %v", settings["consents"])
+	}
 	if t2 := settings["login_throttle"].(map[string]any); t2["account_threshold"] != float64(5) {
 		t.Errorf("defaults are shown: %v", t2)
 	}
@@ -175,5 +187,66 @@ func TestAdminUserSessions(t *testing.T) {
 	}
 	if acts := f.auditActions(t, "session."); len(acts) != 1 || acts[0]["target"] != "user:"+f.adaID {
 		t.Errorf("audit: %v", acts)
+	}
+}
+
+// The realm's files, to browse the whole configuration: realm.yaml, _realm/, each collection's files
+// and the functions projects; nothing hidden or generated; realm.yaml's text only for who reads users.
+func TestAdminConfigFiles(t *testing.T) {
+	f := newRulesFixture(t)
+	url := admin + "/config/files"
+	rec, out := f.doH(t, "GET", url, "", bearer(f.key))
+	if rec.Code != http.StatusOK || out["realm"] != "acme" || out["fingerprint"] == nil {
+		t.Fatalf("files: %d %v", rec.Code, out)
+	}
+	byPath := map[string]map[string]any{}
+	for _, v := range out["files"].([]any) {
+		file := v.(map[string]any)
+		byPath[file["path"].(string)] = file
+	}
+	realm := byPath["acme/realm.yaml"]
+	if realm == nil || realm["role"] != "realm" || realm["language"] != "yaml" || realm["restricted"] != false || !strings.Contains(realm["content"].(string), "roles:") {
+		t.Fatalf("realm.yaml: %v", realm)
+	}
+	posts := byPath["acme/app/posts/collection.yaml"]
+	if posts == nil || posts["role"] != "collection" || posts["database"] != "app" || posts["collection"] != "posts" {
+		t.Errorf("a collection's policy: %v", posts)
+	}
+	if sc := byPath["acme/app/posts/schema.json"]; sc == nil || sc["role"] != "schema" || sc["language"] != "json" {
+		t.Errorf("a schema: %v", sc)
+	}
+	if fn := byPath["acme/app/_functions/echo/function.yaml"]; fn == nil || fn["role"] != "function" || fn["database"] != "app" || fn["collection"] != "" {
+		t.Errorf("a function's files: %v", fn)
+	}
+	if em := byPath["acme/_realm/email/order-shipped/en.txt"]; em == nil || em["role"] != "realm_config" {
+		t.Errorf("an email template: %v", em)
+	}
+	for p := range byPath {
+		if strings.Contains(p, "/.") || strings.HasSuffix(p, "backd.d.ts") || strings.HasSuffix(p, "schema.d.ts") || strings.Contains(p, "node_modules") {
+			t.Errorf("a hidden or generated file is listed: %s", p)
+		}
+	}
+	// Whoever may not read users doesn't get realm.yaml's text (the seeded emails are personal data).
+	f.bobHolds(t, "viewer")
+	_, out = f.doH(t, "GET", url, "", bearer(f.bob))
+	for _, v := range out["files"].([]any) {
+		file := v.(map[string]any)
+		if file["path"] == "acme/realm.yaml" && (file["restricted"] != true || file["content"] != nil) {
+			t.Errorf("realm.yaml for a read-only admin without read_access.users: %v", file)
+		}
+		if file["path"] == "acme/app/posts/schema.json" && file["content"] == nil {
+			t.Error("other files stay readable")
+		}
+	}
+	// The config area, like /config.
+	f.bobHolds(t, "support")
+	if rec, _ := f.doH(t, "GET", url, "", bearer(f.bob)); rec.Code != http.StatusForbidden {
+		t.Errorf("a role without the config area: %d", rec.Code)
+	}
+	if rec, _ := f.doH(t, "GET", url, "", bearer(f.ada)); rec.Code != http.StatusForbidden {
+		t.Errorf("a plain user: %d", rec.Code)
+	}
+	if rec, _ := f.doH(t, "GET", url, "", nil); rec.Code != http.StatusUnauthorized {
+		t.Errorf("no credentials: %d", rec.Code)
 	}
 }

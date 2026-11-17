@@ -688,3 +688,11 @@ test('a function\'s source is read from its folder', async () => {
   assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/functions/app/refund/source')
   await assert.rejects(a.functionSource('refund'), TypeError)
 })
+
+test('the configuration files are read from /config/files', async () => {
+  const body = { realm: 'acme', fingerprint: 'ab', omitted: 0, files: [{ path: 'acme/realm.yaml', role: 'realm', language: 'yaml', size: 3, sha256: 'x', content: 'a: 1', truncated: false, binary: false, database: '', collection: '', restricted: false }] }
+  const m = mockFetch([{ body }])
+  const a = adminOf(m)
+  assert.deepEqual(await a.configFiles(), body)
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/config/files')
+})

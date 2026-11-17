@@ -101,6 +101,9 @@ func realmConfig(s registry.RealmSettings, seesUsers bool) map[string]any {
 		role := s.Roles[name]
 		access := registry.AdminAccess{Write: role.Admin, ReadAll: role.AdminRead}
 		entry := map[string]any{"description": role.Description, "admin": access.String(), "seeded_users": len(role.Users)}
+		if role.Strategies != nil { // null: the role is active on every strategy
+			entry["strategies"] = role.Strategies
+		}
 		if seesUsers {
 			entry["seeded_emails"] = role.Users
 		}
@@ -124,13 +127,52 @@ func realmConfig(s registry.RealmSettings, seesUsers bool) map[string]any {
 		},
 		"default_locale": defaultLocale, "locales": orStrings(locales),
 		"roles":     roles,
-		"audit":     map[string]any{"retention": dur(s.AuditRetention)},
+		"audit":     map[string]any{"retention": dur(s.AuditRetention), "entries": auditEntries(s)},
 		"functions": map[string]any{"max_concurrency": s.FunctionsMaxConcurrency, "log_retention": dur(s.FunctionsLogRetention), "job_retention": dur(s.FunctionsJobRetention)},
 		"account": map[string]any{
 			"require_verified_email": s.Account.RequireVerifiedEmail, "welcome_email": s.Account.WelcomeEmail,
 			"allow_email_change": s.Account.AllowEmailChange, "purge_unverified_after": dur(s.Account.PurgeUnverifiedAfter),
 		},
 	}
+	// How people sign in: every strategy and provider, passkeys, TOTP, magic links, where a sign-in may
+	// go back to. Secrets are named, never shown.
+	strategies := make([]any, 0, len(s.Strategies))
+	for _, st := range s.Strategies {
+		var restricted []string
+		for _, name := range slices.Sorted(maps.Keys(s.Roles)) {
+			if only := s.Roles[name].Strategies; only != nil && slices.Contains(only, st.Name) {
+				restricted = append(restricted, name)
+			}
+		}
+		strategies = append(strategies, map[string]any{"name": st.Name, "methods": orStrings(st.Methods), "roles": orStrings(restricted)})
+	}
+	providers := make([]any, 0, len(s.Providers))
+	for _, name := range slices.Sorted(maps.Keys(s.Providers)) {
+		providers = append(providers, providerConfig(s.Providers[name]))
+	}
+	out["strategies"] = strategies
+	out["providers"] = providers
+	out["passkeys"] = map[string]any{"enabled": s.Passkeys.Enabled, "rp_id": s.Passkeys.RPID, "rp_name": s.Passkeys.RPName, "origins": orStrings(s.Passkeys.Origins)}
+	out["totp"] = map[string]any{"enabled": !s.MFA.Off, "issuer": s.MFA.Issuer}
+	out["magic_link"] = map[string]any{"enabled": s.MagicLink.Enabled, "signup": s.MagicLink.Signup}
+	out["sign_in"] = map[string]any{"app_url": s.SignInAppURL, "allowed_redirects": orStrings(s.SignInRedirects), "reauth_ttl": dur(s.ReauthLifetime())}
+	consents := map[string]any{}
+	for _, name := range slices.Sorted(maps.Keys(s.Consents)) {
+		c := s.Consents[name]
+		consents[name] = map[string]any{"required": c.Required, "current": c.Current, "versions": orStrings(slices.Sorted(maps.Keys(c.Versions)))}
+	}
+	out["consents"] = consents
+	out["compliance"] = map[string]any{"consent_proof": orStrings(s.Compliance.ConsentProof), "consent_retention": s.Compliance.Retention().String(), "export": s.Compliance.Export, "export_page": s.Compliance.ExportPage, "export_retention": dur(s.Compliance.ExportKeep())}
+	rates := map[string]any{}
+	for class, rate := range s.RateLimits {
+		rates[class] = map[string]any{"limit": rate.Limit, "window": dur(rate.Window)}
+	}
+	out["rate_limit"] = rates
+	out["triggers"] = map[string]any{"max_chain": s.Triggers.MaxChain, "max_chained_per_minute": s.Triggers.MaxChainedPerMinute, "max_per_collection": s.Triggers.MaxPerCollection, "max_backlog": s.Triggers.MaxBacklog}
+	out["realtime"] = map[string]any{"max_subscriptions_per_stream": s.Realtime.MaxSubscriptionsPerStream, "max_streams_per_user": s.Realtime.MaxStreamsPerUser}
+	out["openapi"] = map[string]any{"public": s.OpenAPIPublic}
+	out["pages"] = map[string]any{"data_hook": s.PagesDataHook}
+	out["app_config"] = map[string]any{"cache_ttl": dur(s.AppConfigCacheTTL)}
 	if o := s.Organizations; o != nil {
 		orgRoles := map[string]any{}
 		for _, name := range o.RoleNames() {
@@ -413,5 +455,63 @@ func versionView(v registry.Version) map[string]any {
 	if p.Upscale {
 		out["upscale"] = true
 	}
+	return out
+}
+
+// configFiles answers GET /_admin/config/files: the files this instance reads for the realm (realm.yaml,
+// `_realm/`, each collection's schema files and policy, the functions projects), with their text, so the
+// whole configuration can be browsed. realm.yaml's text holds the seeded user emails: it comes without
+// content for whoever may not read users.
+func (a *adminAPI) configFiles(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "realm")
+	rl, ok := a.reg.Realms[name]
+	if !ok {
+		notFound(w, r)
+		return
+	}
+	seesUsers := adminAccessOf(r).CanRead(rl.Settings, registry.RightUsers)
+	files, omitted := a.reg.ConfigFiles(name, !seesUsers)
+	writeJSON(w, http.StatusOK, map[string]any{"realm": name, "fingerprint": a.fingerprint, "files": files, "omitted": omitted})
+}
+
+// providerConfig is a sign-in provider as configured: what it is and where it points, with its
+// secrets named (`secret:NAME`) and never shown.
+func providerConfig(p *registry.Provider) map[string]any {
+	out := map[string]any{"name": p.Name, "kind": p.Kind, "client_id": p.ClientID}
+	secret := func(key, name string) {
+		if name != "" {
+			out[key] = "secret:" + name
+		}
+	}
+	secret("client_secret", p.ClientSecret)
+	secret("private_key", p.PrivateKey)
+	set := func(key, v string) {
+		if v != "" {
+			out[key] = v
+		}
+	}
+	set("tenant", p.Tenant)
+	set("issuer", p.Issuer)
+	set("team_id", p.TeamID)
+	set("key_id", p.KeyID)
+	set("authorize_url", p.AuthorizeURL)
+	set("token_url", p.TokenURL)
+	set("user_info_url", p.UserInfoURL)
+	if len(p.Scopes) > 0 {
+		out["scopes"] = p.Scopes
+	}
+	if len(p.NativeClientIDs) > 0 {
+		out["native_client_ids"] = p.NativeClientIDs
+	}
+	if p.LinkByEmail {
+		out["link_by_email"] = true
+	}
+	return out
+}
+
+// auditEntries are the audit actions realm.yaml switches on or off explicitly (the rest follow their default).
+func auditEntries(s registry.RealmSettings) map[string]bool {
+	out := map[string]bool{}
+	maps.Copy(out, s.AuditEntries)
 	return out
 }

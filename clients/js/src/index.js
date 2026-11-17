@@ -160,6 +160,8 @@ export { parseReturn as parseOAuthReturn } from './oauth.js'
  * @typedef {import('./admin.js').JobSummary} JobSummary
  * @typedef {import('./admin.js').JobsPage} JobsPage
  * @typedef {import('./admin.js').Schedule} Schedule
+ * @typedef {import('./admin.js').ConfigFile} ConfigFile
+ * @typedef {import('./admin.js').ConfigFiles} ConfigFiles
  * @typedef {import('./admin.js').FunctionSource} FunctionSource
  * @typedef {import('./admin.js').FunctionSourceFile} FunctionSourceFile
  * @typedef {import('./admin.js').FunctionSourceDependency} FunctionSourceDependency

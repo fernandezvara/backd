@@ -301,6 +301,31 @@ import { connectionBody } from './orgs.js'
  */
 
 /**
+ * One file of the realm's configuration (`admin.configFiles()`).
+ * @typedef {object} ConfigFile
+ * @property {string} path        Relative to the config directory, such as `acme/app/posts/collection.yaml`.
+ * @property {'realm' | 'realm_config' | 'schema' | 'indexes' | 'collection' | 'function' | 'migration' | 'other'} role
+ * @property {'typescript' | 'javascript' | 'json' | 'yaml' | 'markdown' | 'html' | 'text'} language
+ * @property {number} size        Bytes.
+ * @property {string} sha256
+ * @property {string | null} content   The file as text; null for a binary or restricted file, or past the size limit.
+ * @property {boolean} truncated
+ * @property {boolean} binary
+ * @property {string} database    The database it belongs to; empty for the realm's own files.
+ * @property {string} collection  The collection it belongs to; empty when it belongs to none.
+ * @property {boolean} restricted The caller may not read it (realm.yaml holds personal data): it comes without content.
+ */
+
+/**
+ * The files of the realm's configuration.
+ * @typedef {object} ConfigFiles
+ * @property {string} realm
+ * @property {string} fingerprint
+ * @property {ConfigFile[]} files   Sorted by path.
+ * @property {number} omitted       Files left out because the realm has more than 2000.
+ */
+
+/**
  * One file of a function's source.
  * @typedef {object} FunctionSourceFile
  * @property {string} path        Relative to the functions project (the database's `_functions/`): `refund/index.ts`, `lib/relay.ts`, `deno.json`.
@@ -652,6 +677,17 @@ export class Admin {
     const { status, data } = await this._request({ method: 'POST', path: ['functions', database, name, 'invoke'], body, headers, ...opts })
     if (status === 202) return new Job(this.client, database, /** @type {import('./functions.js').JobData} */ (data))
     return data
+  }
+
+  /**
+   * The files behind the configuration, with their text: realm.yaml, `_realm/`, each collection's
+   * schema files and policy, the functions projects. Read-only; realm.yaml comes without content
+   * for a caller who may not read users.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<ConfigFiles>}
+   */
+  async configFiles(opts) {
+    return (await this._request({ method: 'GET', path: ['config', 'files'], ...opts })).data
   }
 
   /**

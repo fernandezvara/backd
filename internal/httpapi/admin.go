@@ -58,6 +58,7 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		json := requireContentType("application/json")
 		r.Get("/whoami", a.whoami)
 		r.With(a.need(registry.RightConfig)).Get("/config", a.config)
+		r.With(a.need(registry.RightConfig)).Get("/config/files", a.configFiles)
 		r.With(a.need(registry.RightConfig)).Get("/types", a.types)
 		r.With(a.needRead(registry.RightData)).Get("/export", a.export)
 		r.With(a.needRead(registry.RightData), requireContentType("application/json")).Post("/export", a.export)
