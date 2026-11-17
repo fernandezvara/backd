@@ -34,7 +34,6 @@ export const routes: RouteRecordRaw[] = [
   { path: '/r/:realm/config/signin', name: 'config-signin', component: () => import('@/views/ConfigSigninView.vue'), props: true, meta: { auth: true, area: 'config' as const } },
   { path: '/r/:realm/config/files', name: 'config-files', component: () => import('@/views/ConfigFilesView.vue'), props: true, meta: { auth: true, area: 'config' as const } },
   { path: '/r/:realm/config/api', name: 'config-api', component: () => import('@/views/ConfigApiView.vue'), props: true, meta: { auth: true, area: 'config' as const } },
-  { path: '/r/:realm/config/collections', name: 'config-collections', component: () => import('@/views/ConfigCollectionsView.vue'), props: true, meta: { auth: true, area: 'config' as const } },
   { path: '/r/:realm/config/templates', name: 'config-templates', component: () => import('@/views/ConfigTemplatesView.vue'), props: true, meta: { auth: true, area: 'config' as const } },
   { path: '/r/:realm/config/backup', name: 'config-backup', component: () => import('@/views/ConfigBackupView.vue'), props: true, meta: { auth: true, area: 'config' as const } },
   { path: '/r/:realm/data', name: 'data', component: () => import('@/views/DataView.vue'), props: true, meta: { auth: true, area: 'data' as const } },

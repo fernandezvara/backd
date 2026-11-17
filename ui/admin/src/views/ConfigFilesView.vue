@@ -3,12 +3,13 @@ import type { ConfigFile } from 'backd-js'
 import { PhMagnifyingGlass } from '@phosphor-icons/vue'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import AppAlert from '@/components/AppAlert.vue'
 import AppBadge from '@/components/AppBadge.vue'
-import AppCard from '@/components/AppCard.vue'
 import ConfigTabs from '@/components/ConfigTabs.vue'
 import FileTree from '@/components/FileTree.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import SourceSplit from '@/components/SourceSplit.vue'
 import SourceViewer from '@/components/SourceViewer.vue'
 import { useAdmin } from '@/lib/admin'
 import { errorText } from '@/lib/format'
@@ -18,6 +19,7 @@ import { errorText } from '@/lib/format'
 defineProps<{ realm: string }>()
 const { t } = useI18n()
 const admin = useAdmin()
+const route = useRoute()
 
 const files = ref<ConfigFile[]>([])
 const omitted = ref(0)
@@ -31,7 +33,8 @@ onMounted(async () => {
     const out = await admin.configFiles()
     files.value = out.files
     omitted.value = out.omitted
-    selected.value = (out.files.find((f) => f.role === 'realm') ?? out.files[0])?.path ?? ''
+    const wanted = typeof route.query.path === 'string' ? route.query.path : ''
+    selected.value = (out.files.find((f) => f.path === wanted) ?? out.files.find((f) => f.role === 'realm') ?? out.files[0])?.path ?? ''
   } catch (e) {
     error.value = errorText(e, t('config.files.loadFailed'))
   } finally {
@@ -57,26 +60,25 @@ const where = computed(() => {
   <p v-else-if="!loaded" class="text-sm" role="status">{{ t('config.loading') }}</p>
   <template v-else>
     <p class="mb-3 text-sm text-slate-600 dark:text-slate-400">{{ t('config.files.intro', { n: files.length }) }}</p>
-    <div class="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
-      <AppCard flush class="h-fit">
-        <div class="relative border-b border-slate-200 p-2 dark:border-slate-800">
-          <PhMagnifyingGlass :size="14" class="pointer-events-none absolute left-4.5 top-4.5 text-slate-400" aria-hidden="true" />
+    <SourceSplit>
+      <template #toolbar>
+        <div class="relative">
+          <PhMagnifyingGlass :size="14" class="pointer-events-none absolute left-2.5 top-2.5 text-slate-400" aria-hidden="true" />
           <input v-model="filter" type="search" class="h-8 w-full rounded-md border border-slate-300 bg-white pl-8 pr-2 text-[13px] dark:border-slate-700 dark:bg-slate-900" :placeholder="t('config.files.filter')" :aria-label="t('config.files.filter')" autocomplete="off" />
         </div>
-        <div class="max-h-[40rem] overflow-auto">
-          <FileTree v-model="selected" :paths="paths" :filter="filter" :label="t('config.files.tree')" :open-depth="2" />
-        </div>
-        <p v-if="omitted" class="border-t border-slate-200 p-2 text-xs text-slate-500 dark:border-slate-800">{{ t('config.files.omitted', { n: omitted }) }}</p>
-      </AppCard>
-      <div class="min-w-0 space-y-2">
-        <div v-if="file" class="flex flex-wrap items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
-          <AppBadge :kind="roleKind(file.role)">{{ t(`config.files.roles.${file.role}`) }}</AppBadge>
-          <span v-if="where">{{ where }}</span>
-          <span>· {{ file.size }} B</span>
-          <span class="font-mono">· {{ file.sha256.slice(0, 8) }}</span>
-        </div>
-        <SourceViewer :name="file?.path ?? ''" :file="file" :hint="t('config.files.hint')" />
-      </div>
-    </div>
+      </template>
+      <template #tree>
+        <FileTree v-model="selected" :paths="paths" :filter="filter" :label="t('config.files.tree')" :open-depth="2" />
+      </template>
+      <template v-if="omitted" #foot>{{ t('config.files.omitted', { n: omitted }) }}</template>
+      <SourceViewer :name="file?.path ?? ''" :file="file" :hint="t('config.files.hint')">
+        <template #meta>
+          <template v-if="file">
+            <AppBadge :kind="roleKind(file.role)">{{ t(`config.files.roles.${file.role}`) }}</AppBadge>
+            <span v-if="where" class="text-xs text-slate-500">{{ where }}</span>
+          </template>
+        </template>
+      </SourceViewer>
+    </SourceSplit>
   </template>
 </template>

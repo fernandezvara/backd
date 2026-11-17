@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n'
 import AppAlert from '@/components/AppAlert.vue'
 import AppBadge from '@/components/AppBadge.vue'
 import AppCard from '@/components/AppCard.vue'
+import SourceSplit from '@/components/SourceSplit.vue'
 import SourceViewer from '@/components/SourceViewer.vue'
 import { useAdmin } from '@/lib/admin'
 import { errorText } from '@/lib/format'
@@ -54,8 +55,8 @@ const kindBadge = (k: string) => (k === 'local' ? 'neutral' : k === 'unresolved'
   <AppAlert v-if="error" kind="error">{{ error }}</AppAlert>
   <div v-else-if="!source" class="text-sm text-slate-600 dark:text-slate-400" role="status">{{ t('common.loading') }}</div>
   <template v-else>
-    <div class="grid gap-4 lg:grid-cols-[15rem_minmax(0,1fr)]">
-      <AppCard flush class="h-fit">
+    <SourceSplit>
+      <template #tree>
         <nav :aria-label="t('fn.code.files')" class="p-2" data-testid="fn-files">
           <template v-for="g in groups" :key="g.id">
             <p class="px-2 pb-1 pt-1 text-[11px] font-semibold tracking-wider text-slate-500 uppercase">{{ g.label }}</p>
@@ -74,10 +75,9 @@ const kindBadge = (k: string) => (k === 'local' ? 'neutral' : k === 'unresolved'
           </template>
           <p v-if="source.omitted" class="px-2 pt-2 text-xs text-slate-500">{{ t('fn.code.omitted', { n: source.omitted }) }}</p>
         </nav>
-      </AppCard>
-
+      </template>
       <SourceViewer :name="file ? shortName(file.path) : ''" :file="file" :hint="t('fn.code.editHint')" />
-    </div>
+    </SourceSplit>
 
     <section class="mt-5" aria-labelledby="deps-h">
       <AppCard flush>

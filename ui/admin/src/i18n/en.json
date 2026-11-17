@@ -941,7 +941,6 @@
       "label": "Configuration sections",
       "overview": "Overview",
       "settings": "Settings",
-      "collections": "Collections",
       "templates": "Templates",
       "signin": "Sign-in",
       "files": "Files",
@@ -952,13 +951,11 @@
     "loadFailed": "The configuration could not be loaded.",
     "loading": "Loading the configuration...",
     "overview": {
-      "layout": "Realm layout",
       "status": "Status",
       "databases": "Databases",
-      "files": "{n} files",
-      "more": "{n} more",
-      "noLayout": "The files could not be listed.",
-      "browse": "Browse every file"
+      "collections": "Collections",
+      "copyFingerprint": "Copy the full fingerprint",
+      "fingerprintCopied": "Config fingerprint copied."
     },
     "files": {
       "intro": "Every file the server loaded for this realm ({n}), read-only. Change them in your configuration repository.",

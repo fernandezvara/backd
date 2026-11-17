@@ -25,7 +25,6 @@ describe('nothing was lost in the redesign', () => {
       ['push', '/r/:realm/push', 'functions'],
       ['config', '/r/:realm/config', 'config'],
       ['config-settings', '/r/:realm/config/settings', 'config'],
-      ['config-collections', '/r/:realm/config/collections', 'config'],
       ['config-templates', '/r/:realm/config/templates', 'config'],
       ['data', '/r/:realm/data', 'data'],
       ['data-checks', '/r/:realm/data/checks', 'data'],

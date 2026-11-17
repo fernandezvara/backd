@@ -941,7 +941,6 @@
       "label": "Secciones de la configuración",
       "overview": "Resumen",
       "settings": "Ajustes",
-      "collections": "Colecciones",
       "templates": "Plantillas",
       "signin": "Acceso",
       "files": "Archivos",
@@ -952,13 +951,11 @@
     "loadFailed": "No se ha podido cargar la configuración.",
     "loading": "Cargando la configuración...",
     "overview": {
-      "layout": "Estructura del realm",
       "status": "Estado",
       "databases": "Bases de datos",
-      "files": "{n} archivos",
-      "more": "{n} más",
-      "noLayout": "No se pudieron listar los archivos.",
-      "browse": "Ver todos los archivos"
+      "collections": "Colecciones",
+      "copyFingerprint": "Copiar la huella completa",
+      "fingerprintCopied": "Huella de la configuración copiada."
     },
     "files": {
       "intro": "Todos los archivos que el servidor cargó para este realm ({n}), solo lectura. Cámbialos en el repositorio de tu configuración.",

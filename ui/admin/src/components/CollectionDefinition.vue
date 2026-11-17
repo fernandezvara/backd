@@ -51,6 +51,6 @@ const OPS = ['read', 'create', 'update', 'delete', 'restore', 'purge']
       </ul>
       <p class="border-t border-slate-200 px-4 py-2 text-xs text-slate-500 dark:border-slate-800">{{ c.schema_file }}</p>
     </AppCard>
-    <p class="text-xs text-slate-500 lg:col-span-2">{{ t('data.definition.readOnly') }} <RouterLink :to="{ name: 'config-collections', params: { realm } }" class="underline">{{ t('data.definition.open') }}</RouterLink></p>
+    <p class="text-xs text-slate-500 lg:col-span-2">{{ t('data.definition.readOnly') }} <RouterLink :to="{ name: 'config-files', params: { realm }, query: { path: c.collection_file } }" class="underline">{{ t('data.definition.open') }}</RouterLink></p>
   </div>
 </template>

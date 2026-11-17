@@ -35,7 +35,7 @@ async function copy(text: string) {
   <ConfigTabs />
 
   <AppAlert class="mb-4">{{ t('config.backup.help') }}</AppAlert>
-  <div class="grid gap-5 lg:grid-cols-2">
+  <div class="space-y-5">
     <section aria-labelledby="export-h">
       <AppCard>
         <h2 id="export-h" class="mb-1 flex items-center gap-2 text-sm font-semibold"><PhExport :size="16" aria-hidden="true" />{{ t('config.backup.exportTitle') }}</h2>

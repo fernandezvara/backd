@@ -39,7 +39,6 @@ export const EXTRA: Record<string, (c: CrumbContext, p: Params) => Crumb[]> = {
   'functions-triggers': (c) => [{ label: c.t('functions.tabs.triggers') }],
   'functions-history': (c) => [{ label: c.t('functions.tabs.history') }],
   'config-settings': (c) => [{ label: c.t('config.tabs.settings') }],
-  'config-collections': (c) => [{ label: c.t('config.tabs.collections') }],
   'config-backup': (c) => [{ label: c.t('config.tabs.backup') }],
   'config-signin': (c) => [{ label: c.t('config.tabs.signin') }],
   'config-files': (c) => [{ label: c.t('config.tabs.files') }],
