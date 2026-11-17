@@ -1019,6 +1019,7 @@ const detail = await backd.admin.jobs.get(jobId)                // the job with 
 await backd.admin.jobs.cancel(jobId)                              // a queued or running function job ends as "cancelled"
 const again = await backd.admin.jobs.rerun(jobId)                 // a finished one is queued again as a new job (again.rerun_of)
 await backd.admin.schedules.pause('main/nightly')                 // a schedule creates no runs until resume(); list() shows which are paused
+const code = await backd.admin.functionSource('main/refund')   // read-only: code.files (path, role, content), code.dependencies, code.bundle.current
 const secrets = await backd.admin.secrets.list()                  // scope, name, who set it; never the values
 await backd.admin.secrets.set('STRIPE_KEY', value, { database: 'main' })   // omit database for a realm secret
 await backd.admin.secrets.delete('STRIPE_KEY', { database: 'main' })

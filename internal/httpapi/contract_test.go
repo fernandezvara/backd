@@ -1492,6 +1492,11 @@ func TestContract(t *testing.T) {
 	req("GET", ad+"/schedules", "", key, 200)
 	req("GET", ad+"/schedules", "", nil, 401)
 	req("GET", ad+"/schedules", "", ada, 403)
+	// Reading a function's source.
+	req("GET", run+"echo/source", "", key, 200)
+	req("GET", run+"echo/source", "", nil, 401)
+	req("GET", run+"echo/source", "", ada, 403)
+	req("GET", run+"ghost/source", "", key, 404)
 	req("POST", run+"nightly/pause", ``, key, 200)
 	req("POST", run+"nightly/resume", ``, key, 200)
 	req("POST", run+"echo/pause", ``, key, 409) // not scheduled

@@ -193,6 +193,7 @@ func (a *adminAPI) routes(r chi.Router, resolveRealm func(http.Handler) http.Han
 		r.With(a.needRead(registry.RightData)).Get("/data-migrations/{database}/{collection}", a.getDataMigration)
 		r.With(fns).Post("/jobs/{id}/rerun", a.rerunJob)
 		r.With(fns).Get("/schedules", a.listSchedules)
+		r.With(fns).Get("/functions/{database}/{name}/source", a.functionSource)
 		r.With(fns).Post("/functions/{database}/{name}/pause", a.pauseSchedule(true))
 		r.With(fns).Post("/functions/{database}/{name}/resume", a.pauseSchedule(false))
 		r.With(fns, json).Post("/functions/{database}/{name}/invoke", a.fns.adminInvoke)
