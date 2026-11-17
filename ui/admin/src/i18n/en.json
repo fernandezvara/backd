@@ -943,11 +943,104 @@
       "settings": "Settings",
       "collections": "Collections",
       "templates": "Templates",
-      "backup": "Backup and API files"
+      "signin": "Sign-in",
+      "files": "Files",
+      "api": "API files",
+      "backup": "Backup"
     },
-    "backup": {"title":"Backup and API files","description":"Take a backup with the command line, and download the documents and types generated from the configuration this instance runs.","backup":"Backup","help":"A backup streams every collection and file, so it is made with the backd command, not in a browser tab. It needs full administration. These are the commands for this realm.","export":"Export the realm, with its users, as one archive","dryRun":"Check an import without writing anything","import":"Import it","note":"Encrypted fields travel sealed: keep their field keys with the backup. See the documentation on export and import.","downloaded":"Downloaded.","filesTitle":"API files","filesHelp":"Generated from the configuration this instance runs; nothing changes on the server.","files":{"client":"OpenAPI for client apps","admin":"OpenAPI with admin routes","ts":"TypeScript types","dart":"Dart types","go":"Go types","python":"Python types"}},
+    "backup": {"exportTitle":"Export the realm","exportHelp":"A package of the realm, made part by part so large realms work.","includes":"Add --include auth to take the users and their credentials (password hashes) with it.","importTitle":"Import a package","importHelp":"Check a package first, then import it. A failed import can be run again.","importNote":"Importing needs full administration, like exporting.","title":"Backup and API files","description":"Take a backup with the command line, and download the documents and types generated from the configuration this instance runs.","backup":"Backup","help":"A backup streams every collection and file, so it is made with the backd command, not in a browser tab. It needs full administration. These are the commands for this realm.","export":"Export the realm, with its users, as one archive","dryRun":"Check an import without writing anything","import":"Import it","note":"Encrypted fields travel sealed: keep their field keys with the backup. See the documentation on export and import.","downloaded":"Downloaded.","filesTitle":"API files","filesHelp":"Generated from the configuration this instance runs; nothing changes on the server.","files":{"client":"OpenAPI for client apps","admin":"OpenAPI with admin routes","ts":"TypeScript types","dart":"Dart types","go":"Go types","python":"Python types"}},
     "loadFailed": "The configuration could not be loaded.",
     "loading": "Loading the configuration...",
+    "overview": {
+      "layout": "Realm layout",
+      "status": "Status",
+      "databases": "Databases",
+      "files": "{n} files",
+      "more": "{n} more",
+      "noLayout": "The files could not be listed.",
+      "browse": "Browse every file"
+    },
+    "files": {
+      "intro": "Every file the server loaded for this realm ({n}), read-only. Change them in your configuration repository.",
+      "filter": "Filter files",
+      "tree": "Configuration files",
+      "omitted": "{n} more files are not shown.",
+      "hint": "Edit it in the configuration repository, then deploy.",
+      "loadFailed": "The configuration files could not be loaded.",
+      "roles": {
+        "realm": "Realm settings",
+        "realm_config": "Realm file",
+        "schema": "Schema",
+        "indexes": "Indexes",
+        "collection": "Collection",
+        "function": "Function",
+        "migration": "Migration",
+        "other": "Other"
+      }
+    },
+    "api": {
+      "help": "Generated from the configuration this instance runs; nothing changes on the server.",
+      "admin": "Admin API (OpenAPI)",
+      "client": "Client API of this realm (OpenAPI)",
+      "types": "Generated types",
+      "typesHelp": "TypeScript, Python, Go or Dart, from the loaded schemas.",
+      "language": "Language",
+      "copyUrl": "Copy URL",
+      "download": "Download"
+    },
+    "signin": {
+      "authOff": "Authentication is disabled for this realm: there is no sign-in, and anyone who can reach it can read and write its data.",
+      "who": "Who can arrive",
+      "registration": "Registration",
+      "ways": "Ways in",
+      "protection": "Protection",
+      "sessions": "Sessions",
+      "on": "On",
+      "off": "Off",
+      "signup": {
+        "open": "Open to anyone",
+        "invite": "By invitation",
+        "closed": "Closed",
+        "off": "No sign-in"
+      },
+      "signupHelp": {
+        "open": "Anyone can create an account.",
+        "invite": "Only people with an invitation can create an account.",
+        "closed": "Accounts are created by administrators, not by people signing up.",
+        "off": ""
+      },
+      "verifiedEmail": "The email must be verified before a session starts.",
+      "consents": "Consents",
+      "mustAccept": "must accept",
+      "optional": "optional",
+      "rolesOnly": "roles active only here: {roles}",
+      "rolesHelp": "Roles that stay active only in sessions made with this strategy.",
+      "steps": "Steps",
+      "noStrategies": "No strategies are declared.",
+      "methods": {
+        "password": "Password",
+        "totp": "Authenticator code",
+        "passkey": "Passkey",
+        "magic_link": "Email link or code"
+      },
+      "magicSignup": "Also creates accounts",
+      "magicExisting": "Existing accounts only",
+      "providers": "External providers",
+      "noProviders": "No external providers are configured.",
+      "minLength": "Minimum password length",
+      "throttle": "Failed sign-ins",
+      "throttleText": "{n} tries, then waits ({window})",
+      "totp": "Authenticator app",
+      "mfaRequired": "Second factor required",
+      "everyone": "Everyone",
+      "nobody": "Nobody",
+      "idle": "Idle timeout",
+      "maxLife": "Maximum lifetime",
+      "adminIdle": "Administrators: idle",
+      "cookie": "Cookie session",
+      "reauth": "Re-authentication lasts",
+      "redirects": "Sign-in goes back to"
+    },
     "fingerprint": "Config fingerprint",
     "fingerprintHelp": "Changes whenever any configuration file changes: compare it across instances to see they run the same files.",
     "realmFile": "Realm file",
@@ -963,6 +1056,30 @@
       "empty": "(empty)",
       "list": "(none)",
       "file": "Defined in {file}",
+      "defaultsNote": "Defaults that apply are shown too.",
+      "filter": "Filter settings",
+      "notConfigured": "Not configured",
+      "sections": {
+        "general": "General",
+        "signin": "Sign-in",
+        "sessions": "Sessions and passwords",
+        "account": "Accounts, consents and compliance",
+        "admin": "Administration and audit",
+        "functions": "Functions, events and limits",
+        "organizations": "Organizations",
+        "email": "Email",
+        "push": "Push",
+        "storage": "Storage",
+        "public_storage": "Public storage",
+        "other": "Other"
+      },
+      "absent": {
+        "organizations": "The realm has no organizations: add an organizations: section to realm.yaml to let people group into teams.",
+        "email": "The realm sends no email: add email: with a delivery function to send verification and reset emails.",
+        "push": "The realm sends no pushes: add push: to configure FCM or APNs.",
+        "storage": "The realm has no file storage: add storage: to let collections declare file fields.",
+        "public_storage": "The realm has no public storage: add public_storage: for files browsers read directly."
+      },
       "secretNote": "Secrets are referenced by name only; their values are never part of the configuration."
     },
     "roles": {
@@ -970,6 +1087,8 @@
       "name": "Role",
       "description": "Description",
       "admin": "Admin access",
+      "strategies": "Active on",
+      "allStrategies": "every strategy",
       "seeded": "Seeded users",
       "none": "No roles are declared."
     },
@@ -1769,6 +1888,9 @@
       "none": "Not built"
     },
     "code": {
+      "pick": "Pick a file to read it.",
+      "restricted": "This file holds personal data (seeded user emails): you may not read it.",
+      "empty": "The file is empty.",
       "open": "Code",
       "loadFailed": "The function's source could not be loaded.",
       "files": "Files",

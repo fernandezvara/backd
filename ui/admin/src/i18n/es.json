@@ -943,11 +943,104 @@
       "settings": "Ajustes",
       "collections": "Colecciones",
       "templates": "Plantillas",
-      "backup": "Copia y archivos de API"
+      "signin": "Acceso",
+      "files": "Archivos",
+      "api": "Archivos de API",
+      "backup": "Copia de seguridad"
     },
-    "backup": {"title":"Copia de seguridad y archivos de API","description":"Haz una copia con la línea de comandos y descarga los documentos y tipos generados desde la configuración que ejecuta esta instancia.","backup":"Copia de seguridad","help":"Una copia recorre cada colección y archivo, así que se hace con el comando backd, no en una pestaña del navegador. Requiere administración completa. Estos son los comandos para este realm.","export":"Exportar el realm, con sus usuarios, en un archivo","dryRun":"Comprobar una importación sin escribir nada","import":"Importarla","note":"Los campos cifrados viajan cifrados: guarda sus claves de campo junto a la copia. Consulta la documentación de exportar e importar.","downloaded":"Descargado.","filesTitle":"Archivos de API","filesHelp":"Generados desde la configuración que ejecuta esta instancia; no cambia nada en el servidor.","files":{"client":"OpenAPI para apps cliente","admin":"OpenAPI con rutas de administración","ts":"Tipos de TypeScript","dart":"Tipos de Dart","go":"Tipos de Go","python":"Tipos de Python"}},
+    "backup": {"exportTitle":"Exportar el realm","exportHelp":"Un paquete del realm, hecho por partes para que funcione con realms grandes.","includes":"Añade --include auth para llevar también los usuarios y sus credenciales (hashes de contraseña).","importTitle":"Importar un paquete","importHelp":"Comprueba primero el paquete y luego impórtalo. Una importación fallida se puede repetir.","importNote":"Importar requiere administración completa, como exportar.","title":"Copia de seguridad y archivos de API","description":"Haz una copia con la línea de comandos y descarga los documentos y tipos generados desde la configuración que ejecuta esta instancia.","backup":"Copia de seguridad","help":"Una copia recorre cada colección y archivo, así que se hace con el comando backd, no en una pestaña del navegador. Requiere administración completa. Estos son los comandos para este realm.","export":"Exportar el realm, con sus usuarios, en un archivo","dryRun":"Comprobar una importación sin escribir nada","import":"Importarla","note":"Los campos cifrados viajan cifrados: guarda sus claves de campo junto a la copia. Consulta la documentación de exportar e importar.","downloaded":"Descargado.","filesTitle":"Archivos de API","filesHelp":"Generados desde la configuración que ejecuta esta instancia; no cambia nada en el servidor.","files":{"client":"OpenAPI para apps cliente","admin":"OpenAPI con rutas de administración","ts":"Tipos de TypeScript","dart":"Tipos de Dart","go":"Tipos de Go","python":"Tipos de Python"}},
     "loadFailed": "No se ha podido cargar la configuración.",
     "loading": "Cargando la configuración...",
+    "overview": {
+      "layout": "Estructura del realm",
+      "status": "Estado",
+      "databases": "Bases de datos",
+      "files": "{n} archivos",
+      "more": "{n} más",
+      "noLayout": "No se pudieron listar los archivos.",
+      "browse": "Ver todos los archivos"
+    },
+    "files": {
+      "intro": "Todos los archivos que el servidor cargó para este realm ({n}), solo lectura. Cámbialos en el repositorio de tu configuración.",
+      "filter": "Filtrar archivos",
+      "tree": "Archivos de configuración",
+      "omitted": "{n} archivos más no se muestran.",
+      "hint": "Edítalo en el repositorio de configuración y despliega.",
+      "loadFailed": "No se pudieron cargar los archivos de configuración.",
+      "roles": {
+        "realm": "Ajustes del realm",
+        "realm_config": "Archivo del realm",
+        "schema": "Esquema",
+        "indexes": "Índices",
+        "collection": "Colección",
+        "function": "Función",
+        "migration": "Migración",
+        "other": "Otro"
+      }
+    },
+    "api": {
+      "help": "Generados desde la configuración que ejecuta esta instancia; no cambia nada en el servidor.",
+      "admin": "API de administración (OpenAPI)",
+      "client": "API cliente de este realm (OpenAPI)",
+      "types": "Tipos generados",
+      "typesHelp": "TypeScript, Python, Go o Dart, desde los esquemas cargados.",
+      "language": "Lenguaje",
+      "copyUrl": "Copiar URL",
+      "download": "Descargar"
+    },
+    "signin": {
+      "authOff": "La autenticación está desactivada en este realm: no hay acceso y cualquiera que lo alcance puede leer y escribir sus datos.",
+      "who": "Quién puede llegar",
+      "registration": "Registro",
+      "ways": "Formas de entrar",
+      "protection": "Protección",
+      "sessions": "Sesiones",
+      "on": "Activo",
+      "off": "Apagado",
+      "signup": {
+        "open": "Abierto a cualquiera",
+        "invite": "Por invitación",
+        "closed": "Cerrado",
+        "off": "Sin acceso"
+      },
+      "signupHelp": {
+        "open": "Cualquiera puede crear una cuenta.",
+        "invite": "Solo quien tenga una invitación puede crear una cuenta.",
+        "closed": "Las cuentas las crean los administradores, no quien se registra.",
+        "off": ""
+      },
+      "verifiedEmail": "El correo debe verificarse antes de que empiece una sesión.",
+      "consents": "Consentimientos",
+      "mustAccept": "obligatorio",
+      "optional": "opcional",
+      "rolesOnly": "roles activos solo aquí: {roles}",
+      "rolesHelp": "Roles que solo siguen activos en sesiones hechas con esta estrategia.",
+      "steps": "Pasos",
+      "noStrategies": "No se ha declarado ninguna estrategia.",
+      "methods": {
+        "password": "Contraseña",
+        "totp": "Código del autenticador",
+        "passkey": "Passkey",
+        "magic_link": "Enlace o código por correo"
+      },
+      "magicSignup": "También crea cuentas",
+      "magicExisting": "Solo cuentas existentes",
+      "providers": "Proveedores externos",
+      "noProviders": "No hay proveedores externos configurados.",
+      "minLength": "Longitud mínima de contraseña",
+      "throttle": "Accesos fallidos",
+      "throttleText": "{n} intentos y luego espera ({window})",
+      "totp": "App autenticadora",
+      "mfaRequired": "Segundo factor obligatorio",
+      "everyone": "Todos",
+      "nobody": "Nadie",
+      "idle": "Inactividad máxima",
+      "maxLife": "Duración máxima",
+      "adminIdle": "Administradores: inactividad",
+      "cookie": "Sesión por cookie",
+      "reauth": "La reautenticación dura",
+      "redirects": "El acceso vuelve a"
+    },
     "fingerprint": "Huella de la configuración",
     "fingerprintHelp": "Cambia cuando cambia cualquier archivo de configuración: compárala entre instancias para ver que ejecutan los mismos archivos.",
     "realmFile": "Archivo del realm",
@@ -963,6 +1056,30 @@
       "empty": "(vacío)",
       "list": "(ninguno)",
       "file": "Definido en {file}",
+      "defaultsNote": "También se muestran los valores por defecto que se aplican.",
+      "filter": "Filtrar ajustes",
+      "notConfigured": "Sin configurar",
+      "sections": {
+        "general": "General",
+        "signin": "Acceso",
+        "sessions": "Sesiones y contraseñas",
+        "account": "Cuentas, consentimientos y cumplimiento",
+        "admin": "Administración y auditoría",
+        "functions": "Funciones, eventos y límites",
+        "organizations": "Organizaciones",
+        "email": "Correo",
+        "push": "Push",
+        "storage": "Almacenamiento",
+        "public_storage": "Almacenamiento público",
+        "other": "Otros"
+      },
+      "absent": {
+        "organizations": "El realm no tiene organizaciones: añade una sección organizations: a realm.yaml para que las personas se agrupen en equipos.",
+        "email": "El realm no envía correo: añade email: con una función de envío para mandar verificaciones y restablecimientos.",
+        "push": "El realm no envía pushes: añade push: para configurar FCM o APNs.",
+        "storage": "El realm no tiene almacenamiento de archivos: añade storage: para que las colecciones declaren campos de archivo.",
+        "public_storage": "El realm no tiene almacenamiento público: añade public_storage: para archivos que los navegadores leen directamente."
+      },
       "secretNote": "Los secretos se referencian solo por nombre; sus valores nunca forman parte de la configuración."
     },
     "roles": {
@@ -970,6 +1087,8 @@
       "name": "Rol",
       "description": "Descripción",
       "admin": "Acceso de administración",
+      "strategies": "Activo en",
+      "allStrategies": "todas las estrategias",
       "seeded": "Usuarios sembrados",
       "none": "No se ha declarado ningún rol."
     },
@@ -1769,6 +1888,9 @@
       "none": "Sin compilar"
     },
     "code": {
+      "pick": "Elige un archivo para leerlo.",
+      "restricted": "Este archivo contiene datos personales (correos sembrados): no puedes leerlo.",
+      "empty": "El archivo está vacío.",
       "open": "Código",
       "loadFailed": "No se pudo cargar el código de la función.",
       "files": "Archivos",

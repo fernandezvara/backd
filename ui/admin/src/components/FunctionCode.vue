@@ -1,16 +1,14 @@
 <script setup lang="ts">
-import { PhCaretRight, PhCopy, PhFile, PhLockSimple } from '@phosphor-icons/vue'
+import { PhCaretRight, PhFile } from '@phosphor-icons/vue'
 import type { FunctionSource } from 'backd-js'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppAlert from '@/components/AppAlert.vue'
 import AppBadge from '@/components/AppBadge.vue'
-import AppButton from '@/components/AppButton.vue'
 import AppCard from '@/components/AppCard.vue'
+import SourceViewer from '@/components/SourceViewer.vue'
 import { useAdmin } from '@/lib/admin'
 import { errorText } from '@/lib/format'
-import { highlight } from '@/lib/highlight'
-import { useToasts } from '@/stores/toasts'
 
 // A function's code, read-only: the files it has, the shared modules it imports and what it depends on.
 // Editing happens in the configuration repository; this page only shows what runs.
@@ -18,7 +16,6 @@ const props = defineProps<{ database: string; name: string }>()
 const emit = defineEmits<{ loaded: [source: FunctionSource] }>()
 const { t } = useI18n()
 const admin = useAdmin()
-const toasts = useToasts()
 
 const source = ref<FunctionSource>()
 const error = ref('')
@@ -48,18 +45,6 @@ const groups = computed(() => {
   ].filter((g) => g.files.length)
 })
 const file = computed(() => source.value?.files.find((f) => f.path === selected.value))
-const lines = computed(() => (file.value?.content ?? '').replace(/\n$/, '').split('\n'))
-const tokens = computed(() => (file.value?.content == null ? [] : highlight(file.value.content.replace(/\n$/, ''), file.value.language)))
-
-async function copy() {
-  if (file.value?.content == null) return
-  try {
-    await navigator.clipboard.writeText(file.value.content)
-    toasts.push(t('fn.code.copied'))
-  } catch {
-    toasts.push(t('common.unexpected'), 'error')
-  }
-}
 
 const kindLabel = (k: string) => t(`fn.deps.kinds.${k}`)
 const kindBadge = (k: string) => (k === 'local' ? 'neutral' : k === 'unresolved' ? 'warn' : 'blue')
@@ -91,23 +76,7 @@ const kindBadge = (k: string) => (k === 'local' ? 'neutral' : k === 'unresolved'
         </nav>
       </AppCard>
 
-      <AppCard flush class="min-w-0">
-        <div v-if="file" class="flex flex-wrap items-center gap-2 border-b border-slate-200 px-4 py-2 dark:border-slate-800">
-          <span class="font-mono text-[13px] font-medium" data-testid="fn-file-name">{{ shortName(file.path) }}</span>
-          <AppBadge><PhLockSimple :size="11" class="mr-0.5 inline" aria-hidden="true" />{{ t('fn.code.readOnly') }}</AppBadge>
-          <span class="text-xs text-slate-500">{{ t('fn.code.editHint') }}</span>
-          <AppButton v-if="file.content != null" variant="secondary" class="ml-auto" @click="copy"><PhCopy :size="14" aria-hidden="true" />{{ t('fn.code.copy') }}</AppButton>
-        </div>
-        <p v-if="file?.binary" class="p-4 text-sm text-slate-600 dark:text-slate-400">{{ t('fn.code.binary') }}</p>
-        <p v-else-if="file && file.content == null" class="p-4 text-sm text-slate-600 dark:text-slate-400">{{ t('fn.code.noRoom') }}</p>
-        <template v-else-if="file">
-          <p v-if="file.truncated" class="border-b border-slate-200 bg-amber-50 px-4 py-1.5 text-xs text-amber-900 dark:border-slate-800 dark:bg-amber-950/40 dark:text-amber-200">{{ t('fn.code.truncated') }}</p>
-          <div class="flex max-h-[34rem] overflow-auto py-2 font-mono text-[12.5px] leading-relaxed" tabindex="0" data-testid="fn-source">
-            <pre class="sticky left-0 shrink-0 select-none bg-white px-3 text-right text-slate-400 dark:bg-slate-900" aria-hidden="true">{{ lines.map((_, i) => i + 1).join('\n') }}</pre>
-            <pre class="pr-4"><span v-for="(tk, i) in tokens" :key="i" :class="tk.type ? `hl-${tk.type}` : undefined">{{ tk.text }}</span></pre>
-          </div>
-        </template>
-      </AppCard>
+      <SourceViewer :name="file ? shortName(file.path) : ''" :file="file" :hint="t('fn.code.editHint')" />
     </div>
 
     <section class="mt-5" aria-labelledby="deps-h">
