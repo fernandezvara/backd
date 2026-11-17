@@ -52,7 +52,7 @@ export const NAV: NavGroup[] = [
     id: 'compute',
     label: 'nav.groups.compute',
     items: [
-      { route: 'functions', label: 'nav.functions', desc: 'nav.desc.functions', icon: PhFunction, show: (c) => c.canRead('functions') },
+      { route: 'functions', label: 'nav.functions', desc: 'nav.desc.functions', icon: PhFunction, also: ['functions-triggers'], show: (c) => c.canRead('functions') },
       { route: 'functions-jobs', label: 'nav.jobs', desc: 'nav.desc.jobs', icon: PhClockCounterClockwise, also: ['functions-history'], show: (c) => c.canRead('functions') },
       { route: 'push', label: 'nav.push', desc: 'nav.desc.push', icon: PhBell, show: (c) => c.canRead('functions') && c.push },
     ],

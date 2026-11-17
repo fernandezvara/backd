@@ -8,6 +8,9 @@ import AppButton from '@/components/AppButton.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FormDialog from '@/components/FormDialog.vue'
+import EncryptionPanel from '@/components/EncryptionPanel.vue'
+import FieldKeysPanel from '@/components/FieldKeysPanel.vue'
+import SubTabs from '@/components/SubTabs.vue'
 import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
 import { errorText, formatDate } from '@/lib/format'
@@ -22,6 +25,7 @@ const session = useSession()
 const toasts = useToasts()
 const realmConfig = useRealmConfig()
 
+const tab = ref('secrets')
 const canWrite = computed(() => session.canWrite('secrets'))
 const secrets = ref<SecretInfo[]>([])
 const loading = ref(false)
@@ -97,8 +101,12 @@ async function remove() {
 
 <template>
   <PageHeader :title="t('secrets.title')" :description="t('secrets.help')">
-    <AppButton v-if="canWrite" @click="openSet">{{ t('secrets.set.open') }}</AppButton>
+    <AppButton v-if="canWrite && tab === 'secrets'" @click="openSet">{{ t('secrets.set.open') }}</AppButton>
   </PageHeader>
+  <SubTabs v-model="tab" :label="t('secretsTabs.label')" :tabs="[{ id: 'secrets', label: t('secretsTabs.secrets') }, { id: 'keys', label: t('secretsTabs.keys') }, { id: 'encrypted', label: t('secretsTabs.encrypted') }]" />
+  <FieldKeysPanel v-if="tab === 'keys'" />
+  <EncryptionPanel v-else-if="tab === 'encrypted'" />
+  <template v-else>
 
   <AppAlert v-if="error" kind="error" class="mt-4">{{ error }}</AppAlert>
   <p v-if="loading" class="mt-4 text-sm" role="status">{{ t('common.loading') }}</p>
@@ -130,6 +138,7 @@ async function remove() {
       </tbody>
     </table>
   </AppCard>
+  </template>
 
   <FormDialog v-model:open="setting" :title="t('secrets.set.title')" :submit="t('common.save')" :busy="setBusy" :error="setError" @submit="set">
     <TextField v-model="name" :label="t('secrets.set.name')" :help="t('secrets.set.nameHelp')" autocomplete="off" required />

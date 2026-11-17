@@ -5,7 +5,9 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
+import MigrationsPanel from '@/components/MigrationsPanel.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import SubTabs from '@/components/SubTabs.vue'
 import CheckReportView from '@/components/CheckReportView.vue'
 import CheckRunning from '@/components/CheckRunning.vue'
 import CheckStartDialog from '@/components/CheckStartDialog.vue'
@@ -51,13 +53,17 @@ async function confirm() {
   asking.value = false
 }
 const scopeText = computed(() => (scope.value.collection ? `${scope.value.database}/${scope.value.collection}` : scope.value.database ? scope.value.database : t('checks.start.everything')))
+const tab = ref('checks')
 const canStart = computed(() => checks.running.value === null)
 </script>
 
 <template>
   <PageHeader :title="t('checks.title')" :description="t('checks.help')">
-    <AppButton :disabled="!canStart" data-testid="check-all" @click="ask()">{{ t('checks.checkAll') }}</AppButton>
+    <AppButton v-if="tab === 'checks'" :disabled="!canStart" data-testid="check-all" @click="ask()">{{ t('checks.checkAll') }}</AppButton>
   </PageHeader>
+  <SubTabs v-model="tab" :label="t('checksTabs.label')" :tabs="[{ id: 'checks', label: t('checksTabs.checks') }, { id: 'migrations', label: t('checksTabs.migrations') }]" />
+  <MigrationsPanel v-if="tab === 'migrations'" />
+  <template v-else>
   <p class="mt-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100">{{ t('checks.start.warning') }}</p>
 
   <AppAlert v-if="checks.error.value" kind="error" class="mt-4">{{ checks.error.value }}</AppAlert>
@@ -107,6 +113,7 @@ const canStart = computed(() => checks.running.value === null)
       </tbody>
     </table>
   </AppCard>
+  </template>
 
   <CheckStartDialog v-model:open="asking" :scope="scopeText" :busy="checks.starting.value" @submit="confirm" />
 </template>

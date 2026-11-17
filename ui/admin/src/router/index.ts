@@ -24,6 +24,7 @@ export const routes: RouteRecordRaw[] = [
   { path: '/r/:realm/secrets', name: 'secrets', component: () => import('@/views/SecretsView.vue'), props: true, meta: { auth: true, area: 'secrets' as const } },
   { path: '/r/:realm/audit', name: 'audit', component: () => import('@/views/AuditView.vue'), props: true, meta: { auth: true, area: 'audit' as const } },
   { path: '/r/:realm/functions', name: 'functions', component: () => import('@/views/FunctionsView.vue'), props: true, meta: { auth: true, area: 'functions' as const } },
+  { path: '/r/:realm/functions/triggers', name: 'functions-triggers', component: () => import('@/views/TriggersView.vue'), props: true, meta: { auth: true, area: 'functions' as const } },
   { path: '/r/:realm/functions/history', name: 'functions-history', component: () => import('@/views/InvocationsView.vue'), props: true, meta: { auth: true, area: 'functions' as const } },
   { path: '/r/:realm/functions/jobs', name: 'functions-jobs', component: () => import('@/views/JobsView.vue'), props: true, meta: { auth: true, area: 'functions' as const } },
   { path: '/r/:realm/push', name: 'push', component: () => import('@/views/PushView.vue'), props: true, meta: { auth: true, area: 'functions' as const } },

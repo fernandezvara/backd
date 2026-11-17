@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n'
 import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import StorageToolsPanel from '@/components/StorageToolsPanel.vue'
 import { useAdmin } from '@/lib/admin'
 import { formatBytes } from 'backd-js'
 import { errorText, formatDate, percentOf } from '@/lib/format'
@@ -137,5 +138,6 @@ const canOpenUsers = computed(() => session.canRead('users'))
         <p class="mt-3 text-xs text-slate-600 dark:text-slate-400">{{ t('storage.reconcileNote') }}</p>
       </section>
     </template>
+    <StorageToolsPanel v-if="status.configured || status.public_storage" :public-too="!!status.public_storage" />
   </template>
 </template>
