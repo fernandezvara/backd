@@ -1745,5 +1745,73 @@
     "teams": "Teams",
     "invitations": "Invitations",
     "settings": "Settings"
+  },
+  "fn": {
+    "back": "All functions",
+    "testRun": "Test run",
+    "sourceHash": "source",
+    "notFound": "This function is not in the realm's configuration.",
+    "seeAllRuns": "See all runs in the history",
+    "noYaml": "The function.yaml could not be read.",
+    "effective": "Effective settings",
+    "idempotency": "Idempotency",
+    "tabs": {
+      "label": "Function sections",
+      "code": "Code",
+      "invocations": "Invocations",
+      "settings": "Settings",
+      "usedBy": "Used by"
+    },
+    "bundle": {
+      "current": "Deployed: bundle matches the files",
+      "stale": "Files changed since the build",
+      "staleHelp": "The running bundle was built from other files or another Deno: run backd-server functions build",
+      "none": "Not built"
+    },
+    "code": {
+      "open": "Code",
+      "loadFailed": "The function's source could not be loaded.",
+      "files": "Files",
+      "shared": "Shared and project",
+      "omitted": "{n} more files not shown",
+      "readOnly": "read-only",
+      "editHint": "Edit it in the configuration repository, then deploy.",
+      "copy": "Copy",
+      "copied": "Source copied.",
+      "binary": "A binary file: its content isn't shown.",
+      "noRoom": "The content of this file isn't included: the response was already at its size limit.",
+      "truncated": "The file is long: only the first part is shown."
+    },
+    "deps": {
+      "title": "Dependencies",
+      "none": "This function imports nothing.",
+      "specifier": "Import",
+      "kind": "Kind",
+      "points": "Resolves to",
+      "usedBy": "Used in",
+      "missing": "file not found",
+      "kinds": {
+        "local": "File",
+        "npm": "npm",
+        "jsr": "jsr",
+        "node": "Node",
+        "url": "URL",
+        "backd": "backd",
+        "unresolved": "Unmapped"
+      }
+    },
+    "usedBy": {
+      "where": "Where",
+      "kind": "Kind",
+      "detail": "Detail",
+      "http": "HTTP",
+      "schedule": "Schedule",
+      "calls": "Called by",
+      "onComplete": "on_complete of",
+      "trigger": "Trigger",
+      "anyEnd": "any outcome",
+      "none": "Nothing references this function.",
+      "note": "Found in the loaded configuration (function.yaml files and triggers); rules and API keys aren't searched."
+    }
   }
 }

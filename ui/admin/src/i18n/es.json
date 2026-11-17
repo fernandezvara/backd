@@ -1745,5 +1745,73 @@
     "teams": "Equipos",
     "invitations": "Invitaciones",
     "settings": "Ajustes"
+  },
+  "fn": {
+    "back": "Todas las funciones",
+    "testRun": "Prueba",
+    "sourceHash": "código",
+    "notFound": "Esta función no está en la configuración del realm.",
+    "seeAllRuns": "Ver todas las ejecuciones en el historial",
+    "noYaml": "No se pudo leer function.yaml.",
+    "effective": "Ajustes efectivos",
+    "idempotency": "Idempotencia",
+    "tabs": {
+      "label": "Secciones de la función",
+      "code": "Código",
+      "invocations": "Invocaciones",
+      "settings": "Ajustes",
+      "usedBy": "Usada por"
+    },
+    "bundle": {
+      "current": "Desplegada: el bundle coincide con los archivos",
+      "stale": "Archivos cambiados desde la compilación",
+      "staleHelp": "El bundle en ejecución se compiló con otros archivos u otro Deno: ejecuta backd-server functions build",
+      "none": "Sin compilar"
+    },
+    "code": {
+      "open": "Código",
+      "loadFailed": "No se pudo cargar el código de la función.",
+      "files": "Archivos",
+      "shared": "Compartido y proyecto",
+      "omitted": "{n} archivos más sin mostrar",
+      "readOnly": "solo lectura",
+      "editHint": "Edítalo en el repositorio de configuración y despliega.",
+      "copy": "Copiar",
+      "copied": "Código copiado.",
+      "binary": "Un archivo binario: no se muestra su contenido.",
+      "noRoom": "El contenido de este archivo no se incluye: la respuesta ya estaba en su límite de tamaño.",
+      "truncated": "El archivo es largo: solo se muestra la primera parte."
+    },
+    "deps": {
+      "title": "Dependencias",
+      "none": "Esta función no importa nada.",
+      "specifier": "Import",
+      "kind": "Tipo",
+      "points": "Apunta a",
+      "usedBy": "Usado en",
+      "missing": "archivo no encontrado",
+      "kinds": {
+        "local": "Archivo",
+        "npm": "npm",
+        "jsr": "jsr",
+        "node": "Node",
+        "url": "URL",
+        "backd": "backd",
+        "unresolved": "Sin mapear"
+      }
+    },
+    "usedBy": {
+      "where": "Dónde",
+      "kind": "Tipo",
+      "detail": "Detalle",
+      "http": "HTTP",
+      "schedule": "Programación",
+      "calls": "Llamada por",
+      "onComplete": "on_complete de",
+      "trigger": "Disparador",
+      "anyEnd": "cualquier resultado",
+      "none": "Nada hace referencia a esta función.",
+      "note": "Se busca en la configuración cargada (function.yaml y disparadores); no se revisan reglas ni claves de API."
+    }
   }
 }

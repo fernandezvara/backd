@@ -35,6 +35,7 @@ export const EXTRA: Record<string, (c: CrumbContext, p: Params) => Crumb[]> = {
   'data-collection': (_c, p) => [{ label: str(p.database) }, { label: str(p.collection) }],
   'data-new': (c, p) => [{ label: str(p.database) }, collectionCrumb(c, p), { label: c.t('data.collection.new') }],
   'data-doc': (c, p) => [{ label: str(p.database) }, collectionCrumb(c, p), { label: str(p.id) }],
+  function: (_c, p) => [{ label: `${str(p.database)}/${str(p.name)}` }],
   'functions-triggers': (c) => [{ label: c.t('functions.tabs.triggers') }],
   'functions-history': (c) => [{ label: c.t('functions.tabs.history') }],
   'config-settings': (c) => [{ label: c.t('config.tabs.settings') }],

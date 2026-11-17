@@ -3,7 +3,7 @@ import { formatBytes, Job } from 'backd-js'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppAlert from '@/components/AppAlert.vue'
-import { PhCaretDown, PhCaretRight, PhMagnifyingGlass } from '@phosphor-icons/vue'
+import { PhCaretDown, PhCaretRight, PhCode, PhMagnifyingGlass } from '@phosphor-icons/vue'
 import AppBadge from '@/components/AppBadge.vue'
 import AppCard from '@/components/AppCard.vue'
 import AppButton from '@/components/AppButton.vue'
@@ -213,7 +213,7 @@ async function run() {
           <th scope="col" class="px-3 py-2">{{ t('functions.schedule') }}</th>
           <th scope="col" class="px-3 py-2">{{ t('functions.limits') }}</th>
           <th scope="col" class="px-3 py-2">{{ t('functions.uses') }}</th>
-          <th v-if="canInvoke" scope="col" class="px-3 py-2"><span class="sr-only">{{ t('functions.invoke.submit') }}</span></th>
+          <th scope="col" class="px-3 py-2"><span class="sr-only">{{ t('fn.code.open') }}</span></th>
         </tr>
       </thead>
       <tbody>
@@ -225,7 +225,7 @@ async function run() {
               </button>
             </td>
             <td class="px-3 py-2">
-              <div class="font-mono font-medium">{{ r.f.name }}</div>
+              <RouterLink :to="{ name: 'function', params: { realm, database: r.db, name: r.f.name } }" class="font-mono font-medium hover:underline" data-testid="function-link">{{ r.f.name }}</RouterLink>
               <div class="text-xs text-slate-500">{{ r.db }}</div>
             </td>
             <td class="px-3 py-2">
@@ -247,16 +247,19 @@ async function run() {
             </td>
             <td class="px-3 py-2 text-slate-600 dark:text-slate-400">{{ prettyDuration(r.f.timeout) }} · {{ formatBytes(r.f.memory) }}</td>
             <td class="px-3 py-2 text-slate-600 dark:text-slate-400">{{ t('functions.usesText', { calls: r.f.calls.length, secrets: r.f.secrets.length, network: r.f.network.length }) }}</td>
-            <td v-if="canInvoke" class="px-3 py-2 text-right">
+            <td class="px-3 py-2 text-right">
               <span class="inline-flex gap-2">
+                <RouterLink :to="{ name: 'function', params: { realm, database: r.db, name: r.f.name } }" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-[13px] font-medium hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700" :aria-label="`${t('fn.code.open')} ${r.f.name}`" data-testid="function-code"><PhCode :size="14" aria-hidden="true" />{{ t('fn.code.open') }}</RouterLink>
+                <template v-if="canInvoke">
                 <AppButton v-if="r.f.schedule" variant="secondary" :busy="pausing === r.id" @click="togglePause(r.id)">{{ paused[r.id] ? t('functions.resume.open') : t('functions.pause.open') }}</AppButton>
                 <AppButton variant="secondary" @click="show(r.id)">{{ t('functions.invoke.submit') }}</AppButton>
+                </template>
               </span>
             </td>
           </tr>
           <tr v-if="opened.has(r.id)" class="border-b border-slate-100 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50">
             <td />
-            <td :colspan="canInvoke ? 6 : 5" class="px-3 py-3">
+            <td :colspan="6" class="px-3 py-3">
               <dl class="grid max-w-3xl grid-cols-[8rem_1fr] gap-x-3 gap-y-1 text-[13px]">
                 <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.limits') }}</dt>
                 <dd>{{ t('functions.timeout') }} {{ prettyDuration(r.f.timeout) }} · {{ t('functions.memory') }} {{ formatBytes(r.f.memory) }} · {{ t('functions.maxOutput') }} {{ formatBytes(r.f.max_output) }} · {{ t('functions.concurrency') }} {{ r.f.concurrency }}</dd>
@@ -293,7 +296,7 @@ async function run() {
           </tr>
         </template>
         <tr v-if="!shown.length">
-          <td :colspan="canInvoke ? 7 : 6" class="px-3 py-6 text-center text-slate-600 dark:text-slate-400">{{ t('functions.noMatch') }}</td>
+          <td :colspan="7" class="px-3 py-6 text-center text-slate-600 dark:text-slate-400">{{ t('functions.noMatch') }}</td>
         </tr>
       </tbody>
     </table>
