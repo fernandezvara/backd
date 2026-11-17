@@ -111,6 +111,28 @@ html[data-accent='emerald'] {
       0 1px 2px rgb(28 25 23 / 0.05),
       0 1px 1px rgb(28 25 23 / 0.03);
   }
+  /* Tables: a grey header in sentence case, a soft hover on the rows. Pages add only the padding. */
+  thead {
+    background: var(--n50);
+    color: var(--n500);
+    font-size: 0.75rem;
+    border-bottom: 1px solid var(--n200);
+  }
+  thead th {
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  tbody tr:hover {
+    background: var(--n50);
+  }
+  .dark thead {
+    background: var(--n900);
+    color: var(--n400);
+    border-color: var(--n800);
+  }
+  .dark tbody tr:hover {
+    background: color-mix(in srgb, var(--n900) 70%, transparent);
+  }
   .swatch {
     @apply size-5 rounded-full border-2 border-transparent;
   }

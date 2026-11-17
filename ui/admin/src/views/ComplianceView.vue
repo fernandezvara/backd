@@ -74,7 +74,7 @@ async function ask() {
     <AppAlert v-if="!scope.auth">{{ t('compliance.scope.noAuth') }}</AppAlert>
     <AppCard v-else flush data-testid="scope-table">
       <table class="w-full text-left text-[13px]">
-        <thead class="text-xs text-slate-500">
+        <thead>
           <tr>
             <th class="px-3 py-2 font-medium">{{ t('compliance.scope.collection') }}</th>
             <th class="px-3 py-2 font-medium">{{ t('compliance.scope.export') }}</th>

@@ -121,7 +121,7 @@ async function rollback() {
     <div class="grid gap-5 lg:grid-cols-3">
       <AppCard flush class="lg:col-span-2">
         <table class="w-full text-left text-[13px]" data-testid="app-config-keys">
-          <thead class="text-xs text-slate-500">
+          <thead>
             <tr><th class="px-3 py-2 font-medium">{{ t('appConfig.key') }}</th><th class="px-3 py-2 font-medium">{{ t('appConfig.value') }}</th><th class="px-3 py-2 font-medium">{{ t('appConfig.who') }}</th><th class="px-3 py-2" /></tr>
           </thead>
           <tbody>

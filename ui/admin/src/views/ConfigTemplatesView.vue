@@ -32,7 +32,7 @@ const sections = computed(() => {
       <p v-if="!s.rows.length" class="mt-2 text-sm text-slate-600 dark:text-slate-400">{{ s.empty }}</p>
       <AppCard v-else flush class="mt-2">
         <table class="w-full text-left text-sm" :data-testid="`templates-${s.id}`">
-          <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
+          <thead>
             <tr>
               <th scope="col" class="px-3 py-2">{{ t('config.templates.kind') }}</th>
               <th scope="col" class="px-3 py-2">{{ t('config.templates.languages') }}</th>

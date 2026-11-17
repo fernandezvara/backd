@@ -85,7 +85,7 @@ async function run() {
         <AppButton v-if="full" variant="secondary" class="ml-auto" @click="ask({ kind: 'migrate', database: c.database, collection: c.collection })">{{ t('encryption.migrate') }}</AppButton>
       </div>
       <table class="w-full text-left text-[13px]">
-        <thead class="text-xs text-slate-500"><tr><th class="px-4 py-1.5 font-medium">{{ t('encryption.field') }}</th><th class="px-3 py-1.5 font-medium">{{ t('encryption.key') }}</th><th class="px-3 py-1.5 font-medium">{{ t('encryption.plain') }}</th><th class="px-3 py-1.5 font-medium">{{ t('encryption.current') }}</th><th class="px-3 py-1.5 font-medium">{{ t('encryption.old') }}</th><th class="px-3 py-1.5" /></tr></thead>
+        <thead><tr><th class="px-4 py-1.5 font-medium">{{ t('encryption.field') }}</th><th class="px-3 py-1.5 font-medium">{{ t('encryption.key') }}</th><th class="px-3 py-1.5 font-medium">{{ t('encryption.plain') }}</th><th class="px-3 py-1.5 font-medium">{{ t('encryption.current') }}</th><th class="px-3 py-1.5 font-medium">{{ t('encryption.old') }}</th><th class="px-3 py-1.5" /></tr></thead>
         <tbody>
           <tr v-for="f in c.fields" :key="f.path" class="border-t border-slate-100 dark:border-slate-800">
             <td class="px-4 py-1.5 font-mono">{{ f.path }}<AppBadge v-if="!f.configured" kind="warn" class="ml-1">{{ t('encryption.notConfigured') }}</AppBadge><AppBadge v-if="f.search" class="ml-1">{{ t('encryption.search') }}</AppBadge></td>

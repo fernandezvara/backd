@@ -99,7 +99,7 @@ const canOpenUsers = computed(() => session.canRead('users'))
         <p v-if="!usage?.users.length" class="mt-1 text-sm text-slate-600 dark:text-slate-400">{{ t('storage.noUsers') }}</p>
         <AppCard v-else flush class="mt-2">
           <table class="w-full text-left text-sm" data-testid="storage-users">
-            <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
+            <thead>
               <tr>
                 <th scope="col" class="px-3 py-2">{{ t('storage.user') }}</th>
                 <th scope="col" class="px-3 py-2">{{ t('storage.files') }}</th>

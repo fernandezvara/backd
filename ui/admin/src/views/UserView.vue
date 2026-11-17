@@ -531,7 +531,7 @@ onMounted(async () => {
             <AppAlert v-if="sessionsError" kind="error" class="m-3">{{ sessionsError }}</AppAlert>
             <p v-else-if="!sessions.length" class="p-4 text-[13px] text-slate-600 dark:text-slate-400">{{ t('user.sessions.none') }}</p>
             <table v-else class="w-full text-left text-sm" data-testid="user-sessions">
-              <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
+              <thead>
                 <tr>
                   <th scope="col" class="px-4 py-2">{{ t('user.sessions.created') }}</th>
                   <th scope="col" class="px-4 py-2">{{ t('user.sessions.lastUsed') }}</th>

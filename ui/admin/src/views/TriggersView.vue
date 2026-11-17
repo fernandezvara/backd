@@ -74,7 +74,7 @@ async function resolve(g: Gap) {
     <h2 class="mb-2 text-sm font-semibold">{{ t('triggers.declared') }}</h2>
     <AppCard flush class="mb-6">
       <table class="w-full text-left text-[13px]" data-testid="triggers-table">
-        <thead class="text-xs text-slate-500"><tr><th class="px-3 py-2 font-medium">{{ t('triggers.trigger') }}</th><th class="px-3 py-2 font-medium">{{ t('triggers.events') }}</th><th class="px-3 py-2 font-medium">{{ t('triggers.when') }}</th><th class="px-3 py-2 font-medium">{{ t('triggers.runs') }}</th></tr></thead>
+        <thead><tr><th class="px-3 py-2 font-medium">{{ t('triggers.trigger') }}</th><th class="px-3 py-2 font-medium">{{ t('triggers.events') }}</th><th class="px-3 py-2 font-medium">{{ t('triggers.when') }}</th><th class="px-3 py-2 font-medium">{{ t('triggers.runs') }}</th></tr></thead>
         <tbody>
           <tr v-for="x in status.triggers" :key="x.database + x.collection + x.name" class="border-t border-slate-100 dark:border-slate-800">
             <td class="px-3 py-2"><span class="font-mono">{{ x.database }}/{{ x.collection }}</span> · {{ x.name }}</td>
@@ -90,7 +90,7 @@ async function resolve(g: Gap) {
     <h2 class="mb-2 text-sm font-semibold">{{ t('triggers.gapsTitle') }}</h2>
     <AppCard flush>
       <table class="w-full text-left text-[13px]" data-testid="gaps-table">
-        <thead class="text-xs text-slate-500"><tr><th class="px-3 py-2 font-medium">{{ t('triggers.reason') }}</th><th class="px-3 py-2 font-medium">{{ t('triggers.where') }}</th><th class="px-3 py-2 font-medium">{{ t('triggers.window') }}</th><th class="px-3 py-2 font-medium">{{ t('triggers.count') }}</th><th class="px-3 py-2" /></tr></thead>
+        <thead><tr><th class="px-3 py-2 font-medium">{{ t('triggers.reason') }}</th><th class="px-3 py-2 font-medium">{{ t('triggers.where') }}</th><th class="px-3 py-2 font-medium">{{ t('triggers.window') }}</th><th class="px-3 py-2 font-medium">{{ t('triggers.count') }}</th><th class="px-3 py-2" /></tr></thead>
         <tbody>
           <tr v-for="g in gaps" :key="g.id" class="border-t border-slate-100 dark:border-slate-800">
             <td class="px-3 py-2"><AppBadge kind="warn">{{ g.reason }}</AppBadge></td>

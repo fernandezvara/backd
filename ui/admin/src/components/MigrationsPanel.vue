@@ -53,7 +53,7 @@ const running = (database: string, collection: string) => (listing.value?.runnin
   <AppAlert v-if="error" kind="error">{{ error }}</AppAlert>
   <AppCard v-else-if="listing" flush>
     <table class="w-full text-left text-[13px]" data-testid="migrations-table">
-      <thead class="text-xs text-slate-500"><tr><th class="px-3 py-2 font-medium">{{ t('checks.collection') }}</th><th class="px-3 py-2 font-medium">{{ t('migrations.version') }}</th><th class="px-3 py-2 font-medium">{{ t('migrations.below') }}</th><th class="px-3 py-2 font-medium">{{ t('migrations.last') }}</th><th class="px-3 py-2" /></tr></thead>
+      <thead><tr><th class="px-3 py-2 font-medium">{{ t('checks.collection') }}</th><th class="px-3 py-2 font-medium">{{ t('migrations.version') }}</th><th class="px-3 py-2 font-medium">{{ t('migrations.below') }}</th><th class="px-3 py-2 font-medium">{{ t('migrations.last') }}</th><th class="px-3 py-2" /></tr></thead>
       <tbody>
         <tr v-for="it in listing.items" :key="it.database + it.collection" class="border-t border-slate-100 align-top dark:border-slate-800">
           <td class="px-3 py-2 font-mono text-xs">{{ it.database }}/{{ it.collection }}</td>

@@ -34,7 +34,7 @@ const rows = computed(() => {
         <h2 id="settings-h" class="text-lg font-semibold">{{ t('config.settings.title') }}</h2>
         <AppCard flush class="mt-2">
           <table class="w-full text-left text-sm" data-testid="settings-table">
-            <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
+            <thead>
               <tr>
                 <th scope="col" class="px-3 py-2">{{ t('config.settings.setting') }}</th>
                 <th scope="col" class="px-3 py-2">{{ t('config.settings.value') }}</th>
@@ -56,7 +56,7 @@ const rows = computed(() => {
         <p v-if="!roles.length" class="mt-2 text-sm text-slate-600 dark:text-slate-400">{{ t('config.roles.none') }}</p>
         <AppCard v-else flush class="mt-2">
           <table class="w-full text-left text-sm" data-testid="roles-table">
-            <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
+            <thead>
               <tr>
                 <th scope="col" class="px-3 py-2">{{ t('config.roles.name') }}</th>
                 <th scope="col" class="px-3 py-2">{{ t('config.roles.description') }}</th>

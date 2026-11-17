@@ -15,7 +15,7 @@ withDefaults(defineProps<{ variant?: 'primary' | 'secondary' | 'danger'; type?: 
     :class="{
       'bg-brand-700 text-white hover:bg-brand-800': variant === 'primary',
       'border border-slate-300 bg-white text-slate-800 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700': variant === 'secondary',
-      'bg-red-700 text-white hover:bg-red-800': variant === 'danger',
+      'border border-red-300 bg-white text-red-700 hover:bg-red-50 dark:border-red-900 dark:bg-transparent dark:text-red-400 dark:hover:bg-red-950': variant === 'danger',
     }"
   >
     <slot />

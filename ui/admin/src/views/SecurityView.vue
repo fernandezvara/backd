@@ -60,7 +60,7 @@ const full = computed(() => session.canWrite('users') && session.access?.level =
         </span>
       </div>
       <table v-if="mfa.users_without_mfa.length" class="w-full text-left text-[13px]">
-        <thead class="text-xs text-slate-500">
+        <thead>
           <tr><th class="px-3 py-1.5 font-medium">{{ t('security.mfa.user') }}</th><th class="px-3 py-1.5 font-medium">{{ t('security.mfa.rolesCol') }}</th></tr>
         </thead>
         <tbody>

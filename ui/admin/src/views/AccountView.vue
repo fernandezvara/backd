@@ -135,7 +135,7 @@ async function remove() {
     <p v-if="loading" class="mt-2 text-sm" role="status">{{ t('common.loading') }}</p>
     <AppCard v-if="!error" flush class="mt-2">
       <table class="w-full text-left text-sm" data-testid="passkeys-table">
-        <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
+        <thead>
           <tr>
             <th scope="col" class="px-3 py-2">{{ t('account.passkeys.name') }}</th>
             <th scope="col" class="px-3 py-2">{{ t('account.passkeys.kind') }}</th>

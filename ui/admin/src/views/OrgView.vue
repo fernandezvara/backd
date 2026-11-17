@@ -627,7 +627,7 @@ const th = 'px-3 py-2'
         </div>
         <div :class="[box, 'mt-2 overflow-x-auto']">
           <table class="w-full text-left text-sm" data-testid="org-members">
-            <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
+            <thead>
               <tr>
                 <th scope="col" :class="th">{{ t('orgs.members.who') }}</th>
                 <th scope="col" :class="th">{{ t('orgs.members.direct') }}</th>
@@ -682,7 +682,7 @@ const th = 'px-3 py-2'
             <span v-for="r in tm.roles.filter(stale)" :key="r" class="ml-1 text-amber-800 dark:text-amber-300">⚠ {{ r }}: {{ t('orgs.members.stale') }}</span>
             <div v-if="holdersOf.get(tm.id)?.length || (canWrite && teamRoleNames.length)" class="mt-1 ml-4">
               <table v-if="holdersOf.get(tm.id)?.length" class="w-full text-left text-xs" :aria-label="t('orgs.teamRoles.of', { team: tm.name })">
-                <thead class="text-slate-600 dark:text-slate-400">
+                <thead>
                   <tr>
                     <th scope="col" :class="th">{{ t('orgs.members.who') }}</th>
                     <th scope="col" :class="th">{{ t('orgs.teamRoles.role') }}</th>
@@ -728,7 +728,7 @@ const th = 'px-3 py-2'
         <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">{{ t('orgs.invitations.help') }}</p>
         <div :class="[box, 'mt-2 overflow-x-auto']">
           <table class="w-full text-left text-sm" data-testid="org-invitations">
-            <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
+            <thead>
               <tr>
                 <th scope="col" :class="th">{{ t('orgs.invitations.for') }}</th>
                 <th scope="col" :class="th">{{ t('orgs.invitations.binding') }}</th>
@@ -765,7 +765,7 @@ const th = 'px-3 py-2'
         <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">{{ t('orgs.sso.help') }}</p>
         <div :class="[box, 'mt-2 overflow-x-auto']">
           <table class="w-full text-left text-sm" data-testid="org-connections">
-            <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
+            <thead>
               <tr>
                 <th scope="col" :class="th">{{ t('orgs.sso.provider') }}</th>
                 <th scope="col" :class="th">{{ t('orgs.sso.limitedTo') }}</th>
@@ -815,7 +815,7 @@ const th = 'px-3 py-2'
         <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">{{ t('orgs.domains.help') }}</p>
         <div :class="[box, 'mt-2 overflow-x-auto']">
           <table class="w-full text-left text-sm" data-testid="org-domain-list">
-            <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
+            <thead>
               <tr>
                 <th scope="col" :class="th">{{ t('orgs.domains.domain') }}</th>
                 <th scope="col" :class="th">{{ t('orgs.statusLabel') }}</th>
