@@ -5,7 +5,15 @@ auth:
   strategies:
     password: [password]
     sso: [sso]
+    passkey: [passkey]
+    password_passkey: [password, passkey]
   signup: open
+  # Passkeys are bound to the origin the local stack's nginx serves the interface on.
+  sign_in:
+    app_url: https://localhost:8443/
+    allowed_redirects: [https://localhost:8443]
+  passkeys:
+    enabled: true
 
 # Read-only administrators may read users too (they never get a control that
 # changes anything).
