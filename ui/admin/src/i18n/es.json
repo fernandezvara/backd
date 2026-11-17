@@ -1353,6 +1353,13 @@
     "passkey": "Se te pedirá tu llave de acceso al confirmar."
   },
   "orgs": {
+    "membersCol": "Miembros",
+    "organization": "Organización",
+    "security": "Seguridad",
+    "membersCount": "{n} miembros",
+    "createdOn": "creada el {date}",
+    "ssoRequired": "SSO obligatorio",
+    "count": "{n} organizaciones",
     "title": "Organizaciones",
     "back": "Volver a organizaciones",
     "search": "Buscar",

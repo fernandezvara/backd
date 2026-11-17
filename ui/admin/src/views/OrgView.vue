@@ -3,11 +3,11 @@ import type { AdminOrg, AuditRecord, OrgConnection, OrgConnections, OrgDomain, O
 import { NotFoundError } from 'backd-js'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import AppBadge from '@/components/AppBadge.vue'
 import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FormDialog from '@/components/FormDialog.vue'
-import PageHeader from '@/components/PageHeader.vue'
 import JsonField from '@/components/JsonField.vue'
 import SubTabs from '@/components/SubTabs.vue'
 import { useRawAdmin } from '@/lib/adminRaw'
@@ -588,37 +588,30 @@ const th = 'px-3 py-2'
   <AppAlert v-if="loadError" kind="error" class="mt-4">{{ loadError }}</AppAlert>
 
   <template v-if="org">
-    <PageHeader :title="org.name" testid="org-name" />
-
-    <dl class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <div :class="[box, 'p-4']">
-        <dt class="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-400">{{ t('orgs.statusLabel') }}</dt>
-        <dd class="mt-1" data-testid="org-status">{{ t(`orgs.status.${org.status}`) }}</dd>
+    <div class="mb-4 flex flex-wrap items-center gap-4">
+      <span class="grid size-12 shrink-0 place-items-center rounded-lg bg-slate-200 text-xl font-bold dark:bg-slate-700" aria-hidden="true">{{ org.name.slice(0, 1).toUpperCase() }}</span>
+      <div class="min-w-0">
+        <h1 class="text-xl font-semibold" data-testid="org-name">{{ org.name }}</h1>
+        <p class="text-sm text-slate-600 dark:text-slate-400"><span class="font-mono">{{ org.slug ?? '—' }}</span> · {{ t('orgs.membersCount', { n: members.length }) }} · {{ t('orgs.createdOn', { date: formatDate(org.created_at) }) }}</p>
+        <div class="mt-1.5 flex flex-wrap gap-1.5">
+          <AppBadge :kind="org.status === 'active' ? 'ok' : org.status === 'orphaned' ? 'warn' : 'error'"><span data-testid="org-status">{{ t(`orgs.status.${org.status}`) }}</span></AppBadge>
+          <AppBadge v-if="org.require_mfa">{{ t('orgs.requireMfa') }}</AppBadge>
+          <AppBadge v-if="org.sso_required">{{ t('orgs.ssoRequired') }}</AppBadge>
+        </div>
       </div>
-      <div :class="[box, 'p-4']">
-        <dt class="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-400">{{ t('orgs.slug') }}</dt>
-        <dd class="mt-1 font-mono text-sm">{{ org.slug ?? '—' }}</dd>
+      <div v-if="canWrite" class="ml-auto flex flex-wrap items-center gap-2" data-testid="org-actions">
+        <AppButton v-if="org.status === 'orphaned'" @click="openAssign">{{ t('orgs.owner.open') }}</AppButton>
+        <AppButton v-if="deleted" variant="secondary" @click="openReactivate">{{ t('orgs.reactivate.open') }}</AppButton>
+        <AppButton v-if="!deleted" variant="secondary" @click="tab = 'invitations'; openInvite()">{{ t('orgs.invitations.create') }}</AppButton>
+        <AppButton v-if="!deleted" variant="danger" @click="askDelete">{{ t('orgs.delete.open') }}</AppButton>
       </div>
-      <div :class="[box, 'p-4']">
-        <dt class="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-400">{{ t('orgs.requireMfa') }}</dt>
-        <dd class="mt-1">{{ org.require_mfa ? t('common.yes') : t('common.no') }}</dd>
-      </div>
-      <div :class="[box, 'p-4']">
-        <dt class="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-400">{{ t('orgs.created') }}</dt>
-        <dd class="mt-1">{{ formatDate(org.created_at) }}</dd>
-      </div>
-    </dl>
+    </div>
 
     <AppAlert v-if="org.status === 'orphaned'" kind="error" class="mt-4" data-testid="org-orphaned">{{ t('orgs.orphanedHelp') }}</AppAlert>
     <AppAlert v-if="deleted" kind="error" class="mt-4">{{ t('orgs.deletedHelp') }}</AppAlert>
 
-    <div v-if="canWrite" class="mt-6 flex flex-wrap gap-2" data-testid="org-actions">
-      <AppButton v-if="org.status === 'orphaned'" @click="openAssign">{{ t('orgs.owner.open') }}</AppButton>
-      <AppButton v-if="deleted" variant="secondary" @click="openReactivate">{{ t('orgs.reactivate.open') }}</AppButton>
-      <AppButton v-if="!deleted" variant="danger" @click="askDelete">{{ t('orgs.delete.open') }}</AppButton>
-    </div>
 
-    <SubTabs v-if="!deleted" v-model="tab" class="mt-6" :label="t('orgTabs.label')" :tabs="orgTabs" />
+    <SubTabs v-if="!deleted" v-model="tab" class="mt-4" :label="t('orgTabs.label')" :tabs="orgTabs" />
     <template v-if="!deleted">
       <section v-show="tab === 'members'" class="mt-8" aria-labelledby="members-h">
         <div class="flex flex-wrap items-end justify-between gap-3">

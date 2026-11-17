@@ -1353,6 +1353,13 @@
     "passkey": "Your passkey will be asked for when you confirm."
   },
   "orgs": {
+    "membersCol": "Members",
+    "organization": "Organization",
+    "security": "Security",
+    "membersCount": "{n} members",
+    "createdOn": "created {date}",
+    "ssoRequired": "SSO required",
+    "count": "{n} organizations",
     "title": "Organizations",
     "back": "Back to organizations",
     "search": "Search",
