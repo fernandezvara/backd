@@ -54,6 +54,7 @@
   },
   "account": {
     "label": "Account",
+    "prefs": {"title": "Appearance", "help": "Kept in this browser only. Each browser you sign in from has its own.", "theme": "Theme", "themeHelp": "Follow the system, or always light or dark.", "language": "Language", "languageHelp": "Automatic follows the browser's languages.", "accent": "Accent colour", "accentHelp": "Colours the sidebar, buttons and links.", "preview": "Preview", "sample": "Primary action", "sampleSecondary": "Secondary", "sampleBadge": "Active", "sampleLink": "A link"},
     "title": "Account",
     "passkeys": {
       "title": "Passkeys",

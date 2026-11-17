@@ -54,6 +54,7 @@
   },
   "account": {
     "label": "Cuenta",
+    "prefs": {"title": "Apariencia", "help": "Se guarda solo en este navegador. Cada navegador desde el que entras tiene la suya.", "theme": "Tema", "themeHelp": "Seguir al sistema, o siempre claro u oscuro.", "language": "Idioma", "languageHelp": "Automático sigue los idiomas del navegador.", "accent": "Color de acento", "accentHelp": "Colorea la barra lateral, los botones y los enlaces.", "preview": "Vista previa", "sample": "Acción principal", "sampleSecondary": "Secundaria", "sampleBadge": "Activo", "sampleLink": "Un enlace"},
     "title": "Cuenta",
     "passkeys": {
       "title": "Llaves de acceso",

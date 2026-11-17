@@ -311,7 +311,7 @@ function cancel() {
         <div class="flex gap-2">
           <AccentSwitch compact class="mr-2" />
           <LocaleSwitch />
-          <ThemeSwitch />
+          <ThemeSwitch compact />
         </div>
       </div>
       <div class="m-auto w-full max-w-sm space-y-5 py-10">

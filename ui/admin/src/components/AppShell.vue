@@ -10,6 +10,7 @@ import { useCrumbNames } from '@/stores/crumbs'
 import { useRealms } from '@/stores/realms'
 import { useSession } from '@/stores/session'
 import AccountMenu from './AccountMenu.vue'
+import ThemeToggle from './ThemeToggle.vue'
 import AppBreadcrumb from './AppBreadcrumb.vue'
 import AppNav from './AppNav.vue'
 import CommandPalette from './CommandPalette.vue'
@@ -89,6 +90,7 @@ watch(() => route.fullPath, () => (mobileOpen.value = false))
           <span class="hidden w-40 text-left min-[900px]:inline">{{ t('palette.open') }}</span>
           <kbd class="hidden rounded border border-slate-300 px-1 text-[11px] min-[900px]:inline dark:border-slate-700">⌘K</kbd>
         </button>
+        <ThemeToggle />
         <AccountMenu />
       </header>
       <main id="main" class="min-h-0 flex-1 overflow-auto">

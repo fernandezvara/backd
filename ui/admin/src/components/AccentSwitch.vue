@@ -10,8 +10,21 @@ const color = (a: string) => `var(--sw-${a})`
 </script>
 
 <template>
-  <div class="flex items-center gap-2 text-sm" role="group" :aria-label="t('accent.label')">
-    <span v-if="!compact" class="shrink-0">{{ t('accent.label') }}</span>
+  <div v-if="!compact" class="flex flex-wrap gap-2" role="group" :aria-label="t('accent.label')">
+    <button
+      v-for="a in ACCENTS"
+      :key="a"
+      type="button"
+      class="flex h-8 items-center gap-2 rounded-full border px-3 text-sm"
+      :class="prefs.accent === a ? 'border-brand-600 bg-brand-50 font-medium text-brand-800 dark:border-brand-400 dark:bg-brand-900/30 dark:text-brand-100' : 'border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800'"
+      :aria-pressed="prefs.accent === a"
+      :data-testid="`accent-${a}`"
+      @click="prefs.accent = a"
+    >
+      <span class="size-3.5 rounded-full" :style="{ background: color(a) }" aria-hidden="true" />{{ t(`accent.names.${a}`) }}
+    </button>
+  </div>
+  <div v-else class="flex items-center gap-2 text-sm" role="group" :aria-label="t('accent.label')">
     <span class="ml-auto flex gap-1.5">
       <button
         v-for="a in ACCENTS"
