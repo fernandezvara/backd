@@ -1156,7 +1156,9 @@
       "records": "Registros",
       "definition": "Definición",
     "schema": "Esquema",
-    "rules": "Reglas"
+    "rules": "Reglas",
+    "triggers": "Disparadores",
+    "api": "API"
     },
     "form": {
       "required": "obligatorio",
@@ -1184,6 +1186,8 @@
     "softDeleting": "tiene papelera",
     "filter": "Filtrar colecciones",
     "schema": {"fields": "Campos", "name": "Nombre", "type": "Tipo"},
+    "triggers": {"title": "Disparadores de esta colección", "event": "Evento", "name": "Disparador", "function": "Función", "when": "Condición", "ordered": "ordenado", "none": "Ningún disparador se ejecuta en esta colección.", "readOnly": "Se declaran en collection.yaml.", "status": "Ver el estado del despachador", "needsFunctions": "Los disparadores necesitan acceso al área de Funciones."},
+    "api": {"snippets": "Ejemplos de cliente", "reference": "Referencia", "openapi": "OpenAPI de este realm", "types": "Tipos generados del realm"},
     "allDatabases": "Todas las bases de datos",
     "countLine": "{n} colecciones",
     "noMatch": "Ninguna colección coincide.",

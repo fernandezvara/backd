@@ -10,6 +10,8 @@ import AppButton from '@/components/AppButton.vue'
 import FormDialog from '@/components/FormDialog.vue'
 import JsonView from '@/components/JsonView.vue'
 import SchemaCheckPanel from '@/components/SchemaCheckPanel.vue'
+import CollectionApi from '@/components/CollectionApi.vue'
+import CollectionTriggers from '@/components/CollectionTriggers.vue'
 import CollectionDefinition from '@/components/CollectionDefinition.vue'
 import SchemaVersionsPanel from '@/components/SchemaVersionsPanel.vue'
 import SubTabs from '@/components/SubTabs.vue'
@@ -249,7 +251,7 @@ const tab = ref('records')
     </div>
   </div>
 
-  <SubTabs v-model="tab" class="mt-3" :label="t('data.tabs.label')" :tabs="[{ id: 'records', label: t('data.tabs.records') }, { id: 'schema', label: t('data.tabs.schema') }, { id: 'rules', label: t('data.tabs.rules') }]" />
+  <SubTabs v-model="tab" class="mt-3" :label="t('data.tabs.label')" :tabs="[{ id: 'records', label: t('data.tabs.records') }, { id: 'schema', label: t('data.tabs.schema') }, { id: 'rules', label: t('data.tabs.rules') }, { id: 'triggers', label: t('data.tabs.triggers') }, { id: 'api', label: t('data.tabs.api') }]" />
   <SchemaCheckPanel v-if="showCheck" :realm="realm" :database="database" :collection="collection" :total="conditions.length || view === 'trash' ? undefined : total" class="mb-4" />
 
   <template v-if="tab === 'schema'">
@@ -275,6 +277,8 @@ const tab = ref('records')
       </div>
     </div>
   </template>
+  <CollectionTriggers v-if="tab === 'triggers'" :realm="realm" :database="database" :collection="collection" />
+  <CollectionApi v-if="tab === 'api'" :realm="realm" :database="database" :collection="collection" />
   <CollectionDefinition v-if="tab === 'rules'" :realm="realm" :database="database" :collection="collection" only="rules" />
 
   <template v-if="tab === 'records'">

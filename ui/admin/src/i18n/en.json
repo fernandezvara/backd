@@ -1156,7 +1156,9 @@
       "records": "Records",
       "definition": "Definition",
     "schema": "Schema",
-    "rules": "Rules"
+    "rules": "Rules",
+    "triggers": "Triggers",
+    "api": "API"
     },
     "form": {
       "required": "required",
@@ -1184,6 +1186,8 @@
     "softDeleting": "keeps a trash",
     "filter": "Filter collections",
     "schema": {"fields": "Fields", "name": "Name", "type": "Type"},
+    "triggers": {"title": "Triggers on this collection", "event": "Event", "name": "Trigger", "function": "Function", "when": "Condition", "ordered": "ordered", "none": "No trigger runs on this collection.", "readOnly": "Declared in collection.yaml.", "status": "See the dispatcher status", "needsFunctions": "Triggers need access to the Functions area."},
+    "api": {"snippets": "Client snippets", "reference": "Reference", "openapi": "OpenAPI of this realm", "types": "Generated types of the realm"},
     "allDatabases": "All databases",
     "countLine": "{n} collections",
     "noMatch": "No collection matches.",
