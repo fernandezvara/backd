@@ -54,9 +54,9 @@ async function copy() {
     <template v-else>
       <p v-if="file.truncated" class="border-b border-slate-200 bg-amber-50 px-4 py-1.5 text-xs text-amber-900 dark:border-slate-800 dark:bg-amber-950/40 dark:text-amber-200">{{ t('fn.code.truncated') }}</p>
       <p v-if="file.content === ''" class="p-4 text-sm text-slate-600 dark:text-slate-400">{{ t('fn.code.empty') }}</p>
-      <div v-else class="flex min-h-0 flex-1 overflow-auto py-2 font-mono text-[12.5px] leading-relaxed" tabindex="0" data-testid="fn-source">
-        <pre class="sticky left-0 shrink-0 select-none bg-white px-3 text-right text-slate-400 dark:bg-slate-900" aria-hidden="true">{{ lines.map((_, i) => i + 1).join('\n') }}</pre>
-        <pre class="pr-4"><span v-for="(tk, i) in tokens" :key="i" :class="tk.type ? `hl-${tk.type}` : undefined">{{ tk.text }}</span></pre>
+      <div v-else class="flex min-h-0 flex-1 overflow-auto font-mono text-[12.5px] leading-relaxed" tabindex="0" data-testid="fn-source">
+        <pre class="sticky left-0 shrink-0 select-none border-r border-slate-200 bg-slate-100 px-3 py-2 text-right text-slate-400 dark:border-slate-800 dark:bg-slate-800/60" aria-hidden="true">{{ lines.map((_, i) => i + 1).join('\n') }}</pre>
+        <pre class="py-2 pl-3 pr-4"><span v-for="(tk, i) in tokens" :key="i" :class="tk.type ? `hl-${tk.type}` : undefined">{{ tk.text }}</span></pre>
       </div>
     </template>
   </div>
