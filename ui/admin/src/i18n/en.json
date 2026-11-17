@@ -962,6 +962,7 @@
       "filter": "Filter files",
       "tree": "Configuration files",
       "omitted": "{n} more files are not shown.",
+      "data": "Data",
       "hint": "Edit it in the configuration repository, then deploy.",
       "loadFailed": "The configuration files could not be loaded.",
       "roles": {

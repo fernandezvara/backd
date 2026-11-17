@@ -962,6 +962,7 @@
       "filter": "Filtrar archivos",
       "tree": "Archivos de configuración",
       "omitted": "{n} archivos más no se muestran.",
+      "data": "Datos",
       "hint": "Edítalo en el repositorio de configuración y despliega.",
       "loadFailed": "No se pudieron cargar los archivos de configuración.",
       "roles": {

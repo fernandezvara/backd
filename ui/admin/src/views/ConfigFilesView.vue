@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ConfigFile } from 'backd-js'
-import { PhMagnifyingGlass } from '@phosphor-icons/vue'
+import { PhDatabase, PhMagnifyingGlass } from '@phosphor-icons/vue'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
@@ -16,7 +16,7 @@ import { errorText } from '@/lib/format'
 
 // Every file of the realm's configuration, read-only: the whole structure, to inspect what the server
 // loaded. Changes are made in the configuration repository, never here.
-defineProps<{ realm: string }>()
+const props = defineProps<{ realm: string }>()
 const { t } = useI18n()
 const admin = useAdmin()
 const route = useRoute()
@@ -45,6 +45,11 @@ onMounted(async () => {
 const paths = computed(() => files.value.map((f) => f.path))
 const file = computed(() => files.value.find((f) => f.path === selected.value))
 const roleKind = (r: string) => (r === 'realm' || r === 'realm_config' ? 'violet' : r === 'function' || r === 'migration' ? 'blue' : 'neutral')
+// A collection's files link to its data page.
+const dataLink = computed(() => {
+  const f = file.value
+  return f?.database && f.collection ? { name: 'data-collection', params: { realm: props.realm, database: f.database, collection: f.collection } } : null
+})
 const where = computed(() => {
   const f = file.value
   if (!f) return ''
@@ -71,12 +76,15 @@ const where = computed(() => {
         <FileTree v-model="selected" :paths="paths" :filter="filter" :label="t('config.files.tree')" :open-depth="2" />
       </template>
       <template v-if="omitted" #foot>{{ t('config.files.omitted', { n: omitted }) }}</template>
-      <SourceViewer :name="file?.path ?? ''" :file="file" :hint="t('config.files.hint')">
+      <SourceViewer :name="file?.path ?? ''" :file="file">
         <template #meta>
           <template v-if="file">
             <AppBadge :kind="roleKind(file.role)">{{ t(`config.files.roles.${file.role}`) }}</AppBadge>
             <span v-if="where" class="text-xs text-slate-500">{{ where }}</span>
           </template>
+        </template>
+        <template v-if="dataLink" #actions>
+          <RouterLink :to="dataLink" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-[13px] font-medium hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700" data-testid="open-data"><PhDatabase :size="14" aria-hidden="true" />{{ t('config.files.data') }}</RouterLink>
         </template>
       </SourceViewer>
     </SourceSplit>

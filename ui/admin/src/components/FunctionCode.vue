@@ -55,6 +55,7 @@ const kindBadge = (k: string) => (k === 'local' ? 'neutral' : k === 'unresolved'
   <AppAlert v-if="error" kind="error">{{ error }}</AppAlert>
   <div v-else-if="!source" class="text-sm text-slate-600 dark:text-slate-400" role="status">{{ t('common.loading') }}</div>
   <template v-else>
+    <p class="mb-2 text-xs text-slate-600 dark:text-slate-400">{{ t('fn.code.editHint') }}</p>
     <SourceSplit>
       <template #tree>
         <nav :aria-label="t('fn.code.files')" class="p-2" data-testid="fn-files">
@@ -76,7 +77,7 @@ const kindBadge = (k: string) => (k === 'local' ? 'neutral' : k === 'unresolved'
           <p v-if="source.omitted" class="px-2 pt-2 text-xs text-slate-500">{{ t('fn.code.omitted', { n: source.omitted }) }}</p>
         </nav>
       </template>
-      <SourceViewer :name="file ? shortName(file.path) : ''" :file="file" :hint="t('fn.code.editHint')" />
+      <SourceViewer :name="file ? shortName(file.path) : ''" :file="file" />
     </SourceSplit>
 
     <section class="mt-5" aria-labelledby="deps-h">

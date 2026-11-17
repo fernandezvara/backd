@@ -42,7 +42,10 @@ async function copy() {
       <AppBadge><PhLockSimple :size="11" class="mr-0.5 inline" aria-hidden="true" />{{ t('fn.code.readOnly') }}</AppBadge>
       <span v-if="hint" class="text-xs text-slate-500">{{ hint }}</span>
       <slot name="meta" />
-      <AppButton v-if="file.content != null" variant="secondary" class="ml-auto" @click="copy"><PhCopy :size="14" aria-hidden="true" />{{ t('fn.code.copy') }}</AppButton>
+      <div class="ml-auto flex items-center gap-2">
+        <slot name="actions" />
+        <AppButton v-if="file.content != null" variant="secondary" @click="copy"><PhCopy :size="14" aria-hidden="true" />{{ t('fn.code.copy') }}</AppButton>
+      </div>
     </div>
     <p v-if="!file" class="p-4 text-sm text-slate-600 dark:text-slate-400">{{ t('fn.code.pick') }}</p>
     <p v-else-if="file.restricted" class="p-4 text-sm text-slate-600 dark:text-slate-400">{{ t('fn.code.restricted') }}</p>
