@@ -9,6 +9,8 @@ export interface RawOptions {
   body?: unknown
   query?: Record<string, string | number | boolean | undefined>
   headers?: Record<string, string>
+  /** The call needs a fresh proof of identity (the client sends it when it holds one). */
+  reauth?: boolean
 }
 export type RawAdmin = <T = unknown>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string[], opts?: RawOptions) => Promise<T>
 

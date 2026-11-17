@@ -39,6 +39,7 @@ export const EXTRA: Record<string, (c: CrumbContext, p: Params) => Crumb[]> = {
   'functions-history': (c) => [{ label: c.t('functions.tabs.history') }],
   'config-settings': (c) => [{ label: c.t('config.tabs.settings') }],
   'config-collections': (c) => [{ label: c.t('config.tabs.collections') }],
+  'config-backup': (c) => [{ label: c.t('config.tabs.backup') }],
   'config-templates': (c) => [{ label: c.t('config.tabs.templates') }],
 }
 
@@ -61,7 +62,7 @@ export function crumbsFor(name: string, params: Params, c: CrumbContext): Crumb[
     { label: c.realm, to: here('home') },
     // A group is not a page: it leads to its first page, which is where its menu starts. When the
     // group and its page are called the same (Data, Data) the page says it.
-    ...(c.t(group.label) === c.t(item.label) ? [] : [{ label: c.t(group.label), to: here(group.items[0].route) }]),
+    ...(group.id === 'realm' || c.t(group.label) === c.t(item.label) ? [] : [{ label: c.t(group.label), to: here(group.items[0].route) }]),
     { label: c.t(item.label), to: here(item.route) },
     ...extra,
   ]

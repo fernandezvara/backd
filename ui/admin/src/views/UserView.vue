@@ -12,6 +12,8 @@ import PageHeader from '@/components/PageHeader.vue'
 import ProofField from '@/components/ProofField.vue'
 import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
+import PrivacyPanel from '@/components/PrivacyPanel.vue'
+import SubTabs from '@/components/SubTabs.vue'
 import { errorText, formatDate } from '@/lib/format'
 import { useProof } from '@/lib/proof'
 import { useRealmConfig } from '@/stores/config'
@@ -321,6 +323,7 @@ async function erase() {
   }
 }
 
+const tab = ref('overview')
 const statusText = computed(() => {
   const base = erased.value ? t('users.erased') : user.value?.disabled ? t('users.disabled') : t('users.active')
   return user.value?.password_expired && !erased.value ? `${base} · ${t('users.passwordExpired')}` : base
@@ -343,19 +346,19 @@ onMounted(async () => {
     <PageHeader :title="user.email" testid="user-email" />
 
     <dl class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+      <div class="card-soft rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <dt class="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-400">{{ t('user.status') }}</dt>
         <dd class="mt-1" data-testid="user-status">{{ statusText }}</dd>
       </div>
-      <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+      <div class="card-soft rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <dt class="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-400">{{ t('user.emailVerified') }}</dt>
         <dd class="mt-1">{{ user.email_verified ? t('users.verified') : t('users.unverified') }}</dd>
       </div>
-      <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+      <div class="card-soft rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <dt class="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-400">{{ t('user.created') }}</dt>
         <dd class="mt-1">{{ formatDate(user.created_at) }}</dd>
       </div>
-      <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+      <div class="card-soft rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <dt class="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-400">{{ t('user.id') }}</dt>
         <dd class="mt-1 font-mono text-sm break-all">{{ user.id }}</dd>
       </div>
@@ -371,8 +374,10 @@ onMounted(async () => {
       <AppButton variant="danger" @click="erasing = true">{{ t('user.erase.open') }}</AppButton>
     </div>
 
+    <SubTabs v-if="!erased" v-model="tab" class="mt-6" :label="t('userTabs.label')" :tabs="[{ id: 'overview', label: t('userTabs.overview') }, { id: 'security', label: t('userTabs.security') }, { id: 'sessions', label: t('userTabs.sessions') }, { id: 'privacy', label: t('userTabs.privacy') }]" />
     <template v-if="!erased">
-      <section class="mt-8" aria-labelledby="roles-h">
+      <PrivacyPanel v-if="tab === 'privacy'" :realm="realm" :id="id" />
+      <section v-show="tab === 'overview'" class="mt-8" aria-labelledby="roles-h">
         <h2 id="roles-h" class="text-lg font-semibold">{{ t('user.roles.title') }}</h2>
         <p v-if="!user.roles.length" class="mt-2 text-sm text-slate-600 dark:text-slate-400">{{ t('user.roles.none') }}</p>
         <ul class="mt-2 space-y-2" data-testid="user-roles">
@@ -397,7 +402,7 @@ onMounted(async () => {
         </form>
       </section>
 
-      <section class="mt-8" aria-labelledby="networks-h">
+      <section v-show="tab === 'overview'" class="mt-8" aria-labelledby="networks-h">
         <h2 id="networks-h" class="text-lg font-semibold">{{ t('user.networks.title') }}</h2>
         <dl class="mt-2 grid max-w-xl gap-1 text-sm sm:grid-cols-[10rem_1fr]">
           <dt class="text-slate-600 dark:text-slate-400">{{ t('user.adminNetworks') }}</dt>
@@ -407,7 +412,7 @@ onMounted(async () => {
         </dl>
       </section>
 
-      <section class="mt-8" aria-labelledby="identities-h">
+      <section v-show="tab === 'security'" class="mt-8" aria-labelledby="identities-h">
         <h2 id="identities-h" class="text-lg font-semibold">{{ t('user.identities.title') }}</h2>
         <AppAlert v-if="identitiesError" kind="error" class="mt-2">{{ identitiesError }}</AppAlert>
         <AppCard v-else flush class="mt-2">
@@ -440,7 +445,7 @@ onMounted(async () => {
         </AppCard>
       </section>
 
-      <section class="mt-8" aria-labelledby="mfa-h">
+      <section v-show="tab === 'security'" class="mt-8" aria-labelledby="mfa-h">
         <h2 id="mfa-h" class="text-lg font-semibold">{{ t('user.mfa.title') }}</h2>
         <AppAlert v-if="mfaError" kind="error" class="mt-2">{{ mfaError }}</AppAlert>
         <div v-else-if="mfa" class="mt-2 flex flex-wrap items-center gap-4 text-sm" data-testid="user-mfa">
@@ -451,7 +456,7 @@ onMounted(async () => {
         </div>
       </section>
 
-      <section class="mt-8" aria-labelledby="passkeys-h">
+      <section v-show="tab === 'security'" class="mt-8" aria-labelledby="passkeys-h">
         <h2 id="passkeys-h" class="text-lg font-semibold">{{ t('user.passkeys.title') }}</h2>
         <AppAlert v-if="passkeysError" kind="error" class="mt-2">{{ passkeysError }}</AppAlert>
         <p v-else-if="!passkeys.length" class="mt-2 text-sm text-slate-600 dark:text-slate-400" data-testid="user-passkeys-none">{{ t('user.passkeys.none') }}</p>
@@ -479,7 +484,7 @@ onMounted(async () => {
         </AppCard>
       </section>
 
-      <section class="mt-8" aria-labelledby="sessions-h">
+      <section v-show="tab === 'sessions'" class="mt-8" aria-labelledby="sessions-h">
         <h2 id="sessions-h" class="text-lg font-semibold">{{ t('user.sessions.title') }}</h2>
         <AppAlert v-if="sessionsError" kind="error" class="mt-2">{{ sessionsError }}</AppAlert>
         <p v-else-if="!sessions.length" class="mt-2 text-sm text-slate-600 dark:text-slate-400">{{ t('user.sessions.none') }}</p>
@@ -506,7 +511,7 @@ onMounted(async () => {
           </table>
         </AppCard>
       </section>
-      <section v-if="pushConfigured" class="mt-8" aria-labelledby="devices-h">
+      <section v-if="pushConfigured" v-show="tab === 'sessions'" class="mt-8" aria-labelledby="devices-h">
         <h2 id="devices-h" class="text-lg font-semibold">{{ t('user.devices.title') }}</h2>
         <AppAlert v-if="devicesError" kind="error" class="mt-2">{{ devicesError }}</AppAlert>
         <p v-else-if="!devices.length" class="mt-2 text-sm text-slate-600 dark:text-slate-400" data-testid="user-devices-none">{{ t('user.devices.none') }}</p>

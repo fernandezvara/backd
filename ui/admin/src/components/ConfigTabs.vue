@@ -8,6 +8,7 @@ const tabs = [
   { name: 'config-settings', label: 'config.tabs.settings' },
   { name: 'config-collections', label: 'config.tabs.collections' },
   { name: 'config-templates', label: 'config.tabs.templates' },
+  { name: 'config-backup', label: 'config.tabs.backup' },
 ]
 </script>
 

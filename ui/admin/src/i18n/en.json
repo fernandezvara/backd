@@ -913,8 +913,10 @@
       "overview": "Overview",
       "settings": "Settings",
       "collections": "Collections",
-      "templates": "Templates"
+      "templates": "Templates",
+      "backup": "Backup and API files"
     },
+    "backup": {"title":"Backup and API files","description":"Take a backup with the command line, and download the documents and types generated from the configuration this instance runs.","backup":"Backup","help":"A backup streams every collection and file, so it is made with the backd command, not in a browser tab. It needs full administration. These are the commands for this realm.","export":"Export the realm, with its users, as one archive","dryRun":"Check an import without writing anything","import":"Import it","note":"Encrypted fields travel sealed: keep their field keys with the backup. See the documentation on export and import.","downloaded":"Downloaded.","filesTitle":"API files","filesHelp":"Generated from the configuration this instance runs; nothing changes on the server.","files":{"client":"OpenAPI for client apps","admin":"OpenAPI with admin routes","ts":"TypeScript types","dart":"Dart types","go":"Go types","python":"Python types"}},
     "loadFailed": "The configuration could not be loaded.",
     "loading": "Loading the configuration...",
     "fingerprint": "Config fingerprint",
@@ -992,6 +994,22 @@
     }
   },
   "data": {
+    "definition": {
+      "needsConfig": "Reading the definition needs the configuration area.",
+      "missing": "This collection is not in the configuration this instance runs.",
+      "rules": "Rules",
+      "from": "from {op}",
+      "indexes": "Indexes",
+      "unique": "unique",
+      "noIndexes": "No indexes.",
+      "readOnly": "Read-only: a change is a file in the configuration repository.",
+      "open": "Prepare a change"
+    },
+    "tabs": {
+      "label": "Collection sections",
+      "records": "Records",
+      "definition": "Definition"
+    },
     "form": {
       "required": "required",
       "invalidJson": "This isn't valid JSON.",
@@ -1196,6 +1214,9 @@
     "filter": "Status",
     "name": "Name",
     "slug": "Slug",
+    "slugHelp": "The short name used in addresses. Changing it changes the organization's sign-in address.",
+    "slugNew": "New slug",
+    "slugChanged": "Slug changed.",
     "statusLabel": "Status",
     "members": {
       "title": "Members",
@@ -1247,7 +1268,22 @@
     },
     "teams": {
       "title": "Teams",
-      "none": "No teams."
+      "none": "No teams.",
+      "new": "New team",
+      "newTitle": "New team",
+      "rename": "Edit",
+      "renameTitle": "Edit team",
+      "name": "Name",
+      "roles": "Roles (comma separated)",
+      "nameRequired": "A team needs a name.",
+      "created": "Team created.",
+      "renamed": "Team saved.",
+      "deleted": "Team deleted.",
+      "deleteTitle": "Delete {team}",
+      "deleteBody": "It leaves every membership and its roles go with it.",
+      "members": "Members",
+      "membersTitle": "Members of {team}",
+      "addMember": "Add a member"
     },
     "teamRoles": {
       "of": "Team roles in {team}",
@@ -1621,5 +1657,64 @@
     "label": "Data check sections",
     "checks": "Schema checks",
     "migrations": "Migrations"
+  },
+  "privacy": {
+    "loadFailed": "The consents could not be loaded.",
+    "consents": "Consents",
+    "noConsents": "This user holds no consents.",
+    "history": "History ({n} records)",
+    "actions": {
+      "accepted": "accepted",
+      "withdrawn": "withdrawn"
+    },
+    "record": {
+      "open": "Record a consent",
+      "title": "Record a consent",
+      "help": "For a consent given or withdrawn on paper or by phone. The evidence (a ticket or form number) is kept in the record.",
+      "consent": "Consent name",
+      "action": "Action",
+      "version": "Version",
+      "evidence": "Evidence",
+      "evidenceHelp": "A ticket or form number.",
+      "required": "Consent, evidence and, for an acceptance, the version are required.",
+      "done": "Consent recorded."
+    },
+    "exports": "Data exports",
+    "exportsOff": "This realm does not export user data.",
+    "export": {
+      "open": "Export this user's data",
+      "title": "Export this user's data",
+      "help": "Makes the package the user could ask for themselves. Needs full administration and a fresh proof of identity.",
+      "ticket": "Ticket (optional)",
+      "noNotify": "Do not tell the user",
+      "reason": "Why the user is not told",
+      "reasonHelp": "Kept in the audit record.",
+      "reasonRequired": "A reason is required when the user is not told.",
+      "submit": "Export",
+      "started": "Export started.",
+      "when": "Requested",
+      "status": "Status",
+      "by": "By",
+      "silent": "silent",
+      "download": "Download",
+      "downloadFailed": "The package could not be downloaded.",
+      "none": "No exports yet."
+    }
+  },
+  "userTabs": {
+    "label": "User sections",
+    "overview": "Overview",
+    "security": "Sign-in and security",
+    "sessions": "Sessions and devices",
+    "privacy": "Privacy"
+  },
+  "orgTabs": {
+    "label": "Organization sections",
+    "members": "Members",
+    "sso": "Sign-in (SSO)",
+    "domains": "Domains",
+    "teams": "Teams",
+    "invitations": "Invitations",
+    "settings": "Settings"
   }
 }

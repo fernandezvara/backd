@@ -9,7 +9,9 @@ import PageHeader from '@/components/PageHeader.vue'
 import FormDialog from '@/components/FormDialog.vue'
 import JsonView from '@/components/JsonView.vue'
 import SchemaCheckPanel from '@/components/SchemaCheckPanel.vue'
+import CollectionDefinition from '@/components/CollectionDefinition.vue'
 import SchemaVersionsPanel from '@/components/SchemaVersionsPanel.vue'
+import SubTabs from '@/components/SubTabs.vue'
 import { useAdmin } from '@/lib/admin'
 import { errorText, formatDate } from '@/lib/format'
 import { buildWhere, operatorsFor, orderBy, queryFields, QueryError, type Condition } from '@/lib/query'
@@ -221,6 +223,7 @@ async function restore(doc: Doc) {
 // The schema check stays folded until asked for.
 const showCheck = ref(false)
 const showStatus = computed(() => (total.value !== undefined ? t('data.collection.total', { n: total.value }) : ''))
+const tab = ref('records')
 </script>
 
 <template>
@@ -234,9 +237,14 @@ const showStatus = computed(() => (total.value !== undefined ? t('data.collectio
     <RouterLink v-if="canWrite" :to="{ name: 'data-new', params: { realm, database, collection } }" class="rounded-md bg-brand-700 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-800">{{ t('data.collection.new') }}</RouterLink>
   </PageHeader>
 
-  <SchemaVersionsPanel :realm="realm" :database="database" :collection="collection" />
+  <SubTabs v-model="tab" :label="t('data.tabs.label')" :tabs="[{ id: 'records', label: t('data.tabs.records') }, { id: 'definition', label: t('data.tabs.definition') }]" />
+  <template v-if="tab === 'definition'">
+    <SchemaVersionsPanel :realm="realm" :database="database" :collection="collection" />
+    <CollectionDefinition :realm="realm" :database="database" :collection="collection" class="mt-4" />
+  </template>
   <SchemaCheckPanel v-if="showCheck" :realm="realm" :database="database" :collection="collection" :total="conditions.length || view === 'trash' ? undefined : total" />
 
+  <template v-if="tab === 'records'">
   <form class="mt-4 space-y-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900" role="search" :aria-label="t('data.collection.where')" @submit.prevent="apply">
     <template v-if="!rawOpen">
       <div v-for="(c, i) in conditions" :key="i" class="flex flex-wrap items-end gap-2" data-testid="condition">
@@ -349,6 +357,8 @@ const showStatus = computed(() => (total.value !== undefined ? t('data.collectio
     <AppButton variant="secondary" :disabled="pageIndex === 0 || loading" @click="page(-1)">{{ t('common.previous') }}</AppButton>
     <AppButton variant="secondary" :disabled="!hasMore || loading" @click="page(1)">{{ t('common.next') }}</AppButton>
   </div>
+
+  </template>
 
   <FormDialog v-model:open="assigning" :title="t('data.collection.assign.title')" :description="t('data.collection.assign.help')" :submit="t('data.collection.assign.action')" :busy="assignBusy" :error="assignError" @submit="assign">
     <div class="space-y-1">

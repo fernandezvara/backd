@@ -913,8 +913,10 @@
       "overview": "Resumen",
       "settings": "Ajustes",
       "collections": "Colecciones",
-      "templates": "Plantillas"
+      "templates": "Plantillas",
+      "backup": "Copia y archivos de API"
     },
+    "backup": {"title":"Copia de seguridad y archivos de API","description":"Haz una copia con la línea de comandos y descarga los documentos y tipos generados desde la configuración que ejecuta esta instancia.","backup":"Copia de seguridad","help":"Una copia recorre cada colección y archivo, así que se hace con el comando backd, no en una pestaña del navegador. Requiere administración completa. Estos son los comandos para este realm.","export":"Exportar el realm, con sus usuarios, en un archivo","dryRun":"Comprobar una importación sin escribir nada","import":"Importarla","note":"Los campos cifrados viajan cifrados: guarda sus claves de campo junto a la copia. Consulta la documentación de exportar e importar.","downloaded":"Descargado.","filesTitle":"Archivos de API","filesHelp":"Generados desde la configuración que ejecuta esta instancia; no cambia nada en el servidor.","files":{"client":"OpenAPI para apps cliente","admin":"OpenAPI con rutas de administración","ts":"Tipos de TypeScript","dart":"Tipos de Dart","go":"Tipos de Go","python":"Tipos de Python"}},
     "loadFailed": "No se ha podido cargar la configuración.",
     "loading": "Cargando la configuración...",
     "fingerprint": "Huella de la configuración",
@@ -992,6 +994,22 @@
     }
   },
   "data": {
+    "definition": {
+      "needsConfig": "Leer la definición requiere el área de configuración.",
+      "missing": "Esta colección no está en la configuración que ejecuta esta instancia.",
+      "rules": "Reglas",
+      "from": "de {op}",
+      "indexes": "Índices",
+      "unique": "único",
+      "noIndexes": "Sin índices.",
+      "readOnly": "Solo lectura: un cambio es un archivo en el repositorio de configuración.",
+      "open": "Preparar un cambio"
+    },
+    "tabs": {
+      "label": "Secciones de la colección",
+      "records": "Registros",
+      "definition": "Definición"
+    },
     "form": {
       "required": "obligatorio",
       "invalidJson": "Esto no es un JSON válido.",
@@ -1196,6 +1214,9 @@
     "filter": "Estado",
     "name": "Nombre",
     "slug": "Slug",
+    "slugHelp": "El nombre corto que se usa en las direcciones. Cambiarlo cambia la dirección de acceso de la organización.",
+    "slugNew": "Nuevo slug",
+    "slugChanged": "Slug cambiado.",
     "statusLabel": "Estado",
     "members": {
       "title": "Miembros",
@@ -1247,7 +1268,22 @@
     },
     "teams": {
       "title": "Equipos",
-      "none": "No hay equipos."
+      "none": "No hay equipos.",
+      "new": "Nuevo equipo",
+      "newTitle": "Nuevo equipo",
+      "rename": "Editar",
+      "renameTitle": "Editar equipo",
+      "name": "Nombre",
+      "roles": "Roles (separados por comas)",
+      "nameRequired": "Un equipo necesita un nombre.",
+      "created": "Equipo creado.",
+      "renamed": "Equipo guardado.",
+      "deleted": "Equipo eliminado.",
+      "deleteTitle": "Eliminar {team}",
+      "deleteBody": "Sale de todas las membresías y sus roles se van con él.",
+      "members": "Miembros",
+      "membersTitle": "Miembros de {team}",
+      "addMember": "Añadir un miembro"
     },
     "teamRoles": {
       "of": "Roles de equipo en {team}",
@@ -1621,5 +1657,64 @@
     "label": "Secciones de comprobaciones",
     "checks": "Comprobaciones de esquema",
     "migrations": "Migraciones"
+  },
+  "privacy": {
+    "loadFailed": "No se pudieron cargar los consentimientos.",
+    "consents": "Consentimientos",
+    "noConsents": "Este usuario no tiene consentimientos.",
+    "history": "Historial ({n} registros)",
+    "actions": {
+      "accepted": "aceptado",
+      "withdrawn": "retirado"
+    },
+    "record": {
+      "open": "Registrar un consentimiento",
+      "title": "Registrar un consentimiento",
+      "help": "Para un consentimiento dado o retirado en papel o por teléfono. La evidencia (un ticket o número de formulario) queda en el registro.",
+      "consent": "Nombre del consentimiento",
+      "action": "Acción",
+      "version": "Versión",
+      "evidence": "Evidencia",
+      "evidenceHelp": "Un ticket o número de formulario.",
+      "required": "Se requieren el consentimiento, la evidencia y, para una aceptación, la versión.",
+      "done": "Consentimiento registrado."
+    },
+    "exports": "Exportaciones de datos",
+    "exportsOff": "Este realm no exporta datos de usuarios.",
+    "export": {
+      "open": "Exportar los datos de este usuario",
+      "title": "Exportar los datos de este usuario",
+      "help": "Genera el paquete que el usuario podría pedir por sí mismo. Requiere administración completa y una prueba de identidad reciente.",
+      "ticket": "Ticket (opcional)",
+      "noNotify": "No avisar al usuario",
+      "reason": "Por qué no se avisa al usuario",
+      "reasonHelp": "Queda en el registro de auditoría.",
+      "reasonRequired": "Se requiere un motivo cuando no se avisa al usuario.",
+      "submit": "Exportar",
+      "started": "Exportación iniciada.",
+      "when": "Solicitada",
+      "status": "Estado",
+      "by": "Por",
+      "silent": "silenciosa",
+      "download": "Descargar",
+      "downloadFailed": "No se pudo descargar el paquete.",
+      "none": "Aún no hay exportaciones."
+    }
+  },
+  "userTabs": {
+    "label": "Secciones del usuario",
+    "overview": "Resumen",
+    "security": "Acceso y seguridad",
+    "sessions": "Sesiones y dispositivos",
+    "privacy": "Privacidad"
+  },
+  "orgTabs": {
+    "label": "Secciones de la organización",
+    "members": "Miembros",
+    "sso": "Acceso (SSO)",
+    "domains": "Dominios",
+    "teams": "Equipos",
+    "invitations": "Invitaciones",
+    "settings": "Ajustes"
   }
 }

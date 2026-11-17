@@ -82,7 +82,7 @@ export const NAV: NavGroup[] = [
       { route: 'audit', label: 'nav.audit', desc: 'nav.desc.audit', icon: PhScroll, show: (c) => c.canRead('audit') },
       { route: 'compliance', label: 'nav.compliance', desc: 'nav.desc.compliance', icon: PhScales, show: (c) => c.canRead('users') },
       { route: 'app-config', label: 'nav.appConfig', desc: 'nav.desc.appConfig', icon: PhGearSix, show: (c) => c.canRead('config') },
-      { route: 'config', label: 'nav.config', desc: 'nav.desc.config', icon: PhSlidersHorizontal, also: ['config-settings', 'config-collections', 'config-templates'], show: (c) => c.canRead('config') },
+      { route: 'config', label: 'nav.config', desc: 'nav.desc.config', icon: PhSlidersHorizontal, also: ['config-settings', 'config-collections', 'config-templates', 'config-backup'], show: (c) => c.canRead('config') },
     ],
   },
 ]
