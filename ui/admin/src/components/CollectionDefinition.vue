@@ -8,7 +8,8 @@ import { useRealmConfig } from '@/stores/config'
 
 // What the configuration says about this collection: its rules, indexes and the file that defines them.
 // Read-only: a change is a file in the configuration repository (the Configuration page prepares it).
-const props = defineProps<{ realm: string; database: string; collection: string }>()
+// `only` shows one of the two cards (the Rules and Schema tabs of the collection page).
+const props = defineProps<{ realm: string; database: string; collection: string; only?: 'rules' | 'indexes' }>()
 const { t } = useI18n()
 const cfg = useRealmConfig()
 onMounted(() => void cfg.load())
@@ -30,8 +31,8 @@ const OPS = ['read', 'create', 'update', 'delete', 'restore', 'purge']
 <template>
   <AppAlert v-if="!cfg.config">{{ t('data.definition.needsConfig') }}</AppAlert>
   <AppAlert v-else-if="!c" kind="error">{{ t('data.definition.missing') }}</AppAlert>
-  <div v-else class="grid gap-5 lg:grid-cols-2" data-testid="collection-definition">
-    <AppCard flush>
+  <div v-else class="grid gap-5" :class="only ? 'grid-cols-1' : 'lg:grid-cols-2'" data-testid="collection-definition">
+    <AppCard v-if="only !== 'indexes'" flush>
       <h3 class="border-b border-slate-200 px-4 py-2.5 text-[13px] font-semibold dark:border-slate-800">{{ t('data.definition.rules') }}</h3>
       <table class="w-full text-left text-[13px]">
         <tbody>
@@ -43,7 +44,7 @@ const OPS = ['read', 'create', 'update', 'delete', 'restore', 'purge']
       </table>
       <p class="border-t border-slate-200 px-4 py-2 text-xs text-slate-500 dark:border-slate-800">{{ c.collection_file }}</p>
     </AppCard>
-    <AppCard flush>
+    <AppCard v-if="only !== 'rules'" flush>
       <h3 class="border-b border-slate-200 px-4 py-2.5 text-[13px] font-semibold dark:border-slate-800">{{ t('data.definition.indexes') }}</h3>
       <ul class="divide-y divide-slate-100 text-[13px] dark:divide-slate-800">
         <li v-for="ix in c.indexes" :key="ix.fields" class="flex items-center gap-2 px-4 py-2"><span class="font-mono">{{ ix.fields }}</span><AppBadge v-if="ix.unique">{{ t('data.definition.unique') }}</AppBadge><AppBadge v-if="ix.ttl">TTL</AppBadge></li>
@@ -51,6 +52,6 @@ const OPS = ['read', 'create', 'update', 'delete', 'restore', 'purge']
       </ul>
       <p class="border-t border-slate-200 px-4 py-2 text-xs text-slate-500 dark:border-slate-800">{{ c.schema_file }}</p>
     </AppCard>
-    <p class="text-xs text-slate-500 lg:col-span-2">{{ t('data.definition.readOnly') }} <RouterLink :to="{ name: 'config-files', params: { realm }, query: { path: c.collection_file } }" class="underline">{{ t('data.definition.open') }}</RouterLink></p>
+    <p class="text-xs text-slate-500" :class="only ? '' : 'lg:col-span-2'">{{ t('data.definition.readOnly') }} <RouterLink :to="{ name: 'config-files', params: { realm }, query: { path: c.collection_file } }" class="underline">{{ t('data.definition.open') }}</RouterLink></p>
   </div>
 </template>
