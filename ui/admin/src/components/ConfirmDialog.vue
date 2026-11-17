@@ -30,8 +30,8 @@ function submit() {
 <template>
   <DialogRoot v-model:open="open">
     <DialogPortal>
-      <DialogOverlay class="fixed inset-0 bg-black/50" />
-      <DialogContent class="fixed top-1/2 left-1/2 w-[min(28rem,92vw)] -translate-x-1/2 -translate-y-1/2 space-y-4 rounded-lg bg-white p-5 shadow-xl dark:bg-slate-900">
+      <DialogOverlay class="fixed inset-0 bg-slate-950/45" />
+      <DialogContent class="fixed top-1/2 left-1/2 w-[min(28rem,92vw)] -translate-x-1/2 -translate-y-1/2 space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
         <DialogTitle class="text-lg font-semibold">{{ title }}</DialogTitle>
         <DialogDescription v-if="description" class="text-sm text-slate-600 dark:text-slate-400">{{ description }}</DialogDescription>
         <slot />

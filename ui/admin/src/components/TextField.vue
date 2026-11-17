@@ -22,7 +22,7 @@ const id = useId()
         v-bind="$attrs"
         :aria-invalid="error ? true : undefined"
         :aria-describedby="error ? `${id}-error` : help ? `${id}-help` : undefined"
-        class="block w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
+        class="block h-8 w-full rounded-md border border-slate-300 bg-white px-2.5 text-[13px] placeholder-slate-400 dark:border-slate-700 dark:bg-slate-900"
         :class="{ 'pl-9': type === 'search' }"
       />
     </div>

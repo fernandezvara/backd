@@ -1,4 +1,4 @@
-import { PhBell, PhBuildings, PhClockCounterClockwise, PhDatabase, PhEnvelopeSimple, PhFunction, PhHardDrives, PhKey, PhLockKey, PhScroll, PhSlidersHorizontal, PhSquaresFour, PhUsers } from '@phosphor-icons/vue'
+import { PhBell, PhBuildings, PhClockCounterClockwise, PhDatabase, PhEnvelopeSimple, PhFunction, PhGearSix, PhHardDrives, PhKey, PhLockKey, PhScales, PhScroll, PhShieldWarning, PhSlidersHorizontal, PhSquaresFour, PhUsers } from '@phosphor-icons/vue'
 import type { Component } from 'vue'
 import type { Area } from '@/stores/session'
 
@@ -26,7 +26,7 @@ export interface NavItem {
 }
 
 export interface NavGroup {
-  id: 'identity' | 'access' | 'data' | 'compute' | 'platform'
+  id: 'realm' | 'identity' | 'access' | 'data' | 'compute' | 'platform'
   /** i18n key of the group's name. */
   label: string
   items: NavItem[]
@@ -35,22 +35,10 @@ export interface NavGroup {
 /** The navigation of the admin UI: every page a person can open from the menus, in its group. */
 export const NAV: NavGroup[] = [
   {
-    id: 'identity',
-    label: 'nav.groups.identity',
-    items: [
-      { route: 'home', label: 'nav.overview', desc: 'nav.desc.overview', icon: PhSquaresFour, also: ['account'], show: () => true },
-      { route: 'users', label: 'nav.users', desc: 'nav.desc.users', icon: PhUsers, also: ['user'], show: (c) => c.canRead('users') },
-      { route: 'orgs', label: 'nav.orgs', desc: 'nav.desc.orgs', icon: PhBuildings, also: ['org'], show: (c) => c.canRead('users') && c.orgs },
-      { route: 'invitations', label: 'nav.invitations', desc: 'nav.desc.invitations', icon: PhEnvelopeSimple, show: (c) => c.canRead('invitations') },
-    ],
-  },
-  {
-    id: 'access',
-    label: 'nav.groups.access',
-    items: [
-      { route: 'apikeys', label: 'nav.apikeys', desc: 'nav.desc.apikeys', icon: PhKey, show: (c) => c.canRead('apikeys') },
-      { route: 'secrets', label: 'nav.secrets', desc: 'nav.desc.secrets', icon: PhLockKey, show: (c) => c.canRead('secrets') },
-    ],
+    // The first group has no heading: the overview is the top of the sidebar.
+    id: 'realm',
+    label: 'nav.groups.realm',
+    items: [{ route: 'home', label: 'nav.overview', desc: 'nav.desc.overview', icon: PhSquaresFour, also: ['account'], show: () => true }],
   },
   {
     id: 'data',
@@ -65,8 +53,26 @@ export const NAV: NavGroup[] = [
     label: 'nav.groups.compute',
     items: [
       { route: 'functions', label: 'nav.functions', desc: 'nav.desc.functions', icon: PhFunction, show: (c) => c.canRead('functions') },
-      { route: 'push', label: 'nav.push', desc: 'nav.desc.push', icon: PhBell, show: (c) => c.canRead('functions') && c.push },
       { route: 'functions-jobs', label: 'nav.jobs', desc: 'nav.desc.jobs', icon: PhClockCounterClockwise, also: ['functions-history'], show: (c) => c.canRead('functions') },
+      { route: 'push', label: 'nav.push', desc: 'nav.desc.push', icon: PhBell, show: (c) => c.canRead('functions') && c.push },
+    ],
+  },
+  {
+    id: 'identity',
+    label: 'nav.groups.identity',
+    items: [
+      { route: 'users', label: 'nav.users', desc: 'nav.desc.users', icon: PhUsers, also: ['user'], show: (c) => c.canRead('users') },
+      { route: 'orgs', label: 'nav.orgs', desc: 'nav.desc.orgs', icon: PhBuildings, also: ['org'], show: (c) => c.canRead('users') && c.orgs },
+      { route: 'invitations', label: 'nav.invitations', desc: 'nav.desc.invitations', icon: PhEnvelopeSimple, show: (c) => c.canRead('invitations') },
+    ],
+  },
+  {
+    id: 'access',
+    label: 'nav.groups.access',
+    items: [
+      { route: 'apikeys', label: 'nav.apikeys', desc: 'nav.desc.apikeys', icon: PhKey, show: (c) => c.canRead('apikeys') },
+      { route: 'secrets', label: 'nav.secrets', desc: 'nav.desc.secrets', icon: PhLockKey, show: (c) => c.canRead('secrets') },
+      { route: 'security', label: 'nav.security', desc: 'nav.desc.security', icon: PhShieldWarning, show: (c) => c.canRead('users') },
     ],
   },
   {
@@ -74,6 +80,8 @@ export const NAV: NavGroup[] = [
     label: 'nav.groups.platform',
     items: [
       { route: 'audit', label: 'nav.audit', desc: 'nav.desc.audit', icon: PhScroll, show: (c) => c.canRead('audit') },
+      { route: 'compliance', label: 'nav.compliance', desc: 'nav.desc.compliance', icon: PhScales, show: (c) => c.canRead('users') },
+      { route: 'app-config', label: 'nav.appConfig', desc: 'nav.desc.appConfig', icon: PhGearSix, show: (c) => c.canRead('config') },
       { route: 'config', label: 'nav.config', desc: 'nav.desc.config', icon: PhSlidersHorizontal, also: ['config-settings', 'config-collections', 'config-templates'], show: (c) => c.canRead('config') },
     ],
   },

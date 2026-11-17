@@ -22,7 +22,7 @@ onBeforeUnmount(() => watcher?.disconnect())
 </script>
 
 <template>
-  <div ref="box" class="relative rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" :class="flush ? 'overflow-x-auto' : 'p-4'" :tabindex="flush && scrolls ? 0 : undefined">
+  <div ref="box" class="card-soft relative rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" :class="flush ? 'overflow-x-auto' : 'p-4'" :tabindex="flush && scrolls ? 0 : undefined">
     <slot />
   </div>
 </template>

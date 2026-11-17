@@ -15,7 +15,7 @@ const session = useSession()
         <RouterLink
           :to="{ name: tab.name, params: { realm: session.realm } }"
           class="-mb-px block border-b-2 border-transparent px-3 py-2 text-sm"
-          exact-active-class="border-brand-700 font-semibold"
+          exact-active-class="border-brand-700 font-semibold text-brand-800 dark:border-brand-400 dark:text-brand-100"
         >
           {{ t(tab.label) }}
         </RouterLink>

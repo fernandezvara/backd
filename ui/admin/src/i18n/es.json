@@ -13,6 +13,7 @@
     "none": "Ninguno",
     "dismiss": "Descartar",
     "save": "Guardar",
+    "edit": "Editar",
     "create": "Crear",
     "delete": "Eliminar",
     "revoke": "Revocar",
@@ -81,9 +82,16 @@
   },
   "realm": {
     "label": "Realm",
+    "switch": "Realm {realm}: cambiar de realm",
+    "list": "Realms",
+    "connect": "Abrir otro realm…",
+    "name": "Nombre del realm",
+    "open": "Abrir",
+    "note": "La lista se guarda en este navegador. Cada realm pide iniciar sesión.",
     "invalid": "El nombre de un realm solo tiene letras minúsculas, dígitos, - y _."
   },
   "signIn": {
+    "brand": {"title": "Tu backend, guardado en archivos.", "body": "Esquemas, reglas y funciones viven en tu repositorio. Este panel muestra qué se ejecuta, quién ha iniciado sesión y qué necesita atención.", "one": "La configuración es de solo lectura: los cambios pasan por revisión", "two": "Llaves de acceso, apps de autenticación e inicio de sesión de organizaciones", "three": "Cada acción de administración queda en el registro de auditoría", "foot": "backd admin"},
     "strategy": "Estrategia de acceso",
     "strategyHelp": "Los roles que tienes dependen de la estrategia: un rol de administrador puede exigir una más fuerte.",
     "passkey": {
@@ -186,7 +194,12 @@
     "storage": "Almacenamiento",
     "push": "Push",
     "jobs": "Trabajos e historial",
+    "collapse": "Contraer el menú",
+    "security": "Seguridad",
+    "compliance": "Cumplimiento",
+    "appConfig": "Config. de apps",
     "groups": {
+      "realm": "Realm",
       "identity": "Identidad",
       "access": "Acceso",
       "data": "Datos",
@@ -207,7 +220,10 @@
       "push": "Dispositivos, temas y envíos",
       "jobs": "Trabajos programados e invocaciones pasadas",
       "audit": "Quién hizo qué, y cuándo",
-      "config": "Ajustes, colecciones y plantillas"
+      "config": "Ajustes, colecciones y plantillas",
+      "security": "Respuesta a brechas y cobertura del segundo factor",
+      "compliance": "Consentimientos, exportaciones y qué cubre",
+      "appConfig": "Ajustes que leen los clientes, con historial"
     }
   },
   "push": {
@@ -301,7 +317,7 @@
     "reconcileNote": "Tras restaurar una copia, o quitar un campo de archivos, ejecuta backd storage reconcile para hallar objetos que ningún documento referencia."
   },
   "users": {
-    "passwordsShow": "Mostrar las acciones de una filtración",
+    "passwordsShow": "Respuesta a brechas",
     "passwordsHide": "Ocultar las acciones de una filtración",
     "title": "Usuarios",
     "search": "Buscar por correo",
@@ -1365,5 +1381,112 @@
     "fallback": "La configuración aún no se ha cargado (modo de desarrollo).",
     "waiting": "Esta página sigue sola en cuanto se cargue un cambio guardado.",
     "report": "Abrir el informe"
+  },
+  "accent": {
+    "label": "Color de acento",
+    "names": {
+      "teal": "Turquesa",
+      "blue": "Azul",
+      "indigo": "Índigo",
+      "violet": "Violeta",
+      "rose": "Rosa",
+      "orange": "Naranja",
+      "emerald": "Esmeralda"
+    }
+  },
+  "palette": {
+    "open": "Buscar o ir a…",
+    "title": "Paleta de comandos",
+    "placeholder": "Escribe una página, colección o función",
+    "empty": "Nada coincide.",
+    "pages": "Páginas",
+    "collections": "Colecciones",
+    "functions": "Funciones",
+    "actions": "Acciones",
+    "hint": "↑↓ para moverte, Intro para abrir, Esc para cerrar",
+    "actionList": {
+      "breach": "Respuesta a brechas: caducar contraseñas, cerrar sesiones",
+      "backup": "Exportar el realm (copia de seguridad)",
+      "draft": "Abrir los cambios de configuración en borrador"
+    }
+  },
+  "security": {
+    "title": "Seguridad",
+    "description": "Responde a una filtración y mira quién aún debe configurar un segundo factor.",
+    "breach": "Respuesta a brechas",
+    "needsFull": "La respuesta a brechas alcanza a todas las cuentas, así que requiere administración completa.",
+    "mfa": {
+      "title": "Cobertura del segundo factor",
+      "loadFailed": "No se pudo cargar el resumen del segundo factor.",
+      "off": "Este realm no deja que los usuarios activen un segundo factor.",
+      "required": "{n} usuarios aún deben configurar un segundo factor.",
+      "everyone": "obligatorio para todos",
+      "roles": "obligatorio para los roles {roles}",
+      "user": "Usuario",
+      "rolesCol": "Roles",
+      "none": "Quien necesita un segundo factor ya lo tiene.",
+      "more": "Se muestran {shown} de {total}."
+    }
+  },
+  "compliance": {
+    "title": "Cumplimiento",
+    "description": "Qué contiene la exportación de los datos de un usuario, y pedir a los usuarios que revisen una versión nueva de un consentimiento. Las exportaciones se hacen desde la página del usuario.",
+    "scope": {
+      "title": "Alcance de los datos personales",
+      "loadFailed": "No se pudo cargar el alcance.",
+      "needsConfig": "Leer el alcance requiere el área de configuración.",
+      "noAuth": "Este realm no tiene usuarios, así que no hay nada que exportar.",
+      "collection": "Colección",
+      "export": "Exportación",
+      "include": "Incluida",
+      "exclude": "Excluida",
+      "what": "Qué se exporta",
+      "reason": "Motivo",
+      "owned": "documentos del usuario",
+      "fields": "solo {fields}",
+      "pull": "donde aparece en {fields}",
+      "files": "archivos en {fields}",
+      "organization": "documentos de organización completos",
+      "undeclared": "sin declarar",
+      "systemIn": "Datos del sistema incluidos:",
+      "systemOut": "Nunca se exporta:"
+    },
+    "notify": {
+      "open": "Pedir revisar un consentimiento",
+      "title": "Pedir a los usuarios que revisen un consentimiento",
+      "help": "Encola el correo consent-updated para quien aceptó una versión anterior. Publicar una versión nunca envía nada por sí solo.",
+      "name": "Nombre del consentimiento",
+      "submit": "Enviar",
+      "required": "Escribe el nombre del consentimiento.",
+      "done": "{consent} {version}: {matched} usuarios, {queued} correos en cola, {limited} omitidos por límites."
+    }
+  },
+  "appConfig": {
+    "title": "Config. de apps",
+    "description": "Ajustes que leen los clientes en ejecución. Se declaran en la configuración; el servidor guarda los valores y registra cada cambio.",
+    "version": "Versión {version}",
+    "loadFailed": "No se pudo cargar la configuración de apps.",
+    "none": "Este realm no declara configuración de apps.",
+    "invalid": "Estos valores guardados ya no cumplen el esquema; se leen como sus valores por defecto hasta que se corrijan o restablezcan.",
+    "key": "Clave",
+    "value": "Valor",
+    "who": "Quién puede leer",
+    "changed": "cambiado",
+    "public": "cualquiera",
+    "readable": "clientes",
+    "hidden": "solo admins",
+    "reset": "Restablecer",
+    "history": "Historial",
+    "rollback": "Volver a esta",
+    "rolledBack": "vuelto a {version}",
+    "changes": "{n} cambios",
+    "noHistory": "Aún no hay cambios.",
+    "editTitle": "Editar {key}",
+    "editHelp": "Un valor JSON. Se comprueba con el esquema.",
+    "notJson": "Eso no es JSON válido.",
+    "saved": "Guardado como versión {version}.",
+    "unchanged": "No cambió nada.",
+    "rollbackTitle": "Volver a {version}",
+    "rollbackHelp": "Restaura los valores de esa versión como una versión nueva. Se rechazan los valores que ya no encajan."
   }
 }

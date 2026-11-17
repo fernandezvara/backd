@@ -13,6 +13,7 @@
     "none": "None",
     "dismiss": "Dismiss",
     "save": "Save",
+    "edit": "Edit",
     "create": "Create",
     "delete": "Delete",
     "revoke": "Revoke",
@@ -81,9 +82,16 @@
   },
   "realm": {
     "label": "Realm",
+    "switch": "Realm {realm}: switch realm",
+    "list": "Realms",
+    "connect": "Open another realm…",
+    "name": "Realm name",
+    "open": "Open",
+    "note": "The list is kept in this browser. Each realm asks you to sign in.",
     "invalid": "A realm name has lowercase letters, digits, - and _ only."
   },
   "signIn": {
+    "brand": {"title": "Your backend, kept in files.", "body": "Schemas, rules and functions live in your repository. This panel shows what runs, who is signed in and what needs attention.", "one": "Configuration is read-only here: changes go through review", "two": "Passkeys, authenticator apps and organization sign-in", "three": "Every administrator action is recorded in the audit log", "foot": "backd admin"},
     "strategy": "Sign-in strategy",
     "strategyHelp": "The roles you hold depend on the strategy: an administrator role may need a stronger one.",
     "passkey": {
@@ -186,7 +194,12 @@
     "storage": "Storage",
     "push": "Push",
     "jobs": "Jobs and history",
+    "collapse": "Collapse the menu",
+    "security": "Security",
+    "compliance": "Compliance",
+    "appConfig": "App config",
     "groups": {
+      "realm": "Realm",
       "identity": "Identity",
       "access": "Access",
       "data": "Data",
@@ -207,7 +220,10 @@
       "push": "Devices, topics and deliveries",
       "jobs": "Scheduled jobs and past invocations",
       "audit": "Who did what, and when",
-      "config": "Settings, collections and templates"
+      "config": "Settings, collections and templates",
+      "security": "Breach response and second-factor coverage",
+      "compliance": "Consents, exports and what is covered",
+      "appConfig": "Settings that clients read, with history"
     }
   },
   "push": {
@@ -301,7 +317,7 @@
     "reconcileNote": "After restoring a backup, or removing a file field, run backd storage reconcile to find objects no document references."
   },
   "users": {
-    "passwordsShow": "Show the leak actions",
+    "passwordsShow": "Breach response",
     "passwordsHide": "Hide the leak actions",
     "title": "Users",
     "search": "Search by email",
@@ -1365,5 +1381,112 @@
     "fallback": "The config has not loaded yet (dev mode).",
     "waiting": "This page carries on by itself once a saved change loads.",
     "report": "Open the report"
+  },
+  "accent": {
+    "label": "Accent colour",
+    "names": {
+      "teal": "Teal",
+      "blue": "Blue",
+      "indigo": "Indigo",
+      "violet": "Violet",
+      "rose": "Rose",
+      "orange": "Orange",
+      "emerald": "Emerald"
+    }
+  },
+  "palette": {
+    "open": "Search or jump to…",
+    "title": "Command palette",
+    "placeholder": "Type a page, collection or function",
+    "empty": "Nothing matches.",
+    "pages": "Pages",
+    "collections": "Collections",
+    "functions": "Functions",
+    "actions": "Actions",
+    "hint": "↑↓ to move, Enter to open, Esc to close",
+    "actionList": {
+      "breach": "Breach response: expire passwords, end sessions",
+      "backup": "Export the realm (backup)",
+      "draft": "Open draft configuration changes"
+    }
+  },
+  "security": {
+    "title": "Security",
+    "description": "Respond to a leak and see who still has to set up a second factor.",
+    "breach": "Breach response",
+    "needsFull": "Breach response reaches every account, so it needs full administration.",
+    "mfa": {
+      "title": "Second factor coverage",
+      "loadFailed": "The second-factor overview could not be loaded.",
+      "off": "This realm does not let users turn on a second factor.",
+      "required": "{n} users must still set up a second factor.",
+      "everyone": "required for everybody",
+      "roles": "required for the roles {roles}",
+      "user": "User",
+      "rolesCol": "Roles",
+      "none": "Everyone who needs a second factor has one.",
+      "more": "Showing {shown} of {total}."
+    }
+  },
+  "compliance": {
+    "title": "Compliance",
+    "description": "What a user's data export contains, and asking users to review a new consent version. Exports are made from a user's page.",
+    "scope": {
+      "title": "Personal data scope",
+      "loadFailed": "The scope could not be loaded.",
+      "needsConfig": "Reading the scope needs the configuration area.",
+      "noAuth": "This realm has no users, so there is nothing to export.",
+      "collection": "Collection",
+      "export": "Export",
+      "include": "Included",
+      "exclude": "Excluded",
+      "what": "What is exported",
+      "reason": "Reason",
+      "owned": "documents the user owns",
+      "fields": "only {fields}",
+      "pull": "where they appear in {fields}",
+      "files": "files in {fields}",
+      "organization": "organization documents whole",
+      "undeclared": "not declared",
+      "systemIn": "System data included:",
+      "systemOut": "Never exported:"
+    },
+    "notify": {
+      "open": "Ask users to review a consent",
+      "title": "Ask users to review a consent",
+      "help": "Queues the consent-updated email for everybody who accepted an older version. Publishing a version never sends anything by itself.",
+      "name": "Consent name",
+      "submit": "Send",
+      "required": "Enter the consent's name.",
+      "done": "{consent} {version}: {matched} users matched, {queued} emails queued, {limited} skipped by limits."
+    }
+  },
+  "appConfig": {
+    "title": "App config",
+    "description": "Settings that clients read at runtime. Declared in the configuration; the values are kept by the server and every change is recorded.",
+    "version": "Version {version}",
+    "loadFailed": "The app configuration could not be loaded.",
+    "none": "This realm declares no app configuration.",
+    "invalid": "These stored values no longer fit the schema; they read as their defaults until fixed or reset.",
+    "key": "Key",
+    "value": "Value",
+    "who": "Who can read",
+    "changed": "changed",
+    "public": "anyone",
+    "readable": "clients",
+    "hidden": "admins only",
+    "reset": "Reset",
+    "history": "History",
+    "rollback": "Roll back",
+    "rolledBack": "rolled back to {version}",
+    "changes": "{n} changes",
+    "noHistory": "No changes yet.",
+    "editTitle": "Edit {key}",
+    "editHelp": "A JSON value. It is checked against the schema.",
+    "notJson": "That is not valid JSON.",
+    "saved": "Saved as version {version}.",
+    "unchanged": "Nothing changed.",
+    "rollbackTitle": "Roll back to {version}",
+    "rollbackHelp": "Restores the values that version had, as a new version. Values that no longer fit are refused."
   }
 }

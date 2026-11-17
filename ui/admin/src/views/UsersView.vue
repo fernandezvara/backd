@@ -9,7 +9,6 @@ import AppButton from '@/components/AppButton.vue'
 import AppCard from '@/components/AppCard.vue'
 import FormDialog from '@/components/FormDialog.vue'
 import PageHeader from '@/components/PageHeader.vue'
-import PasswordsPanel from '@/components/PasswordsPanel.vue'
 import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
 import { errorText, formatDate } from '@/lib/format'
@@ -57,8 +56,6 @@ watch(q, () => {
 })
 onMounted(() => void load())
 
-// The actions for a leak stay folded until asked for.
-const showPasswords = ref(false)
 const canWrite = computed(() => session.canWrite('users'))
 // The actions of a leak reach every account: the server needs full administration for them.
 const isFull = computed(() => session.access?.level === 'full')
@@ -97,11 +94,9 @@ async function create() {
 
 <template>
   <PageHeader :title="t('users.title')" :description="t('nav.desc.users')">
-    <AppButton v-if="canWrite && isFull" variant="secondary" :aria-expanded="showPasswords" aria-controls="passwords-panel" data-testid="passwords-toggle" @click="showPasswords = !showPasswords">{{ showPasswords ? t('users.passwordsHide') : t('users.passwordsShow') }}</AppButton>
+    <RouterLink v-if="canWrite && isFull" :to="{ name: 'security', params: { realm } }" class="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-3 text-[13px] font-medium hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800" data-testid="passwords-toggle">{{ t('users.passwordsShow') }}</RouterLink>
     <AppButton v-if="canWrite" @click="openCreate">{{ t('users.create.open') }}</AppButton>
   </PageHeader>
-
-  <PasswordsPanel v-if="canWrite && isFull && showPasswords" :realm="realm" />
 
   <form class="mt-4 max-w-md" role="search" @submit.prevent="load()">
     <TextField v-model="q" type="search" :label="t('users.search')" :help="t('users.searchHelp')" autocomplete="off" />
