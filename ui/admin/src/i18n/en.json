@@ -370,6 +370,14 @@
     "unverified": "Unverified",
     "verified": "Verified",
     "noRoles": "No roles",
+    "user": "User",
+    "security": "Security",
+    "anyRole": "Any role",
+    "anyStatus": "Any status",
+    "shown": "{shown} of {loaded} loaded",
+    "mfaPending": "{n} users must still set up a second factor.",
+    "mfaSee": "See who",
+    "mfaMissing": "No second factor",
     "passwordExpired": "Password expired",
     "create": {
       "title": "Create user",
@@ -383,6 +391,10 @@
   "user": {
     "loadFailed": "The user could not be loaded.",
     "back": "All users",
+    "joined": "joined {date}",
+    "moreActions": "More actions",
+    "facts": "Facts",
+    "signOutAll": "Sign out everywhere",
     "locale": "Language",
     "emailVerified": "Email",
     "status": "Status",
@@ -444,7 +456,8 @@
       "none": "The user owns nothing under a policy.",
       "done": "{email} is being erased.",
       "action": "Erase user",
-      "deactivateHint": "To keep the data, disable the user instead."
+      "deactivateHint": "To keep the data, disable the user instead.",
+      "cardBody": "Irreversible. You see what the user owns before confirming."
     },
     "roles": {
       "title": "Roles",
@@ -471,6 +484,7 @@
         "loadFailed": "The passkeys could not be loaded."
       },
     "mfa": {
+      "badge": "Two-step",
       "title": "Two-step verification",
       "on": "On. Recovery codes left: {left}.",
       "off": "Off.",
@@ -497,7 +511,9 @@
       "unlinkBody": "The user can no longer sign in with it. The last way to sign in can't be removed. Removing Apple also revokes the user's Apple tokens.",
       "loadFailed": "The ways to sign in could not be loaded.",
       "viaOrg": "through organization {org}",
-      "dormant": "dormant: its issuer changed"
+      "dormant": "dormant: its issuer changed",
+      "none": "No linked ways to sign in.",
+      "lastWayHint": "The last way to sign in can't be removed."
     },
     "sessions": {
       "title": "Sessions",
@@ -507,6 +523,7 @@
       "expires": "Expires",
       "revoke": "Revoke",
       "revoked": "Session revoked.",
+      "revokedAll": "All sessions ended.",
       "loadFailed": "The sessions could not be loaded."
     },
     "devices": {

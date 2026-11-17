@@ -370,6 +370,14 @@
     "unverified": "Sin verificar",
     "verified": "Verificado",
     "noRoles": "Sin roles",
+    "user": "Usuario",
+    "security": "Seguridad",
+    "anyRole": "Cualquier rol",
+    "anyStatus": "Cualquier estado",
+    "shown": "{shown} de {loaded} cargados",
+    "mfaPending": "{n} usuarios todavía deben configurar un segundo factor.",
+    "mfaSee": "Ver quiénes",
+    "mfaMissing": "Sin segundo factor",
     "passwordExpired": "Contraseña caducada",
     "create": {
       "title": "Crear usuario",
@@ -383,6 +391,10 @@
   "user": {
     "loadFailed": "No se ha podido cargar el usuario.",
     "back": "Todos los usuarios",
+    "joined": "alta el {date}",
+    "moreActions": "Más acciones",
+    "facts": "Datos",
+    "signOutAll": "Cerrar todas las sesiones",
     "locale": "Idioma",
     "emailVerified": "Correo",
     "status": "Estado",
@@ -444,6 +456,7 @@
       "none": "El usuario no posee nada bajo una política.",
       "done": "{email} se está borrando.",
       "action": "Borrar usuario",
+      "cardBody": "Irreversible. Antes de confirmar ves lo que posee el usuario.",
       "deactivateHint": "Para conservar los datos, deshabilita al usuario en su lugar."
     },
     "roles": {
@@ -471,6 +484,7 @@
         "loadFailed": "No se pudieron cargar las llaves de acceso."
       },
     "mfa": {
+      "badge": "Dos pasos",
       "title": "Verificación en dos pasos",
       "on": "Activada. Códigos de recuperación restantes: {left}.",
       "off": "Desactivada.",
@@ -497,6 +511,8 @@
       "unlinkBody": "La persona ya no podrá iniciar sesión con ella. La última forma de iniciar sesión no se puede quitar. Quitar Apple también revoca los tokens de Apple de la persona.",
       "loadFailed": "No se pudieron cargar las formas de iniciar sesión.",
       "viaOrg": "a través de la organización {org}",
+      "none": "Sin métodos de acceso vinculados.",
+      "lastWayHint": "No se puede quitar el último método de acceso.",
       "dormant": "dormida: su emisor cambió"
     },
     "sessions": {
@@ -507,6 +523,7 @@
       "expires": "Caduca",
       "revoke": "Revocar",
       "revoked": "Sesión revocada.",
+      "revokedAll": "Todas las sesiones cerradas.",
       "loadFailed": "No se han podido cargar las sesiones."
     },
     "devices": {
