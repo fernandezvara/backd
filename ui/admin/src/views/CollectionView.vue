@@ -81,6 +81,8 @@ async function assign() {
 }
 
 // The columns: the first few scalar fields the schema declares.
+// A versioned collection's documents carry the schema version they were written under: its own column.
+const showSchemaVersion = computed(() => view.value !== 'trash' && docs.value.some((d) => d._meta.schema_version !== undefined))
 const columns = computed<string[]>(() => {
   const s = schema.value
   if (!s?.properties) return []
@@ -362,6 +364,7 @@ const tab = ref('records')
           <th scope="col" class="px-3 py-2">id</th>
           <th v-for="col in columns" :key="col" scope="col" class="px-3 py-2">{{ col }}</th>
           <th scope="col" class="px-3 py-2">{{ view === 'trash' ? t('data.collection.deleted') : t('data.collection.updated') }}</th>
+          <th v-if="showSchemaVersion" scope="col" class="px-3 py-2">{{ t('data.doc.schemaVersion') }}</th>
           <th scope="col" class="px-3 py-2">{{ view === 'trash' ? t('data.collection.purgeAt') : t('data.collection.version') }}</th>
           <th v-if="view === 'trash' && canWrite" scope="col" class="px-3 py-2"><span class="sr-only">{{ t('data.collection.restore') }}</span></th>
         </tr>
@@ -373,13 +376,14 @@ const tab = ref('records')
           </td>
           <td v-for="col in columns" :key="col" class="px-3 py-2">{{ cell(d, col) }}</td>
           <td class="px-3 py-2 whitespace-nowrap text-slate-600 dark:text-slate-400">{{ formatDate(view === 'trash' ? d._meta.deleted_at : d._meta.updated_at) }}</td>
+          <td v-if="showSchemaVersion" class="px-3 py-2" data-testid="schema-version-cell">{{ d._meta.schema_version ?? 1 }}</td>
           <td class="px-3 py-2 whitespace-nowrap text-slate-600 dark:text-slate-400">{{ view === 'trash' ? formatDate(d._meta.purge_at) : (d._meta.version ?? '—') }}</td>
           <td v-if="view === 'trash' && canWrite" class="px-3 py-2 text-right">
             <button type="button" class="text-brand-700 underline dark:text-brand-400" :aria-label="`${t('data.collection.restore')} ${d.id}`" @click="restore(d)">{{ t('data.collection.restore') }}</button>
           </td>
         </tr>
         <tr v-if="!docs.length && !loading">
-          <td :colspan="columns.length + 4" class="px-3 py-8 text-center text-slate-600 dark:text-slate-400">{{ t('data.collection.empty') }}</td>
+          <td :colspan="columns.length + 4 + (showSchemaVersion ? 1 : 0)" class="px-3 py-8 text-center text-slate-600 dark:text-slate-400">{{ t('data.collection.empty') }}</td>
         </tr>
       </tbody>
     </table>

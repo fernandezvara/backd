@@ -91,6 +91,28 @@ test('a document has its tabs; the history lists the administrator\'s own change
   await expect(page.getByTestId('doc-history')).toBeVisible()
 })
 
+test('a versioned collection shows the schema version of each record, and how many are below the current one', async ({ page, signIn }) => {
+  // scripts/ui-e2e.sh puts documents of versions 1, 2 and 3 in `assets` after its migration ran.
+  await signIn('admin')
+  await go(page, 'Data')
+  await page.getByTestId('open-main-assets').click()
+  await expect(page.getByRole('columnheader', { name: 'Schema version' })).toBeVisible()
+  const versions = await page.getByTestId('schema-version-cell').allTextContents()
+  expect(versions.sort()).toEqual(['1', '1', '1', '2', '2', '3', '3'])
+  // A collection that is not versioned has no such column.
+  await go(page, 'Data')
+  await page.getByTestId('open-main-labels').click()
+  await expect(page.getByRole('columnheader', { name: 'Schema version' })).toHaveCount(0)
+
+  await go(page, 'Data')
+  await page.getByTestId('open-main-assets').click()
+  await page.getByTestId('tab-schema').click()
+  await expect(page.getByText('Current version: 3')).toBeVisible()
+  await expect(page.getByText('Documents still below the current version: 5')).toBeVisible()
+  // The panel offers the dry run and the migration to an administrator who may write data.
+  await expect(page.getByRole('button', { name: 'Migrate now' })).toBeVisible()
+})
+
 test('a level that cannot read functions is told so on the Triggers tab', async ({ page, signIn }) => {
   await signIn('support')
   // The support level has no data area either: the collection is out of reach.

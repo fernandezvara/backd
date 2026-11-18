@@ -59,6 +59,11 @@ test('screenshots of the main views', async ({ page, signIn }) => {
   await page.screenshot({ path: out('document') })
   await page.setViewportSize({ width: 1200, height: 720 })
 
+  // A versioned collection's records show the schema version of each.
+  await page.goto(`/_ui/r/${REALM}/data/main/assets`)
+  await expect(page.getByTestId('schema-version-cell').first()).toBeVisible()
+  await page.screenshot({ path: out('schema-versions-records') })
+
   // A versioned collection's Schema tab: the fields, the versions and what is still to migrate.
   await page.goto(`/_ui/r/${REALM}/data/main/assets`)
   await page.getByTestId('tab-schema').click()

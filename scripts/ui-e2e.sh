@@ -75,6 +75,25 @@ docker compose exec -T mongo mongosh --quiet --eval 'printjson(db.getSiblingDB("
   bypassDocumentValidation: true,
 }))' >/dev/null
 
+# The versioned `assets` collection holds documents written under each of its three schema versions,
+# as a schema change leaves them (the migration runs at start, before these exist): its Records show
+# the version of each, and its Schema tab counts the ones below the current version.
+docker compose exec -T mongo mongosh --quiet --eval '
+const meta = (v) => ({ version: NumberLong(1), schema_version: NumberLong(v), created_at: new Date(), updated_at: new Date() })
+printjson(db.getSiblingDB("adminui__main").runCommand({
+  insert: "assets",
+  documents: [
+    { _id: "asset-v1-a", title: "Launch notes", kind: "note", body: "What shipped in the first release.", tags: ["release"], _meta: meta(1) },
+    { _id: "asset-v1-b", title: "Brand kit", kind: "file", url: "https://example.com/brand-kit.zip", body: "Logos and colours.", downloads: 12, _meta: meta(1) },
+    { _id: "asset-v1-c", title: "Roadmap", kind: "link", url: "https://example.com/roadmap", body: "Where we are going.", _meta: meta(1) },
+    { _id: "asset-v2-a", title: "Press page", kind: "link", url: "https://example.com/press", body: "For journalists.", description: "For journalists.", visibility: "public", _meta: meta(2) },
+    { _id: "asset-v2-b", title: "Team handbook", kind: "note", body: "How we work.", description: "How we work.", visibility: "team", _meta: meta(2) },
+    { _id: "asset-v3-a", title: "Changelog", kind: "link", url: "https://example.com/changelog", description: "Every change, newest first.", visibility: "public", tags: ["release"], _meta: meta(3) },
+    { _id: "asset-v3-b", title: "Design tokens", kind: "file", url: "https://example.com/tokens.json", description: "Colours, spacing and type.", visibility: "team", downloads: 3, _meta: meta(3) },
+  ],
+  bypassDocumentValidation: true,
+}))' >/dev/null
+
 cd ui/admin
 (cd ../../clients/js && npm ci --no-audit --no-fund)
 npm ci --no-audit --no-fund
