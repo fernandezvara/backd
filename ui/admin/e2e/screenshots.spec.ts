@@ -39,18 +39,19 @@ test('screenshots of the main views', async ({ page, signIn }) => {
   await shoot('audit', 'audit-table', 'audit')
   await shoot('functions', 'fn-main-greet', 'functions')
   await shoot('functions/history', 'history-table', 'history')
-  await shoot('config/collections', 'col-main-products', 'config')
+  await shoot('config/files', 'file-tree', 'config')
   await page.goto(`/_ui/r/${REALM}/data/main/products`)
   await expect(page.getByTestId('docs-table')).toBeVisible()
 
   // The query builder with a condition, and a document as a form.
+  await page.getByTestId('filter-toggle').click()
   await page.getByRole('button', { name: 'Add condition' }).click()
   const row = page.getByTestId('condition').first()
   await row.getByLabel('Field').selectOption('name')
   await row.getByLabel('Operator').selectOption('$icontains')
   await row.getByLabel('Value').fill('widget')
   await page.getByRole('button', { name: 'Apply' }).click()
-  await expect(page.getByTestId('total')).toHaveText('1 documents')
+  await expect(page.getByTestId('total')).toHaveText(/ of 1$/)
   await page.screenshot({ path: out('query') })
   await page.getByRole('link', { name: /^[0-9a-v]{20}$/ }).first().click()
   await expect(page.getByTestId('doc-version')).toBeVisible()
@@ -60,6 +61,7 @@ test('screenshots of the main views', async ({ page, signIn }) => {
 
   // A user's page.
   await page.goto(`/_ui/r/${REALM}/users`)
+  await page.getByLabel('Search by email').fill('viewer@adminui.example')
   await page.getByRole('link', { name: 'viewer@adminui.example' }).click()
   await expect(page.getByTestId('user-email')).toBeVisible()
   await page.screenshot({ path: out('user') })
