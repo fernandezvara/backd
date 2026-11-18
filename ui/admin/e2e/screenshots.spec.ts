@@ -17,7 +17,7 @@ const out = (name: string) => {
 test('screenshots of the main views', async ({ page, signIn }) => {
   await page.goto(`/_ui/r/${REALM}/signin`)
   // The sign-in page has no shell: its theme choice is on the page.
-  await page.getByLabel('Theme').selectOption({ label: 'Light' })
+  await page.getByRole('radio', { name: 'Light', exact: true }).click()
   await page.screenshot({ path: out('signin') })
 
   await signIn('admin', { keep: true })
@@ -31,11 +31,9 @@ test('screenshots of the main views', async ({ page, signIn }) => {
     await page.screenshot({ path: out(name) })
   }
   await shoot('users', 'users-table', 'users')
-  // A menu open, with the breadcrumb under the bar.
-  await page.getByTestId('nav-group-compute').click()
+  // The sidebar with its groups, and the breadcrumb in the top bar.
   await expect(page.getByRole('link', { name: 'Jobs and history' })).toBeVisible()
   await page.screenshot({ path: out('menu') })
-  await page.keyboard.press('Escape')
   await shoot('orgs', 'orgs-table', 'orgs')
   await shoot('apikeys', 'apikeys-table', 'apikeys')
   await shoot('audit', 'audit-table', 'audit')

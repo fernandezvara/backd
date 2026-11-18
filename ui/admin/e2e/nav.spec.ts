@@ -1,49 +1,26 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from './fixtures'
-import { go, inAccount, navLabels } from './nav'
+import { go, navLabels } from './nav'
 import { REALM, users } from './users'
 
 const main = (page: import('@playwright/test').Page) => page.getByRole('navigation', { name: 'Main' })
 
-test('a full administrator has the five groups with every page', async ({ page, signIn }) => {
+test('a full administrator has the groups of the sidebar with every page', async ({ page, signIn }) => {
   await signIn('admin')
-  await expect(main(page).getByRole('button')).toHaveText(['Identity', 'Access', 'Data', 'Compute', 'Platform'])
-  expect(await navLabels(page)).toEqual(
-    expect.arrayContaining(['Overview', 'Users', 'Organizations', 'Invitations', 'API keys', 'Secrets', 'Data', 'Storage', 'Functions', 'Push', 'Jobs and history', 'Audit', 'Configuration']),
-  )
+  // The overview heads the sidebar with no heading of its own; the other groups have one.
+  await expect(main(page).getByRole('heading')).toHaveText(['Data', 'Compute', 'Identity', 'Access', 'Platform'])
+  expect(await navLabels(page)).toEqual([
+    'Overview', 'Data', 'Storage', 'Functions', 'Jobs and history', 'Push', 'Users', 'Organizations', 'Invitations', 'API keys', 'Secrets', 'Security', 'Audit', 'Compliance', 'App config', 'Configuration',
+  ])
 })
 
-test('a menu opens on a click, shows what each page is for, and closes on Escape', async ({ page, signIn }) => {
-  await signIn('admin')
-  const identity = main(page).getByRole('button', { name: 'Identity' })
-  await identity.click()
-  await expect(identity).toHaveAttribute('aria-expanded', 'true')
-  await expect(main(page).getByRole('link', { name: 'Users', exact: true })).toBeVisible()
-  await expect(main(page).getByText('Accounts, sessions and sign-in')).toBeVisible()
-  await page.keyboard.press('Escape')
-  await expect(identity).toHaveAttribute('aria-expanded', 'false')
-  await expect(main(page).getByRole('link', { name: 'Users', exact: true })).toHaveCount(0)
-})
-
-test('the menus work from the keyboard and mark where you are', async ({ page, signIn }) => {
-  await signIn('admin')
-  const data = main(page).getByRole('button', { name: 'Data' })
-  await data.focus()
-  await page.keyboard.press('Enter')
-  // Opening a menu from the keyboard puts the focus on its first link.
-  await expect(main(page).getByRole('link', { name: 'Data', exact: true })).toBeFocused()
-  await page.keyboard.press('Enter')
+test('the sidebar marks where you are, and the sub-pages of an area keep the area marked', async ({ page, signIn }) => {
+  await signIn('admin', { keep: true })
+  await go(page, 'Data')
   await expect(page).toHaveURL(new RegExp(`/_ui/r/${REALM}/data$`))
-  // The group of the page is marked, and so is the page inside it.
-  await data.click()
   await expect(main(page).getByRole('link', { name: 'Data', exact: true })).toHaveAttribute('aria-current', 'page')
   await expect(main(page).getByRole('link', { name: 'Storage', exact: true })).not.toHaveAttribute('aria-current', 'page')
-})
-
-test('the sub-pages of an area keep the area marked', async ({ page, signIn }) => {
-  await signIn('admin', { keep: true })
   await page.goto(`/_ui/r/${REALM}/functions/history`)
-  await main(page).getByRole('button', { name: 'Compute' }).click()
   await expect(main(page).getByRole('link', { name: 'Jobs and history' })).toHaveAttribute('aria-current', 'page')
   await expect(main(page).getByRole('link', { name: 'Functions', exact: true })).not.toHaveAttribute('aria-current', 'page')
 })
@@ -54,35 +31,54 @@ test('a level without an area does not see its pages, and an empty group is gone
   expect(labels).toContain('Users')
   expect(labels).not.toContain('Configuration')
   expect(labels).not.toContain('Storage')
-  const groups = await main(page).getByRole('button').allTextContents()
-  expect(groups).not.toContain('Platform')
+  expect(labels).not.toContain('Audit')
+  // Users also open the security and compliance pages; what they cannot read leaves its group out.
+  const groups = await main(page).getByRole('heading').allTextContents()
+  expect(groups).toEqual(['Identity', 'Access', 'Platform'])
+  await expect(main(page).getByRole('heading', { name: 'Data' })).toHaveCount(0)
+  await expect(main(page).getByRole('heading', { name: 'Compute' })).toHaveCount(0)
 })
 
-test('the account menu holds who is signed in, language, theme and the way out', async ({ page, signIn }) => {
+test('the sidebar collapses to its icons, keeps every link named, and remembers the choice', async ({ page, signIn }) => {
+  await signIn('admin', { keep: true })
+  await page.getByTestId('nav-collapse').click()
+  await expect(page.getByTestId('nav-collapse')).toHaveAttribute('aria-pressed', 'true')
+  // Collapsed, the links are icons: the name stays for screen readers and as the tooltip.
+  await expect(main(page).getByRole('link', { name: 'Users', exact: true })).toBeVisible()
+  await expect(main(page).getByRole('heading')).toHaveCount(0)
+  await page.reload()
+  await expect(page.getByTestId('nav-collapse')).toHaveAttribute('aria-pressed', 'true')
+  await page.getByTestId('nav-collapse').click()
+  await expect(page.getByTestId('nav-collapse')).toHaveAttribute('aria-pressed', 'false')
+  await expect(main(page).getByRole('heading')).toHaveCount(5)
+})
+
+test('the account menu holds who is signed in, the Account page and the way out', async ({ page, signIn }) => {
   await signIn('admin')
-  const account = page.getByTestId('account-menu')
-  await account.click()
+  await page.getByTestId('account-menu').click()
   const menu = page.getByRole('dialog', { name: 'Account' })
   await expect(menu.getByText(users.admin)).toBeVisible()
-  await expect(menu.getByLabel('Language')).toBeVisible()
-  await expect(menu.getByLabel('Theme')).toBeVisible()
+  await expect(menu.getByTestId('account-link')).toBeVisible()
   await expect(menu.getByRole('button', { name: 'Sign out' })).toBeVisible()
+  // The appearance is chosen on the Account page, not here; the top bar only has the quick theme button.
+  await expect(menu.getByLabel('Language')).toHaveCount(0)
+  await expect(page.getByTestId('theme-toggle')).toBeVisible()
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
   await page.keyboard.press('Escape')
   await expect(menu).toHaveCount(0)
 })
 
-test('the realm is the first part of the breadcrumb, and there is no menu to change it', async ({ page, signIn }) => {
+test('the realm is the first part of the breadcrumb, and the switcher heads the sidebar', async ({ page, signIn }) => {
   await signIn('admin')
   await expect(page.getByTestId('realm-crumb')).toHaveText(`Realm: ${REALM}`)
-  await expect(page.getByTestId('realm-badge')).toHaveCount(0)
-  await inAccount(page, () => expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible())
+  // The realm switcher heads the sidebar.
+  await expect(page.getByTestId('realm-badge')).toBeVisible()
 })
 
 test('the breadcrumb says where you are and every part with a page leads there', async ({ page, signIn }) => {
   await signIn('admin', { keep: true })
   const crumbs = page.getByRole('navigation', { name: 'Breadcrumb' })
-  await expect(crumbs).toHaveText(new RegExp(`Realm: ${REALM}\\s*Identity\\s*Overview`))
+  await expect(crumbs).toHaveText(new RegExp(`Realm: ${REALM}\\s*Overview`))
   await page.goto(`/_ui/r/${REALM}/data/main/notes`)
   await expect(crumbs.getByRole('listitem')).toHaveText([`Realm: ${REALM}`, 'Data', 'main', 'notes'])
   await expect(crumbs.getByText('notes')).toHaveAttribute('aria-current', 'page')
@@ -108,30 +104,37 @@ test('a user and an organization are named in the breadcrumb', async ({ page, si
 test.describe('a narrow screen', () => {
   test.use({ viewport: { width: 375, height: 700 } })
 
-  test('has one button that stacks every group, and closes after a choice', async ({ page, signIn }) => {
+  test('has one button that opens the sidebar as a drawer, and closes after a choice', async ({ page, signIn }) => {
     await signIn('admin')
-    await expect(main(page).getByRole('button', { name: 'Identity' })).toBeHidden()
-    const toggle = page.getByRole('button', { name: 'Menu' })
+    const toggle = page.getByTestId('nav-toggle')
+    await expect(toggle).toBeVisible()
     await toggle.click()
     await expect(toggle).toHaveAttribute('aria-expanded', 'true')
-    for (const group of ['Identity', 'Access', 'Data', 'Compute', 'Platform']) await expect(main(page).getByRole('heading', { name: group })).toBeVisible()
-    // What the bar has no room for is in the panel: the way out too.
-    await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible()
+    for (const group of ['Data', 'Compute', 'Identity', 'Access', 'Platform']) await expect(main(page).getByRole('heading', { name: group })).toBeVisible()
     await main(page).getByRole('link', { name: 'Users', exact: true }).click()
     await expect(page).toHaveURL(new RegExp(`/_ui/r/${REALM}/users$`))
-    await expect(main(page).getByRole('link', { name: 'Users', exact: true })).toHaveCount(0)
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
   })
 
-  test('has no accessibility violations with the menu open', async ({ page, signIn }) => {
+  test('has no accessibility violations with the drawer open', async ({ page, signIn }) => {
     await signIn('admin')
-    await page.getByRole('button', { name: 'Menu' }).click()
+    await page.getByTestId('nav-toggle').click()
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
   })
 })
 
-test('the menus have no accessibility violations, open or not', async ({ page, signIn }) => {
+test('the command palette opens from the top bar, finds a page and goes there', async ({ page, signIn }) => {
   await signIn('admin')
-  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
-  await main(page).getByRole('button', { name: 'Compute' }).click()
+  await page.getByTestId('palette-open').click()
+  const palette = page.getByTestId('palette')
+  await expect(palette).toBeVisible()
+  await page.getByPlaceholder('Type a page, collection or function').fill('Audit')
+  await page.keyboard.press('Enter')
+  await expect(page).toHaveURL(new RegExp(`/_ui/r/${REALM}/audit$`))
+  await expect(palette).toHaveCount(0)
+})
+
+test('the sidebar has no accessibility violations', async ({ page, signIn }) => {
+  await signIn('admin')
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
 })

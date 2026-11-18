@@ -3,22 +3,19 @@ import { expect, test } from './fixtures'
 import { setTheme } from './nav'
 import { REALM } from './users'
 
-// The shell (bar, menus, breadcrumb, tabs) with the page of each area, in both themes, with a menu
-// open, and on a narrow screen.
+// The shell (sidebar, breadcrumb, tabs) with the page of each area, in both themes, and on a narrow
+// screen with the drawer open.
 const PAGES = ['users', 'apikeys', 'data', 'functions', 'audit', 'config'] as const
 const clean = async (page: import('@playwright/test').Page) => expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
 
 for (const theme of ['Light', 'Dark']) {
-  test(`${theme}: every area with its menu open has no accessibility violations`, async ({ page, signIn }) => {
+  test(`${theme}: every area has no accessibility violations`, async ({ page, signIn }) => {
     await signIn('admin', { keep: true })
     await setTheme(page, theme)
     for (const area of PAGES) {
       await page.goto(`/_ui/r/${REALM}/${area}`)
       await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toBeVisible()
       await clean(page)
-      await page.getByRole('navigation', { name: 'Main' }).locator('[data-testid^="nav-group-"]').first().click()
-      await clean(page)
-      await page.keyboard.press('Escape')
     }
   })
 }
@@ -34,20 +31,20 @@ test.describe('a narrow screen', () => {
       await clean(page)
       // The page may scroll inside its tables, never as a whole.
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `${area} fits the width`).toBe(true)
-      await page.getByRole('button', { name: 'Menu' }).click()
+      await page.getByTestId('nav-toggle').click()
       await clean(page)
       await page.getByRole('button', { name: 'Close the menu' }).click()
     }
   })
 })
 
-test('the keyboard reaches the menus, the breadcrumb and the tabs, in that order', async ({ page, signIn }) => {
+test('the keyboard reaches the sidebar, the breadcrumb and the tabs, in that order', async ({ page, signIn }) => {
   await signIn('admin', { keep: true })
   await page.goto(`/_ui/r/${REALM}/functions/jobs`)
   await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toBeVisible()
   await page.locator('body').click({ position: { x: 1, y: 1 } })
   const seen: string[] = []
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 60; i++) {
     await page.keyboard.press('Tab')
     seen.push(await page.evaluate(() => {
       const el = document.activeElement as HTMLElement | null
@@ -56,8 +53,8 @@ test('the keyboard reaches the menus, the breadcrumb and the tabs, in that order
     }))
   }
   const at = (needle: string) => seen.findIndex((s) => s.includes(needle))
-  expect(at('Identity'), 'the first menu is reached').toBeGreaterThanOrEqual(0)
-  expect(at('Platform'), 'the last menu is reached').toBeGreaterThan(at('Identity'))
-  expect(at('nav[aria-label="Breadcrumb"]|Compute'), 'the breadcrumb is reached after the menus').toBeGreaterThan(at('Platform'))
-  expect(at('Functions sections|Definitions') >= 0 || at('Functions sections') >= 0, 'the tab strip is reached').toBe(true)
+  expect(at('nav[aria-label="Main"]|Overview'), 'the first link of the sidebar is reached').toBeGreaterThanOrEqual(0)
+  expect(at('nav[aria-label="Main"]|Configuration'), 'the last link of the sidebar is reached').toBeGreaterThan(at('Overview'))
+  expect(at('nav[aria-label="Breadcrumb"]'), 'the breadcrumb is reached after the sidebar').toBeGreaterThan(at('Configuration'))
+  expect(at('Functions sections') >= 0, 'the tab strip is reached').toBe(true)
 })

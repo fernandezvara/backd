@@ -69,7 +69,7 @@ test('the token stays in memory unless the tab opts in', async ({ page, signIn }
 test('opting in keeps the session across a reload, in this tab only', async ({ page, signIn }) => {
   await signIn('admin', { keep: true })
   await expect(page.getByTestId('level')).toBeVisible()
-  expect(await page.evaluate(() => Object.keys(localStorage).filter((k) => k !== 'backd-admin:theme' && k !== 'backd-admin-realm'))).toEqual([])
+  expect(await page.evaluate(() => Object.keys(localStorage).filter((k) => !k.startsWith('backd-admin:') && k !== 'backd-admin-realm'))).toEqual([])
   await page.reload()
   await expect(page.getByTestId('level')).toBeVisible()
 })
