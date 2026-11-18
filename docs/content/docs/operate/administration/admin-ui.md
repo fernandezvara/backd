@@ -82,6 +82,8 @@ A read-only level sees the Users page only when the realm's `admin.read_access.u
 
 ## Your account and passkeys
 
+{{< screenshot src="admin-ui/account.png" alt="The Account page: the appearance choices (theme, language, accent colour) with a preview, and the passkeys of the signed-in administrator" >}}
+
 The **Account** page (the *Account* link of the account menu) holds the [appearance](#language-theme-and-accent) of the interface and lists the signed-in administrator's [passkeys](../../../build/auth/sessions/#passkeys) with their name, whether they sync between devices, when they were added and last used, and **adds**, **renames** and **removes** them. Adding or removing one asks for a fresh proof: the password, an authenticator code, or the passkey itself for an account whose only proof it is. Removing the passkey that opened the current session ends the session. A passkey is made by the browser, so the page offers *Add* only where the browser supports them.
 
 For this to work the realm needs `auth.passkeys.enabled`, and the admin interface must be served from an origin within the realm's `rp_id` (the origins in `auth.passkeys.origins`, `https` in production; `http://localhost` only in development). An administrator opening the interface at another address sees the browser refuse the ceremony.
@@ -180,13 +182,19 @@ A read-only level browses only when the realm's `admin.read_access.data` allows 
 
 ### Schema versions
 
+{{< screenshot src="admin-ui/schema-versions.png" alt="The Schema tab of a versioned collection: its fields, the Schema versions panel with the current version, the documents still below it and the Migrate now button, and the indexes" >}}
+
 A document of a [versioned collection](../../../build/configuration/config-dir/#versioned-schemas) shows its schema version next to its write version. The collection's page has a **Schema versions** panel (only for collections with migrations): its current version, how many documents are still below it, the documents per version from the last schema check, and the latest migration with the documents that did not migrate (id, step and reason, never a value). With write access to the data area, **Migrate now** starts the migration job after a confirmation, and **Check what a migration would do** runs it without writing anything.
 
 ## Push notifications
 
+{{< screenshot src="admin-ui/push.png" alt="The Push page: the configuration cards (provider, per-user limits, devices, records kept) and the list of sends" >}}
+
 The **Push** page (for realms with [`push:`](../../../build/push/); the `functions` area) shows how push is configured (the platforms and their provider, the limits and retention) and an alert naming any realm **secret the providers need that is not set**, which is why pushes would answer `503`. Below it, the realm's **sends**, newest first, filterable by template kind and function; opening one shows its batches and units, who it reached (queued, limited, without a device) and what the devices answered (sent, removed as dead, failed). A record holds counts only: never a title, a body, data or a token. With the `users` area, **Send a test** pushes one user, through the same limits as any push (it counts toward theirs) and audited. The CLI equivalents are `backd push sends` and `backd push test`: see [Records, test send and metrics](../../../build/push/records/).
 
 ## Storage
+
+{{< screenshot src="admin-ui/storage.png" alt="The Storage page: the state of the file storage, usage against the realm's quota, the number of files, the clean-up queue and the tools" >}}
 
 The **Storage** page (for realms with [`storage:`](../../providers/storage/)) shows how the storage is connected (the provider, bucket and prefix, whether the keys are set and the bucket answers), the **bytes and files in use** against the realm's [quota](../../providers/storage/#quotas) with a meter, the users holding the most with their share of the per-user quota, and the clean-up queue (objects waiting to be deleted, uploads left unfinished). A realm with a [`public_storage:`](../../providers/storage/#public-storage) has its own block there, with the same checks and the address its files are read at. A banner appears when the realm or a user is at or near a limit. It needs the `config` area, which every read-only level has, and refreshes with a button.
 

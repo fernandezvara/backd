@@ -59,6 +59,26 @@ test('screenshots of the main views', async ({ page, signIn }) => {
   await page.screenshot({ path: out('document') })
   await page.setViewportSize({ width: 1200, height: 720 })
 
+  // A versioned collection's Schema tab: the fields, the versions and what is still to migrate.
+  await page.goto(`/_ui/r/${REALM}/data/main/assets`)
+  await page.getByTestId('tab-schema').click()
+  await expect(page.getByTestId('schema-fields')).toBeVisible()
+  await page.setViewportSize({ width: 1200, height: 1100 })
+  await page.screenshot({ path: out('schema-versions') })
+  await page.setViewportSize({ width: 1200, height: 720 })
+
+  // Push notifications, the storage page and the account's appearance.
+  await shoot('push', 'push-config', 'push')
+  await page.goto(`/_ui/r/${REALM}/storage`)
+  await expect(page.getByTestId('storage-where')).toBeVisible()
+  await expect(page.getByTestId('storage-files')).toBeVisible()
+  await page.setViewportSize({ width: 1200, height: 900 })
+  await page.screenshot({ path: out('storage') })
+  await page.goto(`/_ui/r/${REALM}/account`)
+  await expect(page.getByTestId('preferences')).toBeVisible()
+  await page.screenshot({ path: out('account') })
+  await page.setViewportSize({ width: 1200, height: 720 })
+
   // A user's page.
   await page.goto(`/_ui/r/${REALM}/users`)
   await page.getByLabel('Search by email').fill('viewer@adminui.example')
