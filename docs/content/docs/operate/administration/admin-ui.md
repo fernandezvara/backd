@@ -182,9 +182,11 @@ A read-only level browses only when the realm's `admin.read_access.data` allows 
 
 ### Schema versions
 
+{{< screenshot src="admin-ui/schema-versions-records.png" alt="The Records of a versioned collection with a Schema version column: documents written under versions 1, 2 and 3 side by side" >}}
+
 {{< screenshot src="admin-ui/schema-versions.png" alt="The Schema tab of a versioned collection: its fields, the Schema versions panel with the current version, the documents still below it and the Migrate now button, and the indexes" >}}
 
-A document of a [versioned collection](../../../build/configuration/config-dir/#versioned-schemas) shows its schema version next to its write version. The collection's page has a **Schema versions** panel (only for collections with migrations): its current version, how many documents are still below it, the documents per version from the last schema check, and the latest migration with the documents that did not migrate (id, step and reason, never a value). With write access to the data area, **Migrate now** starts the migration job after a confirmation, and **Check what a migration would do** runs it without writing anything.
+A document of a [versioned collection](../../../build/configuration/config-dir/#versioned-schemas) shows its schema version next to its write version, and the **Records** table of the collection has a *Schema version* column, so documents of several versions can be told apart while a migration is pending. The collection's page has a **Schema versions** panel (only for collections with migrations): its current version, how many documents are still below it, the documents per version from the last schema check, and the latest migration with the documents that did not migrate (id, step and reason, never a value). With write access to the data area, **Migrate now** starts the migration job after a confirmation, and **Check what a migration would do** runs it without writing anything.
 
 ## Push notifications
 
