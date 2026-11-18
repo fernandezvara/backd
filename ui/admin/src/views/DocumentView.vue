@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { ValidationError, VersionMismatchError, type AdminOrg, type Doc } from 'backd-js'
-import { computed, onMounted, ref } from 'vue'
+import { PhArrowCounterClockwise, PhArrowLeft, PhBuildings, PhFileText, PhTrash } from '@phosphor-icons/vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import AppAlert from '@/components/AppAlert.vue'
-import PageHeader from '@/components/PageHeader.vue'
+import AppBadge from '@/components/AppBadge.vue'
+import AppCard from '@/components/AppCard.vue'
+import SubTabs from '@/components/SubTabs.vue'
 import AppButton from '@/components/AppButton.vue'
 import DocumentFiles from '@/components/DocumentFiles.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -58,7 +61,7 @@ const draft = ref<Fields>({})
 const original = ref('')
 const baseVersion = ref<number | undefined>()
 const loadError = ref('')
-const tab = ref<'form' | 'json'>('form')
+const tab = ref('form')
 const busy = ref(false)
 
 const split = (d: Doc): Fields => {
@@ -229,41 +232,65 @@ async function move() {
 const meta = computed(() => doc.value?._meta)
 const docOrg = computed(() => (meta.value as { org?: string } | undefined)?.org)
 const actor = (v?: string | null) => v || '—'
+
+// The tabs: the form when the schema allows one, the JSON, the files and what the admin changed here.
+const canAudit = computed(() => session.canRead('audit'))
+const hasFiles = computed(() => !isNew.value && fileNames.value.length > 0)
+const tabs = computed(() => [
+  ...(canForm.value ? [{ id: 'form', label: t('data.doc.tabs.form') }] : []),
+  { id: 'json', label: t('data.doc.tabs.json') },
+  ...(hasFiles.value ? [{ id: 'files', label: t('data.doc.tabs.files') }] : []),
+  ...(!isNew.value && canAudit.value ? [{ id: 'history', label: t('data.doc.tabs.history') }] : []),
+])
+const editing = computed(() => tab.value === 'form' || tab.value === 'json')
+const toCollection = computed(() => ({ name: 'data-collection', params: { realm: props.realm, database: props.database, collection: props.collection } }))
+
+// History: the administrator changes the audit trail recorded on this document (changes made through
+// the API by the app's own users are not audited).
+interface Entry { id: string; at: string; action: string; actor: string }
+const history = ref<Entry[] | null>(null)
+const historyError = ref('')
+watch(tab, async (v) => {
+  if (v !== 'history' || history.value) return
+  try {
+    history.value = (await admin.audit.list({ target: `doc:${props.database}/${props.collection}/${props.id}`, limit: 50 })).items as Entry[]
+  } catch (e) {
+    historyError.value = errorText(e, t('data.doc.history.loadFailed'))
+  }
+})
 </script>
 
 <template>
-  <PageHeader :title="isNew ? t('data.doc.new', { collection }) : t('data.doc.edit', { id: id ?? '' })" testid="doc-title" />
+  <RouterLink :to="toCollection" class="inline-flex items-center gap-1 text-sm text-slate-600 hover:underline dark:text-slate-400"><PhArrowLeft :size="14" aria-hidden="true" />{{ collection }}</RouterLink>
+
+  <div class="mb-1 mt-2 flex flex-wrap items-center gap-3">
+    <PhFileText :size="26" class="text-brand-700 dark:text-brand-400" aria-hidden="true" />
+    <div class="min-w-0">
+      <h1 class="text-lg leading-tight font-semibold" :class="isNew ? '' : 'font-mono'" data-testid="doc-title">{{ isNew ? t('data.doc.new', { collection }) : id }}</h1>
+      <p v-if="meta" class="text-xs text-slate-500">{{ t('data.doc.revision', { n: meta.version ?? '—', date: formatDate(meta.updated_at), who: actor(meta.updated_by) }) }}</p>
+      <p v-else class="text-xs text-slate-500">{{ database }}</p>
+    </div>
+    <div v-if="inTrash || (orgMode && docOrg)" class="flex flex-wrap gap-1.5">
+      <AppBadge v-if="inTrash" kind="warn">{{ t('data.collection.trash') }}</AppBadge>
+      <AppBadge v-if="orgMode && docOrg" kind="violet"><PhBuildings :size="11" class="mr-0.5 inline" aria-hidden="true" />{{ orgName(docOrg) }}</AppBadge>
+    </div>
+    <div v-if="!isNew && canWrite && (doc || loadError === '')" class="ml-auto flex flex-wrap items-center gap-2">
+      <template v-if="inTrash">
+        <AppButton variant="secondary" @click="restore"><PhArrowCounterClockwise :size="15" aria-hidden="true" />{{ t('data.doc.restore.open') }}</AppButton>
+        <AppButton variant="danger" @click="purging = true"><PhTrash :size="15" aria-hidden="true" />{{ t('data.doc.purge.open') }}</AppButton>
+      </template>
+      <template v-else-if="doc">
+        <AppButton v-if="orgMode" variant="secondary" @click="openMove"><PhBuildings :size="15" aria-hidden="true" />{{ t('data.doc.move.open') }}</AppButton>
+        <AppButton variant="danger" @click="deleting = true"><PhTrash :size="15" aria-hidden="true" />{{ softDelete ? t('data.doc.delete.open') : t('data.doc.delete.openHard') }}</AppButton>
+      </template>
+    </div>
+  </div>
 
   <AppAlert v-if="loadError" kind="error" class="mt-4">{{ loadError }}</AppAlert>
 
   <template v-else-if="isNew || doc">
     <AppAlert v-if="inTrash" class="mt-4">{{ t('data.doc.inTrash', { date: formatDate(meta?.purge_at) }) }}</AppAlert>
     <AppAlert v-else-if="!canWrite" class="mt-4">{{ t('data.doc.readonly') }}</AppAlert>
-
-    <dl v-if="meta" class="mt-4 grid max-w-3xl grid-cols-[9rem_1fr] gap-x-4 gap-y-1 text-sm" data-testid="doc-meta" :aria-label="t('data.doc.meta')">
-      <dt class="text-slate-600 dark:text-slate-400">{{ t('data.doc.id') }}</dt>
-      <dd class="font-mono text-xs">{{ doc!.id }}</dd>
-      <dt class="text-slate-600 dark:text-slate-400">{{ t('data.doc.version') }}</dt>
-      <dd data-testid="doc-version">{{ meta.version ?? '—' }}</dd>
-      <template v-if="meta.schema_version !== undefined">
-        <dt class="text-slate-600 dark:text-slate-400">{{ t('data.doc.schemaVersion') }}</dt>
-        <dd data-testid="doc-schema-version">{{ meta.schema_version }}</dd>
-      </template>
-      <dt class="text-slate-600 dark:text-slate-400">{{ t('data.doc.created') }}</dt>
-      <dd>{{ formatDate(meta.created_at) }} · <span class="font-mono text-xs">{{ actor(meta.created_by) }}</span></dd>
-      <dt class="text-slate-600 dark:text-slate-400">{{ t('data.doc.updated') }}</dt>
-      <dd>{{ formatDate(meta.updated_at) }} · <span class="font-mono text-xs">{{ actor(meta.updated_by) }}</span></dd>
-      <dt class="text-slate-600 dark:text-slate-400">{{ t('data.doc.owner') }}</dt>
-      <dd class="font-mono text-xs">{{ meta.owner ?? t('data.doc.noOwner') }}</dd>
-      <template v-if="orgMode">
-        <dt class="text-slate-600 dark:text-slate-400">{{ t('data.doc.org') }}</dt>
-        <dd data-testid="doc-org">{{ orgName(docOrg) }}</dd>
-      </template>
-      <template v-if="meta.deleted_at">
-        <dt class="text-slate-600 dark:text-slate-400">{{ t('data.doc.deletedAt') }}</dt>
-        <dd>{{ formatDate(meta.deleted_at) }} · <span class="font-mono text-xs">{{ actor(meta.deleted_by) }}</span></dd>
-      </template>
-    </dl>
 
     <AppAlert v-if="conflict" kind="error" class="mt-4" data-testid="conflict">
       <p class="font-medium">{{ t('data.doc.conflict.title') }}</p>
@@ -283,42 +310,75 @@ const actor = (v?: string | null) => v || '—'
       </ul>
     </AppAlert>
 
-    <div class="mt-6 flex flex-wrap items-center justify-between gap-3">
-      <div v-if="canForm" class="flex overflow-hidden rounded-md border border-slate-300 text-sm dark:border-slate-600" role="group" :aria-label="t('data.doc.tabs.label')">
-        <button type="button" class="px-3 py-1.5" :class="tab === 'form' ? 'bg-brand-700 text-white' : ''" :aria-pressed="tab === 'form'" @click="tab = 'form'">{{ t('data.doc.tabs.form') }}</button>
-        <button type="button" class="px-3 py-1.5" :class="tab === 'json' ? 'bg-brand-700 text-white' : ''" :aria-pressed="tab === 'json'" @click="tab = 'json'">{{ t('data.doc.tabs.json') }}</button>
+    <SubTabs v-model="tab" class="mt-4" :label="t('data.doc.tabs.label')" :tabs="tabs" />
+
+    <div class="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]">
+      <div class="min-w-0">
+        <form v-if="editing" novalidate @submit.prevent="save">
+          <AppCard class="space-y-4">
+            <p v-if="!canForm" class="text-sm text-slate-600 dark:text-slate-400">{{ schema ? t('data.doc.noForm') : t('data.doc.noSchema') }}</p>
+            <div v-if="isNew && orgMode" class="max-w-md space-y-1">
+              <label for="doc-org-new" class="block text-sm font-medium">{{ t('data.doc.org') }}</label>
+              <select id="doc-org-new" v-model="newOrg" :required="orgMode === 'required'" class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900">
+                <option value="" :disabled="orgMode === 'required'">{{ orgMode === 'required' ? '—' : t('data.doc.noOrg') }}</option>
+                <option v-for="o in orgChoices" :key="o.id" :value="o.id">{{ o.name }}</option>
+              </select>
+              <p class="text-xs text-slate-600 dark:text-slate-400">{{ t('data.doc.orgHelp') }}</p>
+            </div>
+            <SchemaForm v-if="tab === 'form' && canForm && schema" v-model="draft" :schema="schema" :readonly="readonly" :errors="errors" />
+            <JsonField v-else id="doc-json" v-model="draft" :label="t('data.doc.tabs.json')" :readonly="readonly" :rows="16" :error="errors['']" />
+          </AppCard>
+          <div v-if="!readonly" class="sticky bottom-0 -mx-1 mt-3 flex flex-wrap items-center gap-2 border-t border-slate-200 bg-slate-50/90 px-1 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-950/90">
+            <AppButton type="submit" :busy="busy">{{ isNew ? t('data.doc.create') : t('data.doc.save') }}</AppButton>
+            <RouterLink :to="toCollection" class="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-3 text-[13px] hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800">{{ t('common.cancel') }}</RouterLink>
+            <p v-if="dirty" class="ml-1 text-sm text-amber-800 dark:text-amber-300" role="status">{{ t('data.doc.unsaved') }}</p>
+          </div>
+        </form>
+
+        <DocumentFiles v-else-if="tab === 'files' && doc" :database="database" :collection="collection" :doc="doc" :fields="fileFields" :writable="canWrite && !inTrash" @changed="filesChanged" />
+
+        <AppCard v-else-if="tab === 'history'" flush data-testid="doc-history">
+          <AppAlert v-if="historyError" kind="error" class="m-4">{{ historyError }}</AppAlert>
+          <p v-else-if="!history" class="p-4 text-sm" role="status">{{ t('common.loading') }}</p>
+          <ol v-else-if="history.length" class="divide-y divide-slate-100 dark:divide-slate-800">
+            <li v-for="h in history" :key="h.id" class="flex flex-wrap items-center gap-x-3 px-4 py-2.5 text-[13px]">
+              <AppBadge>{{ h.action }}</AppBadge>
+              <span class="font-mono text-xs text-slate-600 dark:text-slate-400">{{ h.actor }}</span>
+              <span class="ml-auto text-xs text-slate-500">{{ formatDate(h.at) }}</span>
+            </li>
+          </ol>
+          <p v-else class="p-4 text-sm text-slate-600 dark:text-slate-400">{{ t('data.doc.history.empty') }}</p>
+          <p class="border-t border-slate-200 px-4 py-2 text-xs text-slate-500 dark:border-slate-800">{{ t('data.doc.history.help') }}</p>
+        </AppCard>
       </div>
-      <p v-else class="text-sm text-slate-600 dark:text-slate-400">{{ schema ? t('data.doc.noForm') : t('data.doc.noSchema') }}</p>
-      <p v-if="dirty && !readonly" class="text-sm text-amber-800 dark:text-amber-300" role="status">{{ t('data.doc.unsaved') }}</p>
-    </div>
 
-    <div v-if="isNew && orgMode" class="mt-4 max-w-md space-y-1">
-      <label for="doc-org-new" class="block text-sm font-medium">{{ t('data.doc.org') }}</label>
-      <select id="doc-org-new" v-model="newOrg" :required="orgMode === 'required'" class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900">
-        <option value="" :disabled="orgMode === 'required'">{{ orgMode === 'required' ? '—' : t('data.doc.noOrg') }}</option>
-        <option v-for="o in orgChoices" :key="o.id" :value="o.id">{{ o.name }}</option>
-      </select>
-      <p class="text-xs text-slate-600 dark:text-slate-400">{{ t('data.doc.orgHelp') }}</p>
-    </div>
-
-    <form class="mt-4 max-w-3xl space-y-4" novalidate @submit.prevent="save">
-      <SchemaForm v-if="tab === 'form' && canForm && schema" v-model="draft" :schema="schema" :readonly="readonly" :errors="errors" />
-      <JsonField v-else id="doc-json" v-model="draft" :label="t('data.doc.tabs.json')" :readonly="readonly" :rows="16" :error="errors['']" />
-
-      <div v-if="!readonly" class="flex flex-wrap gap-2">
-        <AppButton type="submit" :busy="busy">{{ isNew ? t('data.doc.create') : t('data.doc.save') }}</AppButton>
-      </div>
-    </form>
-
-    <DocumentFiles v-if="!isNew && doc && fileNames.length" :database="database" :collection="collection" :doc="doc" :fields="fileFields" :writable="canWrite && !inTrash" @changed="filesChanged" />
-
-    <div v-if="!isNew && canWrite" class="mt-8 flex flex-wrap gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
-      <template v-if="inTrash">
-        <AppButton variant="secondary" @click="restore">{{ t('data.doc.restore.open') }}</AppButton>
-        <AppButton variant="danger" @click="purging = true">{{ t('data.doc.purge.open') }}</AppButton>
-      </template>
-      <AppButton v-if="orgMode && !inTrash" variant="secondary" @click="openMove">{{ t('data.doc.move.open') }}</AppButton>
-      <AppButton v-if="!inTrash" variant="danger" @click="deleting = true">{{ softDelete ? t('data.doc.delete.open') : t('data.doc.delete.openHard') }}</AppButton>
+      <AppCard v-if="meta" flush data-testid="doc-meta" :aria-label="t('data.doc.meta')">
+        <h2 class="border-b border-slate-200 px-4 py-2.5 text-[13px] font-semibold dark:border-slate-800">{{ t('data.doc.details') }}</h2>
+        <dl class="grid grid-cols-[6.5rem_1fr] gap-x-3 gap-y-2 p-4 text-[13px]">
+          <dt class="text-slate-500">{{ t('data.doc.id') }}</dt>
+          <dd class="font-mono text-xs break-all">{{ doc!.id }}</dd>
+          <dt class="text-slate-500">{{ t('data.doc.version') }}</dt>
+          <dd data-testid="doc-version">{{ meta.version ?? '—' }}</dd>
+          <template v-if="meta.schema_version !== undefined">
+            <dt class="text-slate-500">{{ t('data.doc.schemaVersion') }}</dt>
+            <dd data-testid="doc-schema-version">{{ meta.schema_version }}</dd>
+          </template>
+          <dt class="text-slate-500">{{ t('data.doc.created') }}</dt>
+          <dd>{{ formatDate(meta.created_at) }}<div class="font-mono text-xs text-slate-500">{{ actor(meta.created_by) }}</div></dd>
+          <dt class="text-slate-500">{{ t('data.doc.updated') }}</dt>
+          <dd>{{ formatDate(meta.updated_at) }}<div class="font-mono text-xs text-slate-500">{{ actor(meta.updated_by) }}</div></dd>
+          <dt class="text-slate-500">{{ t('data.doc.owner') }}</dt>
+          <dd class="font-mono text-xs">{{ meta.owner ?? t('data.doc.noOwner') }}</dd>
+          <template v-if="orgMode">
+            <dt class="text-slate-500">{{ t('data.doc.org') }}</dt>
+            <dd data-testid="doc-org">{{ orgName(docOrg) }}</dd>
+          </template>
+          <template v-if="meta.deleted_at">
+            <dt class="text-slate-500">{{ t('data.doc.deletedAt') }}</dt>
+            <dd>{{ formatDate(meta.deleted_at) }}<div class="font-mono text-xs text-slate-500">{{ actor(meta.deleted_by) }}</div></dd>
+          </template>
+        </dl>
+      </AppCard>
     </div>
 
     <FormDialog v-model:open="moving" :title="t('data.doc.move.title')" :description="t('data.doc.move.help')" :submit="t('data.doc.move.action')" :busy="moveBusy" :error="moveError" @submit="move">

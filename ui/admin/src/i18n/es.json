@@ -1277,10 +1277,15 @@
       "new": "Nuevo documento en {collection}",
       "edit": "Documento {id}",
       "tabs": {
-        "label": "Editar como",
+        "label": "Secciones del documento",
         "form": "Formulario",
-        "json": "JSON"
+        "json": "JSON",
+        "files": "Archivos",
+        "history": "Historial"
       },
+      "details": "Detalles",
+      "revision": "Revisión {n} · actualizado {date} por {who}",
+      "history": {"empty": "No hay cambios hechos desde la administración registrados para este documento.", "help": "Los cambios de administradores en este documento, según el registro de auditoría. Los cambios de los usuarios de la propia app no aparecen.", "loadFailed": "No se pudo cargar el historial."},
       "meta": "Metadatos",
       "id": "ID",
       "version": "Versión",

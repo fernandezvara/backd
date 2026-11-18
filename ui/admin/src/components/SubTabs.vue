@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useId } from 'vue'
+import { tabIcon } from '@/lib/tabIcons'
 
 // Tabs inside one page (no route change): a row of buttons that choose which panel shows. The page
 // renders the panels itself with `v-if` on the model.
@@ -16,13 +17,13 @@ const id = useId()
       :key="tab.id"
       type="button"
       role="tab"
-      class="-mb-px border-b-2 px-3 py-2 text-sm"
+      class="-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm"
       :class="model === tab.id ? 'border-brand-700 font-semibold text-brand-800 dark:border-brand-400 dark:text-brand-100' : 'border-transparent text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'"
       :aria-selected="model === tab.id"
       :data-testid="`tab-${tab.id}`"
       @click="model = tab.id"
     >
-      {{ tab.label }}
+      <component :is="tabIcon(tab.id)" v-if="tabIcon(tab.id)" :size="15" aria-hidden="true" />{{ tab.label }}
     </button>
   </div>
 </template>

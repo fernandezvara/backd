@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import AppBadge from '@/components/AppBadge.vue'
 import AppCard from '@/components/AppCard.vue'
-import { PhCaretLeft, PhCaretRight, PhFunnel, PhPlus, PhTable } from '@phosphor-icons/vue'
+import { PhBuildings, PhCaretLeft, PhCaretRight, PhFunnel, PhPlus, PhSealCheck, PhTable } from '@phosphor-icons/vue'
 import type { AdminOrg, Doc } from 'backd-js'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -245,8 +245,8 @@ const tab = ref('records')
       <p class="text-xs text-slate-500">{{ database }}<template v-if="total !== undefined"> · {{ view === 'trash' ? t('data.collection.inTrash', { n: total.toLocaleString() }) : t('data.collection.documents', { n: total.toLocaleString() }) }}</template></p>
     </div>
     <div class="ml-auto flex flex-wrap items-center gap-2">
-      <AppButton variant="secondary" :aria-expanded="showCheck" aria-controls="schema-check" data-testid="check-toggle" @click="showCheck = !showCheck">{{ showCheck ? t('checks.hide') : t('checks.show') }}</AppButton>
-      <AppButton v-if="canWrite && orgMode" variant="secondary" @click="openAssign">{{ t('data.collection.assign.open') }}</AppButton>
+      <AppButton variant="secondary" :aria-expanded="showCheck" aria-controls="schema-check" data-testid="check-toggle" @click="showCheck = !showCheck"><PhSealCheck :size="15" aria-hidden="true" />{{ showCheck ? t('checks.hide') : t('checks.show') }}</AppButton>
+      <AppButton v-if="canWrite && orgMode" variant="secondary" @click="openAssign"><PhBuildings :size="15" aria-hidden="true" />{{ t('data.collection.assign.open') }}</AppButton>
       <RouterLink v-if="canWrite" :to="{ name: 'data-new', params: { realm, database, collection } }" class="inline-flex h-9 items-center gap-1.5 rounded-md bg-brand-700 px-3.5 text-sm font-medium text-white hover:bg-brand-800"><PhPlus aria-hidden="true" /> {{ t('data.collection.new') }}</RouterLink>
     </div>
   </div>

@@ -1277,10 +1277,15 @@
       "new": "New document in {collection}",
       "edit": "Document {id}",
       "tabs": {
-        "label": "Edit as",
+        "label": "Document sections",
         "form": "Form",
-        "json": "JSON"
+        "json": "JSON",
+        "files": "Files",
+        "history": "History"
       },
+      "details": "Details",
+      "revision": "Revision {n} · updated {date} by {who}",
+      "history": {"empty": "No change made from the admin is recorded for this document.", "help": "The administrator changes made to this document, from the audit trail. Changes by the app's own users are not listed.", "loadFailed": "The history could not be loaded."},
       "meta": "Metadata",
       "id": "ID",
       "version": "Version",
