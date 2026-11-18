@@ -1013,7 +1013,7 @@
         "open": "Cualquiera puede crear una cuenta.",
         "invite": "Solo quien tenga una invitación puede crear una cuenta.",
         "closed": "Las cuentas las crean los administradores, no quien se registra.",
-        "off": ""
+        "off": "Este realm no tiene autenticación: nadie inicia sesión y la API está abierta."
       },
       "verifiedEmail": "El correo debe verificarse antes de que empiece una sesión.",
       "consents": "Consentimientos",

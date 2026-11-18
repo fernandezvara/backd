@@ -1013,7 +1013,7 @@
         "open": "Anyone can create an account.",
         "invite": "Only people with an invitation can create an account.",
         "closed": "Accounts are created by administrators, not by people signing up.",
-        "off": ""
+        "off": "This realm has no authentication: nobody signs in and the API is open."
       },
       "verifiedEmail": "The email must be verified before a session starts.",
       "consents": "Consents",

@@ -6,6 +6,9 @@ import { visibleNav } from './nav'
 // Milestone 35 changed how the pages are reached, not which pages there are: these two tests pin
 // what the interface before it offered (the routes and the rules of its flat navigation bar).
 
+// Pages the old bar did not have: the jobs page, and the security, compliance and app config pages.
+const ADDED = ['functions-jobs', 'security', 'compliance', 'app-config']
+
 describe('nothing was lost in the redesign', () => {
   test('every page of the old interface is still a route, with the same address and area', () => {
     const before: [string, string, Area | undefined][] = [
@@ -42,7 +45,7 @@ describe('nothing was lost in the redesign', () => {
     }
   })
 
-  test('for every level and realm setup the menus offer the same pages as the old bar, and the jobs page where functions are readable', () => {
+  test('for every level and realm setup the menus offer the same pages as the old bar, plus the pages added since where their area is readable', () => {
     // The rules of the old AppShell, as they were.
     const oldBar = (read: readonly Area[], orgs: boolean, storage: boolean, push: boolean) => {
       const can = (a: Area) => read.includes(a)
@@ -69,8 +72,12 @@ describe('nothing was lost in the redesign', () => {
       const read = AREAS.filter((_, i) => mask & (1 << i))
       for (const [orgs, storage, push] of [0, 1, 2, 3, 4, 5, 6, 7].map((n) => [!!(n & 1), !!(n & 2), !!(n & 4)])) {
         const now = visibleNav({ canRead: (a) => read.includes(a), orgs, storage, push }).flatMap((g) => g.items.map((i) => i.route))
-        expect(now.filter((r) => r !== 'functions-jobs').sort()).toEqual(oldBar(read, orgs, storage, push))
+        expect(now.filter((r) => !ADDED.includes(r)).sort()).toEqual(oldBar(read, orgs, storage, push))
+        // The pages added since offer themselves to the levels that read what they show.
         expect(now.includes('functions-jobs')).toBe(read.includes('functions'))
+        expect(now.includes('security')).toBe(read.includes('users'))
+        expect(now.includes('compliance')).toBe(read.includes('users'))
+        expect(now.includes('app-config')).toBe(read.includes('config'))
         checked++
       }
     }

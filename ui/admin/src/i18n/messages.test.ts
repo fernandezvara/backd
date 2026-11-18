@@ -22,7 +22,7 @@ const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map((m) 
 
 // Values that are the same in both languages: names, technical words, symbols.
 const SAME = new Set([
-  'app.name', 'common.no', 'common.allRealm', 'realm.label', 'realm.current', 'users.roles', 'user.id', 'user.roles.title',
+  'app.name', 'common.no', 'common.allRealm', 'realm.label', 'realm.list', 'signIn.brand.foot', 'nav.groups.realm', 'functions.tabs.triggers', 'config.signin.methods.passkey', 'config.settings.sections.general', 'config.settings.sections.push', 'data.tabs.api', 'security.mfa.rolesCol', 'triggers.title', 'triggers.trigger', 'fn.deps.specifier', 'fn.deps.kinds.npm', 'fn.deps.kinds.jsr', 'fn.deps.kinds.node', 'fn.deps.kinds.url', 'fn.deps.kinds.backd', 'fn.usedBy.http', 'realm.current', 'users.roles', 'user.id', 'user.roles.title',
   'invitations.create.tokenLabel', 'audit.actor', 'functions.modes.sync', 'functions.modes.async', 'history.actor', 'history.ms',
   'jobs.noResult', 'nav.push', 'config.realm', 'config.roles.title', 'data.collection.json', 'data.doc.tabs.json', 'data.doc.id', 'data.doc.problem', 'orgs.slug', 'orgs.claims.title', 'orgs.invitations.roles', 'orgs.sso.providers.google', 'orgs.sso.providers.microsoft', 'orgs.sso.providers.oidc', 'schemaVersions.failure',
 ])
