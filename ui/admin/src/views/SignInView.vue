@@ -145,8 +145,10 @@ async function signInPasskey(conditional = false) {
   stopConditional()
   const ask = new AbortController()
   if (conditional) waiting = ask
-  else busy.value = true
-  error.value = ''
+  else {
+    busy.value = true
+    error.value = ''
+  }
   try {
     rememberRealm(realm.value)
     const result = await session.signInWithPasskey(realm.value, keep.value, passkeyStrategy.value, conditional ? { conditional: true, signal: ask.signal } : {})
@@ -156,7 +158,9 @@ async function signInPasskey(conditional = false) {
     // none to offer) there is nothing to say; the button's own failures are shown.
     if (!conditional && !(e instanceof Error && e.name === 'AbortError')) error.value = passkeyFailure(e)
   } finally {
-    busy.value = false
+    // The autofill attempt starts late and ends on an abort: it must not clear an error or a busy flag that a
+    // password sign-in set meanwhile.
+    if (!conditional) busy.value = false
   }
 }
 
