@@ -8,7 +8,7 @@ import ConfigTabs from '@/components/ConfigTabs.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { useAdmin } from '@/lib/admin'
 import { useRawAdmin } from '@/lib/adminRaw'
-import { downloadText } from '@/lib/draft'
+import { downloadText } from '@/lib/download'
 import { errorText } from '@/lib/format'
 import { useToasts } from '@/stores/toasts'
 
