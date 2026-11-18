@@ -20,12 +20,13 @@ test('an administrator sees a user\'s devices and removes one', async ({ page, s
   await signIn('admin')
   await go(page, 'Users')
   await page.getByRole('link', { name: users.support }).click()
-  const row = page.getByTestId('user-devices').getByRole('row').filter({ hasText: label })
+  await page.getByTestId('tab-sessions').click()
+  const row = page.getByTestId('user-devices').getByRole('listitem').filter({ hasText: label })
   await expect(row).toBeVisible()
   await expect(row).toContainText('android')
   await row.getByRole('button', { name: 'Remove' }).click()
   await expect(page.getByRole('status').filter({ hasText: 'Device removed' })).toBeVisible()
-  await expect(page.getByTestId('user-devices').getByRole('row').filter({ hasText: label })).toHaveCount(0)
+  await expect(page.getByTestId('user-devices').getByRole('listitem').filter({ hasText: label })).toHaveCount(0)
 })
 
 test('the Push view shows the configuration, sends a test and lists the send', async ({ page, signIn }) => {

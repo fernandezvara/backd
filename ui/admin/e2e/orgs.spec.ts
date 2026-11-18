@@ -5,6 +5,9 @@ import { go } from './nav'
 
 const stamp = Date.now()
 
+// The organization page has its sections in tabs; members is the one that opens.
+const tab = (page: import('@playwright/test').Page, id: 'members' | 'sso' | 'domains' | 'teams' | 'invitations' | 'settings') => page.getByTestId(`tab-${id}`).click()
+
 test('an administrator manages an organization: members, claims, invitations and deletion', async ({ page, signIn }) => {
   const name = `Acme ${stamp}`
   await signIn('admin')
@@ -38,16 +41,19 @@ test('an administrator manages an organization: members, claims, invitations and
   await expect(row).toContainText('editor')
 
   // Claims are limited to 1 KiB.
+  await tab(page, 'settings')
   const claims = page.getByLabel('Claims (JSON object)')
   await claims.fill('{"plan": "pro"}')
-  await page.getByRole('button', { name: 'Save' }).click()
+  const saveClaims = page.locator('section[aria-labelledby="claims-h"]').getByRole('button', { name: 'Save' })
+  await saveClaims.click()
   await expect(page.getByRole('status').filter({ hasText: 'Claims saved' })).toBeVisible()
   await claims.fill(JSON.stringify({ big: 'x'.repeat(1100) }))
   await expect(page.getByTestId('claims-size')).toContainText('bytes')
-  await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled()
+  await expect(saveClaims).toBeDisabled()
 
   // An invitation: its link is shown once and never listed.
-  await page.getByRole('button', { name: 'Invite' }).click()
+  await tab(page, 'invitations')
+  await page.locator('section[aria-labelledby="inv-h"]').getByRole('button', { name: 'Invite' }).click()
   const invite = page.getByRole('dialog')
   await invite.getByLabel('Email of the user').fill('guest@adminui.example')
   await invite.getByRole('button', { name: 'Create', exact: true }).click()
@@ -57,6 +63,7 @@ test('an administrator manages an organization: members, claims, invitations and
   await expect(page.getByTestId('org-invitations')).not.toContainText('bdo_')
 
   // Deleting shows what the cleanup does, and asks for the name.
+  await tab(page, 'settings')
   await page.getByRole('button', { name: 'Delete organization' }).click()
   const del = page.getByRole('dialog')
   await expect(del.getByTestId('org-owned')).toContainText('main/projects')
@@ -100,6 +107,7 @@ test('an administrator gives and takes away a team role, with a window', async (
   await api.request({ method: 'POST', path: ['_admin', 'orgs', id, 'teams'], body: { name: 'Sales' } })
   await api.auth.logout()
   await page.reload()
+  await tab(page, 'teams')
   await expect(page.getByTestId('team-Sales')).toBeVisible()
 
   // A manager for a window that is open; the role needs a second factor, so the member is
@@ -115,7 +123,9 @@ test('an administrator gives and takes away a team role, with a window', async (
   await expect(holder).toContainText('manager')
   await expect(holder).toContainText('In force')
   await expect(holder).toContainText('not in the team')
+  await tab(page, 'members')
   await expect(page.getByTestId('org-unenrolled')).toContainText(users.plain)
+  await tab(page, 'teams')
 
   // Taking it away asks for the member's name.
   await holder.getByRole('button', { name: 'Revoke' }).click()
@@ -146,6 +156,7 @@ test('an administrator connects an organization to its own Google Workspace and 
   const id = /\/orgs\/([^/?#]+)/.exec(page.url())![1]!
 
   // Google: the redirect address to register is shown, the secret never is.
+  await tab(page, 'sso')
   await expect(page.getByTestId('org-sso')).toBeVisible()
   await expect(page.getByTestId('org-connections')).toContainText('No connections yet')
   await page.getByRole('button', { name: 'Connect a provider' }).click()
@@ -212,6 +223,7 @@ test('an administrator claims a domain, sees the record to publish, and an OpenI
   await expect(page.getByTestId('org-name')).toHaveText(name)
 
   // A claim is pending, with the record to publish.
+  await tab(page, 'domains')
   const section = page.getByTestId('org-domains')
   await expect(section).toContainText('No domains claimed')
   await page.getByRole('button', { name: 'Claim a domain' }).click()
@@ -234,6 +246,7 @@ test('an administrator claims a domain, sees the record to publish, and an OpenI
   await expect(row.getByTestId('domain-discoverable')).toBeChecked()
 
   // An OpenID Connect connection asks for an issuer, and is refused while no domain is proved.
+  await tab(page, 'sso')
   await page.getByRole('button', { name: 'Connect a provider' }).click()
   const oidc = page.getByRole('dialog')
   await oidc.getByLabel('Provider').selectOption('oidc')
@@ -246,6 +259,7 @@ test('an administrator claims a domain, sees the record to publish, and an OpenI
   await expect(page.getByTestId('connection-oidc')).toHaveCount(0)
 
   // Releasing asks for the domain's name.
+  await tab(page, 'domains')
   await row.getByRole('button', { name: 'Delete' }).click()
   const del = page.getByRole('dialog')
   await del.getByLabel(/Type/).fill(`e2e-${stamp}.example.com`)
