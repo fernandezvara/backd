@@ -117,6 +117,24 @@ export type MainLabelsWhere = {
 };
 export type MainLabelsOrderByField = "id" | "-id" | "_meta.created_at" | "-_meta.created_at" | "_meta.updated_at" | "-_meta.updated_at" | "_meta.version" | "-_meta.version" | "_meta.owner" | "-_meta.owner" | "_meta.created_by" | "-_meta.created_by" | "_meta.updated_by" | "-_meta.updated_by" | "name" | "-name";
 export type MainLabelsOrderBy = MainLabelsOrderByField | `${MainLabelsOrderByField},${string}`;
+/** What a trigger of labels runs its function with: the bodies in before and after ride only with the trigger's fields. */
+export type MainLabelsTriggerInput = {
+  id: string;
+  event: "created" | "updated" | "removed";
+  collection: "labels";
+  doc: { id: string; version: number };
+  version: number;
+  changed: string[];
+  depth: number;
+  root: string;
+  at: DateTimeString;
+  before?: Partial<MainLabels> | null;
+  after?: Partial<MainLabels> | null;
+  by?: string;
+  truncated?: boolean;
+  rescan?: string;
+};
+
 /** main/notes */
 export type MainNotes = { id: string; _meta: Meta } & { body?: string; pinned?: boolean; title: string; [key: string]: unknown; };
 /** main/notes */
@@ -198,7 +216,7 @@ export interface Realm {
     main: {
       collections: {
         docs: { doc: MainDocs; input: MainDocsInput; create: MainDocsInput; where: MainDocsWhere; order_by: MainDocsOrderBy; expand: {}; aggregate: never; trigger: never };
-        labels: { doc: MainLabels; input: MainLabelsInput; create: MainLabelsInput; where: MainLabelsWhere; order_by: MainLabelsOrderBy; expand: {}; aggregate: never; trigger: never };
+        labels: { doc: MainLabels; input: MainLabelsInput; create: MainLabelsInput; where: MainLabelsWhere; order_by: MainLabelsOrderBy; expand: {}; aggregate: never; trigger: MainLabelsTriggerInput };
         notes: { doc: MainNotes; input: MainNotesInput; create: MainNotesInput; where: MainNotesWhere; order_by: MainNotesOrderBy; expand: {}; aggregate: never; trigger: never };
         products: { doc: MainProducts; input: MainProductsInput; create: MainProductsInput; where: MainProductsWhere; order_by: MainProductsOrderBy; expand: {}; aggregate: never; trigger: never };
         projects: { doc: MainProjects; input: MainProjectsInput; create: MainProjectsInput; where: MainProjectsWhere; order_by: MainProjectsOrderBy; expand: {}; aggregate: never; trigger: never };
@@ -219,7 +237,7 @@ export interface Realm {
     };
   };
   roles: "admin" | "editor" | "support" | "viewer";
-  strategies: "password" | "sso";
+  strategies: "password" | "sso" | "passkey";
   org_roles: "editor" | "owner";
   team_roles: "delegate" | "manager";
 }
@@ -468,7 +486,7 @@ export type FunctionName = keyof Realm["db"][ThisDatabase]["functions"] & string
 export interface FunctionFlags {
   greet: { webhook: false; admin: false; orgs: false; config_write: false; email: false; push: false; secrets: never };
   nightly: { webhook: false; admin: false; orgs: false; config_write: false; email: false; push: false; secrets: never };
-  report: { webhook: false; admin: false; orgs: false; config_write: false; email: false; push: false; secrets: never };
+  report: { webhook: false; admin: true; orgs: true; config_write: false; email: false; push: false; secrets: never };
   slow: { webhook: false; admin: false; orgs: false; config_write: false; email: false; push: false; secrets: never };
 }
 

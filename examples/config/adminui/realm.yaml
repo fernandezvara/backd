@@ -6,7 +6,6 @@ auth:
     password: [password]
     sso: [sso]
     passkey: [passkey]
-    password_passkey: [password, passkey]
   signup: open
   # Passkeys are bound to the origin the local stack's nginx serves the interface on.
   sign_in:

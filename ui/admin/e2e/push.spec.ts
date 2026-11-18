@@ -19,6 +19,7 @@ test('an administrator sees a user\'s devices and removes one', async ({ page, s
   await registerDevice(label)
   await signIn('admin')
   await go(page, 'Users')
+  await page.getByLabel('Search by email').fill(users.support)
   await page.getByRole('link', { name: users.support }).click()
   await page.getByTestId('tab-sessions').click()
   const row = page.getByTestId('user-devices').getByRole('listitem').filter({ hasText: label })

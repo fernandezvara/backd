@@ -1,2 +1,8 @@
 rules:
   read: user != nil
+
+# A trigger for the admin UI's tests (the collection's Triggers tab): a new label queues an async function.
+triggers:
+  on_create:
+    events: [created]
+    function: main/report

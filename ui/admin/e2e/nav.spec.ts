@@ -96,6 +96,7 @@ test('the breadcrumb says where you are and every part with a page leads there',
 test('a user and an organization are named in the breadcrumb', async ({ page, signIn }) => {
   await signIn('admin')
   await go(page, 'Users')
+  await page.getByLabel('Search by email').fill(users.viewer)
   await page.getByRole('link', { name: users.viewer }).click()
   await expect(page.getByRole('navigation', { name: 'Breadcrumb' }).getByText(users.viewer)).toHaveAttribute('aria-current', 'page')
   await expect(page).toHaveTitle(`${users.viewer} · back(d) admin`)
