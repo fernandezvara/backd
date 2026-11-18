@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import AppBadge from '@/components/AppBadge.vue'
 import AppCard from '@/components/AppCard.vue'
-import { PhBuildings, PhCaretLeft, PhCaretRight, PhFunnel, PhPlus, PhSealCheck, PhTable } from '@phosphor-icons/vue'
+import { PhBuildings, PhCaretLeft, PhCaretRight, PhFunnel, PhPlus, PhTable } from '@phosphor-icons/vue'
 import type { AdminOrg, Doc } from 'backd-js'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -223,8 +223,6 @@ async function restore(doc: Doc) {
     toasts.push(errorText(e, t('common.unexpected')), 'error')
   }
 }
-// The schema check stays folded until asked for.
-const showCheck = ref(false)
 const filterOpen = ref(false)
 const activeFilters = computed(() => (rawOpen.value ? (raw.value.trim() ? 1 : 0) : conditions.length))
 // "1–20 of 4,032": where this page sits in the result.
@@ -245,14 +243,13 @@ const tab = ref('records')
       <p class="text-xs text-slate-500">{{ database }}<template v-if="total !== undefined"> · {{ view === 'trash' ? t('data.collection.inTrash', { n: total.toLocaleString() }) : t('data.collection.documents', { n: total.toLocaleString() }) }}</template></p>
     </div>
     <div class="ml-auto flex flex-wrap items-center gap-2">
-      <AppButton variant="secondary" :aria-expanded="showCheck" aria-controls="schema-check" data-testid="check-toggle" @click="showCheck = !showCheck"><PhSealCheck :size="15" aria-hidden="true" />{{ showCheck ? t('checks.hide') : t('checks.show') }}</AppButton>
       <AppButton v-if="canWrite && orgMode" variant="secondary" @click="openAssign"><PhBuildings :size="15" aria-hidden="true" />{{ t('data.collection.assign.open') }}</AppButton>
       <RouterLink v-if="canWrite" :to="{ name: 'data-new', params: { realm, database, collection } }" class="inline-flex h-9 items-center gap-1.5 rounded-md bg-brand-700 px-3.5 text-sm font-medium text-white hover:bg-brand-800"><PhPlus aria-hidden="true" /> {{ t('data.collection.new') }}</RouterLink>
     </div>
   </div>
 
-  <SubTabs v-model="tab" class="mt-3" :label="t('data.tabs.label')" :tabs="[{ id: 'records', label: t('data.tabs.records') }, { id: 'schema', label: t('data.tabs.schema') }, { id: 'rules', label: t('data.tabs.rules') }, { id: 'triggers', label: t('data.tabs.triggers') }, { id: 'api', label: t('data.tabs.api') }]" />
-  <SchemaCheckPanel v-if="showCheck" :realm="realm" :database="database" :collection="collection" :total="conditions.length || view === 'trash' ? undefined : total" class="mb-4" />
+  <SubTabs v-model="tab" class="mt-3" :label="t('data.tabs.label')" :tabs="[{ id: 'records', label: t('data.tabs.records') }, { id: 'schema', label: t('data.tabs.schema') }, { id: 'rules', label: t('data.tabs.rules') }, { id: 'triggers', label: t('data.tabs.triggers') }, { id: 'checks', label: t('data.tabs.checks') }, { id: 'api', label: t('data.tabs.api') }]" />
+  <SchemaCheckPanel v-if="tab === 'checks'" :realm="realm" :database="database" :collection="collection" :total="conditions.length || view === 'trash' ? undefined : total" />
 
   <template v-if="tab === 'schema'">
     <div class="grid gap-5 xl:grid-cols-5">

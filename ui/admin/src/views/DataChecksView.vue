@@ -74,7 +74,7 @@ const canStart = computed(() => checks.running.value === null)
           <th scope="col" class="px-3 py-2">{{ t('checks.collection') }}</th>
           <th scope="col" class="px-3 py-2">{{ t('checks.scanned') }}</th>
           <th scope="col" class="px-3 py-2">{{ t('checks.invalid') }}</th>
-          <th scope="col" class="px-3 py-2">{{ t('checks.finished') }}</th>
+          <th scope="col" class="px-3 py-2">{{ t('checks.lastCheck') }}</th>
           <th scope="col" class="px-3 py-2"><span class="sr-only">{{ t('checks.actions') }}</span></th>
         </tr>
       </thead>

@@ -843,6 +843,7 @@
     "show": "Mostrar la comprobación de esquema",
     "hide": "Ocultar la comprobación de esquema",
     "title": "Comprobaciones de esquema",
+    "lastCheck": "Última comprobación",
     "help": "Encuentra los documentos guardados que ya no cumplen el esquema de su colección, por ejemplo tras cambiarlo. Una comprobación lee todos los documentos y nunca modifica ninguno.",
     "panel": "Comprobación de esquema",
     "button": "Comprobar los documentos con el esquema",
@@ -1165,6 +1166,7 @@
     "schema": "Esquema",
     "rules": "Reglas",
     "triggers": "Disparadores",
+    "checks": "Comprobaciones",
     "api": "API"
     },
     "form": {

@@ -843,6 +843,7 @@
     "show": "Show the schema check",
     "hide": "Hide the schema check",
     "title": "Schema checks",
+    "lastCheck": "Last check",
     "help": "Finds the stored documents that no longer match their collection's schema, for example after the schema changed. A check reads every document and never changes one.",
     "panel": "Schema check",
     "button": "Check documents against the schema",
@@ -1165,6 +1166,7 @@
     "schema": "Schema",
     "rules": "Rules",
     "triggers": "Triggers",
+    "checks": "Checks",
     "api": "API"
     },
     "form": {
