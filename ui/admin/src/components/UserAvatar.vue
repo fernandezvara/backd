@@ -14,7 +14,7 @@ const initials = computed(() => {
 <template>
   <span
     class="grid shrink-0 place-items-center rounded-full font-semibold"
-    :class="[size === 'lg' ? 'size-14 text-xl' : 'size-7 text-xs', muted ? 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400' : size === 'lg' ? 'bg-brand-700 text-white' : 'bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100']"
+    :class="[size === 'lg' ? 'size-14 text-xl' : 'size-7 text-xs', muted ? 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300' : size === 'lg' ? 'bg-brand-700 text-white' : 'bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100']"
     aria-hidden="true"
   >{{ initials }}</span>
 </template>
