@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import AppCard from '@/components/AppCard.vue'
 import type { StorageStatus } from 'backd-js'
+import { PhArrowsClockwise, PhGlobe, PhHardDrives, PhUsers } from '@phosphor-icons/vue'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppAlert from '@/components/AppAlert.vue'
+import AppBadge from '@/components/AppBadge.vue'
 import AppButton from '@/components/AppButton.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import StorageToolsPanel from '@/components/StorageToolsPanel.vue'
@@ -50,7 +52,7 @@ const canOpenUsers = computed(() => session.canRead('users'))
 <template>
   <PageHeader :title="t('storage.title')" :description="t('nav.desc.storage')">
     <span v-if="loadedAt" class="text-xs text-slate-600 dark:text-slate-400">{{ t('storage.asOf', { date: formatDate(loadedAt) }) }}</span>
-    <AppButton variant="secondary" :busy="loading" @click="load">{{ t('storage.refresh') }}</AppButton>
+    <AppButton variant="secondary" :busy="loading" @click="load"><PhArrowsClockwise :size="15" aria-hidden="true" />{{ t('storage.refresh') }}</AppButton>
   </PageHeader>
 
   <AppAlert v-if="error" kind="error" class="mt-4">{{ error }}</AppAlert>
@@ -58,46 +60,73 @@ const canOpenUsers = computed(() => session.canRead('users'))
   <template v-else-if="status">
     <AppAlert v-if="!status.configured && !status.public_storage" class="mt-4" data-testid="storage-none">{{ t('storage.none') }}</AppAlert>
 
-    <section v-if="status.public_storage" class="mt-4 max-w-3xl" aria-labelledby="public-h" data-testid="storage-public">
-      <h2 id="public-h" class="text-lg font-semibold">{{ t('storage.publicTitle') }}</h2>
-      <p class="mt-1 text-sm text-slate-600 dark:text-slate-400" data-testid="storage-public-where">
-        <code class="font-mono">{{ status.public_storage.provider }} · {{ status.public_storage.bucket }}/{{ status.public_storage.prefix }}</code>
-        — {{ t('storage.keys') }}: <strong>{{ status.public_storage.keys.ok ? t('storage.ok') : t('storage.notUsable') }}</strong>,
-        {{ t('storage.bucket') }}: <strong>{{ status.public_storage.reachable.ok ? t('storage.reachable') : t('storage.unreachable') }}</strong>
-      </p>
-      <p class="mt-1 text-sm">{{ t('storage.publicWhere', { url: status.public_storage.url }) }}</p>
-      <AppAlert v-if="!status.public_storage.keys.ok" kind="error" class="mt-2">{{ status.public_storage.keys.error }}</AppAlert>
-      <AppAlert v-else-if="!status.public_storage.reachable.ok" kind="error" class="mt-2">{{ status.public_storage.reachable.error }}</AppAlert>
-    </section>
+    <div class="grid gap-3 lg:grid-cols-2">
+      <AppCard v-if="status.configured" data-testid="storage-where">
+        <div class="flex flex-wrap items-center gap-3">
+          <PhHardDrives :size="22" class="text-brand-700 dark:text-brand-400" aria-hidden="true" />
+          <div class="min-w-0 flex-1">
+            <div class="text-[13px] font-semibold">{{ t('storage.privateTitle') }}</div>
+            <code class="block truncate font-mono text-xs text-slate-600 dark:text-slate-400">{{ status.provider }} · {{ status.bucket }}/{{ status.prefix }}</code>
+          </div>
+          <div class="flex flex-wrap gap-1.5">
+            <AppBadge :kind="status.keys?.ok ? 'ok' : 'error'">{{ t('storage.keys') }}: {{ status.keys?.ok ? t('storage.ok') : t('storage.notUsable') }}</AppBadge>
+            <AppBadge :kind="status.reachable?.ok ? 'ok' : 'error'">{{ t('storage.bucket') }}: {{ status.reachable?.ok ? t('storage.reachable') : t('storage.unreachable') }}</AppBadge>
+          </div>
+        </div>
+        <AppAlert v-if="status.keys && !status.keys.ok" kind="error" class="mt-3">{{ status.keys.error }}</AppAlert>
+        <AppAlert v-else-if="status.reachable && !status.reachable.ok" kind="error" class="mt-3">{{ status.reachable.error }}</AppAlert>
+      </AppCard>
+
+      <AppCard v-if="status.public_storage" data-testid="storage-public">
+        <div class="flex flex-wrap items-center gap-3">
+          <PhGlobe :size="22" class="text-brand-700 dark:text-brand-400" aria-hidden="true" />
+          <div class="min-w-0 flex-1">
+            <div class="text-[13px] font-semibold">{{ t('storage.publicTitle') }}</div>
+            <code class="block truncate font-mono text-xs text-slate-600 dark:text-slate-400" data-testid="storage-public-where">{{ status.public_storage.provider }} · {{ status.public_storage.bucket }}/{{ status.public_storage.prefix }}</code>
+            <div class="mt-0.5 text-xs text-slate-500">{{ t('storage.publicWhere', { url: status.public_storage.url }) }}</div>
+          </div>
+          <div class="flex flex-wrap gap-1.5">
+            <AppBadge :kind="status.public_storage.keys.ok ? 'ok' : 'error'">{{ t('storage.keys') }}: {{ status.public_storage.keys.ok ? t('storage.ok') : t('storage.notUsable') }}</AppBadge>
+            <AppBadge :kind="status.public_storage.reachable.ok ? 'ok' : 'error'">{{ t('storage.bucket') }}: {{ status.public_storage.reachable.ok ? t('storage.reachable') : t('storage.unreachable') }}</AppBadge>
+          </div>
+        </div>
+        <AppAlert v-if="!status.public_storage.keys.ok" kind="error" class="mt-3">{{ status.public_storage.keys.error }}</AppAlert>
+        <AppAlert v-else-if="!status.public_storage.reachable.ok" kind="error" class="mt-3">{{ status.public_storage.reachable.error }}</AppAlert>
+      </AppCard>
+    </div>
 
     <template v-if="status.configured">
-      <p class="mt-2 text-sm text-slate-600 dark:text-slate-400" data-testid="storage-where">
-        <code class="font-mono">{{ status.provider }} · {{ status.bucket }}/{{ status.prefix }}</code>
-        — {{ t('storage.keys') }}: <strong>{{ status.keys?.ok ? t('storage.ok') : t('storage.notUsable') }}</strong>,
-        {{ t('storage.bucket') }}: <strong>{{ status.reachable?.ok ? t('storage.reachable') : t('storage.unreachable') }}</strong>
-      </p>
-      <AppAlert v-if="status.keys && !status.keys.ok" kind="error" class="mt-2">{{ status.keys.error }}</AppAlert>
-      <AppAlert v-else-if="status.reachable && !status.reachable.ok" kind="error" class="mt-2">{{ status.reachable.error }}</AppAlert>
-
       <AppAlert v-if="nearLimit" kind="error" class="mt-4" data-testid="storage-near">{{ t('storage.near') }}</AppAlert>
 
-      <section class="mt-6 max-w-3xl" aria-labelledby="usage-h">
-        <h2 id="usage-h" class="text-lg font-semibold">{{ t('storage.usage') }}</h2>
-        <p class="mt-1" data-testid="storage-usage">
-          <strong>{{ formatBytes(usage?.bytes ?? 0) }}</strong> {{ t('storage.inFiles', { n: usage?.files ?? 0 }) }}
-          <template v-if="realmQuota"> {{ t('storage.ofQuota', { pct: realmPct, limit: formatBytes(realmQuota) }) }}</template>
-        </p>
-        <div v-if="realmQuota" class="mt-2 h-3 w-full overflow-hidden rounded bg-slate-200 dark:bg-slate-700" role="meter" :aria-label="t('storage.realmMeter')" aria-valuemin="0" :aria-valuemax="realmQuota" :aria-valuenow="Math.min(usage?.bytes ?? 0, realmQuota)" data-testid="realm-meter">
-          <div class="h-full" :class="tone(realmPct)" :style="{ width: Math.min(realmPct, 100) + '%' }"></div>
-        </div>
-        <p v-else class="mt-1 text-sm text-slate-600 dark:text-slate-400">{{ t('storage.noRealmQuota') }}</p>
-        <p class="mt-1 text-sm text-slate-600 dark:text-slate-400" data-testid="user-quota">{{ userQuota ? t('storage.userQuota', { limit: formatBytes(userQuota) }) : t('storage.noUserQuota') }}</p>
-      </section>
+      <div class="mt-4 grid gap-3 sm:grid-cols-3">
+        <AppCard>
+          <div class="text-xs font-medium text-slate-500">{{ t('storage.usage') }}</div>
+          <div class="mt-1 text-2xl font-semibold" data-testid="storage-usage">{{ formatBytes(usage?.bytes ?? 0) }}<span v-if="realmQuota" class="ml-1 text-sm font-normal text-slate-500">{{ t('storage.ofLimit', { limit: formatBytes(realmQuota) }) }}</span></div>
+          <div v-if="realmQuota" class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800" role="meter" :aria-label="t('storage.realmMeter')" aria-valuemin="0" :aria-valuemax="realmQuota" :aria-valuenow="Math.min(usage?.bytes ?? 0, realmQuota)" data-testid="realm-meter">
+            <div class="h-full rounded-full" :class="tone(realmPct)" :style="{ width: Math.min(realmPct, 100) + '%' }"></div>
+          </div>
+          <p v-else class="mt-1 text-xs text-slate-500">{{ t('storage.noRealmQuota') }}</p>
+          <p class="mt-2 text-xs text-slate-500" data-testid="user-quota">{{ userQuota ? t('storage.userQuota', { limit: formatBytes(userQuota) }) : t('storage.noUserQuota') }}</p>
+        </AppCard>
+        <AppCard>
+          <div class="text-xs font-medium text-slate-500">{{ t('storage.files') }}</div>
+          <div class="mt-1 text-2xl font-semibold">{{ (usage?.files ?? 0).toLocaleString() }}</div>
+          <p class="mt-2 text-xs text-slate-500">{{ t('storage.referenced') }}</p>
+        </AppCard>
+        <AppCard>
+          <div class="text-xs font-medium text-slate-500">{{ t('storage.cleanup') }}</div>
+          <div class="mt-1 text-2xl font-semibold" data-testid="storage-queue">{{ status.deletions?.queued ?? 0 }}<span class="ml-1 text-sm font-normal text-slate-500">{{ t('storage.waitingDelete') }}</span></div>
+          <p class="mt-2 text-xs text-slate-500">
+            {{ t('storage.retrying', { n: status.deletions?.retrying ?? 0 }) }} · {{ t('storage.staleShort', { n: status.stale_uploads ?? 0 }) }}
+            <template v-if="status.deletions?.oldest"><br />{{ t('storage.oldest', { date: formatDate(status.deletions.oldest) }) }}</template>
+          </p>
+        </AppCard>
+      </div>
 
-      <section class="mt-6" aria-labelledby="users-h">
-        <h2 id="users-h" class="text-lg font-semibold">{{ t('storage.users') }}</h2>
-        <p v-if="!usage?.users.length" class="mt-1 text-sm text-slate-600 dark:text-slate-400">{{ t('storage.noUsers') }}</p>
-        <AppCard v-else flush class="mt-2">
+      <section class="mt-5" aria-labelledby="users-h">
+        <h2 id="users-h" class="mb-2 flex items-center gap-2 text-[13px] font-semibold"><PhUsers :size="15" class="text-slate-400" aria-hidden="true" />{{ t('storage.users') }}</h2>
+        <p v-if="!usage?.users.length" class="text-sm text-slate-600 dark:text-slate-400">{{ t('storage.noUsers') }}</p>
+        <AppCard v-else flush>
           <table class="w-full text-left text-sm" data-testid="storage-users">
             <thead>
               <tr>
@@ -108,17 +137,17 @@ const canOpenUsers = computed(() => session.canRead('users'))
               </tr>
             </thead>
             <tbody>
-              <tr v-for="u in usage.users" :key="u.user_id" class="border-b border-slate-100 last:border-0 dark:border-slate-800">
+              <tr v-for="u in usage.users" :key="u.user_id" class="border-t border-slate-100 dark:border-slate-800">
                 <th scope="row" class="px-3 py-1.5 font-mono text-xs font-normal">
-                  <RouterLink v-if="canOpenUsers" :to="{ name: 'user', params: { realm, id: u.user_id } }" class="underline">{{ u.user_id }}</RouterLink>
+                  <RouterLink v-if="canOpenUsers" :to="{ name: 'user', params: { realm, id: u.user_id } }" class="text-brand-700 hover:underline dark:text-brand-400">{{ u.user_id }}</RouterLink>
                   <template v-else>{{ u.user_id }}</template>
                 </th>
                 <td class="px-3 py-1.5">{{ u.files }}</td>
                 <td class="px-3 py-1.5">{{ formatBytes(u.bytes) }}</td>
                 <td v-if="userQuota" class="px-3 py-1.5">
                   <span :class="userPct(u.bytes) >= 100 ? 'font-semibold text-red-700 dark:text-red-400' : ''">{{ userPct(u.bytes) }}%</span>
-                  <div class="mt-1 h-1.5 w-24 overflow-hidden rounded bg-slate-200 dark:bg-slate-700" role="meter" :aria-label="t('storage.userMeter', { id: u.user_id })" aria-valuemin="0" :aria-valuemax="userQuota" :aria-valuenow="Math.min(u.bytes, userQuota)">
-                    <div class="h-full" :class="tone(userPct(u.bytes))" :style="{ width: Math.min(userPct(u.bytes), 100) + '%' }"></div>
+                  <div class="mt-1 h-1.5 w-24 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800" role="meter" :aria-label="t('storage.userMeter', { id: u.user_id })" aria-valuemin="0" :aria-valuemax="userQuota" :aria-valuenow="Math.min(u.bytes, userQuota)">
+                    <div class="h-full rounded-full" :class="tone(userPct(u.bytes))" :style="{ width: Math.min(userPct(u.bytes), 100) + '%' }"></div>
                   </div>
                 </td>
               </tr>
@@ -126,16 +155,6 @@ const canOpenUsers = computed(() => session.canRead('users'))
           </table>
         </AppCard>
         <p class="mt-2 text-xs text-slate-600 dark:text-slate-400">{{ t('storage.usersNote') }}</p>
-      </section>
-
-      <section class="mt-6 max-w-3xl" aria-labelledby="queue-h">
-        <h2 id="queue-h" class="text-lg font-semibold">{{ t('storage.cleanup') }}</h2>
-        <p class="mt-1 text-sm" data-testid="storage-queue">
-          {{ t('storage.queued', { n: status.deletions?.queued ?? 0, retrying: status.deletions?.retrying ?? 0 }) }}
-          <template v-if="status.deletions?.oldest"> {{ t('storage.oldest', { date: formatDate(status.deletions.oldest) }) }}</template>
-        </p>
-        <p class="mt-1 text-sm">{{ t('storage.stale', { n: status.stale_uploads ?? 0 }) }}</p>
-        <p class="mt-3 text-xs text-slate-600 dark:text-slate-400">{{ t('storage.reconcileNote') }}</p>
       </section>
     </template>
     <StorageToolsPanel v-if="status.configured || status.public_storage" :public-too="!!status.public_storage" />

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { StorageCheck, StorageReconcile } from 'backd-js'
+import { PhArrowsClockwise, PhBroom, PhPlugsConnected, PhWrench } from '@phosphor-icons/vue'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppAlert from '@/components/AppAlert.vue'
@@ -79,16 +80,16 @@ async function regenerate() {
 
 <template>
   <section class="mt-6" aria-labelledby="tools-h" data-testid="storage-tools">
-    <h2 id="tools-h" class="mb-2 text-sm font-semibold">{{ t('storage.tools.title') }}</h2>
+    <h2 id="tools-h" class="mb-2 flex items-center gap-2 text-[13px] font-semibold"><PhWrench :size="15" class="text-slate-400" aria-hidden="true" />{{ t('storage.tools.title') }}</h2>
     <AppCard>
       <div class="flex flex-wrap items-center gap-2">
         <select v-if="props.publicToo" v-model="which" class="h-8 rounded-md border border-slate-300 bg-white px-2 text-[13px] dark:border-slate-700 dark:bg-slate-900" :aria-label="t('storage.tools.which')">
           <option value="private">{{ t('storage.tools.private') }}</option>
           <option value="public">{{ t('storage.tools.public') }}</option>
         </select>
-        <AppButton variant="secondary" :busy="busy === 'check'" @click="runCheck">{{ t('storage.tools.check') }}</AppButton>
-        <AppButton v-if="canWrite" variant="secondary" :busy="busy === 'reconcile'" @click="runReconcile(false)">{{ t('storage.tools.reconcile') }}</AppButton>
-        <AppButton v-if="canWrite" variant="secondary" @click="((regen = true), (regenError = ''))">{{ t('storage.tools.regen') }}</AppButton>
+        <AppButton variant="secondary" :busy="busy === 'check'" @click="runCheck"><PhPlugsConnected :size="15" aria-hidden="true" />{{ t('storage.tools.check') }}</AppButton>
+        <AppButton v-if="canWrite" variant="secondary" :busy="busy === 'reconcile'" @click="runReconcile(false)"><PhBroom :size="15" aria-hidden="true" />{{ t('storage.tools.reconcile') }}</AppButton>
+        <AppButton v-if="canWrite" variant="secondary" @click="((regen = true), (regenError = ''))"><PhArrowsClockwise :size="15" aria-hidden="true" />{{ t('storage.tools.regen') }}</AppButton>
       </div>
       <p class="mt-2 text-xs text-slate-500">{{ t('storage.tools.help') }}</p>
       <AppAlert v-if="error" kind="error" class="mt-3">{{ error }}</AppAlert>
