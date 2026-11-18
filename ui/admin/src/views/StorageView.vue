@@ -110,7 +110,7 @@ const canOpenUsers = computed(() => session.canRead('users'))
         </AppCard>
         <AppCard>
           <div class="text-xs font-medium text-slate-500">{{ t('storage.files') }}</div>
-          <div class="mt-1 text-2xl font-semibold">{{ (usage?.files ?? 0).toLocaleString() }}</div>
+          <div class="mt-1 text-2xl font-semibold" data-testid="storage-files">{{ (usage?.files ?? 0).toLocaleString() }}</div>
           <p class="mt-2 text-xs text-slate-500">{{ t('storage.referenced') }}</p>
         </AppCard>
         <AppCard>
