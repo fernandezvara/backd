@@ -9,7 +9,7 @@ interface Call {
 }
 
 let calls: Call[]
-let routes: Record<string, () => Response>
+let routes: Record<string, () => Response | Promise<Response>>
 
 const json = (status: number, body?: unknown) => new Response(body === undefined ? null : JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 const access = { level: 'read', write: [], read: ['config', 'functions'], read_access: { users: false, data: false }, user: { id: 'u1', email: 'ada@example.com', roles: ['dev'] } }
@@ -142,4 +142,22 @@ test('a realm with several strategies: the choice goes with the sign-in and the 
   expect(s.strategy).toBe('users')
   await s.signOut()
   expect(s.strategy).toBe('')
+})
+
+test('a passkey autofill still waiting does not take the session of a password sign-in that finished first', async () => {
+  // The sign-in page starts the autofill once it knows the realm offers passkeys; its first call can answer after the person signed in.
+  let release: (r: Response) => void = () => {}
+  routes['POST /v1/acme/_auth/passkey/login/options'] = () => new Promise<Response>((resolve) => (release = resolve))
+  const s = useSession()
+  await s.signIn('acme', 'ada@example.com', 'dev-p4ssw0rd!', false)
+  const client = s.client
+  expect(s.signedIn).toBe(true)
+  // The autofill starts only now, after the sign-in.
+  const waiting = s.signInWithPasskey('acme', false, 'passkey', { conditional: true }).catch(() => 'ended')
+  release(json(400, { error: { code: 'bad_request', message: 'no' } }))
+  await waiting
+  // The session is the one the password made: same client, still holding its token.
+  expect(s.client).toBe(client)
+  expect(await s.client!.auth.token()).toBe('bds_tok')
+  expect(s.signedIn).toBe(true)
 })
