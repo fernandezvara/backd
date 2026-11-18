@@ -4,6 +4,7 @@
     "skip": "Saltar al contenido"
   },
   "common": {
+    "actions": "Acciones",
     "strategy": "Estrategia: {name}",
     "cancel": "Cancelar",
     "close": "Cerrar",

@@ -85,10 +85,11 @@ watch(() => route.fullPath, () => (mobileOpen.value = false))
         </button>
         <AppBreadcrumb v-if="crumbs" :crumbs="crumbs" class="min-w-0 flex-1" />
         <div v-else class="flex-1" />
-        <button type="button" class="flex h-8 items-center gap-2 rounded-md border border-slate-300 px-2 text-[13px] text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800" :aria-label="t('palette.open')" data-testid="palette-open" @click="palette = true">
+        <button type="button" class="flex h-8 items-center gap-2 rounded-md border border-slate-300 px-2 text-[13px] text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800" data-testid="palette-open" @click="palette = true">
           <PhMagnifyingGlass :size="15" aria-hidden="true" />
-          <span class="hidden w-40 text-left min-[900px]:inline">{{ t('palette.open') }}</span>
-          <kbd class="hidden rounded border border-slate-300 px-1 text-[11px] min-[900px]:inline dark:border-slate-700">⌘K</kbd>
+          <!-- The name of the button is its text, so it stays for a screen reader where the screen has no room for it. -->
+          <span class="w-40 text-left max-[899px]:sr-only">{{ t('palette.open') }}</span>
+          <kbd class="hidden rounded border border-slate-300 px-1 text-[11px] min-[900px]:inline dark:border-slate-700" aria-hidden="true">⌘K</kbd>
         </button>
         <ThemeToggle />
         <AccountMenu />

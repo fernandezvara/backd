@@ -151,7 +151,7 @@ const kind = (s: string) => (s === 'ready' ? 'ok' : s === 'failed' ? 'error' : '
     <p v-if="exportsUnavailable" class="text-sm text-slate-500">{{ t('privacy.exportsOff') }}</p>
     <AppCard v-else flush>
       <table class="w-full text-left text-[13px]" data-testid="user-exports">
-        <thead><tr><th class="px-3 py-2 font-medium">{{ t('privacy.export.when') }}</th><th class="px-3 py-2 font-medium">{{ t('privacy.export.status') }}</th><th class="px-3 py-2 font-medium">{{ t('privacy.export.by') }}</th><th class="px-3 py-2" /></tr></thead>
+        <thead><tr><th class="px-3 py-2 font-medium">{{ t('privacy.export.when') }}</th><th class="px-3 py-2 font-medium">{{ t('privacy.export.status') }}</th><th class="px-3 py-2 font-medium">{{ t('privacy.export.by') }}</th><th class="px-3 py-2"><span class="sr-only">{{ t('common.actions') }}</span></th></tr></thead>
         <tbody>
           <tr v-for="e in exports_" :key="e.id" class="border-t border-slate-100 dark:border-slate-800">
             <td class="px-3 py-2">{{ formatDate(e.created_at) }}<span v-if="e.ticket" class="ml-1 text-xs text-slate-500">· {{ e.ticket }}</span></td>

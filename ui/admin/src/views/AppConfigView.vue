@@ -122,7 +122,7 @@ async function rollback() {
       <AppCard flush class="lg:col-span-2">
         <table class="w-full text-left text-[13px]" data-testid="app-config-keys">
           <thead>
-            <tr><th class="px-3 py-2 font-medium">{{ t('appConfig.key') }}</th><th class="px-3 py-2 font-medium">{{ t('appConfig.value') }}</th><th class="px-3 py-2 font-medium">{{ t('appConfig.who') }}</th><th class="px-3 py-2" /></tr>
+            <tr><th class="px-3 py-2 font-medium">{{ t('appConfig.key') }}</th><th class="px-3 py-2 font-medium">{{ t('appConfig.value') }}</th><th class="px-3 py-2 font-medium">{{ t('appConfig.who') }}</th><th class="px-3 py-2"><span class="sr-only">{{ t('common.actions') }}</span></th></tr>
           </thead>
           <tbody>
             <tr v-for="k in leaves" :key="k.path" class="border-t border-slate-100 align-top dark:border-slate-800">

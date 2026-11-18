@@ -43,6 +43,11 @@ html[data-accent='emerald'] {
   --side: color-mix(in srgb, var(--b950) 88%, #000);
 }
 
+/* The dark theme's greys for secondary text are a step lighter, so they keep 4.5:1 on its backgrounds. */
+.dark {
+  --n500: #8f8883;
+}
+
 @theme {
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Ubuntu Mono', monospace;

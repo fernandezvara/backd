@@ -41,7 +41,7 @@ async function connect() {
       class="flex w-full items-center gap-2 rounded-md border border-white/15 px-2 py-1.5 text-left text-white hover:bg-white/10"
       :class="collapsed ? 'justify-center' : ''"
       :title="t('realm.label') + ': ' + session.realm"
-      :aria-label="t('realm.switch', { realm: session.realm })"
+      :aria-label="collapsed ? t('realm.switch', { realm: session.realm }) : undefined"
       data-testid="realm-badge"
     >
       <span class="grid size-6 shrink-0 place-items-center rounded bg-brand-400 text-xs font-bold text-brand-950" aria-hidden="true">{{ session.realm.charAt(0).toUpperCase() }}</span>

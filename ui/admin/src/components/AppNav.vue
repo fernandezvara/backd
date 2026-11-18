@@ -18,7 +18,7 @@ const session = useSession()
   <nav :aria-label="t('nav.label')" class="flex min-h-0 flex-1 flex-col">
     <div class="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
       <section v-for="g in groups" :key="g.id" :aria-label="t(g.label)">
-        <h2 v-if="g.id !== 'realm' && !collapsed" class="mt-4 px-2.5 pb-1 text-[11px] font-semibold tracking-wider text-white/40 uppercase">{{ t(g.label) }}</h2>
+        <h2 v-if="g.id !== 'realm' && !collapsed" class="mt-4 px-2.5 pb-1 text-[11px] font-semibold tracking-wider text-white/60 uppercase">{{ t(g.label) }}</h2>
         <div v-else-if="g.id !== 'realm'" class="side-rule mx-3 my-2 border-t" aria-hidden="true" />
         <ul class="space-y-px">
           <li v-for="i in g.items" :key="i.route">

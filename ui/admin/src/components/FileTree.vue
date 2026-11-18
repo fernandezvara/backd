@@ -57,7 +57,7 @@ function toggle(path: string) {
         <component :is="open.has(r.node.path) ? PhCaretDown : PhCaretRight" :size="11" class="shrink-0 text-slate-400" aria-hidden="true" />
         <PhFolder :size="14" class="shrink-0 text-slate-400" aria-hidden="true" />
         <span class="truncate font-mono">{{ r.node.name }}</span>
-        <span class="ml-auto text-[11px] text-slate-400">{{ r.node.count }}</span>
+        <span class="ml-auto text-[11px] text-slate-500">{{ r.node.count }}</span>
       </button>
       <button
         v-else
