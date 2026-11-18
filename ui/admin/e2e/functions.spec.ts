@@ -8,10 +8,12 @@ test('definitions show each function with its schedule, mode and limits', async 
   const greet = page.getByTestId('fn-main-greet')
   await expect(greet).toContainText('sync')
   await expect(greet).toContainText('Internal')
-  await expect(greet).toContainText('Not scheduled')
+  // A function with no schedule has no state to show; one with a schedule says it is active.
+  await expect(greet).not.toContainText(/Active|Paused/)
+  await expect(page.getByTestId('fn-main-nightly')).toContainText('Active')
   await expect(page.getByTestId('fn-main-report')).toContainText('async')
   await expect(page.getByTestId('fn-main-nightly')).toContainText('0 3 * * *')
-  await expect(greet).toContainText('adminui/main/_functions/greet/function.yaml')
+  await expect(greet.getByRole('link', { name: 'Code' })).toBeVisible()
 })
 
 test('a schedule can be paused and resumed, and the state is kept', async ({ page, signIn }) => {
