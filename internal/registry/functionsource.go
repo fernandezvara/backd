@@ -383,7 +383,7 @@ func stripComments(s string) string {
 			b.WriteByte('\n')
 		case c == '/' && i+1 < len(s) && s[i+1] == '*':
 			i += 2
-			for i+1 < len(s) && !(s[i] == '*' && s[i+1] == '/') {
+			for i+1 < len(s) && (s[i] != '*' || s[i+1] != '/') {
 				if s[i] == '\n' {
 					b.WriteByte('\n')
 				}
