@@ -66,6 +66,7 @@ watch(
   { immediate: true },
 )
 const keep = ref(false)
+const appVersion = __BACKD_VERSION__
 const busy = ref(false)
 const error = ref('')
 // The second step: a code, or setting an app up (then the recovery codes, shown once).
@@ -307,7 +308,7 @@ function cancel() {
           <li v-for="k in ['one', 'two', 'three']" :key="k" class="flex gap-2"><PhCheckCircle :size="16" class="mt-px shrink-0 text-brand-300" />{{ t(`signIn.brand.${k}`) }}</li>
         </ul>
       </div>
-      <div class="relative text-xs text-white/50">{{ t('signIn.brand.foot') }}</div>
+      <div class="relative text-xs text-white/50">{{ t('signIn.brand.foot', { version: appVersion }) }}</div>
     </aside>
     <main class="flex flex-col px-5 py-8 sm:px-10">
       <div class="flex items-center justify-between gap-2">

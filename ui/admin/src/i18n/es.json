@@ -93,7 +93,7 @@
     "invalid": "El nombre de un realm solo tiene letras minúsculas, dígitos, - y _."
   },
   "signIn": {
-    "brand": {"title": "Tu backend, guardado en archivos.", "body": "Esquemas, reglas y funciones viven en tu repositorio. Este panel muestra qué se ejecuta, quién ha iniciado sesión y qué necesita atención.", "one": "La configuración es de solo lectura: los cambios pasan por revisión", "two": "Llaves de acceso, apps de autenticación e inicio de sesión de organizaciones", "three": "Cada acción de administración queda en el registro de auditoría", "foot": "backd admin"},
+    "brand": {"title": "Tu backend, guardado en archivos.", "body": "Esquemas, reglas y funciones viven en tu repositorio. Este panel muestra qué se ejecuta, quién ha iniciado sesión y qué necesita atención.", "one": "La configuración es de solo lectura: los cambios pasan por revisión", "two": "Llaves de acceso, apps de autenticación e inicio de sesión de organizaciones", "three": "Cada acción de administración queda en el registro de auditoría", "foot": "backd admin {version}"},
     "strategy": "Estrategia de acceso",
     "strategyHelp": "Los roles que tienes dependen de la estrategia: un rol de administrador puede exigir una más fuerte.",
     "passkey": {

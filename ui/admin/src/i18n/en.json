@@ -93,7 +93,7 @@
     "invalid": "A realm name has lowercase letters, digits, - and _ only."
   },
   "signIn": {
-    "brand": {"title": "Your backend, kept in files.", "body": "Schemas, rules and functions live in your repository. This panel shows what runs, who is signed in and what needs attention.", "one": "Configuration is read-only here: changes go through review", "two": "Passkeys, authenticator apps and organization sign-in", "three": "Every administrator action is recorded in the audit log", "foot": "backd admin"},
+    "brand": {"title": "Your backend, kept in files.", "body": "Schemas, rules and functions live in your repository. This panel shows what runs, who is signed in and what needs attention.", "one": "Configuration is read-only here: changes go through review", "two": "Passkeys, authenticator apps and organization sign-in", "three": "Every administrator action is recorded in the audit log", "foot": "backd admin {version}"},
     "strategy": "Sign-in strategy",
     "strategyHelp": "The roles you hold depend on the strategy: an administrator role may need a stronger one.",
     "passkey": {
