@@ -678,3 +678,21 @@ test('an administrator keeps an organization\'s domains and unlinks an identity 
   await a.users.unlinkIdentity('u1', 'oidc', { org: 'o1' })
   assert.equal(m.calls[5].url.searchParams.get('org'), 'o1')
 })
+
+test('a function\'s source is read from its folder', async () => {
+  const src = { function: 'app/refund', database: 'app', name: 'refund', entry: 'refund/index.ts', source_hash: 'ab', deno: '2.9.8', bundle: null, files: [], dependencies: [], omitted: 0 }
+  const m = mockFetch([{ body: src }])
+  const a = adminOf(m)
+  assert.deepEqual(await a.functionSource('app/refund'), src)
+  assert.equal(m.calls[0].method, 'GET')
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/functions/app/refund/source')
+  await assert.rejects(a.functionSource('refund'), TypeError)
+})
+
+test('the configuration files are read from /config/files', async () => {
+  const body = { realm: 'acme', fingerprint: 'ab', omitted: 0, files: [{ path: 'acme/realm.yaml', role: 'realm', language: 'yaml', size: 3, sha256: 'x', content: 'a: 1', truncated: false, binary: false, database: '', collection: '', restricted: false }] }
+  const m = mockFetch([{ body }])
+  const a = adminOf(m)
+  assert.deepEqual(await a.configFiles(), body)
+  assert.equal(m.calls[0].url.pathname, '/v1/acme/_admin/config/files')
+})

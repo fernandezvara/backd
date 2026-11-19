@@ -2,6 +2,9 @@
 # The linked backd-js (clients/js) builds its typings when installed, so its own
 # dependencies come first.
 FROM --platform=$BUILDPLATFORM docker.io/library/node:22-alpine AS ui
+# The version shown on the sign-in page; the same VERSION the binaries are linked with.
+ARG VERSION=dev
+ENV BACKD_VERSION=$VERSION
 WORKDIR /src
 COPY clients/js clients/js
 COPY ui/admin ui/admin

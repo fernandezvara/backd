@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import { PhCheckCircle } from '@phosphor-icons/vue'
 import { AuthenticationError, NetworkError, PasskeyError, PasswordExpiredError, ValidationError } from 'backd-js'
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import AppAlert from '@/components/AppAlert.vue'
+import AccentSwitch from '@/components/AccentSwitch.vue'
 import AppButton from '@/components/AppButton.vue'
 import TextField from '@/components/TextField.vue'
 import LocaleSwitch from '@/components/LocaleSwitch.vue'
@@ -64,6 +66,7 @@ watch(
   { immediate: true },
 )
 const keep = ref(false)
+const appVersion = __BACKD_VERSION__
 const busy = ref(false)
 const error = ref('')
 // The second step: a code, or setting an app up (then the recovery codes, shown once).
@@ -143,8 +146,10 @@ async function signInPasskey(conditional = false) {
   stopConditional()
   const ask = new AbortController()
   if (conditional) waiting = ask
-  else busy.value = true
-  error.value = ''
+  else {
+    busy.value = true
+    error.value = ''
+  }
   try {
     rememberRealm(realm.value)
     const result = await session.signInWithPasskey(realm.value, keep.value, passkeyStrategy.value, conditional ? { conditional: true, signal: ask.signal } : {})
@@ -154,7 +159,9 @@ async function signInPasskey(conditional = false) {
     // none to offer) there is nothing to say; the button's own failures are shown.
     if (!conditional && !(e instanceof Error && e.name === 'AbortError')) error.value = passkeyFailure(e)
   } finally {
-    busy.value = false
+    // The autofill attempt starts late and ends on an abort: it must not clear an error or a busy flag that a
+    // password sign-in set meanwhile.
+    if (!conditional) busy.value = false
   }
 }
 
@@ -289,15 +296,31 @@ function cancel() {
 </script>
 
 <template>
-  <main class="mx-auto max-w-sm space-y-6 px-4 py-16">
-    <div class="flex items-center justify-between">
-      <span class="font-semibold">{{ t('app.name') }}</span>
-      <div class="flex gap-2">
-        <LocaleSwitch />
-        <ThemeSwitch />
+  <div class="grid min-h-screen lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+    <aside class="side relative hidden flex-col justify-between overflow-hidden p-10 text-white lg:flex" aria-hidden="true">
+      <div class="pointer-events-none absolute -top-24 -right-24 size-96 rounded-full opacity-20" style="background: radial-gradient(circle, var(--b400), transparent 70%)" />
+      <div class="pointer-events-none absolute -bottom-32 -left-16 size-96 rounded-full opacity-10" style="background: radial-gradient(circle, var(--b300), transparent 70%)" />
+      <div class="relative text-lg font-semibold">{{ t('app.name') }}</div>
+      <div class="relative max-w-sm">
+        <p class="text-3xl leading-tight font-semibold">{{ t('signIn.brand.title') }}</p>
+        <p class="mt-3 text-white/70">{{ t('signIn.brand.body') }}</p>
+        <ul class="mt-6 space-y-2 text-[13px] text-white/80">
+          <li v-for="k in ['one', 'two', 'three']" :key="k" class="flex gap-2"><PhCheckCircle :size="16" class="mt-px shrink-0 text-brand-300" />{{ t(`signIn.brand.${k}`) }}</li>
+        </ul>
       </div>
-    </div>
-    <h1 class="text-xl font-semibold">{{ t('signIn.title') }}</h1>
+      <div class="relative text-xs text-white/50">{{ t('signIn.brand.foot', { version: appVersion }) }}</div>
+    </aside>
+    <main class="flex flex-col px-5 py-8 sm:px-10">
+      <div class="flex items-center justify-between gap-2">
+        <span class="font-semibold lg:invisible">{{ t('app.name') }}</span>
+        <div class="flex gap-2">
+          <AccentSwitch compact class="mr-2" />
+          <LocaleSwitch />
+          <ThemeSwitch compact />
+        </div>
+      </div>
+      <div class="m-auto w-full max-w-sm space-y-5 py-10">
+        <h1 class="text-xl font-semibold">{{ t('signIn.title') }}</h1>
     <AppAlert v-if="changed && !expired" data-testid="password-changed">{{ t('signIn.expired.changed') }}</AppAlert>
     <AppAlert v-if="session.ended">{{ t(`signIn.ended.${session.ended}`) }}</AppAlert>
     <AppAlert v-if="error" kind="error">{{ error }}</AppAlert>
@@ -417,5 +440,7 @@ function cancel() {
         <AppButton type="button" variant="secondary" class="w-full" :busy="busy" data-testid="passkey-signin-button" @click="signInPasskey(false)">{{ t('signIn.passkey.button') }}</AppButton>
       </div>
     </form>
-  </main>
+      </div>
+    </main>
+  </div>
 </template>

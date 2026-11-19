@@ -18,7 +18,7 @@ const { t } = useI18n()
     <p v-if="!report.invalid" class="font-medium text-green-800 dark:text-green-300">{{ t('checks.report.clean') }}</p>
     <div v-else class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
       <table class="w-full text-left text-sm">
-        <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
+        <thead>
           <tr>
             <th scope="col" class="px-3 py-2">{{ t('checks.report.document') }}</th>
             <th scope="col" class="px-3 py-2">{{ t('checks.report.problems') }}</th>

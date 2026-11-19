@@ -4,6 +4,12 @@ import { PASSWORD, REALM, users } from './users'
 import { go, navLabels, setTheme } from './nav'
 
 const base = process.env.E2E_URL ?? 'http://localhost:8080'
+// The conditions are in the collection's filter panel: opened with the Filter button.
+const openFilter = async (page: import('@playwright/test').Page) => {
+  const toggle = page.getByTestId('filter-toggle')
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
+}
+
 const stamp = Date.now().toString(36)
 let n = 0
 const unique = () => `E2E ${stamp} ${++n}`
@@ -18,7 +24,7 @@ async function adminClient() {
 test('databases and collections are listed and open', async ({ page, signIn }) => {
   await signIn('admin', { keep: true })
   await go(page, 'Data')
-  await expect(page.getByTestId('open-main-products')).toContainText('keeps a trash')
+  await expect(page.getByTestId('open-main-products')).toContainText('trash')
   await expect(page.getByTestId('open-main-notes')).toBeVisible()
   await page.getByTestId('open-main-products').click()
   await expect(page.getByRole('heading', { name: 'products' })).toBeVisible()
@@ -30,6 +36,7 @@ test('the query builder offers only what the schema allows, and filters', async 
   await page.goto(`/_ui/r/${REALM}/data/main/products`)
   await expect(page.getByTestId('docs-table')).toContainText('Seed Widget')
 
+  await openFilter(page)
   await page.getByRole('button', { name: 'Add condition' }).click()
   const row = page.getByTestId('condition').first()
   await row.getByLabel('Field').selectOption('name')
@@ -43,7 +50,7 @@ test('the query builder offers only what the schema allows, and filters', async 
   await row.getByLabel('Operator').selectOption('$icontains')
   await row.getByLabel('Value').fill('widg')
   await page.getByRole('button', { name: 'Apply' }).click()
-  await expect(page.getByTestId('total')).toHaveText('1 documents')
+  await expect(page.getByTestId('total')).toHaveText(/ of 1$/)
   await expect(page.getByTestId('docs-table')).toContainText('Seed Widget')
   await expect(page.getByTestId('docs-table')).not.toContainText('Seed Gadget')
 
@@ -53,7 +60,7 @@ test('the query builder offers only what the schema allows, and filters', async 
   await row.getByLabel('Value').selectOption('toy')
   await page.getByRole('button', { name: 'Apply' }).click()
   await expect(page.getByTestId('docs-table')).toContainText('Seed Gadget')
-  await expect(page.getByTestId('total')).toHaveText('1 documents')
+  await expect(page.getByTestId('total')).toHaveText(/ of 1$/)
 
   await row.getByLabel('Field').selectOption('price')
   await row.getByLabel('Operator').selectOption('$gte')
@@ -74,12 +81,13 @@ test('the query builder offers only what the schema allows, and filters', async 
   await page.locator('#raw-where').fill('{"kind":"book","name":{"$startsWith":"Seed "}}') // the form test makes books too, so a rerun on the same data finds more
   await page.getByRole('button', { name: 'Apply' }).click()
   await expect(page.getByTestId('docs-table')).toContainText('Seed Novel')
-  await expect(page.getByTestId('total')).toHaveText('1 documents')
+  await expect(page.getByTestId('total')).toHaveText(/ of 1$/)
 })
 
 test('paging walks all the documents', async ({ page, signIn }) => {
   await signIn('admin', { keep: true })
   await page.goto(`/_ui/r/${REALM}/data/main/products`)
+  await openFilter(page)
   await page.getByRole('button', { name: 'Add condition' }).click()
   const row = page.getByTestId('condition').first()
   await row.getByLabel('Field').selectOption('name')
@@ -87,7 +95,7 @@ test('paging walks all the documents', async ({ page, signIn }) => {
   await row.getByLabel('Value').fill('Seed ')
   await page.getByLabel('Sort by').selectOption('name')
   await page.getByRole('button', { name: 'Apply' }).click()
-  await expect(page.getByTestId('total')).toHaveText('48 documents')
+  await expect(page.getByTestId('total')).toHaveText(/ of 48$/)
   const rows = page.getByTestId('docs-table').locator('tbody tr')
   await expect(rows).toHaveCount(20)
   const first = (await rows.first().textContent()) ?? ''
@@ -148,7 +156,7 @@ test('a document is created from a form, edited, and shows no owner', async ({ p
   await expect(page.getByTestId('doc-version')).toHaveText('2')
 
   // The JSON view is the same document, and can be edited.
-  await page.getByRole('button', { name: 'JSON', exact: true }).click()
+  await page.getByTestId('tab-json').click()
   const json = page.locator('#doc-json')
   await expect(json).toHaveValue(/"stock": 7/)
   await json.fill((await json.inputValue()).replace('"stock": 7', '"stock": 8'))
@@ -207,11 +215,12 @@ test('deleting goes to the trash, which can be browsed, restored and emptied', a
   await expect(page).toHaveURL(new RegExp(`/data/main/products$`))
 
   // It is gone from the list and in the trash.
-  await page.getByRole('button', { name: 'Trash' }).click()
+  await page.getByTestId('show-deleted').check()
   await expect(page.getByTestId('docs-table')).toContainText(made.id)
   await page.getByRole('button', { name: `Restore ${made.id}` }).click()
   await expect(page.getByTestId('docs-table')).not.toContainText(made.id)
-  await page.getByRole('button', { name: 'Documents', exact: true }).click()
+  await page.getByTestId('show-deleted').uncheck()
+  await openFilter(page)
   await page.getByLabel('Write the query as JSON').check()
   await page.locator('#raw-where').fill(JSON.stringify({ id: made.id }))
   await page.getByRole('button', { name: 'Apply' }).click()
@@ -222,7 +231,7 @@ test('deleting goes to the trash, which can be browsed, restored and emptied', a
   await page.getByRole('button', { name: 'Move to trash' }).click()
   await page.getByRole('dialog').getByLabel(`Type ${made.id} to confirm`).fill(made.id)
   await page.getByRole('dialog').getByRole('button', { name: 'Delete document' }).click()
-  await page.getByRole('button', { name: 'Trash' }).click()
+  await page.getByTestId('show-deleted').check()
   await page.getByRole('link', { name: made.id }).click()
   await expect(page.getByText('This document is in the trash')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Save' })).toHaveCount(0)
@@ -230,7 +239,7 @@ test('deleting goes to the trash, which can be browsed, restored and emptied', a
   await page.getByRole('dialog').getByLabel(`Type ${made.id} to confirm`).fill(made.id)
   await page.getByRole('dialog').getByRole('button', { name: 'Delete for good' }).click()
   await expect(page).toHaveURL(new RegExp(`/data/main/products$`))
-  await page.getByRole('button', { name: 'Trash' }).click()
+  await page.getByTestId('show-deleted').check()
   await expect(page.getByTestId('docs-table')).not.toContainText(made.id)
 })
 
@@ -238,7 +247,7 @@ test('a collection without a trash deletes for good', async ({ page, signIn }) =
   const name = unique()
   await signIn('admin', { keep: true })
   await page.goto(`/_ui/r/${REALM}/data/main/labels`)
-  await expect(page.getByRole('button', { name: 'Trash' })).toHaveCount(0)
+  await expect(page.getByTestId('show-deleted')).toHaveCount(0)
   await page.getByRole('link', { name: 'New document' }).click()
   await page.locator('[data-path="name"] input, [data-path="name"] textarea').fill(name)
   await page.getByRole('button', { name: 'Create', exact: true }).click()
@@ -280,6 +289,7 @@ test('the data views have no accessibility violations', async ({ page, signIn })
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
     await page.getByTestId('open-main-products').click()
     await expect(page.getByTestId('docs-table')).toContainText('Seed Widget')
+    await openFilter(page)
     await page.getByRole('button', { name: 'Add condition' }).click()
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
     await page.goto(`/_ui/r/${REALM}/data/main/products/${made.id}`)

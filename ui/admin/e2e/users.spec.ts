@@ -6,6 +6,20 @@ const stamp = Date.now()
 let n = 0
 const fresh = () => `e2e-${stamp}-${++n}@adminui.example`
 
+type Page = import('@playwright/test').Page
+
+// The user page: the actions are in its menu, and what is not the overview is in a tab.
+const menu = async (page: Page, testid: string) => {
+  await page.getByTestId('action-menu').click()
+  await page.getByTestId(testid).click()
+}
+// The list shows the newest users first and a stack that ran before has many: find one by searching.
+const openUser = async (page: Page, email: string) => {
+  await page.getByLabel('Search by email').fill(email)
+  await page.getByRole('link', { name: email }).click()
+}
+const tab = (page: Page, id: 'overview' | 'security' | 'sessions' | 'privacy') => page.getByTestId(`tab-${id}`).click()
+
 async function createUser(page: import('@playwright/test').Page, email: string, password = PASSWORD) {
   await page.getByRole('button', { name: 'Create user' }).click()
   const dialog = page.getByRole('dialog')
@@ -31,9 +45,9 @@ test('a full administrator creates, finds and manages a user', async ({ page, si
   await page.getByRole('link', { name: email }).click()
 
   // Disable and enable.
-  await page.getByRole('button', { name: 'Disable', exact: true }).click()
+  await menu(page, 'menu-toggle')
   await expect(page.getByTestId('user-status')).toHaveText('Disabled')
-  await page.getByRole('button', { name: 'Enable', exact: true }).click()
+  await menu(page, 'menu-toggle')
   await expect(page.getByTestId('user-status')).toHaveText('Active')
 
   // Roles: the declared ones are offered; one that realm.yaml doesn't seed
@@ -46,12 +60,14 @@ test('a full administrator creates, finds and manages a user', async ({ page, si
   await expect(page.getByTestId('user-roles')).not.toContainText('editor')
 
   // Password and email.
-  await page.getByRole('button', { name: 'Set password' }).click()
+  await menu(page, 'menu-password')
   await page.getByRole('dialog').getByLabel('New password').fill('another-p4ssw0rd!')
   await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click()
   await expect(page.getByRole('status').filter({ hasText: 'Password changed' })).toBeVisible()
   // The realm sends no email, so changing an address (which tells both) isn't offered.
-  await expect(page.getByRole('button', { name: 'Change email' })).toHaveCount(0)
+  await page.getByTestId('action-menu').click()
+  await expect(page.getByRole('menuitem', { name: 'Set password' })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: 'Change email' })).toHaveCount(0)
 })
 
 test('the ways to sign in are listed, and the last one stays', async ({ page, signIn }) => {
@@ -59,8 +75,9 @@ test('the ways to sign in are listed, and the last one stays', async ({ page, si
   await signIn('admin')
   await go(page, 'Users')
   await createUser(page, email)
+  await tab(page, 'security')
   const table = page.getByTestId('user-identities')
-  await expect(table.getByRole('row')).toHaveCount(2) // header + the password
+  await expect(table.getByRole('listitem')).toHaveCount(1) // the password
   await expect(table).toContainText('password')
   await expect(table).toContainText(email)
   // Removing it asks for the method's name, and the server refuses to remove the only one.
@@ -91,6 +108,7 @@ test('sessions are listed and revoked', async ({ page, signIn, request }) => {
   await go(page, 'Users')
   await page.getByLabel('Search by email').fill(email)
   await page.getByRole('link', { name: email }).click()
+  await tab(page, 'sessions')
   await expect(page.getByTestId('user-sessions').getByRole('row')).toHaveCount(2)
   await page.getByTestId('user-sessions').getByRole('button', { name: 'Revoke' }).click()
   await expect(page.getByText('No active sessions.')).toBeVisible()
@@ -102,7 +120,7 @@ test('erasing shows what the user owns and asks for the email', async ({ page, s
   await signIn('admin')
   await go(page, 'Users')
   await createUser(page, email)
-  await page.getByRole('button', { name: 'Delete user' }).click()
+  await menu(page, 'menu-erase')
   const dialog = page.getByRole('dialog')
   await expect(dialog.getByTestId('owned-report')).toBeVisible()
 
@@ -155,7 +173,7 @@ test('a custom level reaches only its areas', async ({ page, signIn }) => {
   expect(await navLabels(page)).toContain('Invitations')
   // Roles can still be added, by name: the configuration isn't readable at this level.
   await go(page, 'Users')
-  await page.getByRole('link', { name: users.viewer }).click()
+  await openUser(page, users.viewer)
   await expect(page.getByLabel('Role', { exact: true })).toBeVisible()
   await expect(page.getByTestId('user-roles')).not.toContainText('only in the database')
 })
@@ -168,10 +186,10 @@ test('the users and invitations views have no accessibility violations', async (
     await go(page, 'Users')
     await expect(page.getByTestId('users-table')).toContainText(users.admin)
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
-    await page.getByRole('link', { name: users.viewer }).click()
+    await openUser(page, users.viewer)
     await expect(page.getByTestId('user-roles')).toBeVisible()
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
-    await page.getByRole('button', { name: 'Delete user' }).click()
+    await menu(page, 'menu-erase')
     await expect(page.getByTestId('owned-report')).toBeVisible()
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
     await page.keyboard.press('Escape')
@@ -186,11 +204,13 @@ test('the second factor of a user is shown, and not offered to reset when there 
   await signIn('admin')
   await go(page, 'Users')
   await createUser(page, email)
+  await tab(page, 'security')
   await expect(page.getByTestId('user-mfa-state')).toHaveText('Off.')
   await expect(page.getByRole('button', { name: 'Reset second factor' })).toHaveCount(0)
   // The administrator's own page says why nothing can be reset there.
   await page.getByRole('link', { name: 'All users' }).click()
   await page.getByRole('link', { name: users.admin }).click()
+  await tab(page, 'security')
   await expect(page.getByTestId('user-mfa-state')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Reset second factor' })).toHaveCount(0)
 })

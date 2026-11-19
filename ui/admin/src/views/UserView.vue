@@ -1,17 +1,22 @@
 <script setup lang="ts">
 import AppCard from '@/components/AppCard.vue'
 import type { AdminUser, Identity, OwnedReport, Passkey, UserSession } from 'backd-js'
+import { PhDeviceMobile, PhDeviceMobileCamera, PhFingerprint, PhKey, PhX } from '@phosphor-icons/vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import AppAlert from '@/components/AppAlert.vue'
+import ActionMenu, { type MenuItem } from '@/components/ActionMenu.vue'
+import AppBadge from '@/components/AppBadge.vue'
 import AppButton from '@/components/AppButton.vue'
+import UserAvatar from '@/components/UserAvatar.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FormDialog from '@/components/FormDialog.vue'
-import PageHeader from '@/components/PageHeader.vue'
 import ProofField from '@/components/ProofField.vue'
 import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
+import PrivacyPanel from '@/components/PrivacyPanel.vue'
+import SubTabs from '@/components/SubTabs.vue'
 import { errorText, formatDate } from '@/lib/format'
 import { useProof } from '@/lib/proof'
 import { useRealmConfig } from '@/stores/config'
@@ -321,6 +326,44 @@ async function erase() {
   }
 }
 
+const roleKind = (r: string) => (r === 'admin' ? 'violet' : r === 'staff' ? 'blue' : 'neutral')
+const methodsText = computed(() => [...new Set(identities.value.map((i) => i.provider))].join(', ') || '—')
+
+// Every session of the user, ended one by one (the server has no single call for it).
+async function revokeAll() {
+  try {
+    await Promise.all(sessions.value.map((s) => admin.users.revokeSession(props.id, s.id)))
+    toasts.push(t('user.sessions.revokedAll'))
+  } catch (e) {
+    toasts.push(errorText(e, t('common.unexpected')), 'error')
+  }
+  await loadSessions()
+}
+
+const menu = computed<MenuItem[]>(() => {
+  const u = user.value
+  if (!u) return []
+  return [
+    { id: 'toggle', label: u.disabled ? t('user.enable') : t('user.disable'), testid: 'menu-toggle' },
+    { id: 'verify', label: t('user.verify'), hidden: u.email_verified },
+    { id: 'password', label: t('user.password.open'), testid: 'menu-password' },
+    { id: 'expire', label: t('user.expire.open'), testid: 'expire-password' },
+    { id: 'email', label: t('user.email.open'), hidden: realmConfig.sendsEmail === false },
+    { id: 'signout', label: t('user.signOutAll'), hidden: !sessions.value.length },
+    { id: 'erase', label: t('user.erase.open'), danger: true, testid: 'menu-erase' },
+  ]
+})
+function onMenu(id: string) {
+  if (id === 'toggle') void toggleDisabled()
+  else if (id === 'verify') void markVerified()
+  else if (id === 'password') password.show()
+  else if (id === 'expire') expireReason.show()
+  else if (id === 'email') email.show()
+  else if (id === 'signout') void revokeAll()
+  else if (id === 'erase') erasing.value = true
+}
+
+const tab = ref('overview')
 const statusText = computed(() => {
   const base = erased.value ? t('users.erased') : user.value?.disabled ? t('users.disabled') : t('users.active')
   return user.value?.password_expired && !erased.value ? `${base} · ${t('users.passwordExpired')}` : base
@@ -340,199 +383,188 @@ onMounted(async () => {
   <AppAlert v-if="loadError" kind="error" class="mt-4">{{ loadError }}</AppAlert>
 
   <template v-if="user">
-    <PageHeader :title="user.email" testid="user-email" />
-
-    <dl class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-        <dt class="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-400">{{ t('user.status') }}</dt>
-        <dd class="mt-1" data-testid="user-status">{{ statusText }}</dd>
+    <div class="mb-5 mt-3 flex flex-wrap items-center gap-4">
+      <UserAvatar :name="user.email" size="lg" :muted="erased" />
+      <div class="min-w-0">
+        <h1 class="break-all text-xl font-semibold" data-testid="user-email">{{ user.email }}</h1>
+        <p class="text-sm text-slate-600 dark:text-slate-400"><span class="font-mono">{{ user.id }}</span> · {{ t('user.joined', { date: formatDate(user.created_at) }) }}</p>
+        <div class="mt-1.5 flex flex-wrap gap-1.5">
+          <AppBadge :kind="erased ? 'neutral' : user.disabled ? 'error' : 'ok'"><span data-testid="user-status">{{ statusText }}</span></AppBadge>
+          <AppBadge v-if="!erased && !user.email_verified" kind="warn">{{ t('users.unverified') }}</AppBadge>
+          <AppBadge v-for="r in user.roles" :key="r" :kind="roleKind(r)">{{ r }}</AppBadge>
+          <AppBadge v-if="mfa?.enabled || mfa?.passkeys">{{ t('user.mfa.badge') }}</AppBadge>
+        </div>
       </div>
-      <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-        <dt class="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-400">{{ t('user.emailVerified') }}</dt>
-        <dd class="mt-1">{{ user.email_verified ? t('users.verified') : t('users.unverified') }}</dd>
+      <div v-if="canWrite && !erased" class="ml-auto flex items-center gap-2" data-testid="user-actions">
+        <AppButton v-if="realmConfig.sendsEmail !== false && !user.disabled" variant="secondary" data-testid="reset-link" @click="showLink">{{ t('user.resetLink.open') }}</AppButton>
+        <ActionMenu :label="t('user.moreActions')" :items="menu" @select="onMenu" />
       </div>
-      <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-        <dt class="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-400">{{ t('user.created') }}</dt>
-        <dd class="mt-1">{{ formatDate(user.created_at) }}</dd>
-      </div>
-      <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-        <dt class="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-400">{{ t('user.id') }}</dt>
-        <dd class="mt-1 font-mono text-sm break-all">{{ user.id }}</dd>
-      </div>
-    </dl>
-
-    <div v-if="canWrite && !erased" class="mt-6 flex flex-wrap gap-2" data-testid="user-actions">
-      <AppButton variant="secondary" @click="toggleDisabled">{{ user.disabled ? t('user.enable') : t('user.disable') }}</AppButton>
-      <AppButton v-if="!user.email_verified" variant="secondary" @click="markVerified">{{ t('user.verify') }}</AppButton>
-      <AppButton variant="secondary" @click="password.show">{{ t('user.password.open') }}</AppButton>
-      <AppButton variant="secondary" data-testid="expire-password" @click="expireReason.show">{{ t('user.expire.open') }}</AppButton>
-      <AppButton v-if="realmConfig.sendsEmail !== false && !user.disabled" variant="secondary" data-testid="reset-link" @click="showLink">{{ t('user.resetLink.open') }}</AppButton>
-      <AppButton v-if="realmConfig.sendsEmail !== false" variant="secondary" @click="email.show">{{ t('user.email.open') }}</AppButton>
-      <AppButton variant="danger" @click="erasing = true">{{ t('user.erase.open') }}</AppButton>
     </div>
 
+    <SubTabs v-if="!erased" v-model="tab" :label="t('userTabs.label')" :tabs="[{ id: 'overview', label: t('userTabs.overview') }, { id: 'security', label: t('userTabs.security') }, { id: 'sessions', label: `${t('userTabs.sessions')}${sessions.length ? ` (${sessions.length})` : ''}` }, { id: 'privacy', label: t('userTabs.privacy') }]" />
     <template v-if="!erased">
-      <section class="mt-8" aria-labelledby="roles-h">
-        <h2 id="roles-h" class="text-lg font-semibold">{{ t('user.roles.title') }}</h2>
-        <p v-if="!user.roles.length" class="mt-2 text-sm text-slate-600 dark:text-slate-400">{{ t('user.roles.none') }}</p>
-        <ul class="mt-2 space-y-2" data-testid="user-roles">
-          <li v-for="role in user.roles" :key="role" class="flex flex-wrap items-center gap-3 text-sm">
-            <span class="rounded bg-slate-200 px-2 py-0.5 font-medium dark:bg-slate-700">{{ role }}</span>
-            <span v-if="dbOnly(role)" class="text-amber-800 dark:text-amber-300" :title="t('user.roles.dbOnlyHelp')">⚠ {{ t('user.roles.dbOnly') }}</span>
-            <button v-if="canWrite" type="button" class="underline" :aria-label="t('user.roles.remove', { role })" @click="removeRole(role)">{{ t('common.delete') }}</button>
-          </li>
-        </ul>
-        <form v-if="canWrite" class="mt-3 flex max-w-md items-end gap-2" @submit.prevent="addRole">
+      <div v-show="tab === 'overview'" class="grid gap-5 lg:grid-cols-3">
+        <section class="lg:col-span-2" aria-labelledby="roles-h">
+          <AppCard>
+            <h2 id="roles-h" class="mb-3 text-sm font-semibold">{{ t('user.roles.title') }}</h2>
+            <p v-if="!user.roles.length" class="text-sm text-slate-600 dark:text-slate-400">{{ t('user.roles.none') }}</p>
+            <ul class="flex flex-wrap items-center gap-2" data-testid="user-roles">
+              <li v-for="role in user.roles" :key="role" class="flex items-center gap-1.5">
+                <AppBadge :kind="roleKind(role)">
+                  {{ role }}
+                  <button v-if="canWrite" type="button" class="ml-1 hover:text-red-600" :aria-label="t('user.roles.remove', { role })" @click="removeRole(role)"><PhX :size="10" weight="bold" aria-hidden="true" /></button>
+                </AppBadge>
+                <span v-if="dbOnly(role)" class="text-xs text-amber-800 dark:text-amber-300" :title="t('user.roles.dbOnlyHelp')">⚠ {{ t('user.roles.dbOnly') }}</span>
+              </li>
+            </ul>
+            <form v-if="canWrite" class="mt-4 flex max-w-md items-end gap-2" @submit.prevent="addRole">
+              <div class="flex-1">
+                <div v-if="declared.length" class="space-y-1">
+                  <label for="role-pick" class="block text-sm font-medium">{{ t('user.roles.pick') }}</label>
+                  <select id="role-pick" v-model="roleToAdd" class="block h-8 w-full rounded-md border border-slate-300 bg-white px-3 text-[13px] dark:border-slate-600 dark:bg-slate-900">
+                    <option value="" disabled>—</option>
+                    <option v-for="r in addable" :key="r" :value="r">{{ r }}</option>
+                  </select>
+                </div>
+                <TextField v-else v-model="roleToAdd" :label="t('user.roles.pick')" :help="t('user.roles.unlisted')" autocomplete="off" />
+              </div>
+              <AppButton type="submit" variant="secondary">{{ t('user.roles.add') }}</AppButton>
+            </form>
+          </AppCard>
+        </section>
+        <section aria-labelledby="facts-h">
+          <AppCard flush>
+            <h2 id="facts-h" class="border-b border-slate-200 px-4 py-2.5 text-sm font-semibold dark:border-slate-800">{{ t('user.facts') }}</h2>
+            <dl class="divide-y divide-slate-100 text-[13px] dark:divide-slate-800">
+              <div class="flex justify-between gap-3 px-4 py-2"><dt class="text-slate-600 dark:text-slate-400">{{ t('user.emailVerified') }}</dt><dd class="flex items-center gap-2">{{ user.email_verified ? t('users.verified') : t('users.unverified') }}<button v-if="canWrite && !user.email_verified" type="button" class="underline" @click="markVerified">{{ t('user.verify') }}</button></dd></div>
+              <div class="flex justify-between gap-3 px-4 py-2"><dt class="text-slate-600 dark:text-slate-400">{{ t('user.locale') }}</dt><dd>{{ user.locale || '—' }}</dd></div>
+              <div class="flex justify-between gap-3 px-4 py-2"><dt class="text-slate-600 dark:text-slate-400">{{ t('user.created') }}</dt><dd>{{ formatDate(user.created_at) }}</dd></div>
+              <div class="flex justify-between gap-3 px-4 py-2"><dt class="text-slate-600 dark:text-slate-400">{{ t('user.updated') }}</dt><dd>{{ formatDate(user.updated_at) }}</dd></div>
+              <div class="flex justify-between gap-3 px-4 py-2"><dt class="text-slate-600 dark:text-slate-400">{{ t('user.identities.title') }}</dt><dd>{{ methodsText }}</dd></div>
+            </dl>
+          </AppCard>
+        </section>
+      </div>
+
+      <PrivacyPanel v-if="tab === 'privacy'" :realm="realm" :id="id" />
+      <section v-if="tab === 'privacy' && canWrite" class="mt-5" aria-labelledby="erase-h">
+        <div class="card-soft flex flex-wrap items-center gap-3 rounded-lg border border-red-200 bg-white p-4 dark:border-red-900 dark:bg-slate-900">
           <div class="flex-1">
-            <div v-if="declared.length" class="space-y-1">
-              <label for="role-pick" class="block text-sm font-medium">{{ t('user.roles.pick') }}</label>
-              <select id="role-pick" v-model="roleToAdd" class="block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-900">
-                <option value="" disabled>—</option>
-                <option v-for="r in addable" :key="r" :value="r">{{ r }}</option>
-              </select>
-            </div>
-            <TextField v-else v-model="roleToAdd" :label="t('user.roles.pick')" :help="t('user.roles.unlisted')" autocomplete="off" />
+            <h2 id="erase-h" class="text-sm font-semibold text-red-700 dark:text-red-400">{{ t('user.erase.open') }}</h2>
+            <p class="text-[13px] text-slate-600 dark:text-slate-400">{{ t('user.erase.cardBody') }}</p>
           </div>
-          <AppButton type="submit" variant="secondary">{{ t('user.roles.add') }}</AppButton>
-        </form>
-      </section>
-
-      <section class="mt-8" aria-labelledby="networks-h">
-        <h2 id="networks-h" class="text-lg font-semibold">{{ t('user.networks.title') }}</h2>
-        <dl class="mt-2 grid max-w-xl gap-1 text-sm sm:grid-cols-[10rem_1fr]">
-          <dt class="text-slate-600 dark:text-slate-400">{{ t('user.adminNetworks') }}</dt>
-          <dd>{{ user.admin_networks.length ? user.admin_networks.join(', ') : t('user.anywhere') }}</dd>
-          <dt class="text-slate-600 dark:text-slate-400">{{ t('user.loginNetworks') }}</dt>
-          <dd>{{ user.login_networks.length ? user.login_networks.join(', ') : t('user.anywhere') }}</dd>
-        </dl>
-      </section>
-
-      <section class="mt-8" aria-labelledby="identities-h">
-        <h2 id="identities-h" class="text-lg font-semibold">{{ t('user.identities.title') }}</h2>
-        <AppAlert v-if="identitiesError" kind="error" class="mt-2">{{ identitiesError }}</AppAlert>
-        <AppCard v-else flush class="mt-2">
-          <table class="w-full text-left text-sm" data-testid="user-identities">
-            <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
-              <tr>
-                <th scope="col" class="px-3 py-2">{{ t('user.identities.provider') }}</th>
-                <th scope="col" class="px-3 py-2">{{ t('user.identities.email') }}</th>
-                <th scope="col" class="px-3 py-2">{{ t('user.identities.linked') }}</th>
-                <th scope="col" class="px-3 py-2">{{ t('user.identities.lastUsed') }}</th>
-                <th v-if="canWrite" scope="col" class="px-3 py-2"><span class="sr-only">{{ t('user.identities.unlink') }}</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="i in identities" :key="`${i.org ?? ''}/${i.provider}`" :data-testid="`identity-${i.provider}`" class="border-b border-slate-100 last:border-0 dark:border-slate-800">
-                <td class="px-3 py-2 font-mono text-xs">
-                  {{ i.provider }}
-                  <div v-if="i.org" class="text-slate-600 dark:text-slate-400" data-testid="identity-org">{{ t('user.identities.viaOrg', { org: i.org }) }}</div>
-                  <div v-if="i.dormant" class="text-amber-800 dark:text-amber-300" data-testid="identity-dormant">{{ t('user.identities.dormant') }}</div>
-                </td>
-                <td class="px-3 py-2">{{ i.email }} <span class="text-xs text-slate-600 dark:text-slate-400">({{ i.email_verified ? t('user.identities.verified') : t('user.identities.unverified') }})</span></td>
-                <td class="px-3 py-2">{{ formatDate(i.created_at) }}</td>
-                <td class="px-3 py-2">{{ i.last_used_at ? formatDate(i.last_used_at) : t('user.identities.never') }}</td>
-                <td v-if="canWrite" class="px-3 py-2 text-right">
-                  <button type="button" class="underline" @click="askUnlink(i.provider, i.org)">{{ t('user.identities.unlink') }}</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </AppCard>
-      </section>
-
-      <section class="mt-8" aria-labelledby="mfa-h">
-        <h2 id="mfa-h" class="text-lg font-semibold">{{ t('user.mfa.title') }}</h2>
-        <AppAlert v-if="mfaError" kind="error" class="mt-2">{{ mfaError }}</AppAlert>
-        <div v-else-if="mfa" class="mt-2 flex flex-wrap items-center gap-4 text-sm" data-testid="user-mfa">
-          <p data-testid="user-mfa-state">{{ mfa.enabled ? t('user.mfa.on', { left: mfa.recovery_codes_left }) : t('user.mfa.off') }}</p>
-          <p v-if="mfa.required" class="text-slate-600 dark:text-slate-400">{{ t('user.mfa.required') }}</p>
-          <AppButton v-if="canWrite && (mfa.enabled || mfa.passkeys) && !isSelf" variant="danger" @click="resetting = true">{{ t('user.mfa.reset') }}</AppButton>
-          <p v-else-if="(mfa.enabled || mfa.passkeys) && isSelf" class="text-slate-600 dark:text-slate-400">{{ t('user.mfa.self') }}</p>
+          <AppButton variant="danger" @click="erasing = true">{{ t('user.erase.open') }}</AppButton>
         </div>
       </section>
 
-      <section class="mt-8" aria-labelledby="passkeys-h">
-        <h2 id="passkeys-h" class="text-lg font-semibold">{{ t('user.passkeys.title') }}</h2>
-        <AppAlert v-if="passkeysError" kind="error" class="mt-2">{{ passkeysError }}</AppAlert>
-        <p v-else-if="!passkeys.length" class="mt-2 text-sm text-slate-600 dark:text-slate-400" data-testid="user-passkeys-none">{{ t('user.passkeys.none') }}</p>
-        <AppCard v-else flush class="mt-2">
-          <table class="w-full text-left text-sm" data-testid="user-passkeys">
-            <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
-              <tr>
-                <th scope="col" class="px-3 py-2">{{ t('user.passkeys.name') }}</th>
-                <th scope="col" class="px-3 py-2">{{ t('user.passkeys.added') }}</th>
-                <th scope="col" class="px-3 py-2">{{ t('user.passkeys.lastUsed') }}</th>
-                <th v-if="canWrite" scope="col" class="px-3 py-2"><span class="sr-only">{{ t('user.passkeys.remove') }}</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="p in passkeys" :key="p.id" class="border-b border-slate-100 last:border-0 dark:border-slate-800">
-                <td class="px-3 py-2 font-medium">{{ p.name }}</td>
-                <td class="px-3 py-2">{{ formatDate(p.created_at) }}</td>
-                <td class="px-3 py-2">{{ p.last_used_at ? formatDate(p.last_used_at) : t('common.never') }}</td>
-                <td v-if="canWrite" class="px-3 py-2 text-right">
-                  <button type="button" class="underline" :aria-label="`${t('user.passkeys.remove')} ${p.name}`" @click="askRemovePasskey(p)">{{ t('user.passkeys.remove') }}</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </AppCard>
-      </section>
+      <div v-show="tab === 'security'" class="grid gap-5 lg:grid-cols-2">
+        <section aria-labelledby="identities-h">
+          <AppCard flush>
+            <h2 id="identities-h" class="border-b border-slate-200 px-4 py-2.5 text-sm font-semibold dark:border-slate-800">{{ t('user.identities.title') }}</h2>
+            <AppAlert v-if="identitiesError" kind="error" class="m-3">{{ identitiesError }}</AppAlert>
+            <ul v-else class="divide-y divide-slate-100 dark:divide-slate-800" data-testid="user-identities">
+              <li v-for="i in identities" :key="`${i.org ?? ''}/${i.provider}`" :data-testid="`identity-${i.provider}`" class="flex items-center gap-3 p-4 text-[13px]">
+                <PhKey :size="20" class="text-slate-400" aria-hidden="true" />
+                <div class="min-w-0 flex-1">
+                  <b class="font-mono text-xs">{{ i.provider }}</b>
+                  <div class="text-xs text-slate-600 dark:text-slate-400">{{ i.email }} ({{ i.email_verified ? t('user.identities.verified') : t('user.identities.unverified') }}) · {{ t('user.identities.linked') }} {{ formatDate(i.created_at) }} · {{ t('user.identities.lastUsed') }} {{ i.last_used_at ? formatDate(i.last_used_at) : t('user.identities.never') }}</div>
+                  <div v-if="i.org" class="text-xs text-slate-600 dark:text-slate-400" data-testid="identity-org">{{ t('user.identities.viaOrg', { org: i.org }) }}</div>
+                  <div v-if="i.dormant" class="text-xs text-amber-800 dark:text-amber-300" data-testid="identity-dormant">{{ t('user.identities.dormant') }}</div>
+                </div>
+                <AppButton v-if="canWrite" variant="danger" @click="askUnlink(i.provider, i.org)">{{ t('user.identities.unlink') }}</AppButton>
+              </li>
+              <li v-if="!identities.length" class="p-4 text-[13px] text-slate-600 dark:text-slate-400">{{ t('user.identities.none') }}</li>
+            </ul>
+            <p class="border-t border-slate-200 p-3 text-xs text-slate-600 dark:border-slate-800 dark:text-slate-400">{{ t('user.identities.lastWayHint') }}</p>
+          </AppCard>
+        </section>
 
-      <section class="mt-8" aria-labelledby="sessions-h">
-        <h2 id="sessions-h" class="text-lg font-semibold">{{ t('user.sessions.title') }}</h2>
-        <AppAlert v-if="sessionsError" kind="error" class="mt-2">{{ sessionsError }}</AppAlert>
-        <p v-else-if="!sessions.length" class="mt-2 text-sm text-slate-600 dark:text-slate-400">{{ t('user.sessions.none') }}</p>
-        <AppCard v-else flush class="mt-2">
-          <table class="w-full text-left text-sm" data-testid="user-sessions">
-            <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
-              <tr>
-                <th scope="col" class="px-3 py-2">{{ t('user.sessions.created') }}</th>
-                <th scope="col" class="px-3 py-2">{{ t('user.sessions.lastUsed') }}</th>
-                <th scope="col" class="px-3 py-2">{{ t('user.sessions.expires') }}</th>
-                <th v-if="canWrite" scope="col" class="px-3 py-2"><span class="sr-only">{{ t('user.sessions.revoke') }}</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="s in sessions" :key="s.id" class="border-b border-slate-100 last:border-0 dark:border-slate-800">
-                <td class="px-3 py-2">{{ formatDate(s.created_at) }}</td>
-                <td class="px-3 py-2">{{ formatDate(s.last_used_at) }}</td>
-                <td class="px-3 py-2">{{ formatDate(s.expires_at) }}</td>
-                <td v-if="canWrite" class="px-3 py-2 text-right">
-                  <button type="button" class="underline" @click="revokeSession(s.id)">{{ t('user.sessions.revoke') }}</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </AppCard>
-      </section>
-      <section v-if="pushConfigured" class="mt-8" aria-labelledby="devices-h">
-        <h2 id="devices-h" class="text-lg font-semibold">{{ t('user.devices.title') }}</h2>
-        <AppAlert v-if="devicesError" kind="error" class="mt-2">{{ devicesError }}</AppAlert>
-        <p v-else-if="!devices.length" class="mt-2 text-sm text-slate-600 dark:text-slate-400" data-testid="user-devices-none">{{ t('user.devices.none') }}</p>
-        <AppCard v-else flush class="mt-2">
-          <table class="w-full text-left text-sm" data-testid="user-devices">
-            <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
-              <tr>
-                <th scope="col" class="px-3 py-2">{{ t('user.devices.platform') }}</th>
-                <th scope="col" class="px-3 py-2">{{ t('user.devices.name') }}</th>
-                <th scope="col" class="px-3 py-2">{{ t('user.devices.lastSeen') }}</th>
-                <th v-if="canWrite" scope="col" class="px-3 py-2"><span class="sr-only">{{ t('user.devices.remove') }}</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="d in devices" :key="d.id" class="border-b border-slate-100 last:border-0 dark:border-slate-800">
-                <td class="px-3 py-2 font-mono text-xs">{{ d.platform }}</td>
-                <td class="px-3 py-2">{{ d.name ?? '—' }}</td>
-                <td class="px-3 py-2">{{ formatDate(d.last_seen) }}</td>
-                <td v-if="canWrite" class="px-3 py-2 text-right">
-                  <button type="button" class="underline" @click="removeDevice(d.id)">{{ t('user.devices.remove') }}</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </AppCard>
-      </section>
+        <section aria-labelledby="passkeys-h">
+          <AppCard flush>
+            <h2 id="passkeys-h" class="border-b border-slate-200 px-4 py-2.5 text-sm font-semibold dark:border-slate-800">{{ t('user.passkeys.title') }}</h2>
+            <AppAlert v-if="passkeysError" kind="error" class="m-3">{{ passkeysError }}</AppAlert>
+            <p v-else-if="!passkeys.length" class="p-4 text-[13px] text-slate-600 dark:text-slate-400" data-testid="user-passkeys-none">{{ t('user.passkeys.none') }}</p>
+            <ul v-else class="divide-y divide-slate-100 dark:divide-slate-800" data-testid="user-passkeys">
+              <li v-for="p in passkeys" :key="p.id" class="flex items-center gap-3 p-4 text-[13px]">
+                <PhFingerprint :size="20" class="text-slate-400" aria-hidden="true" />
+                <div class="flex-1"><b>{{ p.name }}</b><div class="text-xs text-slate-600 dark:text-slate-400">{{ t('user.passkeys.added') }} {{ formatDate(p.created_at) }} · {{ t('user.passkeys.lastUsed') }} {{ p.last_used_at ? formatDate(p.last_used_at) : t('common.never') }}</div></div>
+                <AppButton v-if="canWrite" variant="danger" :aria-label="`${t('user.passkeys.remove')} ${p.name}`" @click="askRemovePasskey(p)">{{ t('user.passkeys.remove') }}</AppButton>
+              </li>
+            </ul>
+          </AppCard>
+        </section>
+
+        <section aria-labelledby="mfa-h">
+          <AppCard flush>
+            <h2 id="mfa-h" class="border-b border-slate-200 px-4 py-2.5 text-sm font-semibold dark:border-slate-800">{{ t('user.mfa.title') }}</h2>
+            <AppAlert v-if="mfaError" kind="error" class="m-3">{{ mfaError }}</AppAlert>
+            <div v-else-if="mfa" class="flex flex-wrap items-center gap-3 p-4 text-[13px]" data-testid="user-mfa">
+              <PhDeviceMobile :size="20" class="text-slate-400" aria-hidden="true" />
+              <div class="flex-1">
+                <p data-testid="user-mfa-state">{{ mfa.enabled ? t('user.mfa.on', { left: mfa.recovery_codes_left }) : t('user.mfa.off') }}</p>
+                <p v-if="mfa.required" class="text-xs text-slate-600 dark:text-slate-400">{{ t('user.mfa.required') }}</p>
+                <p v-if="(mfa.enabled || mfa.passkeys) && isSelf" class="text-xs text-slate-600 dark:text-slate-400">{{ t('user.mfa.self') }}</p>
+              </div>
+              <AppButton v-if="canWrite && (mfa.enabled || mfa.passkeys) && !isSelf" variant="danger" @click="resetting = true">{{ t('user.mfa.reset') }}</AppButton>
+            </div>
+          </AppCard>
+        </section>
+
+        <section aria-labelledby="networks-h">
+          <AppCard flush>
+            <h2 id="networks-h" class="border-b border-slate-200 px-4 py-2.5 text-sm font-semibold dark:border-slate-800">{{ t('user.networks.title') }}</h2>
+            <dl class="divide-y divide-slate-100 text-[13px] dark:divide-slate-800">
+              <div class="flex justify-between gap-3 px-4 py-2"><dt class="text-slate-600 dark:text-slate-400">{{ t('user.adminNetworks') }}</dt><dd class="font-mono text-xs">{{ user.admin_networks.length ? user.admin_networks.join(', ') : t('user.anywhere') }}</dd></div>
+              <div class="flex justify-between gap-3 px-4 py-2"><dt class="text-slate-600 dark:text-slate-400">{{ t('user.loginNetworks') }}</dt><dd class="font-mono text-xs">{{ user.login_networks.length ? user.login_networks.join(', ') : t('user.anywhere') }}</dd></div>
+            </dl>
+          </AppCard>
+        </section>
+      </div>
+
+      <div v-show="tab === 'sessions'" class="space-y-5">
+        <section aria-labelledby="sessions-h">
+          <AppCard flush>
+            <div class="flex items-center border-b border-slate-200 px-4 py-2.5 dark:border-slate-800">
+              <h2 id="sessions-h" class="text-sm font-semibold">{{ t('user.sessions.title') }}</h2>
+              <AppButton v-if="canWrite && sessions.length" variant="danger" class="ml-auto" data-testid="sign-out-all" @click="revokeAll">{{ t('user.signOutAll') }}</AppButton>
+            </div>
+            <AppAlert v-if="sessionsError" kind="error" class="m-3">{{ sessionsError }}</AppAlert>
+            <p v-else-if="!sessions.length" class="p-4 text-[13px] text-slate-600 dark:text-slate-400">{{ t('user.sessions.none') }}</p>
+            <table v-else class="w-full text-left text-sm" data-testid="user-sessions">
+              <thead>
+                <tr>
+                  <th scope="col" class="px-4 py-2">{{ t('user.sessions.created') }}</th>
+                  <th scope="col" class="px-4 py-2">{{ t('user.sessions.lastUsed') }}</th>
+                  <th scope="col" class="px-4 py-2">{{ t('user.sessions.expires') }}</th>
+                  <th v-if="canWrite" scope="col" class="px-4 py-2"><span class="sr-only">{{ t('user.sessions.revoke') }}</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="s in sessions" :key="s.id" class="border-b border-slate-100 last:border-0 dark:border-slate-800">
+                  <td class="px-4 py-2">{{ formatDate(s.created_at) }}</td>
+                  <td class="px-4 py-2">{{ formatDate(s.last_used_at) }}</td>
+                  <td class="px-4 py-2">{{ formatDate(s.expires_at) }}</td>
+                  <td v-if="canWrite" class="px-4 py-2 text-right"><AppButton variant="secondary" @click="revokeSession(s.id)">{{ t('user.sessions.revoke') }}</AppButton></td>
+                </tr>
+              </tbody>
+            </table>
+          </AppCard>
+        </section>
+        <section v-if="pushConfigured" aria-labelledby="devices-h">
+          <AppCard flush>
+            <h2 id="devices-h" class="border-b border-slate-200 px-4 py-2.5 text-sm font-semibold dark:border-slate-800">{{ t('user.devices.title') }}</h2>
+            <AppAlert v-if="devicesError" kind="error" class="m-3">{{ devicesError }}</AppAlert>
+            <p v-else-if="!devices.length" class="p-4 text-[13px] text-slate-600 dark:text-slate-400" data-testid="user-devices-none">{{ t('user.devices.none') }}</p>
+            <ul v-else class="divide-y divide-slate-100 dark:divide-slate-800" data-testid="user-devices">
+              <li v-for="d in devices" :key="d.id" class="flex items-center gap-3 p-4 text-[13px]">
+                <PhDeviceMobileCamera :size="20" class="text-slate-400" aria-hidden="true" />
+                <div class="flex-1"><b>{{ d.name ?? '—' }}</b><div class="text-xs text-slate-600 dark:text-slate-400"><span class="font-mono">{{ d.platform }}</span> · {{ t('user.devices.lastSeen') }} {{ formatDate(d.last_seen) }}</div></div>
+                <AppButton v-if="canWrite" variant="danger" @click="removeDevice(d.id)">{{ t('user.devices.remove') }}</AppButton>
+              </li>
+            </ul>
+          </AppCard>
+        </section>
+      </div>
     </template>
 
     <FormDialog v-model:open="expireReason.open.value" :title="t('user.expire.title')" :description="t('user.expire.body')" :submit="t('user.expire.action')" :busy="expireReason.busy.value" :error="expireReason.error.value" @submit="expireReason.submit">

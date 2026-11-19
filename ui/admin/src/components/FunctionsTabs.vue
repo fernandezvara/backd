@@ -5,6 +5,7 @@ import TabNav from './TabNav.vue'
 const { t } = useI18n()
 const tabs = [
   { name: 'functions', label: 'functions.tabs.definitions' },
+  { name: 'functions-triggers', label: 'functions.tabs.triggers' },
   { name: 'functions-history', label: 'functions.tabs.history' },
   { name: 'functions-jobs', label: 'functions.tabs.jobs' },
 ]

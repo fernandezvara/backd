@@ -19,7 +19,9 @@ describe('breadcrumb', () => {
       expect(crumbs, `route ${String(r.name)}`).not.toBeNull()
       expect(crumbs![0]).toMatchObject({ label: 'acme', to: { name: 'home' } })
       expect(crumbs!.at(-1)!.to, `the last part of ${String(r.name)} is the page itself`).toBeUndefined()
-      expect(crumbs!.slice(0, -1).filter((c) => c.to).length).toBeGreaterThanOrEqual(2)
+      // Realm, group and page lead somewhere; the overview has no group, so it has the realm and itself.
+      const inRealmGroup = groups.find((g) => g.id === 'realm')!.items.some((i) => i.route === r.name || i.also?.includes(r.name as string))
+      expect(crumbs!.slice(0, -1).filter((c) => c.to).length).toBeGreaterThanOrEqual(inRealmGroup ? 1 : 2)
     }
   })
 

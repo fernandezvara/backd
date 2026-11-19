@@ -2,7 +2,11 @@
 import type { Passkey } from 'backd-js'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import AccentSwitch from '@/components/AccentSwitch.vue'
 import AppAlert from '@/components/AppAlert.vue'
+import AppBadge from '@/components/AppBadge.vue'
+import LocaleSwitch from '@/components/LocaleSwitch.vue'
+import ThemeSwitch from '@/components/ThemeSwitch.vue'
 import AppButton from '@/components/AppButton.vue'
 import AppCard from '@/components/AppCard.vue'
 import FormDialog from '@/components/FormDialog.vue'
@@ -124,7 +128,41 @@ async function remove() {
 <template>
   <PageHeader :title="t('account.title')" :description="t('nav.desc.account')" />
 
-  <section class="mt-4" aria-labelledby="passkeys-h">
+  <section class="mt-4" aria-labelledby="prefs-h">
+    <h2 id="prefs-h" class="text-lg font-semibold">{{ t('account.prefs.title') }}</h2>
+    <p class="mt-1 max-w-2xl text-sm text-slate-600 dark:text-slate-400">{{ t('account.prefs.help') }}</p>
+    <AppCard class="mt-2" data-testid="preferences">
+      <div class="grid gap-6 lg:grid-cols-[1fr_16rem]">
+        <dl class="space-y-5">
+          <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
+            <dt class="w-44 shrink-0"><div class="text-sm font-medium">{{ t('account.prefs.theme') }}</div><div class="text-xs text-slate-500">{{ t('account.prefs.themeHelp') }}</div></dt>
+            <dd><ThemeSwitch /></dd>
+          </div>
+          <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
+            <dt class="w-44 shrink-0"><div class="text-sm font-medium">{{ t('account.prefs.language') }}</div><div class="text-xs text-slate-500">{{ t('account.prefs.languageHelp') }}</div></dt>
+            <dd><LocaleSwitch /></dd>
+          </div>
+          <div class="flex flex-wrap items-start gap-x-6 gap-y-2">
+            <dt class="w-44 shrink-0"><div class="text-sm font-medium">{{ t('account.prefs.accent') }}</div><div class="text-xs text-slate-500">{{ t('account.prefs.accentHelp') }}</div></dt>
+            <dd class="min-w-0 flex-1"><AccentSwitch /></dd>
+          </div>
+        </dl>
+        <div class="rounded-lg border border-slate-200 p-4 dark:border-slate-800" aria-hidden="true">
+          <div class="mb-3 text-xs font-medium text-slate-500">{{ t('account.prefs.preview') }}</div>
+          <div class="space-y-3">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="inline-flex h-8 items-center rounded-md bg-brand-700 px-3 text-sm font-medium text-white">{{ t('account.prefs.sample') }}</span>
+              <span class="inline-flex h-8 items-center rounded-md border border-slate-300 px-3 text-sm dark:border-slate-700">{{ t('account.prefs.sampleSecondary') }}</span>
+            </div>
+            <div class="flex items-center gap-3"><AppBadge kind="ok">{{ t('account.prefs.sampleBadge') }}</AppBadge><span class="text-sm text-brand-700 underline dark:text-brand-400">{{ t('account.prefs.sampleLink') }}</span></div>
+            <div class="h-2 rounded-full bg-slate-200 dark:bg-slate-800"><div class="h-full w-2/3 rounded-full bg-brand-600"></div></div>
+          </div>
+        </div>
+      </div>
+    </AppCard>
+  </section>
+
+  <section class="mt-8" aria-labelledby="passkeys-h">
     <div class="flex flex-wrap items-center gap-3">
       <h2 id="passkeys-h" class="text-lg font-semibold">{{ t('account.passkeys.title') }}</h2>
       <AppButton v-if="canPasskey" class="ml-auto" data-testid="passkey-add" @click="openAdd">{{ t('account.passkeys.add') }}</AppButton>
@@ -135,7 +173,7 @@ async function remove() {
     <p v-if="loading" class="mt-2 text-sm" role="status">{{ t('common.loading') }}</p>
     <AppCard v-if="!error" flush class="mt-2">
       <table class="w-full text-left text-sm" data-testid="passkeys-table">
-        <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
+        <thead>
           <tr>
             <th scope="col" class="px-3 py-2">{{ t('account.passkeys.name') }}</th>
             <th scope="col" class="px-3 py-2">{{ t('account.passkeys.kind') }}</th>

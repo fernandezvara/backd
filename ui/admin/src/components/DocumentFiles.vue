@@ -108,8 +108,8 @@ async function remove() {
 </script>
 
 <template>
-  <section class="mt-8 max-w-3xl border-t border-slate-200 pt-4 dark:border-slate-800" data-testid="files" :aria-label="t('data.doc.files.title')">
-    <h2 class="text-lg font-semibold">{{ t('data.doc.files.title') }}</h2>
+  <section class="max-w-3xl" data-testid="files" :aria-label="t('data.doc.files.title')">
+    <h2 class="sr-only">{{ t('data.doc.files.title') }}</h2>
     <p v-if="!writable" class="mt-1 text-sm text-slate-600 dark:text-slate-400">{{ t('data.doc.files.readonly') }}</p>
 
     <div v-for="field in names" :key="field" class="mt-4 rounded-md border border-slate-200 p-3 dark:border-slate-700" :data-testid="`files-${field}`">

@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@phosphor-icons/vue": "^2.2.1",
+    "@speed-highlight/core": "^2.1.0",
     "backd-js": "file:../../clients/js",
     "pinia": "^4.1.0",
     "reka-ui": "^2.11.0",

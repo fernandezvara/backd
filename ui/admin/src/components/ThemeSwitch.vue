@@ -1,17 +1,17 @@
 <script setup lang="ts">
+import { PhDesktop, PhMoon, PhSun } from '@phosphor-icons/vue'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { usePreferences, type Theme } from '@/stores/preferences'
+import SegmentedControl from './SegmentedControl.vue'
 
+// The theme: follow the system, or light, or dark. Kept in this browser.
+defineProps<{ compact?: boolean }>()
 const { t } = useI18n()
 const prefs = usePreferences()
-const themes: Theme[] = ['system', 'light', 'dark']
+const options = computed(() => (['system', 'light', 'dark'] as Theme[]).map((v) => ({ value: v, label: t(`theme.${v}`), icon: { system: PhDesktop, light: PhSun, dark: PhMoon }[v], testid: `theme-${v}` })))
 </script>
 
 <template>
-  <label class="flex items-center gap-2 text-sm">
-    <span class="sr-only">{{ t('theme.label') }}</span>
-    <select v-model="prefs.theme" class="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900" :aria-label="t('theme.label')">
-      <option v-for="theme in themes" :key="theme" :value="theme">{{ t(`theme.${theme}`) }}</option>
-    </select>
-  </label>
+  <SegmentedControl v-model="prefs.theme" :label="t('theme.label')" :options="options" :icon-only="compact" />
 </template>

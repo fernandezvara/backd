@@ -24,6 +24,7 @@ test('an administrator expires one password, and a new one makes the account usa
   await page.getByRole('button', { name: 'Add role' }).click()
   await expect(page.getByTestId('user-roles')).toContainText('viewer')
 
+  await page.getByTestId('action-menu').click()
   await page.getByTestId('expire-password').click()
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel('Reason (for the audit trail)').fill('e2e')
@@ -45,7 +46,8 @@ test('an administrator expires one password, and a new one makes the account usa
   await page.getByRole('link', { name: email }).click()
 
   // A new password makes the account usable again.
-  await page.getByRole('button', { name: 'Set password' }).click()
+  await page.getByTestId('action-menu').click()
+  await page.getByTestId('menu-password').click()
   await page.getByRole('dialog').getByLabel('New password').fill('another-p4ssw0rd!')
   await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click()
   await expect(page.getByRole('status').filter({ hasText: 'Password changed' })).toBeVisible()
@@ -66,6 +68,7 @@ test('a user whose password expired replaces it on the sign-in page with the cur
   await go(page, 'Users')
   await page.getByLabel('Search by email').fill(email)
   await page.getByRole('link', { name: email }).click()
+  await page.getByTestId('action-menu').click()
   await page.getByTestId('expire-password').click()
   await page.getByRole('dialog').getByRole('button', { name: 'Expire password' }).click()
   await expect(page.getByTestId('user-status')).toHaveText('Active · Password expired')

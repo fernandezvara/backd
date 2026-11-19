@@ -212,7 +212,7 @@ case "${1:-up}" in
     if [ "${EXAMPLES:-}" = 1 ]; then
       echo "Seeding the example realms…"
       ORIGIN=$origin CA=$ca SEED_DIR=$seed_dir \
-        BACKD_EXEC="${compose[*]} exec -T backd /backd" \
+        SERVER_EXEC="${compose[*]} exec -T backd /backd-server" \
         EXEC_EXEC="${compose[*]} exec -T executor" \
         scripts/example-seed.sh
       examples="  $origin/example/     the example apps: blog, expenses, shelf, the workshop, the mailbox (operator@shelf.example and

@@ -7,6 +7,8 @@ import { defineConfig } from 'vitest/config'
 // The build goes straight into the directory the Go binary embeds.
 export default defineConfig({
   base: '/_ui/',
+  // The version of the build (the Dockerfile passes it), shown on the sign-in page; `dev` otherwise.
+  define: { __BACKD_VERSION__: JSON.stringify(process.env.BACKD_VERSION || 'dev') },
   plugins: [
     vue(),
     tailwindcss(),

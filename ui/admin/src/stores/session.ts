@@ -65,18 +65,25 @@ export const useSession = defineStore('session', () => {
   const canRead = (area: Area) => readable.value.includes(area)
   const canWrite = (area: Area) => writable.value.includes(area)
 
-  function begin(forRealm: string, keepInTab: boolean) {
+  /** A client for this realm, not yet the session's: see {@link use}. */
+  function make(forRealm: string, keepInTab: boolean) {
+    const store = keepInTab ? null : memoryStore()
+    return { store, client: createClient({ url: window.location.origin, realm: forRealm, storage: store ?? tabStorage(forRealm) }) }
+  }
+
+  /** Makes the client the session's. Until then nothing of the signed-in session changes. */
+  function use(forRealm: string, made: ReturnType<typeof make>) {
     realm.value = forRealm
-    memory = keepInTab ? null : memoryStore()
-    client.value = createClient({
-      url: window.location.origin,
-      realm: forRealm,
-      storage: memory ?? tabStorage(forRealm),
-    })
+    memory = made.store
+    client.value = made.client
     // The server refusing the token (expired, revoked elsewhere, user disabled).
-    client.value.auth.onAuthChange((event) => {
+    made.client.auth.onAuthChange((event) => {
       if (event === 'SESSION_EXPIRED') expired()
     })
+  }
+
+  function begin(forRealm: string, keepInTab: boolean) {
+    use(forRealm, make(forRealm, keepInTab))
   }
 
   async function adopt(c: Client) {
@@ -163,9 +170,13 @@ export const useSession = defineStore('session', () => {
    * to pick a passkey in the email field's autofill until `signal` aborts (an AbortError).
    */
   async function signInWithPasskey(forRealm: string, keepInTab: boolean, withStrategy: string, opts: { conditional?: boolean; signal?: AbortSignal } = {}): Promise<Next> {
-    begin(forRealm, keepInTab)
-    const c = client.value!
-    return proceed(c, await c.auth.passkeys.signIn({ strategy: withStrategy, ...opts }))
+    // The autofill attempt waits, maybe for ever, while the person may sign in another way: it works on a
+    // client of its own and becomes the session only when a passkey was picked, so it can never take the
+    // session of a sign-in that finished first.
+    const made = make(forRealm, keepInTab)
+    const result = await made.client.auth.passkeys.signIn({ strategy: withStrategy, ...opts })
+    use(forRealm, made)
+    return proceed(made.client, result)
   }
 
   /** The later step of a strategy that asks for a passkey after the first method: the browser asks for it. */

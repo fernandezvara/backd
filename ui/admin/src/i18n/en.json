@@ -4,6 +4,7 @@
     "skip": "Skip to content"
   },
   "common": {
+    "actions": "Actions",
     "strategy": "Strategy: {name}",
     "cancel": "Cancel",
     "close": "Close",
@@ -13,6 +14,7 @@
     "none": "None",
     "dismiss": "Dismiss",
     "save": "Save",
+    "edit": "Edit",
     "create": "Create",
     "delete": "Delete",
     "revoke": "Revoke",
@@ -53,6 +55,7 @@
   },
   "account": {
     "label": "Account",
+    "prefs": {"title": "Appearance", "help": "Kept in this browser only. Each browser you sign in from has its own.", "theme": "Theme", "themeHelp": "Follow the system, or always light or dark.", "language": "Language", "languageHelp": "Automatic follows the browser's languages.", "accent": "Accent colour", "accentHelp": "Colours the sidebar, buttons and links.", "preview": "Preview", "sample": "Primary action", "sampleSecondary": "Secondary", "sampleBadge": "Active", "sampleLink": "A link"},
     "title": "Account",
     "passkeys": {
       "title": "Passkeys",
@@ -81,9 +84,16 @@
   },
   "realm": {
     "label": "Realm",
+    "switch": "Realm {realm}: switch realm",
+    "list": "Realms",
+    "connect": "Open another realm…",
+    "name": "Realm name",
+    "open": "Open",
+    "note": "The list is kept in this browser. Each realm asks you to sign in.",
     "invalid": "A realm name has lowercase letters, digits, - and _ only."
   },
   "signIn": {
+    "brand": {"title": "Your backend, kept in files.", "body": "Schemas, rules and functions live in your repository. This panel shows what runs, who is signed in and what needs attention.", "one": "Configuration is read-only here: changes go through review", "two": "Passkeys, authenticator apps and organization sign-in", "three": "Every administrator action is recorded in the audit log", "foot": "version: {version}"},
     "strategy": "Sign-in strategy",
     "strategyHelp": "The roles you hold depend on the strategy: an administrator role may need a stronger one.",
     "passkey": {
@@ -147,7 +157,13 @@
     "canRead": "Can read",
     "canWrite": "Can change",
     "nothing": "Nothing",
-    "key": "an API key ({name})"
+    "key": "an API key ({name})",
+    "openData": "Open data",
+    "collections": "Collections",
+    "functions": "Functions",
+    "loaded": "Configuration loaded",
+    "access": "Your access",
+    "attention": {"title": "Needs attention", "none": "Nothing needs attention.", "runs": "{n} recent function runs failed, last: {name}", "gaps": "{n} trigger gaps to resolve", "keys": "{n} API keys expire within 14 days, first: {name}", "mfa": "{n} users must still set up a second factor"}
   },
   "areas": {
     "users": "Users",
@@ -186,7 +202,12 @@
     "storage": "Storage",
     "push": "Push",
     "jobs": "Jobs and history",
+    "collapse": "Collapse the menu",
+    "security": "Security",
+    "compliance": "Compliance",
+    "appConfig": "App config",
     "groups": {
+      "realm": "Realm",
       "identity": "Identity",
       "access": "Access",
       "data": "Data",
@@ -207,7 +228,10 @@
       "push": "Devices, topics and deliveries",
       "jobs": "Scheduled jobs and past invocations",
       "audit": "Who did what, and when",
-      "config": "Settings, collections and templates"
+      "config": "Settings, collections and templates",
+      "security": "Breach response and second-factor coverage",
+      "compliance": "Consents, exports and what is covered",
+      "appConfig": "Settings that clients read, with history"
     }
   },
   "push": {
@@ -265,6 +289,36 @@
     }
   },
   "storage": {
+    "tools": {
+      "title": "Tools",
+      "which": "Storage",
+      "private": "Private storage",
+      "public": "Public storage",
+      "check": "Check the storage",
+      "reconcile": "Find unreferenced files",
+      "regen": "Make image versions again…",
+      "help": "Checking writes and removes a few small test objects. Finding unreferenced files only lists them; removing them is a separate step.",
+      "failed": "The operation failed.",
+      "pass": "works",
+      "fail": "a step failed",
+      "sentinel": "Test image left in the bucket:",
+      "scanned": "Scanned {scanned} files: {referenced} referenced, {orphans} not referenced by any document.",
+      "skipped": "{n} skipped (younger than 24 hours or still uploading).",
+      "removeOrphans": "Delete {n} unreferenced files",
+      "deleted": "{n} files deleted.",
+      "failedN": "{n} could not be deleted",
+      "regenTitle": "Make image versions again",
+      "regenBody": "Runs as a job on a worker. Versions a function generated with its own parameters are left alone.",
+      "regenSubmit": "Start",
+      "database": "Database",
+      "collection": "Collection",
+      "field": "File field",
+      "version": "Version (optional)",
+      "versionHelp": "Empty: every declared version.",
+      "missingOnly": "Only make the copies that don't exist",
+      "regenRequired": "Database, collection and field are required.",
+      "regenStarted": "Job started. Follow it on the jobs page."
+    },
     "title": "Storage",
     "refresh": "Refresh",
     "asOf": "as of {date}",
@@ -280,6 +334,12 @@
     "unreachable": "not reachable",
     "near": "Storage is at or near a limit: uploads that would pass it are refused with 413 quota_exceeded.",
     "usage": "In use",
+    "privateTitle": "File storage",
+    "ofLimit": "of {limit}",
+    "referenced": "Referenced by documents.",
+    "waitingDelete": "waiting to be deleted",
+    "retrying": "{n} retrying",
+    "staleShort": "{n} unfinished uploads",
     "inFiles": "in {n} files",
     "ofQuota": "({pct}% of the realm's quota of {limit})",
     "realmMeter": "Realm storage used",
@@ -301,7 +361,7 @@
     "reconcileNote": "After restoring a backup, or removing a file field, run backd storage reconcile to find objects no document references."
   },
   "users": {
-    "passwordsShow": "Show the leak actions",
+    "passwordsShow": "Breach response",
     "passwordsHide": "Hide the leak actions",
     "title": "Users",
     "search": "Search by email",
@@ -318,6 +378,14 @@
     "unverified": "Unverified",
     "verified": "Verified",
     "noRoles": "No roles",
+    "user": "User",
+    "security": "Security",
+    "anyRole": "Any role",
+    "anyStatus": "Any status",
+    "shown": "{shown} of {loaded} loaded",
+    "mfaPending": "{n} users must still set up a second factor.",
+    "mfaSee": "See who",
+    "mfaMissing": "No second factor",
     "passwordExpired": "Password expired",
     "create": {
       "title": "Create user",
@@ -331,6 +399,10 @@
   "user": {
     "loadFailed": "The user could not be loaded.",
     "back": "All users",
+    "joined": "joined {date}",
+    "moreActions": "More actions",
+    "facts": "Facts",
+    "signOutAll": "Sign out everywhere",
     "locale": "Language",
     "emailVerified": "Email",
     "status": "Status",
@@ -392,7 +464,8 @@
       "none": "The user owns nothing under a policy.",
       "done": "{email} is being erased.",
       "action": "Erase user",
-      "deactivateHint": "To keep the data, disable the user instead."
+      "deactivateHint": "To keep the data, disable the user instead.",
+      "cardBody": "Irreversible. You see what the user owns before confirming."
     },
     "roles": {
       "title": "Roles",
@@ -419,6 +492,7 @@
         "loadFailed": "The passkeys could not be loaded."
       },
     "mfa": {
+      "badge": "Two-step",
       "title": "Two-step verification",
       "on": "On. Recovery codes left: {left}.",
       "off": "Off.",
@@ -445,7 +519,9 @@
       "unlinkBody": "The user can no longer sign in with it. The last way to sign in can't be removed. Removing Apple also revokes the user's Apple tokens.",
       "loadFailed": "The ways to sign in could not be loaded.",
       "viaOrg": "through organization {org}",
-      "dormant": "dormant: its issuer changed"
+      "dormant": "dormant: its issuer changed",
+      "none": "No linked ways to sign in.",
+      "lastWayHint": "The last way to sign in can't be removed."
     },
     "sessions": {
       "title": "Sessions",
@@ -455,6 +531,7 @@
       "expires": "Expires",
       "revoke": "Revoke",
       "revoked": "Session revoked.",
+      "revokedAll": "All sessions ended.",
       "loadFailed": "The sessions could not be loaded."
     },
     "devices": {
@@ -638,6 +715,7 @@
     "tabs": {
       "label": "Functions sections",
       "definitions": "Definitions",
+      "triggers": "Triggers",
       "history": "History",
       "jobs": "Jobs"
     },
@@ -673,6 +751,18 @@
       "async": "async"
     },
     "noneValue": "None",
+    "function": "Function",
+    "filter": "Filter functions",
+    "kind": "Kind",
+    "allKinds": "All kinds",
+    "scheduledOnly": "Scheduled",
+    "count": "{n} functions",
+    "details": "Details",
+    "uses": "Uses",
+    "usesText": "Calls {calls} · secrets {secrets} · hosts {network}",
+    "active": "Active",
+    "noMatch": "No function matches.",
+    "fileLabel": "File",
     "noSchedule": "Not scheduled",
     "overlapSkip": "Skips a run while the previous one is going",
     "onComplete": "On completion",
@@ -754,6 +844,7 @@
     "show": "Show the schema check",
     "hide": "Hide the schema check",
     "title": "Schema checks",
+    "lastCheck": "Last check",
     "help": "Finds the stored documents that no longer match their collection's schema, for example after the schema changed. A check reads every document and never changes one.",
     "panel": "Schema check",
     "button": "Check documents against the schema",
@@ -859,11 +950,104 @@
       "label": "Configuration sections",
       "overview": "Overview",
       "settings": "Settings",
-      "collections": "Collections",
-      "templates": "Templates"
+      "templates": "Templates",
+      "signin": "Sign-in",
+      "files": "Files",
+      "api": "API files",
+      "backup": "Backup"
     },
+    "backup": {"exportTitle":"Export the realm","exportHelp":"A package of the realm, made part by part so large realms work.","includes":"Add --include auth to take the users and their credentials (password hashes) with it.","importTitle":"Import a package","importHelp":"Check a package first, then import it. A failed import can be run again.","importNote":"Importing needs full administration, like exporting.","title":"Backup and API files","description":"Take a backup with the command line, and download the documents and types generated from the configuration this instance runs.","backup":"Backup","help":"A backup streams every collection and file, so it is made with the backd command, not in a browser tab. It needs full administration. These are the commands for this realm.","export":"Export the realm, with its users, as one archive","dryRun":"Check an import without writing anything","import":"Import it","note":"Encrypted fields travel sealed: keep their field keys with the backup. See the documentation on export and import.","downloaded":"Downloaded.","filesTitle":"API files","filesHelp":"Generated from the configuration this instance runs; nothing changes on the server.","files":{"client":"OpenAPI for client apps","admin":"OpenAPI with admin routes","ts":"TypeScript types","dart":"Dart types","go":"Go types","python":"Python types"}},
     "loadFailed": "The configuration could not be loaded.",
     "loading": "Loading the configuration...",
+    "overview": {
+      "status": "Status",
+      "databases": "Databases",
+      "collections": "Collections",
+      "copyFingerprint": "Copy the full fingerprint",
+      "fingerprintCopied": "Config fingerprint copied."
+    },
+    "files": {
+      "intro": "Every file the server loaded for this realm ({n}), read-only. Change them in your configuration repository.",
+      "filter": "Filter files",
+      "tree": "Configuration files",
+      "omitted": "{n} more files are not shown.",
+      "data": "Data",
+      "hint": "Edit it in the configuration repository, then deploy.",
+      "loadFailed": "The configuration files could not be loaded.",
+      "roles": {
+        "realm": "Realm settings",
+        "realm_config": "Realm file",
+        "schema": "Schema",
+        "indexes": "Indexes",
+        "collection": "Collection",
+        "function": "Function",
+        "migration": "Migration",
+        "other": "Other"
+      }
+    },
+    "api": {
+      "help": "Generated from the configuration this instance runs; nothing changes on the server.",
+      "admin": "Admin API (OpenAPI)",
+      "client": "Client API of this realm (OpenAPI)",
+      "types": "Generated types",
+      "typesHelp": "TypeScript, Python, Go or Dart, from the loaded schemas.",
+      "language": "Language",
+      "copyUrl": "Copy URL",
+      "download": "Download"
+    },
+    "signin": {
+      "authOff": "Authentication is disabled for this realm: there is no sign-in, and anyone who can reach it can read and write its data.",
+      "who": "Who can arrive",
+      "registration": "Registration",
+      "ways": "Ways in",
+      "protection": "Protection",
+      "sessions": "Sessions",
+      "on": "On",
+      "off": "Off",
+      "signup": {
+        "open": "Open to anyone",
+        "invite": "By invitation",
+        "closed": "Closed",
+        "off": "No sign-in"
+      },
+      "signupHelp": {
+        "open": "Anyone can create an account.",
+        "invite": "Only people with an invitation can create an account.",
+        "closed": "Accounts are created by administrators, not by people signing up.",
+        "off": "This realm has no authentication: nobody signs in and the API is open."
+      },
+      "verifiedEmail": "The email must be verified before a session starts.",
+      "consents": "Consents",
+      "mustAccept": "must accept",
+      "optional": "optional",
+      "rolesOnly": "roles active only here: {roles}",
+      "rolesHelp": "Roles that stay active only in sessions made with this strategy.",
+      "steps": "Steps",
+      "noStrategies": "No strategies are declared.",
+      "methods": {
+        "password": "Password",
+        "totp": "Authenticator code",
+        "passkey": "Passkey",
+        "magic_link": "Email link or code"
+      },
+      "magicSignup": "Also creates accounts",
+      "magicExisting": "Existing accounts only",
+      "providers": "External providers",
+      "noProviders": "No external providers are configured.",
+      "minLength": "Minimum password length",
+      "throttle": "Failed sign-ins",
+      "throttleText": "{n} tries, then waits ({window})",
+      "totp": "Authenticator app",
+      "mfaRequired": "Second factor required",
+      "everyone": "Everyone",
+      "nobody": "Nobody",
+      "idle": "Idle timeout",
+      "maxLife": "Maximum lifetime",
+      "adminIdle": "Administrators: idle",
+      "cookie": "Cookie session",
+      "reauth": "Re-authentication lasts",
+      "redirects": "Sign-in goes back to"
+    },
     "fingerprint": "Config fingerprint",
     "fingerprintHelp": "Changes whenever any configuration file changes: compare it across instances to see they run the same files.",
     "realmFile": "Realm file",
@@ -879,6 +1063,30 @@
       "empty": "(empty)",
       "list": "(none)",
       "file": "Defined in {file}",
+      "defaultsNote": "Defaults that apply are shown too.",
+      "filter": "Filter settings",
+      "notConfigured": "Not configured",
+      "sections": {
+        "general": "General",
+        "signin": "Sign-in",
+        "sessions": "Sessions and passwords",
+        "account": "Accounts, consents and compliance",
+        "admin": "Administration and audit",
+        "functions": "Functions, events and limits",
+        "organizations": "Organizations",
+        "email": "Email",
+        "push": "Push",
+        "storage": "Storage",
+        "public_storage": "Public storage",
+        "other": "Other"
+      },
+      "absent": {
+        "organizations": "The realm has no organizations: add an organizations: section to realm.yaml to let people group into teams.",
+        "email": "The realm sends no email: add email: with a delivery function to send verification and reset emails.",
+        "push": "The realm sends no pushes: add push: to configure FCM or APNs.",
+        "storage": "The realm has no file storage: add storage: to let collections declare file fields.",
+        "public_storage": "The realm has no public storage: add public_storage: for files browsers read directly."
+      },
       "secretNote": "Secrets are referenced by name only; their values are never part of the configuration."
     },
     "roles": {
@@ -886,21 +1094,10 @@
       "name": "Role",
       "description": "Description",
       "admin": "Admin access",
+      "strategies": "Active on",
+      "allStrategies": "every strategy",
       "seeded": "Seeded users",
       "none": "No roles are declared."
-    },
-    "draft": {
-      "edit": "Prepare a change to {file}",
-      "hide": "Close the editor",
-      "note": "The file is made in your browser. The server checks it, with your other changes, against the realm's whole configuration, but applies nothing and never has its configuration written through this page. Download it, review it, save it as {path} in your configuration repository and commit it; backd reads configuration at startup.",
-      "changed": "Changed from what the server runs.",
-      "checking": "Checking the whole realm with your changes…",
-      "ok": "All {n} files of the realm were checked with your changes ({changed} changed) and the configuration loads.",
-      "notOk": "The configuration would not load with your changes (all {n} files of the realm were checked):",
-      "unchecked": "The server could not check it ({why}): the file is not verified.",
-      "invalid": "Not valid JSON: {problem}",
-      "download": "Download {file}",
-      "reset": "Start again"
     },
     "collections": {
       "title": "Collections",
@@ -939,6 +1136,27 @@
     }
   },
   "data": {
+    "definition": {
+      "needsConfig": "Reading the definition needs the configuration area.",
+      "missing": "This collection is not in the configuration this instance runs.",
+      "rules": "Rules",
+      "from": "from {op}",
+      "indexes": "Indexes",
+      "unique": "unique",
+      "noIndexes": "No indexes.",
+      "readOnly": "Read-only: a change is a file in the configuration repository.",
+      "open": "Prepare a change"
+    },
+    "tabs": {
+      "label": "Collection sections",
+      "records": "Records",
+      "definition": "Definition",
+    "schema": "Schema",
+    "rules": "Rules",
+    "triggers": "Triggers",
+    "checks": "Checks",
+    "api": "API"
+    },
     "form": {
       "required": "required",
       "invalidJson": "This isn't valid JSON.",
@@ -963,11 +1181,29 @@
     "databases": "Database {name}",
     "noCollections": "No collections.",
     "softDeleting": "keeps a trash",
+    "filter": "Filter collections",
+    "schema": {"fields": "Fields", "name": "Name", "type": "Type"},
+    "triggers": {"title": "Triggers on this collection", "event": "Event", "name": "Trigger", "function": "Function", "when": "Condition", "ordered": "ordered", "none": "No trigger runs on this collection.", "readOnly": "Declared in collection.yaml.", "status": "See the dispatcher status", "needsFunctions": "Triggers need access to the Functions area."},
+    "api": {"snippets": "Client snippets", "reference": "Reference", "openapi": "OpenAPI of this realm", "types": "Generated types of the realm"},
+    "allDatabases": "All databases",
+    "countLine": "{n} collections",
+    "noMatch": "No collection matches.",
+    "fieldsCount": "{n} fields",
+    "tagRules": "rules",
+    "tagTrash": "trash",
+    "tagOrg": "organizations",
+    "tagIds": "custom ids",
+    "tagFiles": "files",
+    "tagIndexes": "{n} indexes",
     "collectionsNeedConfig": "The list of collections comes from the configuration, which this level can't read. Enter the names.",
     "open": "Open",
     "database": "Database",
     "collection": {
-      "assign": {"open": "Assign an organization", "title": "Assign an organization", "help": "Gives the documents that have none this organization, in a job. Documents that already belong to one never move.", "action": "Assign", "matched": "{n} documents have no organization.", "done": "The assignment was queued: follow it under Functions, Jobs."},
+      "filter": "Filter",
+    "documents": "{n} documents",
+    "inTrash": "{n} in the trash",
+    "range": "{from}–{to} of {n}",
+    "assign": {"open": "Assign an organization", "title": "Assign an organization", "help": "Gives the documents that have none this organization, in a job. Documents that already belong to one never move.", "action": "Assign", "matched": "{n} documents have no organization.", "done": "The assignment was queued: follow it under Functions, Jobs."},
       "new": "New document",
       "in": "A collection of the {database} database.",
       "trash": "Trash",
@@ -1037,10 +1273,15 @@
       "new": "New document in {collection}",
       "edit": "Document {id}",
       "tabs": {
-        "label": "Edit as",
+        "label": "Document sections",
         "form": "Form",
-        "json": "JSON"
+        "json": "JSON",
+        "files": "Files",
+        "history": "History"
       },
+      "details": "Details",
+      "revision": "Revision {n} · updated {date} by {who}",
+      "history": {"empty": "No change made from the admin is recorded for this document.", "help": "The administrator changes made to this document, from the audit trail. Changes by the app's own users are not listed.", "loadFailed": "The history could not be loaded."},
       "meta": "Metadata",
       "id": "ID",
       "version": "Version",
@@ -1136,6 +1377,13 @@
     "passkey": "Your passkey will be asked for when you confirm."
   },
   "orgs": {
+    "membersCol": "Members",
+    "organization": "Organization",
+    "security": "Security",
+    "membersCount": "{n} members",
+    "createdOn": "created {date}",
+    "ssoRequired": "SSO required",
+    "count": "{n} organizations",
     "title": "Organizations",
     "back": "Back to organizations",
     "search": "Search",
@@ -1143,6 +1391,9 @@
     "filter": "Status",
     "name": "Name",
     "slug": "Slug",
+    "slugHelp": "The short name used in addresses. Changing it changes the organization's sign-in address.",
+    "slugNew": "New slug",
+    "slugChanged": "Slug changed.",
     "statusLabel": "Status",
     "members": {
       "title": "Members",
@@ -1194,7 +1445,22 @@
     },
     "teams": {
       "title": "Teams",
-      "none": "No teams."
+      "none": "No teams.",
+      "new": "New team",
+      "newTitle": "New team",
+      "rename": "Edit",
+      "renameTitle": "Edit team",
+      "name": "Name",
+      "roles": "Roles (comma separated)",
+      "nameRequired": "A team needs a name.",
+      "created": "Team created.",
+      "renamed": "Team saved.",
+      "deleted": "Team deleted.",
+      "deleteTitle": "Delete {team}",
+      "deleteBody": "It leaves every membership and its roles go with it.",
+      "members": "Members",
+      "membersTitle": "Members of {team}",
+      "addMember": "Add a member"
     },
     "teamRoles": {
       "of": "Team roles in {team}",
@@ -1365,5 +1631,338 @@
     "fallback": "The config has not loaded yet (dev mode).",
     "waiting": "This page carries on by itself once a saved change loads.",
     "report": "Open the report"
+  },
+  "accent": {
+    "label": "Accent colour",
+    "names": {
+      "teal": "Teal",
+      "blue": "Blue",
+      "indigo": "Indigo",
+      "violet": "Violet",
+      "rose": "Rose",
+      "orange": "Orange",
+      "emerald": "Emerald"
+    }
+  },
+  "palette": {
+    "open": "Search or jump to…",
+    "title": "Command palette",
+    "placeholder": "Type a page, collection or function",
+    "empty": "Nothing matches.",
+    "pages": "Pages",
+    "collections": "Collections",
+    "functions": "Functions",
+    "actions": "Actions",
+    "hint": "↑↓ to move, Enter to open, Esc to close",
+    "actionList": {
+      "breach": "Breach response: expire passwords, end sessions",
+      "backup": "Export the realm (backup)",
+      "draft": "Open draft configuration changes"
+    }
+  },
+  "security": {
+    "title": "Security",
+    "description": "Respond to a leak and see who still has to set up a second factor.",
+    "breach": "Breach response",
+    "needsFull": "Breach response reaches every account, so it needs full administration.",
+    "mfa": {
+      "title": "Second factor coverage",
+      "loadFailed": "The second-factor overview could not be loaded.",
+      "off": "This realm does not let users turn on a second factor.",
+      "required": "{n} users must still set up a second factor.",
+      "everyone": "required for everybody",
+      "roles": "required for the roles {roles}",
+      "user": "User",
+      "rolesCol": "Roles",
+      "none": "Everyone who needs a second factor has one.",
+      "more": "Showing {shown} of {total}."
+    }
+  },
+  "compliance": {
+    "title": "Compliance",
+    "description": "What a user's data export contains, and asking users to review a new consent version. Exports are made from a user's page.",
+    "scope": {
+      "title": "Personal data scope",
+      "loadFailed": "The scope could not be loaded.",
+      "needsConfig": "Reading the scope needs the configuration area.",
+      "noAuth": "This realm has no users, so there is nothing to export.",
+      "collection": "Collection",
+      "export": "Export",
+      "include": "Included",
+      "exclude": "Excluded",
+      "what": "What is exported",
+      "reason": "Reason",
+      "owned": "documents the user owns",
+      "fields": "only {fields}",
+      "pull": "where they appear in {fields}",
+      "files": "files in {fields}",
+      "organization": "organization documents whole",
+      "undeclared": "not declared",
+      "systemIn": "System data included:",
+      "systemOut": "Never exported:"
+    },
+    "notify": {
+      "open": "Ask users to review a consent",
+      "title": "Ask users to review a consent",
+      "help": "Queues the consent-updated email for everybody who accepted an older version. Publishing a version never sends anything by itself.",
+      "name": "Consent name",
+      "submit": "Send",
+      "required": "Enter the consent's name.",
+      "done": "{consent} {version}: {matched} users matched, {queued} emails queued, {limited} skipped by limits."
+    }
+  },
+  "appConfig": {
+    "title": "App config",
+    "description": "Settings that clients read at runtime. Declared in the configuration; the values are kept by the server and every change is recorded.",
+    "version": "Version {version}",
+    "loadFailed": "The app configuration could not be loaded.",
+    "none": "This realm declares no app configuration.",
+    "invalid": "These stored values no longer fit the schema; they read as their defaults until fixed or reset.",
+    "key": "Key",
+    "value": "Value",
+    "who": "Who can read",
+    "changed": "changed",
+    "public": "anyone",
+    "readable": "clients",
+    "hidden": "admins only",
+    "reset": "Reset",
+    "history": "History",
+    "rollback": "Roll back",
+    "rolledBack": "rolled back to {version}",
+    "changes": "{n} changes",
+    "noHistory": "No changes yet.",
+    "editTitle": "Edit {key}",
+    "editHelp": "A JSON value. It is checked against the schema.",
+    "notJson": "That is not valid JSON.",
+    "saved": "Saved as version {version}.",
+    "unchanged": "Nothing changed.",
+    "rollbackTitle": "Roll back to {version}",
+    "rollbackHelp": "Restores the values that version had, as a new version. Values that no longer fit are refused."
+  },
+  "fieldKeys": {
+    "help": "Keys that seal encrypted fields. Create one, then name it in the collection's configuration. A rotated key wraps the data keys again; the generated value is shown once.",
+    "create": "Create a key",
+    "rotate": "Rotate a key",
+    "needsFull": "Keys need full administration and a fresh proof of identity.",
+    "createTitle": "Create a field key",
+    "createBody": "Without a value, backd generates one.",
+    "rotateTitle": "Rotate a field key",
+    "rotateBody": "The data keys sealed under it are wrapped again with the new value.",
+    "name": "Key name",
+    "nameHelp": "Upper-case letters, digits and _.",
+    "own": "Use a value I provide",
+    "value": "Value",
+    "shown": "Key {name}: save this value now, it is not shown again.",
+    "fingerprint": "Fingerprint {fingerprint}"
+  },
+  "encryption": {
+    "loadFailed": "The encryption status could not be loaded.",
+    "none": "No collection encrypts fields.",
+    "complete": "complete",
+    "pending": "to migrate",
+    "field": "Field",
+    "key": "Key",
+    "plain": "Plain",
+    "current": "Current key",
+    "old": "Old key",
+    "notConfigured": "no longer encrypted",
+    "search": "searchable",
+    "migrate": "Migrate",
+    "rekey": "New generation",
+    "needsFull": "Changing keys or migrating needs full administration.",
+    "rekeyTitle": "New data-key generation for {name}",
+    "rekeyBody": "Existing values stay readable until a migration seals them again.",
+    "migrateTitle": "Migrate {name}",
+    "migrateBody": "Seals every stored document with the current configuration, as a job you can follow on the jobs page.",
+    "dry": "Only count (dry run)",
+    "rekeyed": "{field}: generation {generation} started.",
+    "dryStarted": "Dry run queued for {collection}.",
+    "started": "Migration queued for {collection}."
+  },
+  "secretsTabs": {
+    "label": "Secrets sections",
+    "secrets": "Secrets",
+    "keys": "Field keys",
+    "encrypted": "Encrypted fields"
+  },
+  "triggers": {
+    "title": "Triggers",
+    "description": "Functions that run when a document is created, updated or removed.",
+    "loadFailed": "The trigger status could not be loaded.",
+    "dispatcher": "Dispatcher",
+    "running": "running",
+    "noLease": "no instance holds it",
+    "unknown": "not readable here",
+    "position": "Position stored {date}",
+    "backlog": "Unfinished trigger jobs",
+    "gaps": "Open gaps",
+    "declared": "Declared triggers",
+    "trigger": "Trigger",
+    "events": "Events",
+    "when": "Condition",
+    "runs": "Runs",
+    "always": "every event",
+    "none": "No collection declares triggers.",
+    "gapsTitle": "Gaps",
+    "gapsHelp": "Changes that may have been missed.",
+    "reason": "Reason",
+    "where": "Where",
+    "window": "Window",
+    "count": "Changes",
+    "allRealms": "every realm",
+    "resolve": "Resolve",
+    "resolved": "Gap resolved.",
+    "noGaps": "No open gaps."
+  },
+  "migrations": {
+    "help": "Documents keep the schema version they were written with. A migration brings the ones below the current version up to it; workers also do it at every start.",
+    "loadFailed": "The migrations could not be loaded.",
+    "version": "Current",
+    "below": "Documents below it",
+    "last": "Latest migration",
+    "never": "None yet",
+    "dry": "dry run",
+    "counts": "{migrated} migrated, {failed} failed",
+    "none": "No collection has schema migrations.",
+    "dryRun": "Dry run",
+    "migrate": "Migrate",
+    "dryStarted": "Dry run queued for {collection}.",
+    "started": "Migration queued for {collection}.",
+    "already": "A migration for {collection} is already queued or running."
+  },
+  "checksTabs": {
+    "label": "Data check sections",
+    "checks": "Schema checks",
+    "migrations": "Migrations"
+  },
+  "privacy": {
+    "loadFailed": "The consents could not be loaded.",
+    "consents": "Consents",
+    "noConsents": "This user holds no consents.",
+    "history": "History ({n} records)",
+    "actions": {
+      "accepted": "accepted",
+      "withdrawn": "withdrawn"
+    },
+    "record": {
+      "open": "Record a consent",
+      "title": "Record a consent",
+      "help": "For a consent given or withdrawn on paper or by phone. The evidence (a ticket or form number) is kept in the record.",
+      "consent": "Consent name",
+      "action": "Action",
+      "version": "Version",
+      "evidence": "Evidence",
+      "evidenceHelp": "A ticket or form number.",
+      "required": "Consent, evidence and, for an acceptance, the version are required.",
+      "done": "Consent recorded."
+    },
+    "exports": "Data exports",
+    "exportsOff": "This realm does not export user data.",
+    "export": {
+      "open": "Export this user's data",
+      "title": "Export this user's data",
+      "help": "Makes the package the user could ask for themselves. Needs full administration and a fresh proof of identity.",
+      "ticket": "Ticket (optional)",
+      "noNotify": "Do not tell the user",
+      "reason": "Why the user is not told",
+      "reasonHelp": "Kept in the audit record.",
+      "reasonRequired": "A reason is required when the user is not told.",
+      "submit": "Export",
+      "started": "Export started.",
+      "when": "Requested",
+      "status": "Status",
+      "by": "By",
+      "silent": "silent",
+      "download": "Download",
+      "downloadFailed": "The package could not be downloaded.",
+      "none": "No exports yet."
+    }
+  },
+  "userTabs": {
+    "label": "User sections",
+    "overview": "Overview",
+    "security": "Sign-in and security",
+    "sessions": "Sessions and devices",
+    "privacy": "Privacy"
+  },
+  "orgTabs": {
+    "label": "Organization sections",
+    "members": "Members",
+    "sso": "Sign-in (SSO)",
+    "domains": "Domains",
+    "teams": "Teams",
+    "invitations": "Invitations",
+    "settings": "Settings"
+  },
+  "fn": {
+    "back": "All functions",
+    "testRun": "Test run",
+    "sourceHash": "source",
+    "notFound": "This function is not in the realm's configuration.",
+    "seeAllRuns": "See all runs in the history",
+    "noYaml": "The function.yaml could not be read.",
+    "effective": "Effective settings",
+    "idempotency": "Idempotency",
+    "tabs": {
+      "label": "Function sections",
+      "code": "Code",
+      "invocations": "Invocations",
+      "settings": "Settings",
+      "usedBy": "Used by"
+    },
+    "bundle": {
+      "current": "Deployed: bundle matches the files",
+      "stale": "Files changed since the build",
+      "staleHelp": "The running bundle was built from other files or another Deno: run backd-server functions build",
+      "none": "Not built"
+    },
+    "code": {
+      "pick": "Pick a file to read it.",
+      "restricted": "This file holds personal data (seeded user emails): you may not read it.",
+      "empty": "The file is empty.",
+      "open": "Code",
+      "loadFailed": "The function's source could not be loaded.",
+      "files": "Files",
+      "shared": "Shared and project",
+      "omitted": "{n} more files not shown",
+      "readOnly": "read-only",
+      "editHint": "Edit it in the configuration repository, then deploy.",
+      "copy": "Copy",
+      "copied": "Source copied.",
+      "binary": "A binary file: its content isn't shown.",
+      "noRoom": "The content of this file isn't included: the response was already at its size limit.",
+      "truncated": "The file is long: only the first part is shown."
+    },
+    "deps": {
+      "title": "Dependencies",
+      "none": "This function imports nothing.",
+      "specifier": "Import",
+      "kind": "Kind",
+      "points": "Resolves to",
+      "usedBy": "Used in",
+      "missing": "file not found",
+      "kinds": {
+        "local": "File",
+        "npm": "npm",
+        "jsr": "jsr",
+        "node": "Node",
+        "url": "URL",
+        "backd": "backd",
+        "unresolved": "Unmapped"
+      }
+    },
+    "usedBy": {
+      "where": "Where",
+      "kind": "Kind",
+      "detail": "Detail",
+      "http": "HTTP",
+      "schedule": "Schedule",
+      "calls": "Called by",
+      "onComplete": "on_complete of",
+      "trigger": "Trigger",
+      "anyEnd": "any outcome",
+      "none": "Nothing references this function.",
+      "note": "Found in the loaded configuration (function.yaml files and triggers); rules and API keys aren't searched."
+    }
   }
 }

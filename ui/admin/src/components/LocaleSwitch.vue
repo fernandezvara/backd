@@ -1,19 +1,19 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { LOCALES, LOCALE_NAMES } from '@/i18n/locale'
 import { usePreferences } from '@/stores/preferences'
+import SegmentedControl from './SegmentedControl.vue'
 
+// The language: the browser's, or one of the offered, each named in its own words. Kept in this browser.
 const { t } = useI18n()
 const prefs = usePreferences()
+const options = computed(() => [
+  { value: 'auto' as const, label: t('language.auto'), testid: 'language-auto' },
+  ...LOCALES.map((l) => ({ value: l, label: l.toUpperCase(), title: LOCALE_NAMES[l], testid: `language-${l}` })),
+])
 </script>
 
 <template>
-  <label class="flex items-center gap-2 text-sm">
-    <span class="sr-only">{{ t('language.label') }}</span>
-    <select v-model="prefs.language" class="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900" :aria-label="t('language.label')" data-testid="language-switch">
-      <option value="auto">{{ t('language.auto') }}</option>
-      <!-- Each language in its own words, whatever the current one is. -->
-      <option v-for="l in LOCALES" :key="l" :value="l" :lang="l">{{ LOCALE_NAMES[l] }}</option>
-    </select>
-  </label>
+  <SegmentedControl v-model="prefs.language" :label="t('language.label')" :options="options" data-testid="language-switch" />
 </template>

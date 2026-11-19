@@ -35,9 +35,14 @@ export const EXTRA: Record<string, (c: CrumbContext, p: Params) => Crumb[]> = {
   'data-collection': (_c, p) => [{ label: str(p.database) }, { label: str(p.collection) }],
   'data-new': (c, p) => [{ label: str(p.database) }, collectionCrumb(c, p), { label: c.t('data.collection.new') }],
   'data-doc': (c, p) => [{ label: str(p.database) }, collectionCrumb(c, p), { label: str(p.id) }],
+  function: (_c, p) => [{ label: `${str(p.database)}/${str(p.name)}` }],
+  'functions-triggers': (c) => [{ label: c.t('functions.tabs.triggers') }],
   'functions-history': (c) => [{ label: c.t('functions.tabs.history') }],
   'config-settings': (c) => [{ label: c.t('config.tabs.settings') }],
-  'config-collections': (c) => [{ label: c.t('config.tabs.collections') }],
+  'config-backup': (c) => [{ label: c.t('config.tabs.backup') }],
+  'config-signin': (c) => [{ label: c.t('config.tabs.signin') }],
+  'config-files': (c) => [{ label: c.t('config.tabs.files') }],
+  'config-api': (c) => [{ label: c.t('config.tabs.api') }],
   'config-templates': (c) => [{ label: c.t('config.tabs.templates') }],
 }
 
@@ -60,7 +65,7 @@ export function crumbsFor(name: string, params: Params, c: CrumbContext): Crumb[
     { label: c.realm, to: here('home') },
     // A group is not a page: it leads to its first page, which is where its menu starts. When the
     // group and its page are called the same (Data, Data) the page says it.
-    ...(c.t(group.label) === c.t(item.label) ? [] : [{ label: c.t(group.label), to: here(group.items[0].route) }]),
+    ...(group.id === 'realm' || c.t(group.label) === c.t(item.label) ? [] : [{ label: c.t(group.label), to: here(group.items[0].route) }]),
     { label: c.t(item.label), to: here(item.route) },
     ...extra,
   ]

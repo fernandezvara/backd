@@ -11,13 +11,14 @@
 # `backd-server bootstrap`, the local command that creates the first administrator of a realm.
 #
 # Environment: ORIGIN (https://localhost:8443), SEED_DIR (./local-seed),
-# BACKD_EXEC — the command that runs the backd binary in the stack's API container — and
-# EXEC_EXEC — the command that runs a command in the executor container. E.g.:
-#   BACKD_EXEC="docker compose exec -T backd /backd" EXEC_EXEC="docker compose exec -T executor"
+# SERVER_EXEC — the command that runs backd-server in the stack's API container (for
+# `bootstrap`, which works on MongoDB directly) — and EXEC_EXEC — the command that runs
+# a command in the executor container. E.g.:
+#   SERVER_EXEC="docker compose exec -T backd /backd-server" EXEC_EXEC="docker compose exec -T executor"
 set -euo pipefail
 cd "$(dirname "$0")/.."
 origin=${ORIGIN:-https://localhost:8443}
-backd_exec=${BACKD_EXEC:?set BACKD_EXEC to the command that runs backd in the API container}
+server_exec=${SERVER_EXEC:?set SERVER_EXEC to the command that runs backd-server in the API container}
 exec_exec=${EXEC_EXEC:?set EXEC_EXEC to the command that runs a command in the executor container}
 seed_dir=${SEED_DIR:-local-seed}
 mkdir -p "$seed_dir"
@@ -36,7 +37,7 @@ mapfile -t example_env < <(compgen -e EXAMPLE_ || true)
 while IFS=$'\t' read -r realm email; do
   [ -n "$realm" ] || continue
   var=EXAMPLE_$(printf '%s' "$realm" | tr 'a-z-' 'A-Z_')_PASSWORD
-  printf '%s\n' "${!var:-$dev_password}" | $backd_exec bootstrap --realm "$realm" --email "$email" >/dev/null 2>&1 || true
+  printf '%s\n' "${!var:-$dev_password}" | $server_exec bootstrap --realm "$realm" --email "$email" >/dev/null || true
 done < <($exec_exec env "${example_env[@]}" deno run --allow-all /seed/seed.mjs plan)
 
 # Everything else — signups, the consent/MFA chain, the storage keys — is the Deno script.

@@ -26,6 +26,7 @@ test('a picture is uploaded, previewed, downloaded and removed', async ({ page, 
   const { doc } = await newDoc()
   await signIn('admin', { keep: true })
   await page.goto(`/_ui/r/${REALM}/data/main/docs/${doc.id}`)
+  await page.getByTestId('tab-files').click()
   const cover = page.getByTestId('files-cover')
   await expect(cover).toContainText('One file of up to 1 MiB')
   await expect(cover).toContainText('image/png, image/jpeg')
@@ -58,6 +59,7 @@ test('a direct upload shows its progress, and the field is full at max_files', a
   const { doc } = await newDoc()
   await signIn('admin', { keep: true })
   await page.goto(`/_ui/r/${REALM}/data/main/docs/${doc.id}`)
+  await page.getByTestId('tab-files').click()
   const manuals = page.getByTestId('files-manuals')
   await expect(manuals).toContainText('Up to 2 files of 2 MiB each')
   await expect(manuals).toContainText('Sent straight to the storage')
@@ -74,6 +76,7 @@ test('what the field refuses is said, and nothing is stored', async ({ page, sig
   const { doc, col } = await newDoc()
   await signIn('admin', { keep: true })
   await page.goto(`/_ui/r/${REALM}/data/main/docs/${doc.id}`)
+  await page.getByTestId('tab-files').click()
   const cover = page.getByTestId('files-cover')
   // Over 1 MiB, and a type the field doesn't take (by what the bytes say).
   await cover.getByTestId('upload-cover').setInputFiles({ name: 'big.png', mimeType: 'image/png', buffer: Buffer.concat([PNG, Buffer.alloc(1100 * 1024)]) })
@@ -89,11 +92,14 @@ test('unsaved edits survive a file change', async ({ page, signIn }) => {
   await signIn('admin', { keep: true })
   await page.goto(`/_ui/r/${REALM}/data/main/docs/${doc.id}`)
   await page.getByLabel('title').fill('Edited but not saved')
+  await page.getByTestId('tab-files').click()
   await page.getByTestId('upload-cover').setInputFiles({ name: 'dot.png', mimeType: 'image/png', buffer: PNG })
   await expect(page.getByTestId('file-name')).toHaveText('dot.png')
+  await page.getByTestId('tab-form').click()
   await expect(page.getByLabel('title')).toHaveValue('Edited but not saved')
   await page.getByRole('button', { name: 'Save' }).click()
   await expect(page.getByTestId('doc-version')).toHaveText('3') // saved on top of the new version, no conflict
+  await page.getByTestId('tab-files').click()
   await expect(page.getByTestId('file-name')).toHaveText('dot.png') // and the PUT kept the file
 })
 
@@ -102,6 +108,7 @@ test('a read-only administrator downloads but changes nothing', async ({ page, s
   await col.uploadFile(doc.id, 'cover', new Blob([PNG], { type: 'image/png' }), { name: 'dot.png' })
   await signIn('viewer', { keep: true })
   await page.goto(`/_ui/r/${REALM}/data/main/docs/${doc.id}`)
+  await page.getByTestId('tab-files').click()
   const cover = page.getByTestId('files-cover')
   await expect(cover.getByTestId('file-name')).toHaveText('dot.png')
   await expect(cover.getByRole('button', { name: 'Download dot.png' })).toBeVisible()

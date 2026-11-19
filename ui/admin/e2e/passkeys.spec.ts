@@ -124,6 +124,7 @@ test('an administrator sees and removes the passkey of a lost device', async ({ 
   await signInWithPassword(page, ADMIN, 'password')
   await shell(page).waitFor()
   await page.goto(`/_ui/r/${REALM}/users/${id}`)
+  await page.getByTestId('tab-security').click()
   await expect(page.getByTestId('user-passkeys')).toContainText('Lost phone')
   await page.getByRole('button', { name: 'Remove Lost phone' }).click()
   await page.getByRole('dialog').getByLabel('Type Lost phone to confirm').fill('Lost phone')

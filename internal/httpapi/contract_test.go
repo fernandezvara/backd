@@ -1231,6 +1231,9 @@ func TestContract(t *testing.T) {
 	req("POST", ad+"/apikeys", `{"name": "x"}`, nil, 401)
 	req("POST", ad+"/apikeys", `{"name": "x"}`, ada, 403)
 	req("GET", ad+"/config", "", key, 200)
+	req("GET", ad+"/config/files", "", key, 200)
+	req("GET", ad+"/config/files", "", nil, 401)
+	req("GET", ad+"/config/files", "", ada, 403)
 	req("GET", ad+"/config", "", nil, 401)
 	req("GET", ad+"/config", "", ada, 403)
 	spec := "/v1/acme/_openapi.json"
@@ -1492,6 +1495,11 @@ func TestContract(t *testing.T) {
 	req("GET", ad+"/schedules", "", key, 200)
 	req("GET", ad+"/schedules", "", nil, 401)
 	req("GET", ad+"/schedules", "", ada, 403)
+	// Reading a function's source.
+	req("GET", run+"echo/source", "", key, 200)
+	req("GET", run+"echo/source", "", nil, 401)
+	req("GET", run+"echo/source", "", ada, 403)
+	req("GET", run+"ghost/source", "", key, 404)
 	req("POST", run+"nightly/pause", ``, key, 200)
 	req("POST", run+"nightly/resume", ``, key, 200)
 	req("POST", run+"echo/pause", ``, key, 409) // not scheduled

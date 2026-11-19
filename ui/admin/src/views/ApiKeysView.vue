@@ -4,6 +4,7 @@ import type { APIKeyInfo } from 'backd-js'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppAlert from '@/components/AppAlert.vue'
+import AppBadge from '@/components/AppBadge.vue'
 import AppButton from '@/components/AppButton.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -40,6 +41,9 @@ async function load() {
   }
 }
 onMounted(load)
+
+// A key that expires within a week is flagged.
+const soon = (k: APIKeyInfo) => !!k.expires_at && new Date(k.expires_at).getTime() - Date.now() < 7 * 864e5
 
 // Create: the key is shown once.
 const creating = ref(false)
@@ -111,12 +115,12 @@ async function revoke() {
     <AppButton v-if="canWrite" @click="openCreate">{{ t('apikeys.create.open') }}</AppButton>
   </PageHeader>
 
-  <AppAlert v-if="error" kind="error" class="mt-4">{{ error }}</AppAlert>
-  <p v-if="loading" class="mt-4 text-sm" role="status">{{ t('common.loading') }}</p>
+  <AppAlert v-if="error" kind="error" class="mb-4">{{ error }}</AppAlert>
+  <p v-if="loading" class="mb-4 text-sm" role="status">{{ t('common.loading') }}</p>
 
-  <AppCard flush class="mt-4">
+  <AppCard flush>
     <table class="w-full text-left text-sm" data-testid="apikeys-table">
-      <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
+      <thead>
         <tr>
           <th scope="col" class="px-3 py-2">{{ t('apikeys.name') }}</th>
           <th scope="col" class="px-3 py-2">{{ t('apikeys.role') }}</th>
@@ -131,14 +135,14 @@ async function revoke() {
       <tbody>
         <tr v-for="k in keys" :key="k.name" class="border-b border-slate-100 last:border-0 dark:border-slate-800">
           <td class="px-3 py-2 font-medium">{{ k.name }}</td>
-          <td class="px-3 py-2">{{ k.role }}</td>
-          <td class="px-3 py-2 font-mono text-xs">{{ k.prefix }}…</td>
-          <td class="px-3 py-2">{{ k.scopes.length ? k.scopes.join(', ') : t('apikeys.everything') }}</td>
-          <td class="px-3 py-2">{{ k.networks.length ? k.networks.join(', ') : t('apikeys.anywhere') }}</td>
-          <td class="px-3 py-2">{{ k.expires_at ? formatDate(k.expires_at) : t('apikeys.never') }}</td>
-          <td class="px-3 py-2">{{ k.last_used_at ? formatDate(k.last_used_at) : t('common.never') }}</td>
+          <td class="px-3 py-2"><AppBadge :kind="k.role === 'admin' ? 'violet' : 'neutral'">{{ k.role }}</AppBadge></td>
+          <td class="px-3 py-2 font-mono text-xs text-slate-600 dark:text-slate-400">{{ k.prefix }}…</td>
+          <td class="px-3 py-2 text-slate-600 dark:text-slate-400">{{ k.scopes.length ? k.scopes.join(', ') : t('apikeys.everything') }}</td>
+          <td class="px-3 py-2 font-mono text-xs text-slate-600 dark:text-slate-400">{{ k.networks.length ? k.networks.join(', ') : t('apikeys.anywhere') }}</td>
+          <td class="px-3 py-2"><AppBadge v-if="soon(k)" kind="warn">{{ formatDate(k.expires_at!) }}</AppBadge><span v-else class="text-slate-600 dark:text-slate-400">{{ k.expires_at ? formatDate(k.expires_at) : t('apikeys.never') }}</span></td>
+          <td class="px-3 py-2 text-slate-600 dark:text-slate-400">{{ k.last_used_at ? formatDate(k.last_used_at) : t('common.never') }}</td>
           <td v-if="canWrite" class="px-3 py-2 text-right">
-            <button type="button" class="underline" :aria-label="`${t('common.revoke')} ${k.name}`" @click="askRevoke(k)">{{ t('common.revoke') }}</button>
+            <AppButton variant="danger" :aria-label="`${t('common.revoke')} ${k.name}`" @click="askRevoke(k)">{{ t('common.revoke') }}</AppButton>
           </td>
         </tr>
         <tr v-if="!keys.length && !loading">

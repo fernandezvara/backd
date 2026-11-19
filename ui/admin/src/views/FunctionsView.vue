@@ -3,13 +3,16 @@ import { formatBytes, Job } from 'backd-js'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppAlert from '@/components/AppAlert.vue'
+import { PhCaretDown, PhCaretRight, PhCode, PhMagnifyingGlass } from '@phosphor-icons/vue'
+import AppBadge from '@/components/AppBadge.vue'
+import AppCard from '@/components/AppCard.vue'
 import AppButton from '@/components/AppButton.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import FormDialog from '@/components/FormDialog.vue'
 import FunctionsTabs from '@/components/FunctionsTabs.vue'
 import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
-import { downloadText } from '@/lib/draft'
+import { downloadText } from '@/lib/download'
 import { errorText, prettyDuration } from '@/lib/format'
 import { useRealmConfig } from '@/stores/config'
 import { useSession } from '@/stores/session'
@@ -101,6 +104,25 @@ const databases = computed(() => {
     .filter((db) => db.functions.length)
     .sort((a, b) => a.name.localeCompare(b.name))
 })
+// One row per function, over every database; the filters work on it.
+const rows = computed(() => databases.value.flatMap((db) => db.functions.map((f) => ({ id: `${db.name}/${f.name}`, db: db.name, f }))))
+const filter = ref('')
+const modeFilter = ref('')
+const modes = computed(() => [...new Set(rows.value.map((r) => r.f.mode))].sort())
+const shown = computed(() =>
+  rows.value.filter((r) => {
+    if (filter.value && !r.id.toLowerCase().includes(filter.value.trim().toLowerCase())) return false
+    const m = modeFilter.value
+    if (!m) return true
+    return m === 'scheduled' ? !!r.f.schedule : m === 'internal' ? r.f.internal : r.f.mode === m
+  }),
+)
+const opened = ref(new Set<string>())
+function toggle(id: string) {
+  const next = new Set(opened.value)
+  if (!next.delete(id)) next.add(id)
+  opened.value = next
+}
 const allFunctions = computed(() => databases.value.flatMap((db) => db.functions.map((f) => `${db.name}/${f.name}`)))
 const list = (xs: string[]) => (xs.length ? xs.join(', ') : t('functions.noneValue'))
 
@@ -168,55 +190,117 @@ async function run() {
   <AppAlert v-else-if="loadError" kind="error">{{ loadError }}</AppAlert>
   <p v-else-if="realmConfig.config && !databases.length" class="text-sm text-slate-600 dark:text-slate-400">{{ t('functions.none') }}</p>
 
-  <section v-for="db in databases" :key="db.name" class="mb-8" :aria-labelledby="`db-${db.name}`">
-    <h2 :id="`db-${db.name}`" class="text-lg font-semibold">{{ t('functions.database', { name: db.name }) }}</h2>
-    <div class="mt-3 grid gap-4 lg:grid-cols-2">
-      <article v-for="f in db.functions" :key="f.name" class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900" :data-testid="`fn-${db.name}-${f.name}`">
-        <div class="flex flex-wrap items-center gap-2">
-          <h3 class="font-mono text-sm font-semibold">{{ f.name }}</h3>
-          <span class="rounded bg-slate-200 px-2 py-0.5 text-xs dark:bg-slate-700">{{ t(`functions.modes.${f.mode}`) }}</span>
-          <span v-if="f.internal" class="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900 dark:bg-amber-900 dark:text-amber-100">{{ t('functions.internal') }}</span>
-          <span v-if="f.admin" class="rounded bg-slate-200 px-2 py-0.5 text-xs dark:bg-slate-700">{{ t('functions.admin') }}</span>
-          <span v-if="f.email" class="rounded bg-slate-200 px-2 py-0.5 text-xs dark:bg-slate-700">{{ t('functions.email') }}</span>
-          <span v-if="f.dev_only" class="rounded bg-slate-200 px-2 py-0.5 text-xs dark:bg-slate-700">{{ t('functions.devOnly') }}</span>
-          <AppButton v-if="canInvoke" variant="secondary" class="ml-auto" @click="show(`${db.name}/${f.name}`)">{{ t('functions.invoke.submit') }}</AppButton>
-        </div>
-        <dl class="mt-3 grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 text-sm">
-          <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.schedule') }}</dt>
-          <dd class="font-mono text-xs">
-            {{ f.schedule || t('functions.noSchedule') }}<span v-if="f.schedule && f.timezone !== 'UTC'" class="font-sans text-slate-600 dark:text-slate-400"> · {{ f.timezone }}</span><span v-if="f.schedule && f.overlap === 'skip'" class="font-sans text-slate-600 dark:text-slate-400"> · {{ t('functions.overlapSkip') }}</span>
-            <span v-if="f.schedule && paused[`${db.name}/${f.name}`]" class="ml-2 rounded bg-amber-100 px-2 py-0.5 font-sans text-xs text-amber-900 dark:bg-amber-900 dark:text-amber-100">{{ t('functions.paused') }}</span>
-            <AppButton v-if="f.schedule && canInvoke" variant="secondary" class="ml-2" :busy="pausing === `${db.name}/${f.name}`" @click="togglePause(`${db.name}/${f.name}`)">{{ paused[`${db.name}/${f.name}`] ? t('functions.resume.open') : t('functions.pause.open') }}</AppButton>
-          </dd>
-          <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.limits') }}</dt>
-          <dd>{{ t('functions.timeout') }} {{ prettyDuration(f.timeout) }} · {{ t('functions.memory') }} {{ formatBytes(f.memory) }} · {{ t('functions.maxOutput') }} {{ formatBytes(f.max_output) }} · {{ t('functions.concurrency') }} {{ f.concurrency }}</dd>
-          <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.calls') }}</dt>
-          <dd class="font-mono text-xs">{{ list(f.calls) }}</dd>
-          <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.secrets') }}</dt>
-          <dd class="font-mono text-xs">{{ list(f.secrets) }}</dd>
-          <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.network') }}</dt>
-          <dd class="font-mono text-xs">{{ list(f.network) }}</dd>
-          <template v-if="f.on_complete">
-            <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.onComplete') }}</dt>
-            <dd class="font-mono text-xs">{{ f.on_complete.function }}<span v-if="f.on_complete.on.length" class="font-sans text-slate-600 dark:text-slate-400"> · {{ f.on_complete.on.join(', ') }}</span></dd>
-          </template>
-          <template v-if="f.retry">
-            <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.retry') }}</dt>
-            <dd>{{ t('functions.retryText', { attempts: f.retry.attempts, backoff: prettyDuration(f.retry.backoff) }) }}</dd>
-          </template>
-          <template v-if="f.rate_limit">
-            <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.rateLimit') }}</dt>
-            <dd>{{ t('functions.rateText', { limit: f.rate_limit.limit, per: f.rate_limit.per, window: prettyDuration(f.rate_limit.window) }) }}</dd>
-          </template>
-          <template v-if="f.invoke">
-            <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.invokeRule') }}</dt>
-            <dd class="font-mono text-xs">{{ f.invoke }}</dd>
-          </template>
-        </dl>
-        <p class="mt-3 text-xs text-slate-600 dark:text-slate-400">{{ t('functions.file', { file: f.file }) }}</p>
-      </article>
+  <AppCard v-if="rows.length || filter || modeFilter" flush>
+    <div class="flex flex-wrap items-center gap-2 border-b border-slate-200 p-3 dark:border-slate-800">
+      <div class="relative">
+        <PhMagnifyingGlass :size="14" class="pointer-events-none absolute left-2.5 top-2.5 text-slate-400" aria-hidden="true" />
+        <input v-model="filter" type="search" class="h-8 w-72 max-w-full rounded-md border border-slate-300 bg-white pl-8 pr-2 text-[13px] dark:border-slate-700 dark:bg-slate-900" :placeholder="t('functions.filter')" :aria-label="t('functions.filter')" autocomplete="off" />
+      </div>
+      <select v-model="modeFilter" class="h-8 rounded-md border border-slate-300 bg-white px-2 text-[13px] dark:border-slate-700 dark:bg-slate-900" :aria-label="t('functions.kind')">
+        <option value="">{{ t('functions.allKinds') }}</option>
+        <option v-for="m in modes" :key="m" :value="m">{{ t(`functions.modes.${m}`) }}</option>
+        <option value="scheduled">{{ t('functions.scheduledOnly') }}</option>
+        <option value="internal">{{ t('functions.internal') }}</option>
+      </select>
+      <span class="ml-auto text-xs text-slate-600 dark:text-slate-400">{{ t('functions.count', { n: shown.length }) }}</span>
     </div>
-  </section>
+    <table class="w-full text-left text-sm" data-testid="functions-table">
+      <thead>
+        <tr>
+          <th scope="col" class="w-8 px-3 py-2"><span class="sr-only">{{ t('functions.details') }}</span></th>
+          <th scope="col" class="px-3 py-2">{{ t('functions.function') }}</th>
+          <th scope="col" class="px-3 py-2">{{ t('functions.kind') }}</th>
+          <th scope="col" class="px-3 py-2">{{ t('functions.schedule') }}</th>
+          <th scope="col" class="px-3 py-2">{{ t('functions.limits') }}</th>
+          <th scope="col" class="px-3 py-2">{{ t('functions.uses') }}</th>
+          <th scope="col" class="px-3 py-2"><span class="sr-only">{{ t('fn.code.open') }}</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        <template v-for="r in shown" :key="r.id">
+          <tr class="border-b border-slate-100 dark:border-slate-800" :data-testid="`fn-${r.db}-${r.f.name}`">
+            <td class="px-3 py-2">
+              <button type="button" class="text-slate-500 hover:text-slate-900 dark:hover:text-slate-100" :aria-expanded="opened.has(r.id)" :aria-label="`${t('functions.details')} ${r.f.name}`" @click="toggle(r.id)">
+                <component :is="opened.has(r.id) ? PhCaretDown : PhCaretRight" :size="14" aria-hidden="true" />
+              </button>
+            </td>
+            <td class="px-3 py-2">
+              <RouterLink :to="{ name: 'function', params: { realm, database: r.db, name: r.f.name } }" class="font-mono font-medium hover:underline" data-testid="function-link">{{ r.f.name }}</RouterLink>
+              <div class="text-xs text-slate-500">{{ r.db }}</div>
+            </td>
+            <td class="px-3 py-2">
+              <span class="flex flex-wrap gap-1">
+                <AppBadge kind="blue">{{ t(`functions.modes.${r.f.mode}`) }}</AppBadge>
+                <AppBadge v-if="r.f.internal" kind="warn">{{ t('functions.internal') }}</AppBadge>
+                <AppBadge v-if="r.f.admin">{{ t('functions.admin') }}</AppBadge>
+                <AppBadge v-if="r.f.email">{{ t('functions.email') }}</AppBadge>
+                <AppBadge v-if="r.f.dev_only">{{ t('functions.devOnly') }}</AppBadge>
+              </span>
+            </td>
+            <td class="px-3 py-2">
+              <span v-if="!r.f.schedule" class="text-slate-500">—</span>
+              <span v-else class="flex flex-wrap items-center gap-1.5">
+                <span class="font-mono text-xs">{{ r.f.schedule }}</span>
+                <AppBadge v-if="paused[r.id]" kind="warn">{{ t('functions.paused') }}</AppBadge>
+                <AppBadge v-else kind="ok">{{ t('functions.active') }}</AppBadge>
+              </span>
+            </td>
+            <td class="px-3 py-2 text-slate-600 dark:text-slate-400">{{ prettyDuration(r.f.timeout) }} · {{ formatBytes(r.f.memory) }}</td>
+            <td class="px-3 py-2 text-slate-600 dark:text-slate-400">{{ t('functions.usesText', { calls: r.f.calls.length, secrets: r.f.secrets.length, network: r.f.network.length }) }}</td>
+            <td class="px-3 py-2 text-right">
+              <span class="inline-flex gap-2">
+                <RouterLink :to="{ name: 'function', params: { realm, database: r.db, name: r.f.name } }" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 text-[13px] font-medium hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700" :aria-label="`${t('fn.code.open')} ${r.f.name}`" data-testid="function-code"><PhCode :size="14" aria-hidden="true" />{{ t('fn.code.open') }}</RouterLink>
+                <template v-if="canInvoke">
+                <AppButton v-if="r.f.schedule" variant="secondary" :busy="pausing === r.id" @click="togglePause(r.id)">{{ paused[r.id] ? t('functions.resume.open') : t('functions.pause.open') }}</AppButton>
+                <AppButton variant="secondary" @click="show(r.id)">{{ t('functions.invoke.submit') }}</AppButton>
+                </template>
+              </span>
+            </td>
+          </tr>
+          <tr v-if="opened.has(r.id)" class="border-b border-slate-100 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50">
+            <td />
+            <td :colspan="6" class="px-3 py-3">
+              <dl class="grid max-w-3xl grid-cols-[8rem_1fr] gap-x-3 gap-y-1 text-[13px]">
+                <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.limits') }}</dt>
+                <dd>{{ t('functions.timeout') }} {{ prettyDuration(r.f.timeout) }} · {{ t('functions.memory') }} {{ formatBytes(r.f.memory) }} · {{ t('functions.maxOutput') }} {{ formatBytes(r.f.max_output) }} · {{ t('functions.concurrency') }} {{ r.f.concurrency }}</dd>
+                <template v-if="r.f.schedule && (r.f.timezone !== 'UTC' || r.f.overlap === 'skip')">
+                  <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.schedule') }}</dt>
+                  <dd>{{ r.f.timezone }}<span v-if="r.f.overlap === 'skip'"> · {{ t('functions.overlapSkip') }}</span></dd>
+                </template>
+                <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.calls') }}</dt>
+                <dd class="font-mono text-xs">{{ list(r.f.calls) }}</dd>
+                <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.secrets') }}</dt>
+                <dd class="font-mono text-xs">{{ list(r.f.secrets) }}</dd>
+                <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.network') }}</dt>
+                <dd class="font-mono text-xs">{{ list(r.f.network) }}</dd>
+                <template v-if="r.f.on_complete">
+                  <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.onComplete') }}</dt>
+                  <dd class="font-mono text-xs">{{ r.f.on_complete.function }}<span v-if="r.f.on_complete.on.length" class="font-sans text-slate-600 dark:text-slate-400"> · {{ r.f.on_complete.on.join(', ') }}</span></dd>
+                </template>
+                <template v-if="r.f.retry">
+                  <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.retry') }}</dt>
+                  <dd>{{ t('functions.retryText', { attempts: r.f.retry.attempts, backoff: prettyDuration(r.f.retry.backoff) }) }}</dd>
+                </template>
+                <template v-if="r.f.rate_limit">
+                  <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.rateLimit') }}</dt>
+                  <dd>{{ t('functions.rateText', { limit: r.f.rate_limit.limit, per: r.f.rate_limit.per, window: prettyDuration(r.f.rate_limit.window) }) }}</dd>
+                </template>
+                <template v-if="r.f.invoke">
+                  <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.invokeRule') }}</dt>
+                  <dd class="font-mono text-xs">{{ r.f.invoke }}</dd>
+                </template>
+                <dt class="text-slate-600 dark:text-slate-400">{{ t('functions.fileLabel') }}</dt>
+                <dd class="font-mono text-xs">{{ r.f.file }}</dd>
+              </dl>
+            </td>
+          </tr>
+        </template>
+        <tr v-if="!shown.length">
+          <td :colspan="7" class="px-3 py-6 text-center text-slate-600 dark:text-slate-400">{{ t('functions.noMatch') }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </AppCard>
 
   <FormDialog v-model:open="open" :title="t('functions.invoke.title')" :description="t('functions.invoke.help')" :submit="busy ? t('functions.invoke.running') : t('functions.invoke.submit')" :busy="busy" :error="error" @submit="run">
     <div v-if="allFunctions.length" class="space-y-1">

@@ -80,7 +80,7 @@ ready || {
 # The example realms: storage keys and their administrators (scripts/example-seed.sh),
 # whose one-off sign-in details (TOTP QR, recovery codes) land in $seed_dir/credentials.json.
 ORIGIN=$origin CA=$ca SEED_DIR=$seed_dir \
-  BACKD_EXEC='docker compose exec -T backd /backd' \
+  SERVER_EXEC='docker compose exec -T backd /backd-server' \
   EXEC_EXEC='docker compose exec -T executor' \
   scripts/example-seed.sh
 

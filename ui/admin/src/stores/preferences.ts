@@ -5,6 +5,21 @@ import { isLocale, resolveLocale, type LanguagePreference } from '@/i18n/locale'
 
 export type Theme = 'system' | 'light' | 'dark'
 
+/** The accent palettes (`html[data-accent]` in style.css). The first is the default. */
+export const ACCENTS = ['teal', 'blue', 'indigo', 'violet', 'rose', 'orange', 'emerald'] as const
+export type Accent = (typeof ACCENTS)[number]
+const ACCENT_KEY = 'backd-admin:accent'
+
+function readAccent(): Accent {
+  try {
+    const v = localStorage.getItem(ACCENT_KEY)
+    if ((ACCENTS as readonly string[]).includes(v ?? '')) return v as Accent
+  } catch {
+    // storage blocked: the default
+  }
+  return 'teal'
+}
+
 const KEY = 'backd-admin:theme'
 
 function read(): Theme {
@@ -46,6 +61,19 @@ export function applyLanguage(preference: LanguagePreference, languages: readonl
 export const usePreferences = defineStore('preferences', () => {
   const theme = ref<Theme>(read())
   const language = ref<LanguagePreference>(readLanguage())
+  const accent = ref<Accent>(readAccent())
+  watch(
+    accent,
+    (a) => {
+      document.documentElement.dataset.accent = a
+      try {
+        localStorage.setItem(ACCENT_KEY, a)
+      } catch {
+        // not persisted; still applied
+      }
+    },
+    { immediate: true },
+  )
   watch(
     language,
     (l) => {
@@ -72,5 +100,5 @@ export const usePreferences = defineStore('preferences', () => {
     { immediate: true },
   )
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme(theme.value))
-  return { theme, language }
+  return { theme, language, accent }
 })

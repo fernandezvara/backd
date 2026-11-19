@@ -93,11 +93,27 @@ const prev = JSON.parse(
 const stored = (realm, email) =>
   prev.accounts?.find((a) => a.realm === realm && a.email === email);
 
+// The strategy a seeded account signs in with: a role may restrict the
+// strategies it is active on (shelf's admin: [password_totp, magic_link_totp]) —
+// a session made with another one has the role inactive. Pick the role's first
+// password-first strategy, else the realm's default.
+const strategyFor = (s, roleName) => {
+  const allowed = s.roles[roleName]?.strategies;
+  if (allowed?.length) {
+    const pw = s.pwStrategies.find((st) => allowed.includes(st.name));
+    if (pw) return pw.name;
+  }
+  return s.passwordStrategy;
+};
+
 // Signs in, answering every step the realm can come back with, until the client
-// holds the session. Resolves with the one-off material to keep —
-// { mfa, recovery_codes } — or null when it could not get in.
-const signIn = async (client, realm, email, pw) => {
-  let res = await client.auth.signIn({ email, password: pw });
+// holds the session. `strategy` is the strategy to sign in with (a realm with
+// more than one strategy that starts with a password requires it);
+// `org` scopes the session to that organization, as realms with organizations
+// reject members' sessions that belong to none. Resolves with the one-off
+// material to keep — { mfa, recovery_codes } — or null when it could not get in.
+const signIn = async (client, realm, email, pw, strategy, org) => {
+  let res = await client.auth.signIn({ email, password: pw, strategy, org });
   const keep = {};
   for (let i = 0; i < 6; i++) {
     if (res?.token || res?.session_id) return keep;
@@ -170,9 +186,10 @@ const verifyEmail = async (client, realm, db, email) => {
 };
 
 // Reads the parts of a realm.yaml the seed needs — a narrow extractor, not a YAML
-// parser, fine for files of this repository: top-level scalars (auth, signup),
-// two-level keys (account.require_verified_email, email.function,
-// mfa.required_roles), storage's presence, and roles.<name>.
+// parser, fine for files of this repository: top-level scalars (auth, signup —
+// also nested under auth —, organizations), two-level keys
+// (account.require_verified_email, email.function, mfa.required_roles,
+// auth.strategies' password-first strategies), storage's presence, and roles.<name>.
 // {admin, description, users} (block or inline-map form). A line it can't place
 // throws: the caller skips the realm with a warning.
 const scalar = (v) => (v ?? "").trim().replace(/^["']|["']$/g, "");
@@ -183,9 +200,10 @@ const inlineList = (v) => {
 const readRealmYaml = (text) => {
   const s = {
     auth: "enabled", signup: "closed", verifyEmail: false,
-    emailDb: "notifications", hasStorage: false, hasPublicStorage: false, roles: {},
+    emailDb: "notifications", hasStorage: false, hasPublicStorage: false,
+    hasOrgs: false, pwStrategies: [], roles: {},
   };
-  let section = "", role = null, list = null;
+  let section = "", role = null, list = null, authSub = null;
   for (const raw of text.split("\n")) {
     const line = raw.replace(/(^|\s)#.*$/, ""); // comments
     if (!line.trim()) continue;
@@ -205,10 +223,24 @@ const readRealmYaml = (text) => {
     if (indent === 0) {
       section = key;
       role = null;
+      authSub = null;
       if (key === "auth") s.auth = scalar(val) || "enabled";
       else if (key === "signup") s.signup = scalar(val) || "closed";
+      else if (key === "organizations") s.hasOrgs = true;
       else if (key === "storage") s.hasStorage = true;
       else if (key === "public_storage") s.hasPublicStorage = true;
+      continue;
+    }
+    if (section === "auth") {
+      if (indent === 2) {
+        authSub = key === "strategies" ? "strategies" : null;
+        if (key === "signup") s.signup = scalar(val) || "closed";
+      } else if (authSub === "strategies" && indent === 4) {
+        const methods = inlineList(val) ?? [];
+        if (methods[0] === "password") {
+          s.pwStrategies.push({ name: key, single: methods.length === 1 });
+        }
+      }
       continue;
     }
     if (section === "account" && indent === 2 && key === "require_verified_email") {
@@ -218,7 +250,7 @@ const readRealmYaml = (text) => {
     } else if (section === "roles") {
       if (indent === 2) { // a role's name
         role = key;
-        const r = (s.roles[role] ??= { admin: null, adminAreas: null, users: [], description: "" });
+        const r = (s.roles[role] ??= { admin: null, adminAreas: null, users: [], description: "", strategies: null });
         const im = /^\{(.*)\}$/.exec(val); // inline map: name: {k: v, …}
         if (im) {
           for (const part of im[1].split(/,(?![^\[]*\])/)) { // commas outside []
@@ -229,6 +261,8 @@ const readRealmYaml = (text) => {
               r.admin = scalar(kv[2]) === "true" ? "full" : r.adminAreas ? "areas" : scalar(kv[2]) || null;
             } else if (kv?.[1] === "users") {
               r.users.push(...(inlineList(kv[2]) ?? []));
+            } else if (kv?.[1] === "strategies") {
+              r.strategies = inlineList(kv[2]) ?? [];
             }
           }
         }
@@ -240,6 +274,8 @@ const readRealmYaml = (text) => {
       else if (key === "admin") {
         r.adminAreas = inlineList(val);
         r.admin = scalar(val) === "true" ? "full" : r.adminAreas ? "areas" : scalar(val) || null;
+      } else if (key === "strategies") {
+        r.strategies = inlineList(val) ?? [];
       } else if (key === "users") {
         const il = inlineList(val);
         if (il) r.users.push(...il);
@@ -247,6 +283,10 @@ const readRealmYaml = (text) => {
       }
     }
   }
+  // The strategy a password sign-in names: the plain password one when the realm
+  // has it, else the first that starts with a password (its later steps are the
+  // enrollment/MFA answers signIn already makes).
+  s.passwordStrategy = (s.pwStrategies.find((x) => x.single) ?? s.pwStrategies[0])?.name;
   return s;
 };
 
@@ -306,7 +346,7 @@ for (const e of Deno.readDirSync(configDir)) {
 if (Deno.args[0] === "plan") {
   for (const name of Object.keys(realms).sort()) {
     const s = realms[name];
-    if (s.signup === "open") continue;
+    if (s.signup === "open" && !s.hasOrgs) continue;
     const admin = Object.values(s.roles).find((r) => r.admin === "full" && r.users.length);
     if (admin) console.log(`${name}\t${admin.users[0].toLowerCase()}`);
   }
@@ -347,6 +387,44 @@ const createAsAdmin = async (admin, email, pw) => {
   }
 };
 
+// Creates the member and their organization in one call, as the example apps do
+// (in a realm with organizations a member's session is scoped to one; each
+// person's team is slugged by their address's local part). Realms that sign
+// people up only by invitation need one from the realm's administrator.
+const createInOrg = async (admin, client, realm, email, pw, slug, invite) => {
+  let invitation;
+  if (invite) {
+    if (!admin) {
+      warn(`no administrator of ${realm} signed in to invite ${email}`);
+      return false;
+    }
+    try {
+      invitation = (await admin.admin.invitations.create({ email })).token;
+    } catch (e) {
+      warn(`admin couldn't invite ${email}: ${e?.message ?? e}`);
+      return false;
+    }
+  }
+  const attempt = async (consents) => {
+    try {
+      await client.auth.signUpWithOrg({
+        email, password: pw, name: `${slug}'s team`, slug, invitation, consents,
+      });
+      return true;
+    } catch (e) {
+      if (e?.consents?.length) {
+        return attempt(
+          Object.fromEntries(e.consents.map((c) => [c.name, c.version])),
+        );
+      }
+      if (e?.status === 409 || /exist|taken|conflict/i.test(e?.message ?? "")) return true;
+      warn(`couldn't sign ${email} up with team ${slug}: ${e?.message ?? e}`);
+      return false;
+    }
+  };
+  return attempt();
+};
+
 // The storage keys the local MinIO knows (the compose files' MinIO user), for the private
 // storage and for the public one.
 const storageSecrets = {
@@ -370,11 +448,18 @@ for (const [realm, s] of Object.entries(realms)) {
   const pw = password(realm);
   for (const a of s.accounts) {
     const client = createClient({ url: api, realm });
+    // In a realm with organizations, a member (an account that holds no admin
+    // role) needs a session scoped to their own team — slugged by their
+    // address's local part, the example apps' convention. Administrators' realm
+    // sessions need no organization.
+    const memberOrg = s.hasOrgs && a.admin == null ? a.email.split("@")[0] : undefined;
+    const strategy = strategyFor(s, a.role);
     const account = {
       realm,
       email: a.email,
       password: pw,
       sign_in: a.sign_in ?? s.app,
+      ...(memberOrg && { org: memberOrg }),
       ...(a.note && { note: a.note }),
     };
     try {
@@ -383,13 +468,15 @@ for (const [realm, s] of Object.entries(realms)) {
       // creating — or, on a verified-email realm, its address verifying.
       let keep;
       try {
-        keep = await signIn(client, realm, a.email, pw);
+        keep = await signIn(client, realm, a.email, pw, strategy, memberOrg);
       } catch (e) {
         if (s.verifyEmail && (e?.status === 403 || e?.code === "email_not_verified") &&
             await verifyEmail(client, realm, s.emailDb, a.email)) {
           // Signed up before but never verified: the mail's token is still good.
         } else if (e?.status === 401 || e?.code === "invalid_credentials") {
-          if (s.signup === "open") {
+          if (memberOrg) {
+            await createInOrg(usersAdmin ?? fullAdmin, client, realm, a.email, pw, memberOrg, s.signup !== "open");
+          } else if (s.signup === "open" && !s.hasOrgs) {
             await ensureAccount(client, realm, a.email, pw, s.emailDb);
           } else if (usersAdmin) {
             await createAsAdmin(usersAdmin, a.email, pw);
@@ -399,7 +486,7 @@ for (const [realm, s] of Object.entries(realms)) {
         } else {
           throw e;
         }
-        keep = await signIn(client, realm, a.email, pw);
+        keep = await signIn(client, realm, a.email, pw, strategy, memberOrg);
       }
       if (keep === null) {
         warn(`no session for ${a.email}: sign in by hand`);

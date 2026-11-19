@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from './fixtures'
 import { PASSWORD, REALM, users } from './users'
-import { go, inAccount, navLabels, setLanguage, setTheme } from './nav'
+import { go, navLabels, openAccount, setLanguage, setTheme } from './nav'
 
 test.describe('a Spanish browser', () => {
   test.use({ locale: 'es-ES' })
@@ -30,9 +30,7 @@ test('the language can be chosen, and the choice is kept', async ({ page, signIn
   await expect(page.getByRole('button', { name: 'Cuenta' })).toBeVisible()
   await expect(page.locator('html')).toHaveAttribute('lang', 'es')
   // The choices are written in their own language.
-  await inAccount(page, async () => {
-    await expect(page.getByTestId('language-switch').locator('option')).toHaveText(['Automático', 'English', 'Español'])
-  })
+  await expect(page.getByTestId('language-switch').getByRole('radio')).toHaveText(['Automático', 'EN', 'ES'])
 
   // Pages, and the dates on them, follow.
   await go(page, 'Usuarios')
@@ -43,13 +41,12 @@ test('the language can be chosen, and the choice is kept', async ({ page, signIn
   // It survives a reload (and keeps the session, which this tab opted in to).
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Usuarios' })).toBeVisible()
-  await inAccount(page, async () => {
-    await expect(page.getByTestId('language-switch')).toHaveValue('es')
-  })
+  await openAccount(page)
+  await expect(page.getByTestId('language-es')).toHaveAttribute('aria-checked', 'true')
 
   // Back to following the browser, English here.
   await setLanguage(page, 'auto')
-  await expect(page.getByRole('heading', { name: 'Users' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Account', exact: true })).toBeVisible()
   expect(await page.evaluate(() => localStorage.getItem('backd-admin:language'))).toBeNull()
 })
 
@@ -76,7 +73,7 @@ test('the Spanish views have no accessibility violations', async ({ page, signIn
       ['users', 'users-table'],
       ['apikeys', 'apikeys-table'],
       ['audit', 'audit-table'],
-      ['config/collections', 'col-main-products'],
+      ['config', 'config-realm'],
       ['data/main/products', 'docs-table'],
     ] as const) {
       await page.goto(`/_ui/r/${REALM}/${url}`)

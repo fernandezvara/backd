@@ -301,6 +301,71 @@ import { connectionBody } from './orgs.js'
  */
 
 /**
+ * One file of the realm's configuration (`admin.configFiles()`).
+ * @typedef {object} ConfigFile
+ * @property {string} path        Relative to the config directory, such as `acme/app/posts/collection.yaml`.
+ * @property {'realm' | 'realm_config' | 'schema' | 'indexes' | 'collection' | 'function' | 'migration' | 'other'} role
+ * @property {'typescript' | 'javascript' | 'json' | 'yaml' | 'markdown' | 'html' | 'text'} language
+ * @property {number} size        Bytes.
+ * @property {string} sha256
+ * @property {string | null} content   The file as text; null for a binary or restricted file, or past the size limit.
+ * @property {boolean} truncated
+ * @property {boolean} binary
+ * @property {string} database    The database it belongs to; empty for the realm's own files.
+ * @property {string} collection  The collection it belongs to; empty when it belongs to none.
+ * @property {boolean} restricted The caller may not read it (realm.yaml holds personal data): it comes without content.
+ */
+
+/**
+ * The files of the realm's configuration.
+ * @typedef {object} ConfigFiles
+ * @property {string} realm
+ * @property {string} fingerprint
+ * @property {ConfigFile[]} files   Sorted by path.
+ * @property {number} omitted       Files left out because the realm has more than 2000.
+ */
+
+/**
+ * One file of a function's source.
+ * @typedef {object} FunctionSourceFile
+ * @property {string} path        Relative to the functions project (the database's `_functions/`): `refund/index.ts`, `lib/relay.ts`, `deno.json`.
+ * @property {'entry' | 'config' | 'schema' | 'code' | 'shared' | 'project'} role
+ * @property {'typescript' | 'javascript' | 'json' | 'yaml' | 'markdown' | 'text'} language
+ * @property {number} size        Bytes.
+ * @property {string} sha256
+ * @property {string | null} content   The file as text; null for a binary file or when the response already holds 2 MiB of contents.
+ * @property {boolean} truncated  `content` is only the first 256 KiB, or absent for lack of room.
+ * @property {boolean} binary
+ */
+
+/**
+ * A module a function's code imports.
+ * @typedef {object} FunctionSourceDependency
+ * @property {string} specifier   As written in the code.
+ * @property {'local' | 'npm' | 'jsr' | 'node' | 'url' | 'backd' | 'unresolved'} kind
+ * @property {string | null} resolved   For `local`: the project path it points to; null when the file is not there.
+ * @property {string | null} maps_to    What deno.json's `imports` says a bare name stands for.
+ * @property {string | null} package    The npm or jsr package, without version or path.
+ * @property {string | null} version    The version or range written, if any.
+ * @property {string[]} used_by         The files that import it.
+ */
+
+/**
+ * A function's source, read-only (`admin.functionSource()`).
+ * @typedef {object} FunctionSource
+ * @property {string} function    `<database>/<name>`.
+ * @property {string} database
+ * @property {string} name
+ * @property {string} entry       Project path of the module that runs.
+ * @property {string} source_hash Hash of the functions project, the one a build records.
+ * @property {string} deno        The Deno version functions run with.
+ * @property {{ sha256: string, built_with_deno: string, built_source_hash: string, current: boolean } | null} bundle   What the build made of the project; `current` says it was built from these files. Null when not built.
+ * @property {FunctionSourceFile[]} files   The function's own files first, then deno.json, then the shared modules it imports.
+ * @property {FunctionSourceDependency[]} dependencies
+ * @property {number} omitted     Files of the function's folder left out because it holds more than 200.
+ */
+
+/**
  * A scheduled function and whether its schedule is paused.
  * @typedef {object} Schedule
  * @property {string} function        `<database>/<name>`.
@@ -612,6 +677,31 @@ export class Admin {
     const { status, data } = await this._request({ method: 'POST', path: ['functions', database, name, 'invoke'], body, headers, ...opts })
     if (status === 202) return new Job(this.client, database, /** @type {import('./functions.js').JobData} */ (data))
     return data
+  }
+
+  /**
+   * The files behind the configuration, with their text: realm.yaml, `_realm/`, each collection's
+   * schema files and policy, the functions projects. Read-only; realm.yaml comes without content
+   * for a caller who may not read users.
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<ConfigFiles>}
+   */
+  async configFiles(opts) {
+    return (await this._request({ method: 'GET', path: ['config', 'files'], ...opts })).data
+  }
+
+  /**
+   * A function's code, read-only: its files (entry, `function.yaml`, schemas), the shared
+   * modules it imports, `deno.json`, what it imports and whether the running bundle was built
+   * from these files. `function` is `<database>/<name>`. Never secrets.
+   * @param {string} fn
+   * @param {RequestOptions} [opts]
+   * @returns {Promise<FunctionSource>}
+   */
+  async functionSource(fn, opts) {
+    const [database, name, ...rest] = fn.split('/')
+    if (!database || !name || rest.length > 0) throw new TypeError('functionSource: the function must be "<database>/<name>"')
+    return (await this._request({ method: 'GET', path: ['functions', database, name, 'source'], ...opts })).data
   }
 
   /**

@@ -3,12 +3,14 @@ import type { AdminOrg, AuditRecord, OrgConnection, OrgConnections, OrgDomain, O
 import { NotFoundError } from 'backd-js'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import AppBadge from '@/components/AppBadge.vue'
 import AppAlert from '@/components/AppAlert.vue'
 import AppButton from '@/components/AppButton.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import FormDialog from '@/components/FormDialog.vue'
-import PageHeader from '@/components/PageHeader.vue'
 import JsonField from '@/components/JsonField.vue'
+import SubTabs from '@/components/SubTabs.vue'
+import { useRawAdmin } from '@/lib/adminRaw'
 import TextField from '@/components/TextField.vue'
 import { useAdmin } from '@/lib/admin'
 import { errorText, formatDate, parseList } from '@/lib/format'
@@ -22,6 +24,8 @@ const { t } = useI18n()
 const admin = useAdmin()
 const session = useSession()
 const crumbNames = useCrumbNames()
+const raw = useRawAdmin()
+const tab = ref('members')
 const toasts = useToasts()
 const realmConfig = useRealmConfig()
 
@@ -38,6 +42,14 @@ const ssoLoginsError = ref('')
 // The organization's verified domains: null while the realm has organizations.domains off.
 const domains = ref<{ items: OrgDomain[]; max_domains: number } | null>(null)
 
+const orgTabs = computed(() => [
+  { id: 'members', label: t('orgTabs.members') },
+  ...(sso.value ? [{ id: 'sso', label: t('orgTabs.sso') }] : []),
+  ...(domains.value ? [{ id: 'domains', label: t('orgTabs.domains') }] : []),
+  { id: 'teams', label: t('orgTabs.teams') },
+  { id: 'invitations', label: t('orgTabs.invitations') },
+  { id: 'settings', label: t('orgTabs.settings') },
+])
 const deleted = computed(() => org.value?.status === 'deleted')
 const teamName = (id: string) => teams.value.find((x) => x.id === id)?.name ?? id
 
@@ -125,6 +137,82 @@ async function act<T>(fn: () => Promise<T>, done: string): Promise<boolean> {
     toasts.push(errorText(e, t('common.unexpected')), 'error')
     return false
   }
+}
+
+// ---- Team management (create, rename, delete, members) ----
+const teamDialog = ref<'new' | 'rename' | 'members' | ''>('')
+const teamTarget = ref<OrgTeam>()
+const teamNameDraft = ref('')
+const teamRolesDraft = ref('')
+const teamError = ref('')
+const teamBusy = ref(false)
+const teamAddUser = ref('')
+function openNewTeam() {
+  teamDialog.value = 'new'
+  teamNameDraft.value = ''
+  teamRolesDraft.value = ''
+  teamError.value = ''
+}
+function openRename(tm: OrgTeam) {
+  teamTarget.value = tm
+  teamDialog.value = 'rename'
+  teamNameDraft.value = tm.name
+  teamRolesDraft.value = tm.roles.join(', ')
+  teamError.value = ''
+}
+function openTeamMembers(tm: OrgTeam) {
+  teamTarget.value = tm
+  teamDialog.value = 'members'
+  teamAddUser.value = ''
+  teamError.value = ''
+}
+async function saveTeam() {
+  teamError.value = ''
+  if (!teamNameDraft.value.trim()) {
+    teamError.value = t('orgs.teams.nameRequired')
+    return
+  }
+  teamBusy.value = true
+  try {
+    const body = { name: teamNameDraft.value.trim(), roles: parseList(teamRolesDraft.value) }
+    if (teamDialog.value === 'new') await raw('POST', ['orgs', props.id, 'teams'], { body })
+    else await raw('PATCH', ['orgs', props.id, 'teams', teamTarget.value!.id], { body })
+    toasts.push(t(teamDialog.value === 'new' ? 'orgs.teams.created' : 'orgs.teams.renamed'))
+    teamDialog.value = ''
+    await load()
+  } catch (e) {
+    teamError.value = errorText(e, t('common.unexpected'))
+  } finally {
+    teamBusy.value = false
+  }
+}
+const deletingTeam = ref(false)
+async function deleteTeam() {
+  const tm = teamTarget.value!
+  await act(() => raw('DELETE', ['orgs', props.id, 'teams', tm.id]), t('orgs.teams.deleted'))
+}
+async function setTeamMember(user: string, add: boolean) {
+  teamBusy.value = true
+  try {
+    await raw(add ? 'PUT' : 'DELETE', ['orgs', props.id, 'teams', teamTarget.value!.id, 'members', user])
+    teamAddUser.value = ''
+    await load()
+    teamTarget.value = teams.value.find((x) => x.id === teamTarget.value!.id)
+  } catch (e) {
+    teamError.value = errorText(e, t('common.unexpected'))
+  } finally {
+    teamBusy.value = false
+  }
+}
+const teamMembers = computed(() => members.value.filter((m) => teamTarget.value && m.teams.includes(teamTarget.value.id)))
+const notInTeam = computed(() => members.value.filter((m) => teamTarget.value && !m.teams.includes(teamTarget.value.id)))
+
+// ---- Slug ----
+const slugDraft = ref('')
+async function saveSlug() {
+  if (!slugDraft.value.trim()) return
+  await act(() => admin.orgs.setSlug(props.id, slugDraft.value.trim()), t('orgs.slugChanged'))
+  slugDraft.value = ''
 }
 
 // ---- Members ----
@@ -500,45 +588,39 @@ const th = 'px-3 py-2'
   <AppAlert v-if="loadError" kind="error" class="mt-4">{{ loadError }}</AppAlert>
 
   <template v-if="org">
-    <PageHeader :title="org.name" testid="org-name" />
-
-    <dl class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <div :class="[box, 'p-4']">
-        <dt class="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-400">{{ t('orgs.statusLabel') }}</dt>
-        <dd class="mt-1" data-testid="org-status">{{ t(`orgs.status.${org.status}`) }}</dd>
+    <div class="mb-4 flex flex-wrap items-center gap-4">
+      <span class="grid size-12 shrink-0 place-items-center rounded-lg bg-slate-200 text-xl font-bold dark:bg-slate-700" aria-hidden="true">{{ org.name.slice(0, 1).toUpperCase() }}</span>
+      <div class="min-w-0">
+        <h1 class="text-xl font-semibold" data-testid="org-name">{{ org.name }}</h1>
+        <p class="text-sm text-slate-600 dark:text-slate-400"><span class="font-mono">{{ org.slug ?? '—' }}</span> · {{ t('orgs.membersCount', { n: members.length }) }} · {{ t('orgs.createdOn', { date: formatDate(org.created_at) }) }}</p>
+        <div class="mt-1.5 flex flex-wrap gap-1.5">
+          <AppBadge :kind="org.status === 'active' ? 'ok' : org.status === 'orphaned' ? 'warn' : 'error'"><span data-testid="org-status">{{ t(`orgs.status.${org.status}`) }}</span></AppBadge>
+          <AppBadge v-if="org.require_mfa">{{ t('orgs.requireMfa') }}</AppBadge>
+          <AppBadge v-if="org.sso_required">{{ t('orgs.ssoRequired') }}</AppBadge>
+        </div>
       </div>
-      <div :class="[box, 'p-4']">
-        <dt class="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-400">{{ t('orgs.slug') }}</dt>
-        <dd class="mt-1 font-mono text-sm">{{ org.slug ?? '—' }}</dd>
+      <div v-if="canWrite" class="ml-auto flex flex-wrap items-center gap-2" data-testid="org-actions">
+        <AppButton v-if="org.status === 'orphaned'" @click="openAssign">{{ t('orgs.owner.open') }}</AppButton>
+        <AppButton v-if="deleted" variant="secondary" @click="openReactivate">{{ t('orgs.reactivate.open') }}</AppButton>
+        <AppButton v-if="!deleted" variant="secondary" @click="tab = 'invitations'; openInvite()">{{ t('orgs.invitations.create') }}</AppButton>
+        <AppButton v-if="!deleted" variant="danger" @click="askDelete">{{ t('orgs.delete.open') }}</AppButton>
       </div>
-      <div :class="[box, 'p-4']">
-        <dt class="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-400">{{ t('orgs.requireMfa') }}</dt>
-        <dd class="mt-1">{{ org.require_mfa ? t('common.yes') : t('common.no') }}</dd>
-      </div>
-      <div :class="[box, 'p-4']">
-        <dt class="text-xs uppercase tracking-wide text-slate-600 dark:text-slate-400">{{ t('orgs.created') }}</dt>
-        <dd class="mt-1">{{ formatDate(org.created_at) }}</dd>
-      </div>
-    </dl>
+    </div>
 
     <AppAlert v-if="org.status === 'orphaned'" kind="error" class="mt-4" data-testid="org-orphaned">{{ t('orgs.orphanedHelp') }}</AppAlert>
     <AppAlert v-if="deleted" kind="error" class="mt-4">{{ t('orgs.deletedHelp') }}</AppAlert>
 
-    <div v-if="canWrite" class="mt-6 flex flex-wrap gap-2" data-testid="org-actions">
-      <AppButton v-if="org.status === 'orphaned'" @click="openAssign">{{ t('orgs.owner.open') }}</AppButton>
-      <AppButton v-if="deleted" variant="secondary" @click="openReactivate">{{ t('orgs.reactivate.open') }}</AppButton>
-      <AppButton v-if="!deleted" variant="danger" @click="askDelete">{{ t('orgs.delete.open') }}</AppButton>
-    </div>
 
+    <SubTabs v-if="!deleted" v-model="tab" class="mt-4" :label="t('orgTabs.label')" :tabs="orgTabs" />
     <template v-if="!deleted">
-      <section class="mt-8" aria-labelledby="members-h">
+      <section v-show="tab === 'members'" class="mt-8" aria-labelledby="members-h">
         <div class="flex flex-wrap items-end justify-between gap-3">
           <h2 id="members-h" class="text-lg font-semibold">{{ t('orgs.members.title') }}</h2>
           <AppButton v-if="canWrite" variant="secondary" @click="openAdd">{{ t('orgs.members.add') }}</AppButton>
         </div>
         <div :class="[box, 'mt-2 overflow-x-auto']">
           <table class="w-full text-left text-sm" data-testid="org-members">
-            <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
+            <thead>
               <tr>
                 <th scope="col" :class="th">{{ t('orgs.members.who') }}</th>
                 <th scope="col" :class="th">{{ t('orgs.members.direct') }}</th>
@@ -584,15 +666,16 @@ const th = 'px-3 py-2'
         </p>
       </section>
 
-      <section class="mt-8" aria-labelledby="teams-h">
-        <h2 id="teams-h" class="text-lg font-semibold">{{ t('orgs.teams.title') }}</h2>
+      <section v-show="tab === 'teams'" class="mt-8" aria-labelledby="teams-h">
+        <div class="flex items-center gap-2"><h2 id="teams-h" class="text-lg font-semibold">{{ t('orgs.teams.title') }}</h2><AppButton v-if="canWrite" variant="secondary" class="ml-auto" data-testid="team-new" @click="openNewTeam">{{ t('orgs.teams.new') }}</AppButton></div>
         <ul class="mt-2 space-y-1 text-sm" data-testid="org-teams">
           <li v-for="tm in teams" :key="tm.id" :data-testid="`team-${tm.name}`">
             <span class="font-medium">{{ tm.name }}</span> — {{ tm.roles.length ? tm.roles.join(', ') : t('common.none') }}
+            <span v-if="canWrite" class="ml-2 inline-flex gap-2 text-xs"><button type="button" class="underline" @click="openTeamMembers(tm)">{{ t('orgs.teams.members') }}</button><button type="button" class="underline" @click="openRename(tm)">{{ t('orgs.teams.rename') }}</button><button type="button" class="underline" @click="((teamTarget = tm), (deletingTeam = true))">{{ t('common.delete') }}</button></span>
             <span v-for="r in tm.roles.filter(stale)" :key="r" class="ml-1 text-amber-800 dark:text-amber-300">⚠ {{ r }}: {{ t('orgs.members.stale') }}</span>
             <div v-if="holdersOf.get(tm.id)?.length || (canWrite && teamRoleNames.length)" class="mt-1 ml-4">
               <table v-if="holdersOf.get(tm.id)?.length" class="w-full text-left text-xs" :aria-label="t('orgs.teamRoles.of', { team: tm.name })">
-                <thead class="text-slate-600 dark:text-slate-400">
+                <thead>
                   <tr>
                     <th scope="col" :class="th">{{ t('orgs.members.who') }}</th>
                     <th scope="col" :class="th">{{ t('orgs.teamRoles.role') }}</th>
@@ -622,7 +705,7 @@ const th = 'px-3 py-2'
         </ul>
       </section>
 
-      <section v-if="unenrolled.length" class="mt-8" aria-labelledby="mfa-h">
+      <section v-if="unenrolled.length" v-show="tab === 'members'" class="mt-8" aria-labelledby="mfa-h">
         <h2 id="mfa-h" class="text-lg font-semibold">{{ t('orgs.teamRoles.unenrolledTitle') }}</h2>
         <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">{{ t('orgs.teamRoles.unenrolledHelp') }}</p>
         <ul class="mt-2 space-y-1 text-sm" data-testid="org-unenrolled">
@@ -630,7 +713,7 @@ const th = 'px-3 py-2'
         </ul>
       </section>
 
-      <section class="mt-8" aria-labelledby="inv-h">
+      <section v-show="tab === 'invitations'" class="mt-8" aria-labelledby="inv-h">
         <div class="flex flex-wrap items-end justify-between gap-3">
           <h2 id="inv-h" class="text-lg font-semibold">{{ t('orgs.invitations.title') }}</h2>
           <AppButton v-if="canWrite" variant="secondary" @click="openInvite">{{ t('orgs.invitations.create') }}</AppButton>
@@ -638,7 +721,7 @@ const th = 'px-3 py-2'
         <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">{{ t('orgs.invitations.help') }}</p>
         <div :class="[box, 'mt-2 overflow-x-auto']">
           <table class="w-full text-left text-sm" data-testid="org-invitations">
-            <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
+            <thead>
               <tr>
                 <th scope="col" :class="th">{{ t('orgs.invitations.for') }}</th>
                 <th scope="col" :class="th">{{ t('orgs.invitations.binding') }}</th>
@@ -667,7 +750,7 @@ const th = 'px-3 py-2'
         </div>
       </section>
 
-      <section v-if="sso" class="mt-8" aria-labelledby="sso-h" data-testid="org-sso">
+      <section v-if="sso" v-show="tab === 'sso'" class="mt-8" aria-labelledby="sso-h" data-testid="org-sso">
         <div class="flex flex-wrap items-end justify-between gap-3">
           <h2 id="sso-h" class="text-lg font-semibold">{{ t('orgs.sso.title') }}</h2>
           <AppButton v-if="canWrite && canAddConnection" variant="secondary" @click="openConnect()">{{ t('orgs.sso.add') }}</AppButton>
@@ -675,7 +758,7 @@ const th = 'px-3 py-2'
         <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">{{ t('orgs.sso.help') }}</p>
         <div :class="[box, 'mt-2 overflow-x-auto']">
           <table class="w-full text-left text-sm" data-testid="org-connections">
-            <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
+            <thead>
               <tr>
                 <th scope="col" :class="th">{{ t('orgs.sso.provider') }}</th>
                 <th scope="col" :class="th">{{ t('orgs.sso.limitedTo') }}</th>
@@ -717,7 +800,7 @@ const th = 'px-3 py-2'
         </ul>
       </section>
 
-      <section v-if="domains" class="mt-8" aria-labelledby="domains-h" data-testid="org-domains">
+      <section v-if="domains" v-show="tab === 'domains'" class="mt-8" aria-labelledby="domains-h" data-testid="org-domains">
         <div class="flex flex-wrap items-end justify-between gap-3">
           <h2 id="domains-h" class="text-lg font-semibold">{{ t('orgs.domains.title') }}</h2>
           <AppButton v-if="canWrite && domains.items.length < domains.max_domains" variant="secondary" @click="openClaim">{{ t('orgs.domains.add') }}</AppButton>
@@ -725,7 +808,7 @@ const th = 'px-3 py-2'
         <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">{{ t('orgs.domains.help') }}</p>
         <div :class="[box, 'mt-2 overflow-x-auto']">
           <table class="w-full text-left text-sm" data-testid="org-domain-list">
-            <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-600 dark:border-slate-800 dark:text-slate-400">
+            <thead>
               <tr>
                 <th scope="col" :class="th">{{ t('orgs.domains.domain') }}</th>
                 <th scope="col" :class="th">{{ t('orgs.statusLabel') }}</th>
@@ -766,7 +849,13 @@ const th = 'px-3 py-2'
         </div>
       </section>
 
-      <section class="mt-8" aria-labelledby="claims-h">
+      <section v-show="tab === 'settings'" class="mt-8" aria-labelledby="slug-h">
+        <h2 id="slug-h" class="text-lg font-semibold">{{ t('orgs.slug') }}</h2>
+        <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">{{ t('orgs.slugHelp') }}</p>
+        <form v-if="canWrite" class="mt-2 flex max-w-md items-end gap-2" @submit.prevent="saveSlug"><div class="flex-1"><TextField v-model="slugDraft" :label="t('orgs.slugNew')" autocomplete="off" /></div><AppButton type="submit" variant="secondary">{{ t('common.save') }}</AppButton></form>
+      </section>
+
+      <section v-show="tab === 'settings'" class="mt-8" aria-labelledby="claims-h">
         <h2 id="claims-h" class="text-lg font-semibold">{{ t('orgs.claims.title') }}</h2>
         <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">{{ t('orgs.claims.help') }}</p>
         <div class="mt-2 max-w-xl">
@@ -777,6 +866,16 @@ const th = 'px-3 py-2'
       </section>
     </template>
   </template>
+
+  <FormDialog :open="teamDialog === 'new' || teamDialog === 'rename'" :title="teamDialog === 'new' ? t('orgs.teams.newTitle') : t('orgs.teams.renameTitle')" :submit="t('common.save')" :busy="teamBusy" :error="teamError" @update:open="(v: boolean) => !v && (teamDialog = '')" @submit="saveTeam">
+    <TextField v-model="teamNameDraft" :label="t('orgs.teams.name')" autocomplete="off" required />
+    <TextField v-model="teamRolesDraft" :label="t('orgs.teams.roles')" :help="t('orgs.members.rolesHelp', { roles: (declared ?? []).join(', ') })" autocomplete="off" />
+  </FormDialog>
+  <FormDialog :open="teamDialog === 'members'" :title="t('orgs.teams.membersTitle', { team: teamTarget?.name ?? '' })" :submit="t('common.close')" :error="teamError" @update:open="(v: boolean) => !v && (teamDialog = '')" @submit="teamDialog = ''">
+    <ul class="divide-y divide-slate-100 text-sm dark:divide-slate-800"><li v-for="m in teamMembers" :key="m.user" class="flex items-center gap-2 py-1.5">{{ memberLabel(m) }}<button type="button" class="ml-auto underline" @click="setTeamMember(m.user, false)">{{ t('common.delete') }}</button></li><li v-if="!teamMembers.length" class="py-2 text-slate-500">{{ t('common.none') }}</li></ul>
+    <div class="flex items-end gap-2"><label class="block flex-1 space-y-1 text-sm font-medium">{{ t('orgs.teams.addMember') }}<select v-model="teamAddUser" class="block h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-[13px] font-normal dark:border-slate-700 dark:bg-slate-900"><option value="" /><option v-for="m in notInTeam" :key="m.user" :value="m.user">{{ memberLabel(m) }}</option></select></label><AppButton variant="secondary" :disabled="!teamAddUser" :busy="teamBusy" @click="setTeamMember(teamAddUser, true)">{{ t('orgs.members.add') }}</AppButton></div>
+  </FormDialog>
+  <ConfirmDialog v-model:open="deletingTeam" :title="t('orgs.teams.deleteTitle', { team: teamTarget?.name ?? '' })" :description="t('orgs.teams.deleteBody')" :expected="teamTarget?.name ?? ''" :action="t('common.delete')" @confirm="deleteTeam" />
 
   <FormDialog v-model:open="connecting" :title="conn.existing ? t('orgs.sso.editTitle', { provider: t(`orgs.sso.providers.${conn.provider}`) }) : t('orgs.sso.add')" :submit="t('common.save')" :busy="connBusy" :error="connError" @submit="saveConnection">
     <div v-if="!conn.existing" class="space-y-1">

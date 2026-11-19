@@ -20,6 +20,7 @@ test('the storage page shows what is in use against the quotas, and who holds it
 
   await signIn('admin', { keep: true })
   await page.goto(`/_ui/r/${REALM}/data/main/docs/${doc.id}`)
+  await page.getByTestId('tab-files').click()
   const cover = page.getByTestId('files-cover')
   await cover.getByTestId('upload-cover').setInputFiles({ name: 'dot.png', mimeType: 'image/png', buffer: PNG })
   await expect(cover.getByTestId('file-name')).toHaveText('dot.png')
@@ -28,12 +29,12 @@ test('the storage page shows what is in use against the quotas, and who holds it
   await expect(page.getByRole('heading', { name: 'Storage', level: 1 })).toBeVisible()
   await expect(page.getByTestId('storage-where')).toContainText('access keys: ok')
 
-  await expect(page.getByTestId('storage-usage')).toContainText("of the realm's quota of 10 MiB")
+  await expect(page.getByTestId('storage-usage')).toContainText('of 10 MiB')
   await expect(page.getByTestId('realm-meter')).toBeVisible()
   await expect(page.getByTestId('user-quota')).toContainText('Quota per user: 5 MiB')
-  await expect(page.getByTestId('storage-usage')).toContainText(/in [1-9]\d* files/) // documents made by an administrator have no owner: only the realm counts them
+  await expect(page.getByTestId('storage-files')).toHaveText(/^[1-9]/) // documents made by an administrator have no owner: only the realm counts them
   await expect(page.getByTestId('storage-near')).toHaveCount(0) // far from both limits
-  await expect(page.getByTestId('storage-queue')).toContainText('objects wait to be deleted')
+  await expect(page.getByTestId('storage-queue')).toContainText('waiting to be deleted')
 })
 
 test('a read-only administrator sees the storage too', async ({ page, signIn }) => {

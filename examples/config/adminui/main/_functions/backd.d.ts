@@ -61,6 +61,38 @@ export type TextOps = {
 };
 export type NullOps = { $isNull?: boolean; $notNull?: boolean };
 
+/** main/assets as stored in version 1 of its schema. */
+export type MainAssetsV1 = { id: string; _meta: Meta & { schema_version: 1 } } & { body?: string; downloads?: number; kind: "link" | "note" | "file"; published_at?: DateTimeString | null; tags?: string[]; title: string; url?: string; [key: string]: unknown; };
+/** main/assets as stored in version 2 of its schema. */
+export type MainAssetsV2 = { id: string; _meta: Meta & { schema_version: 2 } } & { body?: string; description?: string; downloads?: number; kind: "link" | "note" | "file"; published_at?: DateTimeString | null; tags?: string[]; title: string; url?: string; visibility?: "team" | "public"; [key: string]: unknown; };
+/** main/assets as stored in version 3 of its schema. */
+export type MainAssetsV3 = { id: string; _meta: Meta & { schema_version: 3 } } & { description?: string; downloads?: number; kind: "link" | "note" | "file"; published_at?: DateTimeString | null; tags?: string[]; title: string; url?: string; visibility?: "team" | "public"; [key: string]: unknown; };
+/** main/assets */
+export type MainAssets = MainAssetsV1 | MainAssetsV2 | MainAssetsV3;
+/** main/assets */
+export type MainAssetsInput = { description?: string; downloads?: number; kind: "link" | "note" | "file"; published_at?: DateTimeString | null; tags?: string[]; title: string; url?: string; visibility?: "team" | "public"; [key: string]: unknown; };
+export type MainAssetsWhere = {
+  id?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "_meta.created_at"?: DateTimeString | (Ops<DateTimeString> & NullOps & RangeOps<DateTimeString>);
+  "_meta.updated_at"?: DateTimeString | (Ops<DateTimeString> & NullOps & RangeOps<DateTimeString>);
+  "_meta.version"?: number | (Ops<number> & NullOps & RangeOps<number>);
+  "_meta.owner"?: (string | null) | (Ops<(string | null)> & NullOps & RangeOps<string> & TextOps);
+  "_meta.created_by"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "_meta.updated_by"?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  "_meta.schema_version"?: number | (Ops<number> & NullOps & RangeOps<number>);
+  description?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  downloads?: number | (Ops<number> & NullOps & RangeOps<number>);
+  kind?: ("link" | "note" | "file") | (Ops<("link" | "note" | "file")> & NullOps & RangeOps<"link" | "note" | "file"> & TextOps);
+  published_at?: (DateTimeString | null) | (Ops<(DateTimeString | null)> & NullOps & RangeOps<DateTimeString>);
+  tags?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  title?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  url?: string | (Ops<string> & NullOps & RangeOps<string> & TextOps);
+  visibility?: ("team" | "public") | (Ops<("team" | "public")> & NullOps & RangeOps<"team" | "public"> & TextOps);
+  $or?: Array<MainAssetsWhere>;
+  $and?: Array<MainAssetsWhere>;
+};
+export type MainAssetsOrderByField = "id" | "-id" | "_meta.created_at" | "-_meta.created_at" | "_meta.updated_at" | "-_meta.updated_at" | "_meta.version" | "-_meta.version" | "_meta.owner" | "-_meta.owner" | "_meta.created_by" | "-_meta.created_by" | "_meta.updated_by" | "-_meta.updated_by" | "_meta.schema_version" | "-_meta.schema_version" | "description" | "-description" | "downloads" | "-downloads" | "kind" | "-kind" | "published_at" | "-published_at" | "tags" | "-tags" | "title" | "-title" | "url" | "-url" | "visibility" | "-visibility";
+export type MainAssetsOrderBy = MainAssetsOrderByField | `${MainAssetsOrderByField},${string}`;
 /** main/docs */
 export type MainDocs = { id: string; _meta: Meta } & { cover?: FileDetails; manuals?: FileDetails[]; title: string; [key: string]: unknown; };
 /** main/docs */
@@ -117,6 +149,24 @@ export type MainLabelsWhere = {
 };
 export type MainLabelsOrderByField = "id" | "-id" | "_meta.created_at" | "-_meta.created_at" | "_meta.updated_at" | "-_meta.updated_at" | "_meta.version" | "-_meta.version" | "_meta.owner" | "-_meta.owner" | "_meta.created_by" | "-_meta.created_by" | "_meta.updated_by" | "-_meta.updated_by" | "name" | "-name";
 export type MainLabelsOrderBy = MainLabelsOrderByField | `${MainLabelsOrderByField},${string}`;
+/** What a trigger of labels runs its function with: the bodies in before and after ride only with the trigger's fields. */
+export type MainLabelsTriggerInput = {
+  id: string;
+  event: "created" | "updated" | "removed";
+  collection: "labels";
+  doc: { id: string; version: number };
+  version: number;
+  changed: string[];
+  depth: number;
+  root: string;
+  at: DateTimeString;
+  before?: Partial<MainLabels> | null;
+  after?: Partial<MainLabels> | null;
+  by?: string;
+  truncated?: boolean;
+  rescan?: string;
+};
+
 /** main/notes */
 export type MainNotes = { id: string; _meta: Meta } & { body?: string; pinned?: boolean; title: string; [key: string]: unknown; };
 /** main/notes */
@@ -197,8 +247,9 @@ export interface Realm {
   db: {
     main: {
       collections: {
+        assets: { doc: MainAssets; input: MainAssetsInput; create: MainAssetsInput; where: MainAssetsWhere; order_by: MainAssetsOrderBy; expand: {}; aggregate: never; trigger: never };
         docs: { doc: MainDocs; input: MainDocsInput; create: MainDocsInput; where: MainDocsWhere; order_by: MainDocsOrderBy; expand: {}; aggregate: never; trigger: never };
-        labels: { doc: MainLabels; input: MainLabelsInput; create: MainLabelsInput; where: MainLabelsWhere; order_by: MainLabelsOrderBy; expand: {}; aggregate: never; trigger: never };
+        labels: { doc: MainLabels; input: MainLabelsInput; create: MainLabelsInput; where: MainLabelsWhere; order_by: MainLabelsOrderBy; expand: {}; aggregate: never; trigger: MainLabelsTriggerInput };
         notes: { doc: MainNotes; input: MainNotesInput; create: MainNotesInput; where: MainNotesWhere; order_by: MainNotesOrderBy; expand: {}; aggregate: never; trigger: never };
         products: { doc: MainProducts; input: MainProductsInput; create: MainProductsInput; where: MainProductsWhere; order_by: MainProductsOrderBy; expand: {}; aggregate: never; trigger: never };
         projects: { doc: MainProjects; input: MainProjectsInput; create: MainProjectsInput; where: MainProjectsWhere; order_by: MainProjectsOrderBy; expand: {}; aggregate: never; trigger: never };
@@ -219,7 +270,7 @@ export interface Realm {
     };
   };
   roles: "admin" | "editor" | "support" | "viewer";
-  strategies: "password" | "sso";
+  strategies: "password" | "sso" | "passkey";
   org_roles: "editor" | "owner";
   team_roles: "delegate" | "manager";
 }
@@ -468,7 +519,7 @@ export type FunctionName = keyof Realm["db"][ThisDatabase]["functions"] & string
 export interface FunctionFlags {
   greet: { webhook: false; admin: false; orgs: false; config_write: false; email: false; push: false; secrets: never };
   nightly: { webhook: false; admin: false; orgs: false; config_write: false; email: false; push: false; secrets: never };
-  report: { webhook: false; admin: false; orgs: false; config_write: false; email: false; push: false; secrets: never };
+  report: { webhook: false; admin: true; orgs: true; config_write: false; email: false; push: false; secrets: never };
   slow: { webhook: false; admin: false; orgs: false; config_write: false; email: false; push: false; secrets: never };
 }
 

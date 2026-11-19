@@ -7,21 +7,21 @@ const routes = (c: NavContext) => visibleNav(c).flatMap((g) => g.items.map((i) =
 
 describe('navigation', () => {
   test('a full level sees every page', () => {
-    expect(routes(ctx(AREAS))).toEqual(['home', 'users', 'orgs', 'invitations', 'apikeys', 'secrets', 'data', 'storage', 'functions', 'push', 'functions-jobs', 'audit', 'config'])
+    expect(routes(ctx(AREAS))).toEqual(['home', 'data', 'storage', 'functions', 'functions-jobs', 'push', 'users', 'orgs', 'invitations', 'apikeys', 'secrets', 'security', 'audit', 'compliance', 'app-config', 'config'])
   })
 
   test('a level that reads nothing sees the overview only, in one group', () => {
     const groups = visibleNav(ctx([]))
-    expect(groups.map((g) => g.id)).toEqual(['identity'])
+    expect(groups.map((g) => g.id)).toEqual(['realm'])
     expect(routes(ctx([]))).toEqual(['home'])
   })
 
   test('a read-only operations level (configuration and functions)', () => {
-    expect(routes(ctx(['config', 'functions']))).toEqual(['home', 'storage', 'functions', 'push', 'functions-jobs', 'config'])
+    expect(routes(ctx(['config', 'functions']))).toEqual(['home', 'storage', 'functions', 'functions-jobs', 'push', 'app-config', 'config'])
   })
 
   test('organizations, storage and push show only when the realm has them', () => {
-    expect(routes(ctx(AREAS, { orgs: false, storage: false, push: false }))).toEqual(['home', 'users', 'invitations', 'apikeys', 'secrets', 'data', 'functions', 'functions-jobs', 'audit', 'config'])
+    expect(routes(ctx(AREAS, { orgs: false, storage: false, push: false }))).toEqual(['home', 'data', 'functions', 'functions-jobs', 'users', 'invitations', 'apikeys', 'secrets', 'security', 'audit', 'compliance', 'app-config', 'config'])
   })
 
   test('organizations need the users area, storage the configuration, push the functions', () => {
@@ -31,7 +31,7 @@ describe('navigation', () => {
   })
 
   test('a group with nothing to show is dropped', () => {
-    expect(visibleNav(ctx(['audit'])).map((g) => g.id)).toEqual(['identity', 'platform'])
+    expect(visibleNav(ctx(['audit'])).map((g) => g.id)).toEqual(['realm', 'platform'])
   })
 
   test('each route is in one item, and the sub-pages belong to their item', () => {
